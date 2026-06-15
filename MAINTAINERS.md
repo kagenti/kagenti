@@ -16,8 +16,10 @@ The current Maintainers Group for the Kagenti Project consists of:
 | [Mariusz Sabath](https://github.com/mrsabath) | IBM | Project Technical Lead, Workload Identity, Security |
 | [Morgan Foster](https://github.com/usize) | Red Hat | Workload Identity and Security |
 | [Paolo Dettori](https://github.com/pdettori) | IBM | Project Technical Lead, Agent Lifecycle Management |
+| [Rong Chang](https://github.com/webchang) | IBM | Identity, Attestation, Authorization and Policy Management |
 | [Ryan Jenkins](https://github.com/RyanJenkins99) | Red Hat | Automation, HyperShift CI |
-| [Varsha Prasad Narsing](https://github.com/varshaprasad96) | Red Hat | |
+| [Varsha Prasad Narsing](https://github.com/varshaprasad96) | Red Hat | Agent Runtime |
+| [Kevin Cogan](https://github.com/kevincogan) | Red Hat | Agent Runtime |
 
 ## Contact
 

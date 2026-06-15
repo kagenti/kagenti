@@ -4,6 +4,8 @@ kind: Gateway
 metadata:
   name: http
   labels:
+    # Keep generated gateway pods out of ambient capture.
+    istio.io/dataplane-mode: none
     {{- include "kagenti.labels" . | nindent 4 }}
   annotations:
     networking.istio.io/service-type: ClusterIP

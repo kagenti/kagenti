@@ -10,13 +10,15 @@ Skills are stored as Kubernetes ConfigMaps labeled with `kagenti.io/type=skill`.
 import json
 import logging
 import re
-from typing import List, Optional
+from typing import Dict, List, Optional
 
+import kubernetes.client as k8s_client
 from fastapi import APIRouter, Depends, HTTPException, Query
 from kubernetes.client.exceptions import ApiException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.auth import require_roles, ROLE_VIEWER, ROLE_OPERATOR
+from app.core.config import settings
 from app.core.constants import (
     SKILL_TYPE_LABEL,
     SKILL_TYPE_VALUE,
@@ -26,8 +28,16 @@ from app.core.constants import (
     SKILL_USAGE_ANNOTATION,
     SKILL_FILE_PATHS_ANNOTATION,
     SKILL_STATUS_READY,
+    SKILL_DISPLAY_NAME_ANNOTATION,
     APP_KUBERNETES_IO_MANAGED_BY,
     APP_KUBERNETES_IO_NAME,
+    KAGENTI_UI_CREATOR_LABEL,
+    SKILL_SOURCE_LABEL,
+    SKILL_SOURCE_EXTERNAL,
+    SKILL_REGISTRY_TYPE_LABEL,
+    SKILL_REGISTRY_URL_ANNOTATION,
+    SKILL_REGISTRY_SKILL_NAME_ANNOTATION,
+    SKILL_REGISTRY_SKILL_VERSION_ANNOTATION,
 )
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
 
@@ -42,6 +52,15 @@ class SkillLabels(BaseModel):
     type: Optional[str] = None
 
 
+class ExternalSkillInfo(BaseModel):
+    """Registry metadata for externally-sourced skills."""
+
+    registryType: str
+    registryUrl: str
+    registrySkillName: str
+    registrySkillVersion: str
+
+
 class Skill(BaseModel):
     """Represents a skill stored as a ConfigMap."""
 
@@ -54,6 +73,8 @@ class Skill(BaseModel):
     createdAt: Optional[str] = None
     origin: Optional[str] = None
     usageCount: int = 0
+    source: Optional[str] = None
+    externalInfo: Optional[ExternalSkillInfo] = None
 
 
 class SkillFile(BaseModel):
@@ -97,6 +118,37 @@ class CreateSkillResponse(BaseModel):
     name: str
     namespace: str
     message: str
+
+
+class CreateExternalSkillRequest(BaseModel):
+    """Request model for creating an external skill registry reference."""
+
+    name: str = Field(..., max_length=253)
+    namespace: str = Field(..., max_length=63)
+    description: str = Field("", max_length=1000)
+    category: str = Field("", max_length=63)
+    registryType: str = Field(..., max_length=63)
+    registryUrl: str = Field(..., max_length=2048)
+    registrySkillName: str = Field(..., max_length=253)
+    registrySkillVersion: str = Field("latest", max_length=63)
+    origin: str = Field("", max_length=253)
+
+    @field_validator("registryUrl")
+    @classmethod
+    def validate_registry_url(cls, v: str) -> str:
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("registryUrl must use http:// or https:// scheme")
+        return v
+
+    @field_validator("registrySkillName")
+    @classmethod
+    def validate_registry_skill_name(cls, v: str) -> str:
+        if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$", v):
+            raise ValueError(
+                "registrySkillName must start with alphanumeric and contain only "
+                "letters, digits, '.', '_', or '-'"
+            )
+        return v
 
 
 def _sanitize_k8s_name(name: str) -> str:
@@ -151,6 +203,24 @@ def _desanitize_configmap_key(key: str, file_paths_map: Optional[dict] = None) -
     return key
 
 
+def _is_external(cm) -> bool:
+    """Return True if the ConfigMap is an external skill registry reference."""
+    labels = cm.metadata.labels or {}
+    return labels.get(SKILL_SOURCE_LABEL) == SKILL_SOURCE_EXTERNAL
+
+
+def _configmap_to_external_skill_info(cm) -> ExternalSkillInfo:
+    """Build ExternalSkillInfo from a registry-reference ConfigMap's annotations."""
+    labels = cm.metadata.labels or {}
+    annotations = cm.metadata.annotations or {}
+    return ExternalSkillInfo(
+        registryType=labels.get(SKILL_REGISTRY_TYPE_LABEL, ""),
+        registryUrl=annotations.get(SKILL_REGISTRY_URL_ANNOTATION, ""),
+        registrySkillName=annotations.get(SKILL_REGISTRY_SKILL_NAME_ANNOTATION, ""),
+        registrySkillVersion=annotations.get(SKILL_REGISTRY_SKILL_VERSION_ANNOTATION, "latest"),
+    )
+
+
 def _configmap_to_skill(cm) -> Skill:
     """Convert a ConfigMap to a Skill model."""
     md = cm.metadata
@@ -161,8 +231,10 @@ def _configmap_to_skill(cm) -> Skill:
         usage_count = int(usage)
     except Exception:
         usage_count = 0
+    source = SKILL_SOURCE_EXTERNAL if _is_external(cm) else None
+    external_info = _configmap_to_external_skill_info(cm) if _is_external(cm) else None
     return Skill(
-        name=annos.get("kagenti.io/display-name") or md.name,
+        name=annos.get(SKILL_DISPLAY_NAME_ANNOTATION) or md.name,
         namespace=md.namespace,
         resourceName=md.name,
         description=annos.get(SKILL_DESCRIPTION_ANNOTATION, ""),
@@ -174,6 +246,8 @@ def _configmap_to_skill(cm) -> Skill:
         createdAt=(md.creation_timestamp.isoformat() if md.creation_timestamp else None),
         origin=annos.get(SKILL_ORIGIN_ANNOTATION),
         usageCount=usage_count,
+        source=source,
+        externalInfo=external_info,
     )
 
 
@@ -189,31 +263,38 @@ def _configmap_to_skill_detail(cm) -> SkillDetail:
         usage_count = 0
     data = cm.data or {}
 
-    # Load file paths mapping from annotation if available
-    file_paths_map = {}
-    file_paths_json = annos.get(SKILL_FILE_PATHS_ANNOTATION)
-    if file_paths_json:
-        try:
-            file_paths_map = json.loads(file_paths_json)
-        except Exception:
-            pass  # Fall back to heuristic if annotation is malformed
+    if _is_external(cm):
+        files = []
+        data_keys: list[str] = []
+    else:
+        # Load file paths mapping from annotation if available
+        file_paths_map = {}
+        file_paths_json = annos.get(SKILL_FILE_PATHS_ANNOTATION)
+        if file_paths_json:
+            try:
+                file_paths_map = json.loads(file_paths_json)
+            except Exception:
+                pass  # Fall back to heuristic if annotation is malformed
 
-    # Build files list from all data keys, desanitizing the paths
-    files = []
-    for sanitized_key, content in data.items():
-        # Desanitize the key to get the original file path
-        file_path = _desanitize_configmap_key(sanitized_key, file_paths_map)
-        files.append(
-            SkillFile(
-                name=file_path.split("/")[-1],  # Extract filename from path
-                path=file_path,
-                content=content,
-                size=len(content.encode("utf-8")),
+        # Build files list from all data keys, desanitizing the paths
+        files = []
+        for sanitized_key, content in data.items():
+            # Desanitize the key to get the original file path
+            file_path = _desanitize_configmap_key(sanitized_key, file_paths_map)
+            files.append(
+                SkillFile(
+                    name=file_path.split("/")[-1],  # Extract filename from path
+                    path=file_path,
+                    content=content,
+                    size=len(content.encode("utf-8")),
+                )
             )
-        )
+        data_keys = sorted([_desanitize_configmap_key(k, file_paths_map) for k in data.keys()])
 
+    source = SKILL_SOURCE_EXTERNAL if _is_external(cm) else None
+    external_info = _configmap_to_external_skill_info(cm) if _is_external(cm) else None
     return SkillDetail(
-        name=annos.get("kagenti.io/display-name") or md.name,
+        name=annos.get(SKILL_DISPLAY_NAME_ANNOTATION) or md.name,
         namespace=md.namespace,
         resourceName=md.name,
         description=annos.get(SKILL_DESCRIPTION_ANNOTATION, ""),
@@ -225,7 +306,9 @@ def _configmap_to_skill_detail(cm) -> SkillDetail:
         createdAt=(md.creation_timestamp.isoformat() if md.creation_timestamp else None),
         origin=annos.get(SKILL_ORIGIN_ANNOTATION),
         usageCount=usage_count,
-        dataKeys=sorted([_desanitize_configmap_key(k, file_paths_map) for k in data.keys()]),
+        source=source,
+        externalInfo=external_info,
+        dataKeys=data_keys,
         annotations=dict(annos),
         files=sorted(files, key=lambda f: f.path),
     )
@@ -360,7 +443,7 @@ async def create_skill(
         labels[SKILL_CATEGORY_LABEL] = _sanitize_k8s_name(request.category)
 
     annotations = {
-        "kagenti.io/display-name": display_name,
+        SKILL_DISPLAY_NAME_ANNOTATION: display_name,
         SKILL_USAGE_ANNOTATION: "0",
     }
     if request.description:
@@ -423,6 +506,74 @@ async def create_skill(
             exc,
         )
         raise HTTPException(status_code=exc.status or 500, detail=str(exc))
+
+
+@router.post(
+    "/external",
+    response_model=CreateSkillResponse,
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def create_external_skill(
+    request: CreateExternalSkillRequest,
+) -> CreateSkillResponse:
+    """Create an external skill registry reference (feature-flagged)."""
+    if not settings.kagenti_feature_flag_external_skills:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    if not request.registryType:
+        raise HTTPException(status_code=400, detail="registryType is required")
+
+    kube = get_kubernetes_service()
+    resource_name = _sanitize_k8s_name(request.name)
+
+    labels: Dict[str, str] = {
+        SKILL_TYPE_LABEL: SKILL_TYPE_VALUE,
+        SKILL_SOURCE_LABEL: SKILL_SOURCE_EXTERNAL,
+        SKILL_REGISTRY_TYPE_LABEL: request.registryType,
+        APP_KUBERNETES_IO_NAME: resource_name,
+        APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
+    }
+    if request.category:
+        labels[SKILL_CATEGORY_LABEL] = request.category
+
+    annotations: Dict[str, str] = {
+        SKILL_DISPLAY_NAME_ANNOTATION: request.name,
+        SKILL_USAGE_ANNOTATION: "0",
+        SKILL_REGISTRY_URL_ANNOTATION: request.registryUrl,
+        SKILL_REGISTRY_SKILL_NAME_ANNOTATION: request.registrySkillName,
+        SKILL_REGISTRY_SKILL_VERSION_ANNOTATION: request.registrySkillVersion,
+    }
+    if request.description:
+        annotations[SKILL_DESCRIPTION_ANNOTATION] = request.description
+    if request.origin:
+        annotations[SKILL_ORIGIN_ANNOTATION] = request.origin
+
+    body = k8s_client.V1ConfigMap(
+        metadata=k8s_client.V1ObjectMeta(
+            name=resource_name,
+            namespace=request.namespace,
+            labels=labels,
+            annotations=annotations,
+        ),
+        data={},
+    )
+
+    try:
+        kube.core_api.create_namespaced_config_map(namespace=request.namespace, body=body)
+    except ApiException as e:
+        if e.status == 409:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Skill '{resource_name}' already exists in namespace '{request.namespace}'",
+            )
+        raise HTTPException(status_code=500, detail=f"Kubernetes error: {e.reason}")
+
+    return CreateSkillResponse(
+        success=True,
+        name=resource_name,
+        namespace=request.namespace,
+        message=f"External skill reference '{resource_name}' created successfully",
+    )
 
 
 @router.post(

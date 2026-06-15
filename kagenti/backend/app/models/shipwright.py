@@ -131,6 +131,7 @@ class ResourceConfigFromBuild(BaseModel):
     createHttpRoute: bool = False
     registrySecret: Optional[str] = None
     envVars: Optional[List[Dict[str, Any]]] = None
+    skills: Optional[List[str]] = None
     servicePorts: Optional[List[Dict[str, Any]]] = None
 
 

@@ -1,13 +1,11 @@
 # Weather agent running inside OpenShell supervisor
 # Supervisor applies Landlock + seccomp, then execs the weather agent
-# hadolint ignore=DL3007
-FROM ghcr.io/nvidia/openshell/supervisor:latest AS supervisor
+FROM ghcr.io/kagenti/openshell/supervisor:v0.0.36-kagenti.8 AS supervisor
 
-# hadolint ignore=DL3007
-FROM ghcr.io/kagenti/agent-examples/weather_service:latest
+FROM ghcr.io/kagenti/agent-examples/weather_service:latest@sha256:59c77636edcb918f8789367e6224c2a9b3753d8fc2e1259d78ab1c0c3efef1c5
 
 # Copy supervisor binary from supervisor image
-COPY --from=supervisor /usr/local/bin/openshell-sandbox /usr/local/bin/openshell-sandbox
+COPY --from=supervisor /openshell-sandbox /usr/local/bin/openshell-sandbox
 
 # Create sandbox user and install agent deps into system python
 # Supervisor runs as root to set up namespaces, then drops to sandbox user

@@ -44,6 +44,7 @@ charts:
           enabled: false
         mlflow:
           enabled: true
+          routeNamespace: "redhat-ods-applications"
         spire:
           # ⚠️  REQUIRES OpenShift 4.19 or higher
           # The ZTWIM (Zero Trust Workload Identity Manager) operator is only available on OCP 4.19+
@@ -102,6 +103,7 @@ charts:
           enabled: true
         backend:
           defaultRegistryUrl: "image-registry.openshift-image-registry.svc:5000"
+          shipwrightDefaultStrategy: "buildah"
       uiOAuthSecret:
         # for a OCP with self-signed certs for routes it should be true.
         # for a OCP with CA-signed certs for routes it should be false.

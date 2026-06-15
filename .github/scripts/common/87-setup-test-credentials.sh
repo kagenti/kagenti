@@ -260,8 +260,8 @@ dump_scope_timeout_diagnostics() {
         grep -E '^  [A-Z_]+:|^data:' | head -30 || echo "  (not found — reconciler will requeue forever on 'waiting for KEYCLOAK_URL/KEYCLOAK_REALM')"
 
     echo
-    echo "--- team1 keycloak-admin-secret (existence + key names, not values) ---"
-    kubectl get secret -n team1 keycloak-admin-secret \
+    echo "--- keycloak-admin-secret (now in kagenti-system, not team1) ---"
+    kubectl get secret -n kagenti-system keycloak-admin-secret \
         -o jsonpath='{"  keys: "}{.data}{"\n"}' 2>&1 | python3 -c "
 import sys, json, re
 s = sys.stdin.read().strip()
@@ -275,7 +275,7 @@ if m:
         print(s)
 else:
     print(s)
-" 2>&1 || echo "  (not found — reconciler will requeue forever on 'waiting for keycloak-admin-secret')"
+" 2>&1 || echo "  (not found — operator will be unable to register clients)"
 
     echo
     echo "--- kagenti-operator controller pod status ---"

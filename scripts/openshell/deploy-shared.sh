@@ -8,7 +8,8 @@
 #   3. cert-manager CA chain (ClusterIssuer + CA Certificate)
 #   4. Keycloak realm (openshell realm, PKCE client, test users)
 #   5. LiteLLM model proxy (optional, when --litellm is passed)
-#   6. Base sandbox image pre-pull (optional, when --pre-pull is passed)
+#   6. Container image pre-pull (optional, when --pre-pull is passed)
+#   7. kagenti-backend + PostgreSQL sessions DB (off by default, --with-backend)
 #
 # Idempotent: safe to re-run. Checks existing state before each step.
 #
@@ -29,7 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # ── Versions (keep in sync with scripts/kind/setup-kagenti.sh) ──────────────
-AGENT_SANDBOX_VERSION="v0.3.10"
+AGENT_SANDBOX_VERSION="v0.4.6"
 GATEWAY_API_VERSION="v1.4.0"
 
 # ── Defaults ────────────────────────────────────────────────────────────────
@@ -44,6 +45,7 @@ STEP_TLS=true
 STEP_KEYCLOAK=true
 STEP_LITELLM=false
 STEP_PREPULL=false
+STEP_BACKEND=false
 KIND_CLUSTER="${CLUSTER_NAME:-kagenti}"
 DRY_RUN=false
 
@@ -71,7 +73,8 @@ Options:
   --skip-tls          Skip cert-manager CA chain
   --skip-keycloak     Skip Keycloak realm setup
   --litellm           Deploy LiteLLM model proxy (requires MAAS_* env vars)
-  --pre-pull          Pre-pull base sandbox image into the cluster
+  --pre-pull          Pre-pull container images into the cluster
+  --with-backend      Deploy kagenti-backend + PostgreSQL sessions DB (default: off)
   --kind-cluster NAME Kind cluster name for pre-pull (default: kagenti)
   --keycloak-ns NS    Keycloak namespace (default: keycloak)
   --dry-run           Print commands without executing
@@ -90,6 +93,8 @@ while [[ $# -gt 0 ]]; do
     --keycloak-ns)      KEYCLOAK_NS="$2"; shift 2 ;;
     --litellm)          STEP_LITELLM=true; shift ;;
     --pre-pull)         STEP_PREPULL=true; shift ;;
+    --with-backend)     STEP_BACKEND=true; shift ;;
+    --backend|--skip-backend) STEP_BACKEND=false; shift ;;  # compat aliases (no-op, kept for existing scripts)
     --kind-cluster)     KIND_CLUSTER="$2"; shift 2 ;;
     --dry-run)          DRY_RUN=true; shift ;;
     *)
@@ -109,7 +114,8 @@ echo "  Gateway API CRDs:   $STEP_GATEWAY_API"
 echo "  cert-manager CA:    $STEP_TLS"
 echo "  Keycloak realm:     $STEP_KEYCLOAK"
 echo "  LiteLLM proxy:      $STEP_LITELLM"
-echo "  Base image pre-pull: $STEP_PREPULL"
+echo "  Image pre-pull:      $STEP_PREPULL"
+echo "  Backend + sessions: $STEP_BACKEND$( $STEP_BACKEND || echo ' (use --with-backend to enable)' )"
 echo "  Keycloak namespace: $KEYCLOAK_NS"
 echo "  Dry run:            $DRY_RUN"
 echo ""
@@ -272,10 +278,17 @@ fi
 if $STEP_TLS; then
   log_info "Step 3: cert-manager CA chain for OpenShell TLS"
 
-  # Verify cert-manager is installed
+  # Verify cert-manager is installed and webhook is ready
   if ! kubectl get deployment cert-manager-webhook -n cert-manager &>/dev/null; then
     log_error "cert-manager is not installed. Install cert-manager first."
     exit 1
+  fi
+
+  if ! $DRY_RUN; then
+    log_info "Waiting for cert-manager webhook to be available..."
+    kubectl wait --for=condition=available deployment/cert-manager -n cert-manager --timeout=120s
+    kubectl wait --for=condition=available deployment/cert-manager-webhook -n cert-manager --timeout=120s
+    kubectl wait --for=condition=available deployment/cert-manager-cainjector -n cert-manager --timeout=120s
   fi
 
   # 3a: Bootstrap self-signed ClusterIssuer
@@ -390,6 +403,27 @@ if $STEP_KEYCLOAK; then
       -s 'attributes={\"pkce.code.challenge.method\":\"S256\"}' \
       2>/dev/null" 2>/dev/null || true
 
+    # 4b2: Create confidential client for backend → gateway gRPC
+    BACKEND_CLIENT_SECRET=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 40)
+    log_info "Creating client: kagenti-backend (confidential, service account)"
+    kc_exec "$KCADM create clients --config $KC_CONFIG -r openshell \
+      -s clientId=kagenti-backend \
+      -s enabled=true \
+      -s publicClient=false \
+      -s serviceAccountsEnabled=true \
+      -s clientAuthenticatorType=client-secret \
+      -s secret=$BACKEND_CLIENT_SECRET \
+      -s directAccessGrantsEnabled=false \
+      2>/dev/null" 2>/dev/null || true
+
+    # Store backend client credentials in each tenant namespace
+    for _ns in team1 team2; do
+      kubectl create secret generic kagenti-backend-oidc \
+        --from-literal=client-id=kagenti-backend \
+        --from-literal=client-secret="$BACKEND_CLIENT_SECRET" \
+        -n "$_ns" --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+    done
+
     # 4c: Create roles
     for role in openshell-admin openshell-user; do
       log_info "Creating role: $role"
@@ -443,10 +477,20 @@ if $STEP_KEYCLOAK; then
       done
     }
 
-    # 4e: Create users
-    create_openshell_user "alice" "alice123" "openshell-user" "team1"
-    create_openshell_user "bob"   "bob123"   "openshell-user" "team2"
-    create_openshell_user "admin" "admin123" "openshell-admin" "team1" "team2"
+    # 4e: Create users (generate passwords at deploy time, store in K8s secret)
+    ALICE_PW=$(head -c 16 /dev/urandom | base64 | tr -d '/+=' | head -c 20)
+    BOB_PW=$(head -c 16 /dev/urandom | base64 | tr -d '/+=' | head -c 20)
+    ADMIN_PW=$(head -c 16 /dev/urandom | base64 | tr -d '/+=' | head -c 20)
+
+    create_openshell_user "alice" "$ALICE_PW" "openshell-user" "team1"
+    create_openshell_user "bob"   "$BOB_PW"   "openshell-user" "team2"
+    create_openshell_user "admin" "$ADMIN_PW" "openshell-admin" "team1" "team2"
+
+    kubectl create secret generic openshell-test-users \
+      --from-literal=alice-password="$ALICE_PW" \
+      --from-literal=bob-password="$BOB_PW" \
+      --from-literal=admin-password="$ADMIN_PW" \
+      -n team1 --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
 
     # 4f: Create per-tenant client scopes with audience mappers
     # Each tenant gets a default client scope so the audience claim is always
@@ -487,6 +531,28 @@ if $STEP_KEYCLOAK; then
 
     if [[ -z "$CLIENT_ID" ]]; then
       log_warn "Could not find openshell-cli client ID — audience scopes created but not linked"
+    fi
+
+    # Also assign audience scopes to kagenti-backend client
+    BACKEND_CLIENT_ID=$(kc_exec "$KCADM get clients --config $KC_CONFIG -r openshell \
+      -q clientId=kagenti-backend --fields id 2>/dev/null" | \
+      grep '"id"' | head -1 | sed 's/.*: "\(.*\)".*/\1/')
+    if [[ -n "$BACKEND_CLIENT_ID" ]]; then
+      # Assign openshell-user role to the service account
+      kc_exec "$KCADM add-roles --config $KC_CONFIG -r openshell \
+        --uusername service-account-kagenti-backend \
+        --rolename openshell-user 2>/dev/null" 2>/dev/null || true
+
+      for tenant in team1 team2; do
+        SCOPE_ID=$(kc_exec "$KCADM get client-scopes --config $KC_CONFIG -r openshell \
+          --fields id,name 2>/dev/null" | \
+          grep -B1 "\"${tenant}-audience\"" | grep '"id"' | sed 's/.*: "\(.*\)".*/\1/')
+        if [[ -n "$SCOPE_ID" ]]; then
+          kc_exec "$KCADM update clients/$BACKEND_CLIENT_ID/default-client-scopes/$SCOPE_ID \
+            --config $KC_CONFIG -r openshell 2>/dev/null" 2>/dev/null || true
+        fi
+      done
+      log_info "Assigned audience scopes to kagenti-backend client"
     fi
 
     log_success "Keycloak openshell realm configured"
@@ -679,54 +745,13 @@ fi
 # Step 6: Base sandbox image pre-pull (optional)
 # ============================================================================
 if $STEP_PREPULL; then
-  log_info "Step 6: Pre-pull base sandbox image"
-
-  BASE_IMAGE="ghcr.io/nvidia/openshell-community/sandboxes/base:latest"
-
-  # Read gateway image tags from values.yaml
-  CHART_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/charts/openshell"
-  GW_REPO=$(grep -A2 'gateway:' "$CHART_DIR/values.yaml" | grep 'repository:' | awk '{print $2}')
-  GW_TAG=$(grep -A3 'gateway:' "$CHART_DIR/values.yaml" | grep 'tag:' | awk '{print $2}')
-  CD_REPO=$(grep -A2 'computeDriver:' "$CHART_DIR/values.yaml" | grep 'repository:' | awk '{print $2}')
-  CD_TAG=$(grep -A3 'computeDriver:' "$CHART_DIR/values.yaml" | grep 'tag:' | awk '{print $2}')
-  CR_REPO=$(grep -A2 'credentialsDriver:' "$CHART_DIR/values.yaml" | grep 'repository:' | awk '{print $2}')
-  CR_TAG=$(grep -A3 'credentialsDriver:' "$CHART_DIR/values.yaml" | grep 'tag:' | awk '{print $2}')
+  log_info "Step 6: Pre-pull container images"
 
   if is_openshift; then
-    # OCP: Start pull Jobs for all images in parallel (non-blocking)
-    PULL_IMAGES="$BASE_IMAGE ${GW_REPO}:${GW_TAG} ${CD_REPO}:${CD_TAG} ${CR_REPO}:${CR_TAG}"
-    for img in $PULL_IMAGES; do
-      job_name="pull-$(echo "$img" | sed 's|[/:.@]|-|g' | tail -c 58)"
-      if kubectl get job "$job_name" -n team1 &>/dev/null; then
-        continue
-      fi
-      log_info "Pre-pulling $img..."
-      run_cmd kubectl apply -f - <<EOJOB
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: $job_name
-  namespace: team1
-spec:
-  ttlSecondsAfterFinished: 300
-  template:
-    spec:
-      containers:
-      - name: pull
-        image: $img
-        imagePullPolicy: Always
-        command: ["echo", "pulled"]
-      restartPolicy: Never
-EOJOB
-    done
-    log_info "Waiting for pre-pull Jobs to complete (up to 10 min)..."
-    for jn in $PULL_IMAGES; do
-      jname="pull-$(echo "$jn" | sed 's|[/:.@]|-|g' | tail -c 58)"
-      kubectl wait --for=condition=Complete "job/$jname" \
-        -n team1 --timeout=600s 2>/dev/null || log_warn "Pre-pull $jname not complete"
-    done
+    "$SCRIPT_DIR/prepull-images.sh" --namespace team1 --timeout 1200
   else
-    # Kind: docker pull + kind load
+    # Kind: docker pull + kind load for base sandbox image
+    BASE_IMAGE="ghcr.io/nvidia/openshell-community/sandboxes/base:latest"
     if docker exec "${KIND_CLUSTER}-control-plane" crictl images 2>/dev/null | grep -q "sandboxes/base"; then
       log_success "Base sandbox image already loaded in Kind — skipping"
     else
@@ -736,6 +761,319 @@ EOJOB
         log_warn "Base image pre-pull failed (non-critical)"
     fi
   fi
+  echo ""
+fi
+
+# ============================================================================
+# Step 7: kagenti-backend + PostgreSQL sessions DB
+# ============================================================================
+if $STEP_BACKEND; then
+  log_info "Step 7: kagenti-backend + PostgreSQL sessions DB"
+
+  BACKEND_NS="${LITELLM_NS:-team1}"
+  BACKEND_IMAGE="${KAGENTI_BACKEND_IMAGE:-kagenti-backend:local}"
+
+  # 7a: PostgreSQL sessions DB
+  if kubectl get statefulset postgres-sessions -n "$BACKEND_NS" &>/dev/null \
+     && kubectl rollout status statefulset/postgres-sessions -n "$BACKEND_NS" --timeout=5s &>/dev/null; then
+    log_success "PostgreSQL sessions DB already deployed — skipping"
+  else
+    log_info "Deploying PostgreSQL sessions DB in $BACKEND_NS..."
+
+    PG_PASSWORD=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
+
+    # Kind: use postgres:16-alpine (RedHat image needs registry auth)
+    if ! is_openshift; then
+      run_cmd kubectl apply -f - <<EOPG
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-sessions-secret
+  namespace: $BACKEND_NS
+  labels:
+    app.kubernetes.io/name: postgres-sessions
+    app.kubernetes.io/part-of: kagenti
+type: Opaque
+stringData:
+  host: postgres-sessions.$BACKEND_NS
+  port: "5432"
+  database: sessions
+  username: kagenti
+  password: $PG_PASSWORD
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-sessions
+  namespace: $BACKEND_NS
+  labels:
+    app.kubernetes.io/name: postgres-sessions
+    app.kubernetes.io/part-of: kagenti
+spec:
+  serviceName: postgres-sessions
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres-sessions
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres-sessions
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        securityContext:
+          runAsUser: 999
+          runAsGroup: 999
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          seccompProfile:
+            type: RuntimeDefault
+          capabilities:
+            drop: [ALL]
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: sessions
+        - name: POSTGRES_USER
+          value: kagenti
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-sessions-secret
+              key: password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: [ReadWriteOnce]
+      resources:
+        requests:
+          storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-sessions
+  namespace: $BACKEND_NS
+  labels:
+    app.kubernetes.io/name: postgres-sessions
+spec:
+  selector:
+    app.kubernetes.io/name: postgres-sessions
+  ports:
+  - port: 5432
+    targetPort: 5432
+  clusterIP: None
+EOPG
+    else
+      # OCP: use the RedHat image from the existing manifest
+      run_cmd kubectl apply -f "$REPO_ROOT/deployments/sandbox/postgres-sessions.yaml"
+    fi
+
+    if ! $DRY_RUN; then
+      kubectl rollout status statefulset/postgres-sessions -n "$BACKEND_NS" --timeout=120s || {
+        log_warn "PostgreSQL still starting — continuing (backend will retry connection)"
+      }
+    fi
+    log_success "PostgreSQL sessions DB deployed"
+  fi
+
+  # 7b: Build backend image (Kind only)
+  if ! is_openshift && [[ "$BACKEND_IMAGE" == *":local"* ]]; then
+    log_info "Building kagenti-backend image..."
+    if ! $DRY_RUN; then
+      docker build -f "$REPO_ROOT/kagenti/backend/Dockerfile" "$REPO_ROOT/kagenti/" \
+        -t "$BACKEND_IMAGE" 2>&1 | tail -5
+      kind load docker-image "$BACKEND_IMAGE" --name "$KIND_CLUSTER" 2>/dev/null || {
+        log_warn "kind load failed — image may already exist"
+      }
+    else
+      echo "  [dry-run] docker build -f kagenti/backend/Dockerfile kagenti/ -t $BACKEND_IMAGE"
+      echo "  [dry-run] kind load docker-image $BACKEND_IMAGE --name $KIND_CLUSTER"
+    fi
+  fi
+
+  # 7c: Backend RBAC (needed to list agents and resolve service ports)
+  log_info "Applying backend RBAC..."
+  run_cmd kubectl apply -f - <<EORBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kagenti-backend
+  namespace: $BACKEND_NS
+  labels:
+    app.kubernetes.io/name: kagenti-backend
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kagenti-backend
+rules:
+- apiGroups: ["", "apps", "batch"]
+  resources: ["pods", "deployments", "statefulsets", "jobs", "services", "configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["agents.x-k8s.io", "extensions.agents.x-k8s.io"]
+  resources: ["sandboxes", "sandboxclaims", "sandboxtemplates"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kagenti-backend-secrets
+  namespace: $BACKEND_NS
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+  resourceNames: ["postgres-sessions-secret", "litemaas-credentials", "litellm-virtual-keys", "openshell-client-tls", "kagenti-backend-oidc"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kagenti-backend-secrets
+  namespace: $BACKEND_NS
+subjects:
+- kind: ServiceAccount
+  name: kagenti-backend
+  namespace: $BACKEND_NS
+roleRef:
+  kind: Role
+  name: kagenti-backend-secrets
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kagenti-backend
+subjects:
+- kind: ServiceAccount
+  name: kagenti-backend
+  namespace: $BACKEND_NS
+roleRef:
+  kind: ClusterRole
+  name: kagenti-backend
+  apiGroup: rbac.authorization.k8s.io
+EORBAC
+
+  # 7d: Backend Deployment (always apply — idempotent, picks up RBAC/config changes)
+    log_info "Deploying kagenti-backend in $BACKEND_NS..."
+    run_cmd kubectl apply -f - <<EOBACKEND
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kagenti-backend
+  namespace: $BACKEND_NS
+  labels:
+    app.kubernetes.io/name: kagenti-backend
+    app.kubernetes.io/part-of: kagenti
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kagenti-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kagenti-backend
+    spec:
+      serviceAccountName: kagenti-backend
+      containers:
+      - name: backend
+        image: $BACKEND_IMAGE
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: ENABLE_AUTH
+          value: "false"
+        - name: DOMAIN_NAME
+          value: "localtest.me"
+        - name: KAGENTI_FEATURE_FLAG_SANDBOX
+          value: "true"
+        - name: KAGENTI_FEATURE_FLAG_ACP
+          value: "true"
+        - name: POSTGRES_HOST
+          valueFrom:
+            secretKeyRef:
+              name: postgres-sessions-secret
+              key: host
+        - name: POSTGRES_PORT
+          valueFrom:
+            secretKeyRef:
+              name: postgres-sessions-secret
+              key: port
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-sessions-secret
+              key: database
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-sessions-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-sessions-secret
+              key: password
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kagenti-backend
+  namespace: $BACKEND_NS
+  labels:
+    app.kubernetes.io/name: kagenti-backend
+    app.kubernetes.io/part-of: kagenti
+spec:
+  selector:
+    app.kubernetes.io/name: kagenti-backend
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+EOBACKEND
+
+    if ! $DRY_RUN; then
+      kubectl rollout status deploy/kagenti-backend -n "$BACKEND_NS" --timeout=120s || {
+        log_warn "kagenti-backend still starting — continuing"
+      }
+    fi
+    log_success "kagenti-backend deployed"
   echo ""
 fi
 
@@ -754,6 +1092,10 @@ if ! $DRY_RUN; then
   echo "    kubectl get secret openshell-ca-secret -n cert-manager"
   if $STEP_LITELLM; then
     echo "    kubectl get deployment litellm-model-proxy -n ${LITELLM_NS:-team1}"
+  fi
+  if $STEP_BACKEND; then
+    echo "    kubectl get deployment kagenti-backend -n ${BACKEND_NS:-team1}"
+    echo "    kubectl get statefulset postgres-sessions -n ${BACKEND_NS:-team1}"
   fi
   echo ""
 fi

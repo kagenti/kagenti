@@ -62,11 +62,45 @@ export function parseGitHubUrl(url: string): GitHubUrlParts | null {
     const owner = pathParts[0];
     const repo = pathParts[1];
     const type = pathParts[2]; // 'tree' or 'blob'
-    const branch = pathParts[3];
-    const path = pathParts.slice(4).join('/');
 
     if (type !== 'tree' && type !== 'blob') {
       return null;
+    }
+
+    // For branch names with slashes (e.g., feature/add-skill-loading-support),
+    // we need to determine where the branch ends and the path begins.
+    // Strategy: Try progressively longer branch names starting from the end,
+    // since paths are more likely to have multiple segments than branch names.
+    const remainingParts = pathParts.slice(3);
+    
+    // Start with the assumption that everything except the last part is the branch
+    // and work backwards. This handles cases like:
+    // - feature/add-skill-loading-support/skills/summarizer
+    //   -> branch: feature/add-skill-loading-support, path: skills/summarizer
+    // - main/skills/summarizer
+    //   -> branch: main, path: skills/summarizer
+    
+    let branch = '';
+    let path = '';
+    
+    // Try from longest possible branch name to shortest
+    for (let i = remainingParts.length - 1; i >= 0; i--) {
+      const potentialBranch = remainingParts.slice(0, i + 1).join('/');
+      const potentialPath = remainingParts.slice(i + 1).join('/');
+      
+      // If we have a path, this is a valid split
+      // (we need at least one path segment for a skill directory)
+      if (potentialPath) {
+        branch = potentialBranch;
+        path = potentialPath;
+        break;
+      }
+    }
+    
+    // Fallback: if no path found, assume first part is branch and rest is path
+    if (!branch) {
+      branch = remainingParts[0];
+      path = remainingParts.slice(1).join('/');
     }
 
     return { owner, repo, branch, path };
@@ -104,7 +138,8 @@ async function fetchDirectoryContents(
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch directory: ${response.statusText}`);
+    const errorText = await response.text();
+    throw new Error(`Failed to fetch directory: ${response.status} ${response.statusText}. ${errorText}`);
   }
 
   // Check rate limit headers
@@ -126,6 +161,65 @@ async function fetchDirectoryContents(
   }
 
   return response.json();
+}
+
+/**
+ * Cache for successful branch/path lookups to reduce API calls
+ * Key format: "owner/repo/branch/path"
+ */
+const branchPathCache = new Map<string, { branch: string; path: string }>();
+
+/**
+ * Try to find the correct branch/path split by testing against GitHub API
+ * Uses session-based caching to minimize redundant API calls
+ */
+async function findValidBranchAndPath(
+  owner: string,
+  repo: string,
+  remainingParts: string[]
+): Promise<{ branch: string; path: string } | null> {
+  // Check cache first
+  const cacheKey = `${owner}/${repo}/${remainingParts.join('/')}`;
+  const cached = branchPathCache.get(cacheKey);
+  if (cached) {
+    console.debug(`Using cached branch/path for ${cacheKey}`);
+    return cached;
+  }
+
+  // Try progressively longer branch names, starting from shortest
+  // This is more efficient as most branches don't have slashes
+  for (let i = 0; i < remainingParts.length; i++) {
+    const potentialBranch = remainingParts.slice(0, i + 1).join('/');
+    const potentialPath = remainingParts.slice(i + 1).join('/');
+    
+    // We need at least a path for a skill directory
+    if (!potentialPath) {
+      continue;
+    }
+    
+    // Test if this branch/path combination works
+    try {
+      const testUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${potentialPath}?ref=${potentialBranch}`;
+      const response = await fetch(testUrl, {
+        method: 'HEAD', // Use HEAD to avoid downloading content
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+        },
+      });
+      
+      if (response.ok) {
+        const result = { branch: potentialBranch, path: potentialPath };
+        // Cache successful lookup
+        branchPathCache.set(cacheKey, result);
+        return result;
+      }
+    } catch {
+      // Continue trying other combinations
+      continue;
+    }
+  }
+  
+  return null;
 }
 
 /**
@@ -241,17 +335,34 @@ export async function importSkillFromGitHub(
   url: string
 ): Promise<ImportedSkillData> {
   // Parse the URL
-  const urlParts = parseGitHubUrl(url);
+  let urlParts = parseGitHubUrl(url);
   if (!urlParts) {
     throw new Error('Invalid GitHub URL. Expected format: https://github.com/owner/repo/tree/branch/path');
   }
 
-  const { owner, repo, branch, path } = urlParts;
+  let { owner, repo, branch, path } = urlParts;
 
   console.info(
     'Importing skill from GitHub. Note: Unauthenticated API requests are limited to 60/hour. ' +
     'Large skills may require multiple requests.'
   );
+
+  // If the initial parse might have an incorrect branch/path split (due to slashes in branch name),
+  // try to find the correct split by testing against the GitHub API
+  try {
+    const urlObj = new URL(url);
+    const pathParts = urlObj.pathname.split('/').filter(Boolean);
+    const remainingParts = pathParts.slice(3); // After owner/repo/tree
+    
+    const validSplit = await findValidBranchAndPath(owner, repo, remainingParts);
+    if (validSplit) {
+      branch = validSplit.branch;
+      path = validSplit.path;
+      console.info(`Resolved branch: ${branch}, path: ${path}`);
+    }
+  } catch (error) {
+    console.warn('Could not validate branch/path split, using parsed values:', error);
+  }
 
   // Fetch all files recursively
   const allFiles = await fetchAllFiles(owner, repo, path, branch);

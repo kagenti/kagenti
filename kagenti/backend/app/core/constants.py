@@ -34,10 +34,11 @@ APP_KUBERNETES_IO_COMPONENT = "app.kubernetes.io/component"
 KAGENTI_SPIRE_LABEL = "kagenti.io/spire"
 KAGENTI_SPIRE_ENABLED_VALUE = "enabled"
 
-# Per-sidecar injection labels (matched by kagenti-webhook precedence evaluator)
-KAGENTI_ENVOY_PROXY_INJECT_LABEL = "kagenti.io/envoy-proxy-inject"
-KAGENTI_SPIFFE_HELPER_INJECT_LABEL = "kagenti.io/spiffe-helper-inject"
-KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL = "kagenti.io/client-registration-inject"
+# Per-sidecar opt-out labels (envoy-proxy / spiffe-helper /
+# client-registration) are gone after kagenti-extensions#411 — they
+# referenced separate sidecars that no longer exist. The master enable
+# /disable trigger is still KAGENTI_INJECT_LABEL above; per-workload
+# mode now lives on AgentRuntime.Spec.AuthBridgeMode.
 
 # Port exclusion annotations (matched by kagenti-webhook init-iptables.sh)
 KAGENTI_OUTBOUND_PORTS_EXCLUDE = "kagenti.io/outbound-ports-exclude"
@@ -165,8 +166,21 @@ SKILL_ORIGIN_ANNOTATION = "kagenti.io/origin"
 SKILL_USAGE_ANNOTATION = "kagenti.io/usage-count"
 SKILL_FILE_PATHS_ANNOTATION = "kagenti.io/file-paths"
 SKILL_STATUS_READY = "Ready"
+SKILL_DISPLAY_NAME_ANNOTATION = "kagenti.io/display-name"
+AGENT_SKILLS_ANNOTATION = "kagenti.io/skills"
+AGENT_SKILLS_MOUNT_ROOT = "/app/skills"
 # Environment variable name for the agent endpoint (the agent card URL for the agent)
 AGENT_ENDPOINT = "AGENT_ENDPOINT"
+
+# External skill registry constants
+SKILL_SOURCE_LABEL = "kagenti.io/source"
+SKILL_SOURCE_EXTERNAL = "external"
+SKILL_REGISTRY_TYPE_LABEL = "kagenti.io/registry-type"
+SKILL_REGISTRY_URL_ANNOTATION = "kagenti.io/registry-url"
+SKILL_REGISTRY_SKILL_NAME_ANNOTATION = "kagenti.io/registry-skill-name"
+SKILL_REGISTRY_SKILL_VERSION_ANNOTATION = "kagenti.io/registry-skill-version"
+SKILL_FETCHER_SCRIPTS_CM = "kagenti-skill-fetcher-scripts"
+SKILL_FETCHER_IMAGE = "alpine:3.21.3"
 
 # Default Keycloak in-cluster URL (used by AuthBridge ConfigMaps)
 DEFAULT_KEYCLOAK_INTERNAL_URL = "http://keycloak-service.keycloak.svc:8080"
@@ -246,6 +260,7 @@ static_resources:
                 envoy_grpc:
                   cluster_name: ext_proc_cluster
                 timeout: 300s
+              message_timeout: 310s
               processing_mode:
                 request_header_mode: SEND
                 response_header_mode: SKIP
@@ -307,6 +322,7 @@ static_resources:
                 envoy_grpc:
                   cluster_name: ext_proc_cluster
                 timeout: 300s
+              message_timeout: 310s
               processing_mode:
                 request_header_mode: SEND
                 response_header_mode: SKIP

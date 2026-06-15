@@ -96,6 +96,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
   const { data: agentCard, isLoading: isLoadingCard, error: cardError } = useQuery({
     queryKey: ['agent-card', namespace, name],
     queryFn: () => chatService.getAgentCard(namespace, name),
+    retry: 3,
+    retryDelay: 2000,
+    refetchInterval: (query) => {
+      return query.state.data ? false : 5000;
+    },
   });
 
   const sendMessageMutation = useMutation({
@@ -187,7 +192,9 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
         }
 
         if (!response.ok) {
-          throw new Error(`HTTP error: ${response.status}`);
+          const errorData = await response.json().catch(() => ({}));
+          const detail = typeof errorData.detail === 'string' ? errorData.detail : '';
+          throw new Error(detail || `HTTP error: ${response.status}`);
         }
 
         const reader = response.body?.getReader();

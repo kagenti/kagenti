@@ -10,7 +10,7 @@
 # Optional:        --with-istio (ambient mesh), --with-spire, --with-backend,
 #                  --with-ui, --with-mcp-gateway, --with-kuadrant, --with-otel,
 #                  --with-mlflow, --with-builds, --with-kiali,
-#                  --with-agent-sandbox, --with-all
+#                  --with-agent-sandbox, --with-skills, --with-all
 #
 # Idempotent: safe to re-run. Uses helm upgrade --install and kubectl apply.
 # Re-running with additional --with-* flags adds components incrementally.
@@ -19,6 +19,7 @@
 #   scripts/kind/setup-kagenti.sh                          # Core only
 #   scripts/kind/setup-kagenti.sh --with-all               # Everything
 #   scripts/kind/setup-kagenti.sh --with-istio --with-ui   # Core + Istio + UI
+#   scripts/kind/setup-kagenti.sh --with-all --skip-mlflow --skip-kuadrant  # Lightweight
 #   scripts/kind/setup-kagenti.sh --skip-cluster           # Reuse existing cluster
 #   scripts/kind/setup-kagenti.sh --cluster-name my-test   # Custom cluster name
 #
@@ -47,9 +48,14 @@ WITH_BUILDS=false
 WITH_KIALI=false
 WITH_KUADRANT=false
 WITH_AGENT_SANDBOX=false
+WITH_SKILLS=false
+WITH_ALL=false
 SKIP_CLUSTER=false
+SKIP_MLFLOW=false
+SKIP_KUADRANT=false
 BUILD_IMAGES=false
 PRELOAD_IMAGES=false
+INSTALL_EXAMPLES=false
 DRY_RUN=false
 SECRETS_FILE_ARG=""
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
@@ -64,7 +70,15 @@ TEKTON_VERSION="v0.66.0"
 SHIPWRIGHT_VERSION="v0.14.0"
 MCP_GATEWAY_VERSION="0.6.0"
 KUADRANT_VERSION="1.4.2"
-AGENT_SANDBOX_VERSION="v0.4.3"
+AGENT_SANDBOX_VERSION="v0.4.6"
+
+# Recommended container-runtime resources for a full (--with-all) install.
+# Keep in sync with the `podman machine init` command in docs/install.md.
+RECOMMENDED_MEMORY_MB=18432   # 18 GB
+RECOMMENDED_CPUS=6
+
+KAGENTI_DEPS_VALUES_FILES=()
+KAGENTI_VALUES_FILES=()
 
 # ── Colors & logging ────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -75,6 +89,109 @@ log_error()   { echo -e "${RED}✗${NC} $1"; }
 
 run_cmd() {
   if $DRY_RUN; then echo "  [dry-run] $*"; else "$@"; fi
+}
+
+# Pre-flight check for Podman-backed Kind clusters (chiefly macOS).
+#
+# Two problems this catches early, before the opaque downstream failure:
+#   1. Rootless Podman — Kind's rootless provider needs the systemd property
+#      `Delegate=yes`, which a fresh `podman machine init` does NOT configure,
+#      so `kind create cluster` aborts. We hard-fail here (unless --skip-cluster)
+#      with the exact `--rootful` remedy instead of letting Kind fail cryptically.
+#   2. Under-resourced machine — a full `--with-all` install needs ample
+#      memory/CPU; warn (never fail) when below the recommended thresholds.
+#
+# Only runs when the container engine is Podman. Read-only (inspect only), so it
+# is safe in --dry-run; the rootless case warns instead of exiting under dry-run.
+_check_podman() {
+  # Detect Podman whether CONTAINER_ENGINE=podman or a docker->podman alias.
+  case "$($CONTAINER_ENGINE --version 2>/dev/null)" in
+    *podman*|*Podman*) ;;
+    *) return 0 ;;
+  esac
+
+  if ! command -v python3 &>/dev/null; then
+    log_warn "python3 not found; skipping Podman rootful/resource pre-flight checks"
+    return 0
+  fi
+
+  local inspect
+  if ! inspect="$(podman machine inspect 2>/dev/null)" || [ -z "$inspect" ]; then
+    log_warn "Could not inspect Podman machine; skipping rootful/resource checks"
+    return 0
+  fi
+
+  # Emit: "<rootful> <memoryMB> <cpus>" (rootful = true/false). Empty on parse error.
+  local parsed rootful mem cpus
+  parsed="$(printf '%s' "$inspect" | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    m = d[0] if isinstance(d, list) else d
+    r = m.get("Rootful", False)
+    res = m.get("Resources", {}) or {}
+    print(str(bool(r)).lower(), res.get("Memory", 0), res.get("CPUs", 0))
+except Exception:
+    pass
+' 2>/dev/null)"
+
+  if [ -z "$parsed" ]; then
+    log_warn "Could not parse Podman machine info; skipping rootful/resource checks"
+    return 0
+  fi
+  read -r rootful mem cpus <<<"$parsed"
+
+  # ── Rootful check ──────────────────────────────────────────────────────────
+  if [ "$rootful" != "true" ]; then
+    if $SKIP_CLUSTER; then
+      log_warn "Podman machine is running rootless. Kind needs rootful mode (rootless requires systemd Delegate=yes)."
+      log_warn "  Reusing an existing cluster, so continuing — but new Kind clusters will fail under rootless."
+    else
+      log_error "Podman machine is running rootless — Kind cannot create a cluster (its rootless"
+      log_error "  provider requires the systemd property \"Delegate=yes\"). Switch to rootful:"
+      log_error ""
+      log_error "    podman machine stop"
+      log_error "    podman machine set --rootful"
+      log_error "    podman machine start"
+      log_error ""
+      log_error "  Or recreate it: podman machine rm -f && \\"
+      log_error "    podman machine init --rootful --memory $RECOMMENDED_MEMORY_MB --cpus $RECOMMENDED_CPUS && podman machine start"
+      log_error "  (Note: rootful and rootless use separate image storage; preloaded images re-pull.)"
+      if $DRY_RUN; then
+        log_warn "[dry-run] would exit here due to rootless Podman"
+      else
+        exit 1
+      fi
+    fi
+  else
+    log_success "Podman machine is rootful"
+  fi
+
+  # ── Resource check (only for the heaviest profile: --with-all) ──────────────
+  if $WITH_ALL; then
+    local low=false
+    if [ "${mem:-0}" -lt "$RECOMMENDED_MEMORY_MB" ] 2>/dev/null; then low=true; fi
+    if [ "${cpus:-0}" -lt "$RECOMMENDED_CPUS" ] 2>/dev/null; then low=true; fi
+    if $low; then
+      log_warn "Podman machine resources are below the recommended values for --with-all:"
+      log_warn "  detected: ${mem} MB / ${cpus} CPUs   recommended: ${RECOMMENDED_MEMORY_MB} MB / ${RECOMMENDED_CPUS} CPUs"
+      log_warn "  Increase with: podman machine stop && \\"
+      log_warn "    podman machine set --memory $RECOMMENDED_MEMORY_MB --cpus $RECOMMENDED_CPUS && podman machine start"
+      log_warn "  The install may be slow or unstable with fewer resources."
+    else
+      log_success "Podman machine resources OK (${mem} MB / ${cpus} CPUs)"
+    fi
+  fi
+}
+
+# Load a single image into the Kind node via docker save piped to ctr import.
+# Avoids 'kind load docker-image' failures (e.g. "failed to detect containerd
+# snapshotter") on WSL2 and Rancher Desktop.
+load_image_into_kind() {
+  local img="$1"
+  $CONTAINER_ENGINE save "$img" | \
+    $CONTAINER_ENGINE exec -i "${CLUSTER_NAME}-control-plane" \
+      ctr --namespace=k8s.io images import -
 }
 
 # ── Argument parsing ────────────────────────────────────────────────────────
@@ -91,18 +208,19 @@ while [[ $# -gt 0 ]]; do
     --with-builds)      WITH_BUILDS=true; shift ;;
     --with-kiali)       WITH_KIALI=true; shift ;;
     --with-agent-sandbox) WITH_AGENT_SANDBOX=true; shift ;;
-    --with-all)
-      WITH_ISTIO=true; WITH_SPIRE=true; WITH_BACKEND=true; WITH_UI=true
-      WITH_MCP_GATEWAY=true; WITH_KUADRANT=true; WITH_OTEL=true
-      WITH_MLFLOW=true; WITH_BUILDS=true; WITH_KIALI=true
-      WITH_AGENT_SANDBOX=true
-      shift ;;
+    --with-skills)      WITH_SKILLS=true; shift ;;
+    --with-all)         WITH_ALL=true; shift ;;
     --skip-cluster)     SKIP_CLUSTER=true; shift ;;
+    --skip-mlflow)      SKIP_MLFLOW=true; shift ;;
+    --skip-kuadrant)    SKIP_KUADRANT=true; shift ;;
     --build-images)     BUILD_IMAGES=true; shift ;;
     --preload-images)   PRELOAD_IMAGES=true; shift ;;
     --secrets-file)     SECRETS_FILE_ARG="$2"; shift 2 ;;
     --cluster-name)     CLUSTER_NAME="$2"; shift 2 ;;
     --domain)           DOMAIN="$2"; shift 2 ;;
+    --kagenti-values)   KAGENTI_VALUES_FILES+=("--values" "$2"); shift 2 ;;
+    --kagenti-deps-values) KAGENTI_DEPS_VALUES_FILES+=("--values" "$2"); shift 2 ;;
+    --with-examples)    INSTALL_EXAMPLES=true; shift ;;
     --dry-run)          DRY_RUN=true; shift ;;
     -h|--help)
       echo "Usage: $0 [OPTIONS]"
@@ -120,7 +238,14 @@ while [[ $# -gt 0 ]]; do
       echo "  --with-builds       Install Tekton + Shipwright"
       echo "  --with-kiali        Install Kiali + Prometheus (auto-enables Istio)"
       echo "  --with-agent-sandbox Install agent-sandbox controller (kubernetes-sigs)"
+      echo "  --with-skills       Enable skills and external skill registries"
+      echo "                      (enables featureFlags.skills and featureFlags.externalSkills;"
+      echo "                      auto-enables --with-backend and --with-ui)"
       echo "  --with-all          Enable all optional components"
+      echo ""
+      echo "Skip flags (override --with-all for resource-constrained environments):"
+      echo "  --skip-mlflow       Exclude MLflow even when --with-all is used (~2 GB saved)"
+      echo "  --skip-kuadrant     Exclude Kuadrant even when --with-all is used (~1 GB saved)"
       echo ""
       echo "Other options:"
       echo "  --skip-cluster      Don't create Kind cluster (reuse existing)"
@@ -132,6 +257,11 @@ while [[ $# -gt 0 ]]; do
       echo "                      openaiApiKey, slackBotToken, etc.)"
       echo "  --cluster-name NAME Kind cluster name (default: kagenti)"
       echo "  --domain DOMAIN     Domain for services (default: localtest.me)"
+      echo "  --kagenti-values FILE"
+      echo "                      Helm override file to apply to Kagenti chart"
+      echo "  --kagenti-deps-values FILE"
+      echo "                      Helm override file to apply to Kagenti-deps chart"
+      echo "  --with-examples     Install weather agent and weather tool examples"
       echo "  --dry-run           Show commands without executing"
       echo "  -h, --help          Show this help"
       exit 0 ;;
@@ -139,10 +269,25 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# ── Expand --with-all (deferred so --skip-* flags are order-independent) ───
+if $WITH_ALL; then
+  WITH_ISTIO=true; WITH_SPIRE=true; WITH_BACKEND=true; WITH_UI=true
+  WITH_MCP_GATEWAY=true; WITH_OTEL=true; WITH_BUILDS=true; WITH_KIALI=true
+  WITH_AGENT_SANDBOX=true
+  $SKIP_MLFLOW    || WITH_MLFLOW=true
+  $SKIP_KUADRANT  || WITH_KUADRANT=true
+  # Note that INSTALL_EXAMPLES isn't part of --with-all; it is not part of Kagenti
+  # but exists for demos and tests.
+fi
+
 # ── Flag dependencies ──────────────────────────────────────────────────────
 # UI requires backend API
 if $WITH_UI && ! $WITH_BACKEND; then
   WITH_BACKEND=true
+fi
+# Skills requires UI (and transitively backend)
+if $WITH_SKILLS && ! $WITH_UI; then
+  WITH_UI=true
 fi
 # Kiali requires full ambient mesh for service mesh telemetry
 if $WITH_KIALI && ! $WITH_ISTIO; then
@@ -184,9 +329,13 @@ echo "    MLflow:        $WITH_MLFLOW"
 echo "    Builds:        $WITH_BUILDS"
 echo "    Kiali:         $WITH_KIALI"
 echo "    Agent Sandbox: $WITH_AGENT_SANDBOX"
+echo "    Skills:        $WITH_SKILLS"
 echo "    Skip cluster:  $SKIP_CLUSTER"
 echo "    Build images:  $BUILD_IMAGES"
 echo "    Preload imgs:  $PRELOAD_IMAGES"
+echo "    Examples:      $INSTALL_EXAMPLES"
+echo "    Kagenti helm --values overrides: ${KAGENTI_VALUES_FILES[*]:-}"
+echo "    Kagenti-deps helm --values overrides: ${KAGENTI_DEPS_VALUES_FILES[*]:-}"
 echo ""
 
 for cmd in helm kubectl; do
@@ -205,6 +354,9 @@ if ! $SKIP_CLUSTER; then
   fi
   log_success "kind found"
 fi
+
+# Podman-specific pre-flight (rootful + resource checks); no-op for Docker.
+_check_podman
 
 # Validate chart directories exist
 if [ ! -d "$REPO_ROOT/charts/kagenti-deps" ] || [ ! -d "$REPO_ROOT/charts/kagenti" ]; then
@@ -228,6 +380,25 @@ _wait_deployment_ready() {
   log_info "Waiting for $label rollout..."
   kubectl rollout status deployment/"$deploy" -n "$ns" --timeout="$timeout" || \
     log_warn "$label rollout not ready within timeout"
+}
+
+_wait_crds_established() {
+  # kubectl wait --for=condition=Established can fail with a nil accessor error
+  # if .status.conditions hasn't been populated yet on a freshly-applied CRD.
+  # Retry the wait to handle this race condition.
+  local timeout="${1:-60s}"; shift
+  local attempts=0 max_attempts=5
+  while true; do
+    if kubectl wait --for=condition=Established crd "$@" --timeout="$timeout" 2>/dev/null; then
+      return 0
+    fi
+    if [ $((++attempts)) -ge $max_attempts ]; then
+      # Last attempt: let stderr through for diagnostics
+      kubectl wait --for=condition=Established crd "$@" --timeout="$timeout"
+      return $?
+    fi
+    sleep 2
+  done
 }
 
 # ============================================================================
@@ -265,7 +436,10 @@ if $PRELOAD_IMAGES && ! $DRY_RUN; then
     exit 1
   fi
 
-  mapfile -t PRELOAD_LIST < <(grep -v '^\s*#' "$PRELOAD_FILE" | grep -v '^\s*$')
+  PRELOAD_LIST=()
+  while IFS= read -r line; do
+    PRELOAD_LIST+=("$line")
+  done < <(grep -v '^[[:space:]]*#' "$PRELOAD_FILE" | grep -v '^[[:space:]]*$')
   if [ ${#PRELOAD_LIST[@]} -eq 0 ]; then
     log_warn "Preload images file is empty — skipping"
   else
@@ -472,10 +646,9 @@ else
     "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/standard-install.yaml"
   if ! $DRY_RUN; then
     log_info "Waiting for Gateway API CRDs to become established..."
-    kubectl wait --for=condition=Established crd \
+    _wait_crds_established 60s \
       httproutes.gateway.networking.k8s.io \
-      gateways.gateway.networking.k8s.io \
-      --timeout=60s
+      gateways.gateway.networking.k8s.io
   fi
   log_success "Gateway API CRDs installed"
 fi
@@ -501,9 +674,8 @@ if $WITH_AGENT_SANDBOX; then
 
     if ! $DRY_RUN; then
       log_info "Waiting for agent-sandbox CRDs to become established..."
-      kubectl wait --for=condition=Established crd \
-        sandboxes.agents.x-k8s.io \
-        --timeout=60s
+      _wait_crds_established 60s \
+        sandboxes.agents.x-k8s.io
     fi
     _wait_deployment_ready agent-sandbox-controller agent-sandbox-system agent-sandbox
     log_success "agent-sandbox installed"
@@ -537,11 +709,11 @@ DEPS_FLAGS=(
   --set "components.tekton.enabled=false"
   --set "components.shipwright.enabled=false"
   --set "components.kiali.enabled=${WITH_KIALI}"
-  --set "components.phoenix.enabled=false"
   --set "components.mlflow.enabled=${WITH_MLFLOW}"
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
   --set "components.rhoai.enabled=false"
 )
+DEPS_FLAGS=( "${DEPS_FLAGS[@]}" ${KAGENTI_DEPS_VALUES_FILES[@]+"${KAGENTI_DEPS_VALUES_FILES[@]}"} )
 
 log_info "Installing kagenti-deps..."
 # --skip-crds: Gateway API CRDs already installed in Step 5 at a newer version;
@@ -558,7 +730,7 @@ log_success "kagenti-deps installed"
 echo ""
 
 # ── Configure Kind node to reach in-cluster container registry ──────────────
-if $WITH_BUILDS && ! $SKIP_CLUSTER; then
+if $WITH_BUILDS; then
   REGISTRY_NAME="registry"
   REGISTRY_NS="cr-system"
   REGISTRY_HOST="${REGISTRY_NAME}.${REGISTRY_NS}.svc.cluster.local"
@@ -569,9 +741,10 @@ if $WITH_BUILDS && ! $SKIP_CLUSTER; then
   if ! $DRY_RUN; then
     CLUSTER_IP=$(kubectl get svc "$REGISTRY_NAME" -n "$REGISTRY_NS" -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
     if [ -n "$CLUSTER_IP" ]; then
-      # Add registry DNS to Kind node's /etc/hosts
+      # Upsert registry DNS in Kind node's /etc/hosts (replace stale entry if present).
+      # /etc/hosts is a bind mount so sed -i (rename) fails; use grep -v + cat > instead.
       $CONTAINER_ENGINE exec "${CLUSTER_NAME}-control-plane" \
-        sh -c "echo '${CLUSTER_IP} ${REGISTRY_HOST}' >> /etc/hosts"
+        sh -c "{ grep -v '${REGISTRY_HOST}' /etc/hosts || true; } > /tmp/hosts.tmp && cat /tmp/hosts.tmp > /etc/hosts && echo '${CLUSTER_IP} ${REGISTRY_HOST}' >> /etc/hosts"
 
       # Configure containerd registry mirror for insecure in-cluster registry
       $CONTAINER_ENGINE exec "${CLUSTER_NAME}-control-plane" sh -c "
@@ -801,6 +974,13 @@ json.dump(cm, sys.stdout)
     fi
   fi
 
+  # Wait for OIDC discovery provider to be fully ready before starting IdP setup
+  log_info "Waiting for OIDC discovery provider to be ready..."
+  kubectl wait --for=condition=Available deployment/spire-spiffe-oidc-discovery-provider \
+    -n "$SPIRE_SERVER_NS" --timeout=300s 2>/dev/null \
+    && log_success "OIDC discovery provider ready" \
+    || log_warn "OIDC discovery provider not ready after 5m — IdP setup may fail"
+
   # 7b: Run SPIFFE IdP setup job (configures Keycloak with SPIRE identity provider)
   log_info "Setting up SPIFFE IdP..."
 
@@ -911,11 +1091,11 @@ EOF
   # Build and load spiffe-idp-setup image to ensure correct arch for Kind
   if $BUILD_IMAGES; then
     log_info "Building spiffe-idp-setup image for Kind..."
-    $CONTAINER_ENGINE build --load \
+    $CONTAINER_ENGINE buildx build --load \
       -t "$SPIFFE_IDP_IMAGE" \
       -f "$REPO_ROOT/kagenti/auth/spiffe-idp-setup/Dockerfile" \
       "$REPO_ROOT/kagenti"
-    kind load docker-image "$SPIFFE_IDP_IMAGE" --name "$CLUSTER_NAME"
+    load_image_into_kind "$SPIFFE_IDP_IMAGE"
   fi
 
   # Delete existing job (jobs are immutable)
@@ -999,19 +1179,10 @@ fi
 # ============================================================================
 log_info "Step 8: kagenti"
 
-# Detect latest release tag for UI images (skip when building from source)
-KAGENTI_TAG="latest"
-if $WITH_UI && ! $BUILD_IMAGES; then
-  log_info "Detecting latest kagenti release tag..."
-  DETECTED_TAG=$(git ls-remote --tags --sort="v:refname" https://github.com/kagenti/kagenti.git 2>/dev/null | \
-    tail -n1 | sed 's|.*refs/tags/||; s/\^{}//' || echo "")
-  if [ -n "$DETECTED_TAG" ]; then
-    KAGENTI_TAG="$DETECTED_TAG"
-    log_success "Using tag: $KAGENTI_TAG"
-  else
-    log_warn "Could not detect latest tag — using 'latest'"
-  fi
-fi
+# Image tags come from charts/kagenti/values.yaml (pinned at release time by
+# chore(release) commits — see docs/releasing.md). The only override is below
+# in KAGENTI_FLAGS when --build-images is set, since locally-built images are
+# tagged ":latest" and loaded into Kind.
 
 # Secrets file resolution (checked in order of precedence):
 #   1. --secrets-file CLI argument
@@ -1074,8 +1245,8 @@ if $BUILD_IMAGES && ! $DRY_RUN; then
   for spec in "${_BUILD_IMAGES[@]}"; do
     IFS='|' read -r img dockerfile <<< "$spec"
     log_info "  Building ${img}..."
-    $CONTAINER_ENGINE build --load -t "$img" -f "$BUILD_CONTEXT/$dockerfile" "$BUILD_CONTEXT"
-    kind load docker-image "$img" --name "$CLUSTER_NAME"
+    $CONTAINER_ENGINE buildx build --load -t "$img" -f "$BUILD_CONTEXT/$dockerfile" "$BUILD_CONTEXT"
+    load_image_into_kind "$img"
   done
   log_success "Platform images built and loaded into Kind"
 fi
@@ -1097,13 +1268,32 @@ KAGENTI_FLAGS=(
   --set "components.istio.enabled=${WITH_ISTIO}"
   --set "components.mcpGateway.enabled=${WITH_MCP_GATEWAY}"
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
-  --set "components.phoenix.enabled=false"
+  --set "featureFlags.skills=${WITH_SKILLS}"
+  --set "featureFlags.externalSkills=${WITH_SKILLS}"
   --set "components.mlflow.enabled=${WITH_MLFLOW}"
-  --set "ui.frontend.tag=${KAGENTI_TAG}"
-  --set "ui.backend.tag=${KAGENTI_TAG}"
   --set "ui.auth.enabled=$($WITH_SPIRE && echo true || echo false)"
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
+  --set "kagenti-operator-chart.featureGates.injectTools=true"
 )
+KAGENTI_FLAGS=( "${KAGENTI_FLAGS[@]}" ${KAGENTI_VALUES_FILES[@]+"${KAGENTI_VALUES_FILES[@]}"} )
+
+# When --build-images is set, the build step tags images ":latest" and loads
+# them into Kind (see list above). Override the chart's release-pinned tags
+# for exactly those images so pods use the locally-built copies instead of
+# pulling pinned tags from ghcr.io. Image selection mirrors _BUILD_IMAGES.
+if $BUILD_IMAGES; then
+  KAGENTI_FLAGS+=(--set "agentOAuthSecret.tag=latest")
+  if $WITH_BACKEND; then
+    KAGENTI_FLAGS+=(--set "ui.backend.tag=latest")
+  fi
+  if $WITH_UI; then
+    KAGENTI_FLAGS+=(--set "ui.frontend.tag=latest")
+    KAGENTI_FLAGS+=(--set "uiOAuthSecret.tag=latest")
+  fi
+  if $WITH_MLFLOW; then
+    KAGENTI_FLAGS+=(--set "mlflowOAuthSecret.tag=latest")
+  fi
+fi
 
 log_info "Installing kagenti..."
 run_cmd helm upgrade --install kagenti "$REPO_ROOT/charts/kagenti/" \
@@ -1158,13 +1348,56 @@ if $WITH_MCP_GATEWAY; then
   kubectl create namespace mcp-system --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
   kubectl create namespace gateway-system --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
 
+  # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior
+  # version that used a different API group). A stuck finalizer prevents the controller
+  # from creating the broker-router deployment on reinstall.
+  for _crd_group in mcp.kuadrant.io mcp.kagenti.com; do
+    _stuck=$(kubectl get mcpgatewayextensions.${_crd_group} -n mcp-system -o json 2>/dev/null \
+      | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for item in data.get('items', []):
+    if item.get('metadata', {}).get('deletionTimestamp'):
+        print(item['metadata']['name'])
+" 2>/dev/null || echo "")
+    if [ -n "$_stuck" ]; then
+      echo "$_stuck" | while read -r _name; do
+        log_warn "Removing stuck finalizer from MCPGatewayExtension/${_name} (${_crd_group})"
+        kubectl patch "mcpgatewayextensions.${_crd_group}/${_name}" -n mcp-system \
+          --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]' 2>/dev/null || true
+      done
+      sleep 2
+    fi
+  done
+
   log_info "Installing MCP Gateway v${MCP_GATEWAY_VERSION}..."
   run_cmd helm upgrade --install mcp-gateway oci://ghcr.io/kuadrant/charts/mcp-gateway \
     -n mcp-system --create-namespace --version "$MCP_GATEWAY_VERSION" \
     --set "broker.create=true"
   log_success "MCP Gateway installed"
+
 else
   log_info "Skipped (use --with-mcp-gateway)"
+fi
+echo ""
+
+# ============================================================================
+# Step 9b: Install Examples
+# ============================================================================
+log_info "Step 9b: Agent and tool examples (weather)"
+
+if $INSTALL_EXAMPLES; then
+  run_cmd ${REPO_ROOT}/.github/scripts/kagenti-operator/72-deploy-weather-tool.sh
+  run_cmd ${REPO_ROOT}/.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+  log_success "Agent and tool examples (weather) installed"
+
+  if ! $DRY_RUN; then
+    LLM_API_BASE=$(kubectl get deployment weather-service -n team1 -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="LLM_API_BASE")].value}')
+    log_info "  Weather Service using LLM at ${LLM_API_BASE}"
+    log_info "  (override with kubectl -n team1 set env deployment/weather-service LLM_API_BASE=<your llm>)"
+  fi
+else
+  log_info "Skipped (use --with-examples)"
 fi
 echo ""
 
@@ -1262,19 +1495,41 @@ if [ -n "$KC_ADMIN_PASS" ]; then
 else
   echo "    Keycloak admin console: (pending — secret keycloak-initial-admin not ready)"
 fi
-if $WITH_UI; then
-  UI_USER=$(kubectl get secret kagenti-test-user -n keycloak -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-  UI_PASS=$(kubectl get secret kagenti-test-user -n keycloak -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-  if [ -n "$UI_PASS" ]; then
-    echo "    Kagenti UI login:       ${UI_USER} / ${UI_PASS}"
-  else
-    echo "    Kagenti UI login:       (pending — run show-services.sh once platform is ready)"
-  fi
-fi
 echo ""
-echo "  For full service URLs and credentials, run:"
+echo "  For service URLs and credentials (including UI login), run:"
 echo "    .github/scripts/local-setup/show-services.sh"
 echo ""
+
+# ============================================================================
+# Post-install patches (applied after controllers have stabilized)
+# ============================================================================
+if $WITH_MCP_GATEWAY && $WITH_OTEL; then
+  # The mcp-gateway chart deploys the broker-router via its controller and does not
+  # expose OTel config via Helm values. kubectl set env is the only injection point.
+  # Patching here (after verification) reduces the likelihood of the controller
+  # overwriting the patch during its initial reconcile.
+  log_info "Patching MCP Gateway router with OTel exporter..."
+  # Wait for the controller to create the deployment (up to 90s)
+  waited=0
+  while ! kubectl get deployment mcp-gateway -n mcp-system &>/dev/null; do
+    if [ $waited -ge 90 ]; then
+      log_warn "deployment/mcp-gateway not found in mcp-system after 90s — skipping OTel patch"
+      break
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+  if kubectl get deployment mcp-gateway -n mcp-system &>/dev/null; then
+    kubectl rollout status deployment/mcp-gateway -n mcp-system --timeout=60s &>/dev/null || \
+      log_warn "rollout not ready — patching anyway"
+    run_cmd kubectl set env deployment/mcp-gateway -n mcp-system \
+      OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.kagenti-system.svc.cluster.local:8335 \
+      OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+    log_success "MCP Gateway OTel exporter configured"
+  else
+    log_warn "Skipping OTel patch (deployment not found after wait)"
+  fi
+fi
 
 ELAPSED=$(( SECONDS - START_SECONDS ))
 MINS=$(( ELAPSED / 60 ))

@@ -40,10 +40,11 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: openshell-kind-${{ github.event.issue.number || github.head_ref || github.ref }}
+  group: openshell-kind-${{ github.event_name }}-${{ github.event.issue.number || github.head_ref || github.ref }}
   cancel-in-progress: true
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
   # ── Authorization (issue_comment only) ─────────────────────────
@@ -57,7 +58,6 @@ jobs:
     permissions:
       pull-requests: write
       contents: read
-      statuses: write
     outputs:
       authorized: ${{ steps.check.outputs.has-permission }}
       pr_sha: ${{ steps.pr-info.outputs.sha }}
@@ -101,36 +101,18 @@ jobs:
               comment_id: context.payload.comment.id, content: 'rocket'
             });
 
-      - name: Create pending commit status
-        if: steps.check.outputs.has-permission == 'true' && github.event_name == 'issue_comment'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
-        with:
-          script: |
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner, repo: context.repo.repo,
-              sha: '${{ steps.pr-info.outputs.sha }}',
-              state: 'pending',
-              target_url: runUrl,
-              description: 'OpenShell E2E tests running on Kind',
-              context: 'OpenShell PoC (Kind) [/run-e2e-openshell]'
-            });
-
   # ── E2E Test Job ───────────────────────────────────────────────
   e2e-openshell:
     name: OpenShell PoC (Kind)
     runs-on: ubuntu-latest
     needs: authorize
     if: needs.authorize.outputs.authorized == 'true'
-    timeout-minutes: 45
+    timeout-minutes: 55  # Observed worst-case: ~44min (deploy ~27min + tests ~8min + overhead)
     continue-on-error: true
-    permissions:
-      contents: read
-      statuses: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           ref: ${{ needs.authorize.outputs.pr_sha || github.sha }}
 
@@ -156,10 +138,10 @@ jobs:
           kind version
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
 
       - name: Free up disk space
         run: bash .github/scripts/common/05-free-disk-space.sh
@@ -201,19 +183,3 @@ jobs:
           path: |
             test-results/
             /tmp/kagenti/
-
-      - name: Update commit status
-        if: always() && github.event_name == 'issue_comment' && needs.authorize.outputs.pr_sha
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
-        with:
-          script: |
-            const passed = '${{ steps.run-tests.outcome }}' === 'success';
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner, repo: context.repo.repo,
-              sha: '${{ needs.authorize.outputs.pr_sha }}',
-              state: passed ? 'success' : 'failure',
-              target_url: runUrl,
-              description: `OpenShell E2E ${passed ? 'Passed' : 'Failed'}`,
-              context: 'OpenShell PoC (Kind) [/run-e2e-openshell]'
-            });

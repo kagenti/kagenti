@@ -56,8 +56,8 @@ kagenti/
 ```bash
 # Deploy to Kind cluster
 # From repository root
-cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
-# Edit deployments/envs/.secret_values.yaml with your values
+cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
+# Edit charts/kagenti/.secrets.yaml with your values
 scripts/kind/setup-kagenti.sh
 
 # Run UI locally
@@ -327,8 +327,8 @@ git clone https://github.com/kagenti/kagenti.git
 cd kagenti
 
 # Configure secrets
-cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
-# Edit .secret_values.yaml with your values
+cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
+# Edit .secrets.yaml with your values
 
 # Deploy to Kind cluster
 scripts/kind/setup-kagenti.sh

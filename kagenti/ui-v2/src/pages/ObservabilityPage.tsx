@@ -53,7 +53,7 @@ const DashboardCard: React.FC<DashboardCardProps> = ({
           {title}
         </span>
       </CardTitle>
-      <CardBody>
+      <CardBody style={{ minHeight: '120px' }}>
         <Text component="p">{description}</Text>
         {isLoading ? (
           <Skeleton width="80%" style={{ marginTop: '8px' }} />
@@ -124,7 +124,7 @@ export const ObservabilityPage: React.FC = () => {
 
         <Grid hasGutter>
           {tracesUrl && (
-            <GridItem md={6}>
+            <GridItem md={6} lg={4}>
               <DashboardCard
                 title="Tracing & Performance"
                 description="Access detailed trace data for debugging and performance analysis. Monitor LLM calls, latency, and token usage with Phoenix/OpenTelemetry."
@@ -136,7 +136,7 @@ export const ObservabilityPage: React.FC = () => {
             </GridItem>
           )}
 
-          <GridItem md={tracesUrl ? 6 : 12}>
+          <GridItem md={6} lg={4}>
             <DashboardCard
               title="Network Traffic"
               description="Visualize service interactions, traffic flow, and service mesh health with Kiali. Monitor Istio metrics and network policies."
@@ -148,7 +148,7 @@ export const ObservabilityPage: React.FC = () => {
           </GridItem>
 
           {mlflowUrl && (
-            <GridItem md={6}>
+            <GridItem md={6} lg={4}>
               <DashboardCard
                 title="MLflow"
                 description="Track experiments, model runs, and LLM traces with MLflow."

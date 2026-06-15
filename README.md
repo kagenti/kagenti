@@ -3,7 +3,7 @@
 
 [![CI](https://github.com/kagenti/kagenti/actions/workflows/ci.yaml/badge.svg)](https://github.com/kagenti/kagenti/actions/workflows/ci.yaml)
 [![E2E K8s 1.35.0 (Kind)](https://github.com/kagenti/kagenti/actions/workflows/e2e-kind.yaml/badge.svg)](https://github.com/kagenti/kagenti/actions/workflows/e2e-kind.yaml)
-[![E2E OCP 4.20.11 (HyperShift)](https://github.com/kagenti/kagenti/actions/workflows/e2e-hypershift.yaml/badge.svg)](https://github.com/kagenti/kagenti/actions/workflows/e2e-hypershift.yaml)
+[![E2E OCP 4.20.21 (HyperShift)](https://github.com/kagenti/kagenti/actions/workflows/e2e-hypershift.yaml/badge.svg)](https://github.com/kagenti/kagenti/actions/workflows/e2e-hypershift.yaml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/kagenti/kagenti/badge)](https://scorecard.dev/viewer/?uri=github.com/kagenti/kagenti)
 [![GitHub Release](https://img.shields.io/github/v/release/kagenti/kagenti)](https://github.com/kagenti/kagenti/releases/latest)
 [![License](https://img.shields.io/github/license/kagenti/kagenti)](LICENSE)
@@ -42,52 +42,53 @@ The goal of Kagenti is to provide a pluggable agentic platform blueprint. Key fu
 Under each of these pillars are logical components that support the workload runtime.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                                    KAGENTI PLATFORM                                 │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                     │
-│  ┌───────────────────────────────────────────────────────────────────────────────┐  │
-│  │                              KAGENTI UI*                                      │  │
-│  │      (Dashboard: Deploy, Test, Monitor Agents & Tools + Backend API)          │  │
-│  └───────────────────────────────────────────────────────────────────────────────┘  │
-│                                        │                                            │
-│                                        ▼                                            │
-│  ┌───────────────────────────────────────────────────────────────────────────────┐  │
-│  │                          WORKLOAD RUNTIME                                     │  │
-│  │      ┌─────────────────────────────┐    ┌─────────────────────────────┐       │  │
-│  │      │          AGENTS             │    │           TOOLS             │       │  │
-│  │      │  (A2A - LangGraph, CrewAI   │    │   (MCP Protocol Servers)    │       │  │
-│  │      │   Marvin, Autogen, etc.)    │    │                             │       │  │
-│  │      └─────────────────────────────┘    └─────────────────────────────┘       │  │
-│  └───────────────────────────────────────────────────────────────────────────────┘  │
-│                                        │                                            │
-├────────────────────────────────────────┼────────────────────────────────────────────┤
-│                                PLATFORM PILLARS                                     │
-│                                        │                                            │
-│  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌────────────────┐  │
-│  │    LIFECYCLE     │ │    NETWORKING    │ │     SECURITY     │ │  OBSERVABILITY │  │
-│  │  ORCHESTRATION   │ │                  │ │                  │ │                │  │
-│  ├──────────────────┤ ├──────────────────┤ ├──────────────────┤ ├────────────────┤  │
-│  │                  │ │                  │ │                  │ │                │  │
-│  │   Agents/Tools   │ │   Tool Routing   │ │  Identity & Auth │ │    Tracing     │  │
-│  │   Lifecycle &    │ │    & Policy      │ │   (AuthBridge*)  │ │(MLflow,Langflow│  │
-│  │   Discovery      │ │  (MCP Gateway)   │ │                  │ │ Phoenix)       │  │
-│  │ (k8s workloads,  │ │                  │ │                  │ │                │  │
-│  │ labels,          │ ├──────────────────┤ ├──────────────────┤ ├────────────────┤  │
-│  │  AgentCard CRD*) │ │                  │ │                  │ │                │  │
-│  │                  │ │  Service Mesh    │ │    OAuth/OIDC    │ │   Network      │  │
-│  │                  │ │ (Istio/Ambient)  │ │    (Keycloak)    │ │ Visualization  │  │
-│  │                  │ │                  │ │                  │ │   (Kiali)      │  │
-│  │   Container      │ ├──────────────────┤ ├──────────────────┤ │                │  │
-│  │     Builds       │ │                  │ │                  │ │                │  │
-│  │  (Shipwright)    │ │ Ingress/Routing  │ │ Workload Identity│ │                │  │
-│  │                  │ │ (Gateway API)    │ │ (SPIFFE/SPIRE)   │ │                │  │
-│  │                  │ │                  │ │                  │ │                │  │
-│  └──────────────────┘ └──────────────────┘ └──────────────────┘ └────────────────┘  │
-│                                                                                     │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│                               KUBERNETES / OPENSHIFT                                │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                         KAGENTI PLATFORM                                │
+├─────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────────────────────┐  │
+│  │                                  KAGENTI UI*                                      │  │
+│  │          (Dashboard: Deploy, Test, Monitor Agents & Tools + Backend API)          │  │
+│  └───────────────────────────────────────────────────────────────────────────────────┘  │
+│                                                 │                                       │
+│                                                 ▼                                       │
+│  ┌───────────────────────────────────────────────────────────────────────────────────┐  │
+│  │                                    WORKLOAD RUNTIME                               │  │
+│  │   ┌──────────────────────┐    ┌──────────────────────┐    ┌───────────────────┐   │  │
+│  │   │       AGENTS         │    │        TOOLS         │    │      SKILLS       │   │  │
+│  │   │  (A2A - LangGraph,   │    │  (MCP Protocol       │    │    (Reusable      │   │  │
+│  │   │   CrewAI, Marvin,    │    │   Servers)           │    │   capabilities)   │   │  │
+│  │   │   Autogen, etc.)     │    │                      │    │                   │   │  │
+│  │   └──────────────────────┘    └──────────────────────┘    └───────────────────┘   │  │
+│  └───────────────────────────────────────────────────────────────────────────────────┘  │
+│                                                 │                                       │
+├─────────────────────────────────────────────────┼───────────────────────────────────────┤
+│                                        PLATFORM PILLARS                                 │
+│                                                 │                                       │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  ┌────────────────┐   │
+│  │    LIFECYCLE     │  │    NETWORKING    │  │     SECURITY     │  │  OBSERVABILITY │   │
+│  │  ORCHESTRATION   │  │                  │  │                  │  │                │   │
+│  ├──────────────────┤  ├──────────────────┤  ├──────────────────┤  ├────────────────┤   │
+│  │                  │  │                  │  │                  │  │                │   │
+│  │   Agents/Tools   │  │   Tool Routing   │  │  Identity & Auth │  │    Tracing     │   │
+│  │   Lifecycle &    │  │    & Policy      │  │   (AuthBridge*)  │  │(MLflow,Langflow│   │
+│  │   Discovery      │  │  (MCP Gateway)   │  │                  │  │ Phoenix)       │   │
+│  │ (k8s workloads,  │  │                  │  │                  │  │                │   │
+│  │ labels,          │  ├──────────────────┤  ├──────────────────┤  ├────────────────┤   │
+│  │  AgentCard CRD*) │  │                  │  │                  │  │                │   │
+│  │                  │  │  Service Mesh    │  │    OAuth/OIDC    │  │   Network      │   │
+│  │                  │  │ (Istio/Ambient)  │  │    (Keycloak)    │  │ Visualization  │   │
+│  │                  │  │                  │  │                  │  │   (Kiali)      │   │
+│  │   Container      │  ├──────────────────┤  ├──────────────────┤  │                │   │
+│  │     Builds       │  │                  │  │                  │  │                │   │
+│  │  (Shipwright)    │  │ Ingress/Routing  │  │ Workload Identity│  │                │   │
+│  │                  │  │ (Gateway API)    │  │ (SPIFFE/SPIRE)   │  │                │   │
+│  │                  │  │                  │  │                  │  │                │   │
+│  └──────────────────┘  └──────────────────┘  └──────────────────┘  └────────────────┘   │
+│                                                                                         │
+├─────────────────────────────────────────────────────────────────────────────────────────┤
+│                                 KUBERNETES / OPENSHIFT                                  │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 * = Built by Kagenti
 ```
 
@@ -119,24 +120,18 @@ Kagenti provides a set of components and assets that make it easier to manage AI
 git clone https://github.com/kagenti/kagenti.git
 cd kagenti
 
-# Check out the latest stable release (recommended)
-# Find the current version at https://github.com/kagenti/kagenti/releases/latest
-git checkout v0.5.1
+# Check out the latest release
+git checkout v0.6.0
 
-# Copy and configure secrets
-cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
-# Edit deployments/envs/.secret_values.yaml with your values
+# Copy and configure secrets (optional)
+cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
+# Edit charts/kagenti/.secrets.yaml with your values
 
 # Deploy to Kind cluster
-scripts/kind/setup-kagenti.sh --with-all
+scripts/kind/setup-kagenti.sh --with-ui --with-spire --with-agent-sandbox --with-builds
 ```
 
-> **Tip:** To find the latest stable version from the command line:
-> ```bash
-> git tag --list 'v*' --sort=-v:refname | grep -v -E '(alpha|rc)' | head -1
-> ```
-
-For more detailed installation instructions including OpenShift refer to [Installation Guide](./docs/install.md).
+Use `scripts/kind/setup-kagenti.sh --help` for all available options. For detailed instructions including OpenShift, refer to the [Installation Guide](./docs/install.md).
 
 ### Access the UI
 
@@ -163,8 +158,10 @@ To learn how to deploy agents and MCP tools, follow the **[Weather Agent Demo](h
 | **Installation** | [Installation Guide](./docs/install.md) (Kind & OpenShift) |
 | **Components** | [Component Details](./docs/components.md) |
 | **Demos & Tutorials** | [Demo Documentation](./docs/demos/README.md) |
+| **Developing Kagenti Apps** | [Application Development Guide](./docs/developing-kagenti-app.md) · [App Demo Example](./kagenti/examples/app-demo/README.md) |
 | **Import Your Own Agent** | [New Agent Guide](./docs/new-agent.md) |
 | **Import Your Own Tool** | [New Tool Guide](./docs/new-tool.md) |
+| **Skills Configuration & Usage** | [Skills Guide](./docs/skills.md) |
 | **Architecture Details** | [Technical Details](./docs/tech-details.md) |
 | **Identity, Security, and Auth Bridge** | [Identity and Auth Bridge](./docs/identity-guide.md) |
 | **Developer Guide** | [Contributing](./docs/dev-guide.md) |
@@ -173,7 +170,7 @@ To learn how to deploy agents and MCP tools, follow the **[Weather Agent Demo](h
 
 ## Supported Protocols
 
-- **[A2A (Agent-to-Agent)](https://google.github.io/A2A)** — Standard protocol for agent communication
+- **[A2A (Agent-to-Agent)](https://a2a-protocol.org/latest/)** — Standard protocol for agent communication
 - **[MCP (Model Context Protocol)](https://modelcontextprotocol.io)** — Protocol for tool/server integration
 
 ## Contributing

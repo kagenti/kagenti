@@ -187,16 +187,42 @@ Kagenti spans multiple repositories. Tags must be created in dependency order:
 
 ---
 
-## 6. Automation Goals
+## 6. Automation and Tooling
+
+### Release image pinning
+
+Installers use local charts from the repo checkout — they do NOT pull from OCI.
+Therefore image tags must be pinned in the committed `values.yaml` files before
+tagging.
+
+**Pin all images in one command:**
+
+```bash
+bash scripts/pin-release-tags.sh v0.6.0-rc.6
+```
+
+This updates tags across both `charts/kagenti/values.yaml` and
+`charts/kagenti-deps/values.yaml`. See [docs/releasing.md — Pinning Image
+Tags](releasing.md#pinning-image-tags-before-release) for details.
+
+**Validate before tagging:**
+
+```bash
+bash scripts/check-release-pins.sh
+```
+
+This validates both charts for `tag: latest` entries and detects tag drift
+between `kagenti-deps` and the main platform chart.
 
 ### Currently Automated (via existing `build.yaml` workflows)
 
 | Step | Trigger | Output |
 |------|---------|--------|
 | Container image build + push | Tag push (`v*`) | Images on `ghcr.io/kagenti/` |
-| Helm chart package + push | Tag push (`v*`) | OCI charts on `ghcr.io/kagenti/` |
+| Helm chart package + push (with tag pinning) | Tag push (`v*`) | OCI charts on `ghcr.io/kagenti/` |
 | GitHub Release creation | Tag push (`v*`) | Release with auto-generated changelog |
 | Pre-release flag | GoReleaser `prerelease: auto` | `-alpha`/`-rc` tags marked as pre-release |
+| Pin validation (`ci-release-pins.yaml`) | PR touching `charts/` | Summary on all PRs; hard gate on `release/*` branches |
 
 ### Recommended Additions
 
@@ -204,42 +230,9 @@ Kagenti spans multiple repositories. Tags must be created in dependency order:
 |-----------|---------|---------|----------|
 | **Release branch protection** | Branch creation matching `release-*` | Enforce PR reviews, required CI, no force push | P0 |
 | **Changelog generation** | Tag push | Generate structured changelog from conventional commits (e.g., `git-cliff`) | P1 |
-| **Image tag lint** | PR to `release-*` branches | Fail if `values.yaml` contains `tag: latest` | P1 |
-| **Version bump PR** | Manual workflow dispatch | Create PR bumping Chart.yaml + values.yaml to target version | P2 |
 | **Cross-repo orchestration** | Manual workflow dispatch | Trigger dependency-ordered release across repos | P2 |
 | **Cosign image signing** | After image push | Sign images with Sigstore keyless signing | P2 |
 | **SBOM generation** | Tag push | Produce CycloneDX SBOM per image | P3 |
-| **Release readiness check** | Manual or pre-tag hook | Validate all criteria before allowing a tag | P3 |
-
-### Suggested GitHub Action: `release-lint.yaml`
-
-```yaml
-name: Release Lint
-on:
-  pull_request:
-    branches: ['release-*']
-    paths: ['charts/kagenti/values.yaml', 'charts/kagenti/Chart.yaml']
-
-jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: No 'latest' tags allowed
-        run: |
-          if grep -q 'tag: latest' charts/kagenti/values.yaml; then
-            echo "::error::values.yaml contains 'tag: latest' — pin all images before release"
-            exit 1
-          fi
-      - name: Chart.yaml versions are not -alpha on release branches
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          if echo "$BASE_REF" | grep -q 'release-' && \
-             grep -q 'alpha' charts/kagenti/Chart.yaml; then
-            echo "::warning::Chart.yaml references alpha dependencies on a release branch"
-          fi
-```
 
 ---
 

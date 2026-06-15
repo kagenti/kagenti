@@ -53,6 +53,11 @@ def _workload_exists(kube: KubernetesService, namespace: str, name: str) -> bool
 async def reconcile_builds() -> None:
     """Single reconciliation pass — find and finalize orphaned builds."""
     kube = get_kubernetes_service()
+
+    if not kube.api_group_exists("shipwright.io"):
+        logger.debug("Shipwright API group not found, skipping build reconciliation")
+        return
+
     namespaces = kube.list_enabled_namespaces()
 
     for namespace in namespaces:

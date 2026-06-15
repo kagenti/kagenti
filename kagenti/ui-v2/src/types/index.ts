@@ -409,6 +409,13 @@ export interface SkillLabels {
   type?: string;
 }
 
+export interface ExternalSkillInfo {
+  registryType: string;
+  registryUrl: string;
+  registrySkillName: string;
+  registrySkillVersion: string;
+}
+
 export interface Skill {
   name: string;
   namespace: string;
@@ -419,6 +426,8 @@ export interface Skill {
   createdAt?: string;
   origin?: string;
   usageCount: number;
+  source?: 'local' | 'external';
+  externalInfo?: ExternalSkillInfo;
 }
 
 export interface SkillFile {
@@ -450,70 +459,66 @@ export interface CreateSkillResponse {
   message: string;
 }
 
+export interface CreateExternalSkillRequest {
+  name: string;
+  namespace: string;
+  description?: string;
+  category?: string;
+  registryType: string;
+  registryUrl: string;
+  registrySkillName: string;
+  registrySkillVersion?: string;
+  origin?: string;
+}
+
 // AuthBridge types
+export type AuthBridgeMode = 'proxy-sidecar' | 'envoy-sidecar' | 'lite' | 'waypoint';
+
+// mTLS posture for AuthBridge sidecars (proxy-sidecar / lite paths only;
+// envoy-sidecar mTLS is not currently configured in the kagenti envoy-config).
+// Maps 1:1 to AgentRuntime.Spec.MTLSMode in the operator.
+export type MtlsMode = 'disabled' | 'permissive' | 'strict';
+
 export interface AuthBridgeConfig {
-  AuthBridge: boolean | null
-  mode: string | null;
-  inbound: InboundConfig | null;
-  outbound: OutboundConfig | null;
-  identity: IdentityConfig | null;
-  listener: ListenerConfig | null;
-  bypass:   BypassConfig | null;
-  routes:   RoutesConfig | null;
-  stats:    StatsConfig | null;
+  AuthBridge: boolean | null;
+  mode: AuthBridgeMode | null;
+  pipeline: PipelineConfig | null;
 }
 
-export interface InboundConfig {
-  jwks_url: string;
-  issuer:  string;
+export interface PipelineConfig {
+  inbound: PipelineStageConfig | null;
+  outbound: PipelineStageConfig | null;
 }
 
-export interface OutboundConfig {
-  token_url:      string;
-  keycloak_url:   string;
+export interface PipelineStageConfig {
+  plugins: PluginConfig[];
+}
+
+export interface PluginConfig {
+  name: string;
+  config: Record<string, unknown>;
+}
+
+export interface JwtValidationPluginConfig {
+  issuer: string;
+  keycloak_url: string;
+  keycloak_realm: string;
+}
+
+export interface TokenExchangePluginConfig {
+  keycloak_url: string;
   keycloak_realm: string;
   default_policy: string;
+  identity: IdentityConfig;
 }
 
 export interface IdentityConfig {
-  type:             string; // "spiffe", "client-secret", "k8s-sa"
-  client_id:         string;
-  client_secret:     string;
-  client_id_file:     string;
-  client_secret_file: string;
-  socket_path:       string;
-  jwt_svid_path:      string;
-  jwt_audience:      string[];
-}
-
-export interface ListenerConfig {
-  ext_proc_addr:         string;
-  ext_authz_addr:        string;
-  forward_proxy_addr:    string;
-  reverse_proxy_addr:    string;
-  reverse_proxy_backend: string;
-}
-
-export interface BypassConfig {
-  inbound_paths: string[];
-}
-
-export interface RoutesConfig {
-  file:  string; // path to routes YAML file
-  rules: RouteConfig[]
-}
-
-export interface RouteConfig {
-  host:           string;
-  target_audience: string;
-  token_scopes:    string;
-  token_url:       string;
-  passthrough:    boolean;
-  action:         string;
-}
-
-export interface StatsConfig {
-  address: string; // for example, ":9093"
+  type: string; // "spiffe" | "client-secret"
+  // jwt_audience is required when type === "spiffe": authbridge mints
+  // a JWT-SVID with this audience and sends it as the OAuth client_assertion
+  // to Keycloak. Must match Keycloak's SPIFFE IdP expected audience
+  // (typically the realm issuer URL). Omitted when type === "client-secret".
+  jwt_audience?: string;
 }
 
 export interface AuthBridgeStats {
