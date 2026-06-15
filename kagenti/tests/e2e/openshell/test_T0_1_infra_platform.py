@@ -102,6 +102,10 @@ class TestAgentPods:
     def _discover_agents(namespace: str) -> list[str]:
         """Discover agent Deployments that have at least one ready replica.
 
+        Uses the kagenti.io/type=agent label selector — this label is
+        applied by the kagenti-operator via AgentRuntime reconciliation,
+        not manually.
+
         Filters out agents stuck on ImagePull or other non-ready states
         so the same test works on Kind (all agents) and HyperShift
         (only agents with available images).
