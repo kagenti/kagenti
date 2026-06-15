@@ -77,6 +77,30 @@ def k8s_apps_client():
 
 
 @pytest.fixture(scope="session")
+def k8s_custom_client():
+    """
+    Load Kubernetes configuration and return CustomObjectsApi client.
+
+    Used for querying custom resources (e.g. AgentRuntime CRs).
+
+    Returns:
+        kubernetes.client.CustomObjectsApi: Kubernetes custom objects API client
+
+    Raises:
+        pytest.skip: If cannot connect to Kubernetes cluster
+    """
+    try:
+        config.load_kube_config()
+    except config.ConfigException:
+        try:
+            config.load_incluster_config()
+        except config.ConfigException as e:
+            pytest.skip(f"Could not load Kubernetes config: {e}")
+
+    return client.CustomObjectsApi()
+
+
+@pytest.fixture(scope="session")
 def k8s_batch_client():
     """
     Load Kubernetes configuration and return BatchV1Api client.
