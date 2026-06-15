@@ -623,7 +623,7 @@ Kagenti is framework-neutral and supports agents built with any framework that c
 
 ### A2A (Agent-to-Agent)
 
-[A2A](https://google.github.io/A2A) is Google's standard protocol for agent communication.
+[A2A](https://a2a-protocol.org/latest/) is Google's standard protocol for agent communication.
 
 **Features**:
 
