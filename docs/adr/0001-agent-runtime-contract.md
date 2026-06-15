@@ -8,7 +8,7 @@
 | Authors        | [Roland Huss](https://github.com/rhuss) |
 | Supersedes     | N/A |
 | Superseded by  | N/A |
-| Tickets        | TBD |
+| Tickets        | [RHAIRFE-2389](https://redhat.atlassian.net/browse/RHAIRFE-2389), [RHAISTRAT-1952](https://redhat.atlassian.net/browse/RHAISTRAT-1952) |
 
 ## What
 
@@ -136,7 +136,7 @@ The contract file conforms to the [AGENTS.md open standard](https://agents.md/) 
 
 No cleartext credentials appear anywhere in the file. Credential entries describe how to retrieve them from ServiceBinding paths.
 
-Here is a complete example for a Deployment target with tracing enabled and no OBO delegation:
+Here is an abbreviated example for a Deployment target with tracing enabled and no OBO delegation. The full rendered contract is in [agents-md-format.md](../specs/001-agent-runtime-contract/contracts/agents-md-format.md).
 
 ````markdown
 ---
@@ -144,18 +144,12 @@ arc_version: v1alpha1
 target_type: Deployment
 obo_mode: none
 tracing_enabled: true
-bindings:
-  - identity
-  - model-access
-  - trace-collector
+bindings: [identity, model-access, trace-collector]
 ---
 
 # Agent Runtime Contract
 
-**Version**: v1alpha1 | **Target**: Deployment | **Generated**: 2026-05-13T10:00:00Z
-
-This file is the contract between the Kagenti platform and your agent container.
-It describes what the platform provides and what your agent must expose.
+**Version**: v1alpha1 | **Target**: Deployment | **Generated**: 2026-06-12T10:00:00Z
 
 ## Platform-Provided Environment Variables
 
@@ -163,92 +157,17 @@ It describes what the platform provides and what your agent must expose.
 |----------|-------|-------------|
 | `ARC_CONTRACT_VERSION` | `v1alpha1` | Contract version |
 | `ARC_AGENT_ID` | `spiffe://kagenti.local/ns/team1/sa/weather-agent` | Your SPIFFE identity |
-| `ARC_NAMESPACE` | `team1` | Your namespace |
-| `ARC_MCP_CONFIG` | `/arc/mcp/servers.json` | MCP server discovery file |
-| `ARC_SKILLS_DIR` | `/arc/skills/` | Mounted skills directory |
-| `HTTP_PROXY` | `http://127.0.0.1:15001` | Outbound proxy (route all HTTP through this) |
-| `HTTPS_PROXY` | `http://127.0.0.1:15001` | Outbound proxy (route all HTTPS through this) |
-| `SPIFFE_ENDPOINT_SOCKET` | `unix:///spiffe-workload-api/spire-agent.sock` | SPIRE Workload API |
-| `SERVICE_BINDING_ROOT` | `/bindings` | Credential projection root |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://otel-collector.kagenti-system:4317` | Trace collector |
-
-## Mount Paths
-
-| Path | Contents | Source |
-|------|----------|--------|
-| `/arc/AGENTS.md` | This file | Controller (ConfigMap) |
-| `/arc/mcp/servers.json` | Available MCP server endpoints | Controller (ConfigMap) |
-| `/arc/skills/` | Skill artifacts | Init container |
-| `/bindings/identity/` | SPIFFE X.509 SVID (cert, key, bundle) | SPIRE CSI driver |
-| `/bindings/model-access/` | Model endpoint URL, API key, provider | Controller (Secret) |
-| `/bindings/trace-collector/` | OTEL endpoint, sampling config | Controller (ConfigMap) |
-
-## Auth Behavior
-
-### Inbound (requests to your agent)
-
-The sidecar terminates TLS and validates JWTs before traffic reaches your container.
-You receive plain HTTP on your container port. You do not need to handle TLS certificates
-or token validation.
-
-### Outbound (requests from your agent)
-
-Route all outbound HTTP through `$HTTP_PROXY`. The sidecar intercepts the request,
-attaches your SPIFFE X.509 SVID for mTLS, and handles TLS negotiation with the
-destination. If the proxy is unavailable, outbound requests will fail with a
-connection error. Implement retry with backoff for resilience.
-
-### Scenarios
-
-| Scenario | Mechanism | What you see |
-|----------|-----------|-------------|
-| Agent-to-agent | mTLS (SPIFFE X.509 SVID) | Plain HTTP inbound. Outbound via `$HTTP_PROXY`. |
-| User-to-agent | JWT with shared audience | Plain HTTP inbound (sidecar validated JWT). |
-| Agent-to-external | CONNECT tunnel via `$HTTP_PROXY` | Send request, sidecar tunnels to destination. |
-
-### On-Behalf-Of Delegation
-
-**Mode**: none (client-credentials)
-
-Your outbound requests use your agent's own SPIFFE identity. The sidecar does not
-perform token exchange on behalf of the calling user.
-
-To enable user-context delegation, set `spec.oboMode` on your AgentRuntime CR to
-`token-forwarding` or `correlation-header`.
+| `HTTP_PROXY` | `http://127.0.0.1:15001` | Route all outbound HTTP through this |
+| ... | | *(10 variables total, see [format spec](../specs/001-agent-runtime-contract/contracts/agents-md-format.md))* |
 
 ## Agent Requirements
 
-Your container MUST:
+Your container MUST expose: A2A agent card (`GET /.well-known/agent-card.json`),
+liveness probe, readiness probe.
 
-1. **Expose an A2A agent card** at `GET /.well-known/agent-card.json` on your
-   container port (convention: 8080)
-2. **Expose a liveness probe** (e.g., `GET /healthz`)
-3. **Expose a readiness probe** (e.g., `GET /readyz`)
-
-## MCP Server Access
-
-Available MCP servers are listed in `/arc/mcp/servers.json`.
-Use `$ARC_MCP_CONFIG` to locate the file:
-
-```python
-import json, os
-with open(os.environ["ARC_MCP_CONFIG"]) as f:
-    servers = json.load(f)["mcpServers"]
-for name, cfg in servers.items():
-    print(f"{name}: {cfg['url']}")
-```
-
-## Credentials
-
-Do not hardcode credentials. Read them from `$SERVICE_BINDING_ROOT`:
-
-| Credential | Path | Files |
-|------------|------|-------|
-| SPIFFE identity | `$SERVICE_BINDING_ROOT/identity/` | `svid.pem`, `key.pem`, `bundle.pem`, `type` |
-| Model access | `$SERVICE_BINDING_ROOT/model-access/` | `url`, `api-key`, `provider`, `type` |
-| Trace collector | `$SERVICE_BINDING_ROOT/trace-collector/` | `endpoint`, `sampling`, `type` |
-
-Check for file existence before reading. Not all bindings are configured for every agent.
+*(Full contract includes: mount paths, auth behavior with inbound/outbound/OBO
+scenarios, MCP server discovery via `/arc/mcp/servers.json`, credential paths
+under `$SERVICE_BINDING_ROOT`. See [agents-md-format.md](../specs/001-agent-runtime-contract/contracts/agents-md-format.md).)*
 ````
 
 ### Target-Specific Generation
