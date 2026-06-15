@@ -1,5 +1,5 @@
 SPI_VERSION      := 0.1.0
-KEYCLOAK_VERSION := 26.5.2
+KEYCLOAK_VERSION := 26.6.0
 
 JAR := target/github-org-authenticator-$(SPI_VERSION).jar
 

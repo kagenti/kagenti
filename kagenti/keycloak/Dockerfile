@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG KEYCLOAK_IMAGE=quay.io/keycloak/keycloak:26.5.2
+ARG KEYCLOAK_IMAGE=quay.io/keycloak/keycloak:26.6.0
 
 # Stage 1: build the SPI JAR.
 FROM maven:3.9-eclipse-temurin-17 AS jar-builder

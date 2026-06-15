@@ -16,22 +16,24 @@ REGISTRY=quay.io/your-username make push
 2. Run `kc.sh build` (RHBK) or restart your Keycloak distribution so the SPI
    is registered.
 
-Note: The `keycloak.version` property in `pom.xml` defaults to `26.0.7`. Set it to
+Note: The `keycloak.version` property in `pom.xml` defaults to `26.6.0`. Set it to
 match your Red Hat Build of Keycloak / Keycloak version before building.
 
 ## How to install on kind
 
 ```bash
-kubectl -n keycloak patch keycloak keycloak --type=merge -p '{"spec":{"image":"quay.io/aslomorg/github-org-keycloak:0.1.0-kc26.5.2"}'
+# Note that these instructions refer to a personal org 26.5.2 image; an official image will appear in a followup
+kubectl -n keycloak patch keycloak keycloak --type=merge -p '{"spec":{"image":"quay.io/aslomorg/github-org-keycloak:0.1.0-kc26.5.2"}}'
 kubectl -n keycloak rollout status --watch statefulset/keycloak
 ```
 
 ## How to install on OpenShift
 
 ```bash
+# Note that these instructions refer to a personal org 26.5.2 image; an official image will appear in a followup
 kubectl -n keycloak patch keycloak keycloak \
     --type=merge \
-    -p '{"spec":{"image":"quay.io/aslomorg/github-org-keycloak:0.1.0-kc26.5.2"}'
+    -p '{"spec":{"image":"quay.io/aslomorg/github-org-keycloak:0.1.0-kc26.5.2"}}'
 kubectl -n keycloak rollout status --watch statefulset/keycloak
 ```
 
@@ -53,7 +55,7 @@ kubectl -n keycloak rollout status --watch statefulset/keycloak
    (e.g. `kagenti`).
 3. Go to **Identity Providers** and add a **github** provider.
 4. Set the Client ID and Client Secret to the values recorded above.
-4. set **First Login Flow** to your new flow `github-org-gated`.
+5. set **First Login Flow** to your new flow `github-org-gated`.
 
 ## Script to configure Keycloak
 
