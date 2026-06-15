@@ -15,6 +15,24 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  name: authbridge-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+data:
+  KEYCLOAK_URL: "http://keycloak-service.{{ .Values.keycloak.namespace }}.svc:8080"
+  KEYCLOAK_REALM: {{ .Values.keycloak.realm | quote }}
+  KEYCLOAK_NAMESPACE: "{{ .Values.keycloak.namespace }}"
+  ISSUER: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
+  SPIRE_ENABLED: {{ if .Values.spire.enabled }}"true"{{ else }}"false"{{ end }}
+  CLIENT_AUTH_TYPE: "{{ .Values.authBridge.clientAuthType }}"
+  SPIFFE_IDP_ALIAS: "{{ .Values.authBridge.spiffeIdpAlias }}"
+  EXPECTED_AUDIENCE: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
+  CREDENTIAL_WAIT_TIMEOUT: {{ .Values.authBridge.credentialWaitTimeout | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
   name: authbridge-runtime-config
   namespace: {{ .Release.Namespace }}
   labels:

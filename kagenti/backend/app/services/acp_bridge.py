@@ -26,8 +26,15 @@ ACP_PROTOCOL_VERSION = 1
 A2A_STREAM_TIMEOUT = 120.0
 SANDBOX_EXEC_TIMEOUT = 120
 
-SANDBOX_AGENTS = {"openshell-claude", "openshell-opencode"}
-NEMOCLAW_AGENTS = {"nemoclaw-openclaw", "nemoclaw-hermes"}
+SANDBOX_AGENTS = {"openshell-claude", "openshell-opencode", "nemoclaw-hermes"}
+SANDBOX_PREFIXES = ("teleport-",)
+NEMOCLAW_AGENTS = {"nemoclaw-openclaw"}
+
+_SANDBOX_CLI: dict[str, list[str]] = {
+    "nemoclaw-hermes": ["hermes", "chat", "-q"],
+    "openshell-claude": ["claude", "--print", "--bare", "--model", "claude-sonnet-4-20250514"],
+    "openshell-opencode": ["opencode", "run"],
+}
 
 _K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
@@ -83,12 +90,16 @@ class ACPBridge:
         return False
 
     async def cleanup_sessions(self, namespace: str, agent_name: str) -> int:
-        """Remove all sessions for a namespace/agent pair (called on WebSocket disconnect)."""
+        """Remove all sessions for a namespace/agent pair (called on WebSocket disconnect).
+
+        Removes both open and closed sessions — the WebSocket is gone so all
+        sessions for this connection are orphaned.
+        """
         async with self._lock:
             to_remove = [
                 sid
                 for sid, s in self._sessions.items()
-                if s.namespace == namespace and s.agent_name == agent_name and s.closed
+                if s.namespace == namespace and s.agent_name == agent_name
             ]
             for sid in to_remove:
                 del self._sessions[sid]
@@ -119,7 +130,7 @@ class ACPBridge:
             yield _acp_error("Session not found", session_id=session_id)
             return
 
-        if session.agent_name in SANDBOX_AGENTS:
+        if session.agent_name in SANDBOX_AGENTS or session.agent_name.startswith(SANDBOX_PREFIXES):
             async for update in self._prompt_sandbox(session, text):
                 yield update
         elif session.agent_name in NEMOCLAW_AGENTS:
@@ -179,12 +190,10 @@ class ACPBridge:
 
         except httpx.HTTPStatusError as e:
             logger.error("A2A HTTP error: %s", e)
-            yield _acp_error(
-                f"Agent returned {e.response.status_code}", session_id=session.session_id
-            )
+            yield _acp_error("Agent request failed", session_id=session.session_id)
         except httpx.RequestError as e:
             logger.error("A2A connection error: %s", e)
-            yield _acp_error(f"Cannot reach agent: {e}", session_id=session.session_id)
+            yield _acp_error("Cannot reach agent", session_id=session.session_id)
 
     async def _prompt_sandbox(self, session: ACPSession, text: str) -> AsyncIterator[dict]:
         """Send prompt to sandbox agent via OpenShell gateway ExecSandbox gRPC."""
@@ -192,15 +201,25 @@ class ACPBridge:
             yield _acp_error("Invalid namespace or agent_name", session_id=session.session_id)
             return
 
-        cli = "claude" if "claude" in session.agent_name else "opencode"
-        cmd = ["timeout", "90", cli]
-        if cli == "claude":
-            cmd += ["--print", "--bare", "--model", "claude-sonnet-4-20250514", text]
-        else:
-            cmd += ["run", text]
+        cli_args = _SANDBOX_CLI.get(
+            session.agent_name,
+            ["claude", "--print", "--bare", "--model", "claude-sonnet-4-20250514"],
+        )
+        cmd = ["timeout", "90", *cli_args, text]
 
         gateway = get_openshell_client()
         stdout_parts: list[str] = []
+
+        logger.info(
+            "Sandbox prompt via ExecSandbox",
+            extra={
+                "session_id": session.session_id,
+                "agent_name": session.agent_name,
+                "namespace": session.namespace,
+                "cli": cli_args[0],
+                "prompt_length": len(text),
+            },
+        )
 
         try:
             async for event_type, data in gateway.exec_sandbox(
@@ -213,18 +232,31 @@ class ACPBridge:
                     stdout_parts.append(data.decode("utf-8", errors="replace"))
                 elif event_type == "stderr":
                     logger.warning(
-                        "Sandbox stderr (session %s): %s",
-                        session.session_id,
-                        data.decode("utf-8", errors="replace")[:200],
+                        "Sandbox stderr",
+                        extra={
+                            "session_id": session.session_id,
+                            "stderr": data.decode("utf-8", errors="replace")[:200],
+                        },
                     )
                 elif event_type == "exit":
                     if data != 0:
                         logger.warning(
-                            "Sandbox exit code %d (session %s)", data, session.session_id
+                            "Sandbox non-zero exit",
+                            extra={
+                                "session_id": session.session_id,
+                                "exit_code": data,
+                            },
                         )
 
             output = "".join(stdout_parts).strip()
             if output:
+                logger.info(
+                    "Sandbox prompt completed",
+                    extra={
+                        "session_id": session.session_id,
+                        "response_length": len(output),
+                    },
+                )
                 yield {
                     "jsonrpc": "2.0",
                     "method": "session/update",
@@ -235,12 +267,23 @@ class ACPBridge:
                     },
                 }
             else:
+                logger.warning(
+                    "Sandbox returned empty output",
+                    extra={"session_id": session.session_id},
+                )
                 yield _acp_error(
                     "Sandbox exec returned empty output", session_id=session.session_id
                 )
         except Exception as e:
-            logger.error("ExecSandbox gRPC failed (session %s): %s", session.session_id, e)
-            yield _acp_error(f"Gateway ExecSandbox failed: {e}", session_id=session.session_id)
+            logger.error(
+                "ExecSandbox failed",
+                extra={
+                    "session_id": session.session_id,
+                    "error_type": type(e).__name__,
+                },
+                exc_info=True,
+            )
+            yield _acp_error("Sandbox execution failed", session_id=session.session_id)
 
     async def _prompt_nemoclaw(self, session: ACPSession, text: str) -> AsyncIterator[dict]:
         """Send prompt to NemoClaw agent via LiteLLM OpenAI-compat format."""
@@ -275,11 +318,11 @@ class ACPBridge:
                         }
 
         except httpx.HTTPStatusError as e:
-            yield _acp_error(
-                f"NemoClaw returned {e.response.status_code}", session_id=session.session_id
-            )
+            logger.error("NemoClaw HTTP error: %s", e)
+            yield _acp_error("Agent request failed", session_id=session.session_id)
         except httpx.RequestError as e:
-            yield _acp_error(f"Cannot reach NemoClaw: {e}", session_id=session.session_id)
+            logger.error("NemoClaw connection error: %s", e)
+            yield _acp_error("Cannot reach agent", session_id=session.session_id)
 
         yield {
             "jsonrpc": "2.0",

@@ -291,20 +291,33 @@ cleanup_orphaned_aws_resources() {
                 if [ -n "$RTS" ] && [ "$RTS" != "None" ]; then
                     echo "    Found non-main: $RTS"
                     for rt in $RTS; do
-                        echo "    Deleting route table: $rt"
-                        # Show any remaining associations for debugging
+                        echo "    Cleaning route table: $rt"
+                        # Delete non-local routes first (e.g., 0.0.0.0/0 -> NAT gateway)
+                        # AWS refuses to delete a route table with active routes
+                        RT_ROUTES=$(aws ec2 describe-route-tables --region "$AWS_REGION" \
+                            --route-table-ids "$rt" \
+                            --query 'RouteTables[0].Routes[?GatewayId!=`local` && DestinationCidrBlock!=null].DestinationCidrBlock' \
+                            --output text 2>/dev/null || echo "")
+                        if [ -n "$RT_ROUTES" ] && [ "$RT_ROUTES" != "None" ]; then
+                            for cidr in $RT_ROUTES; do
+                                echo "      Deleting route $cidr from $rt"
+                                aws ec2 delete-route --region "$AWS_REGION" \
+                                    --route-table-id "$rt" --destination-cidr-block "$cidr" 2>/dev/null || true
+                            done
+                        fi
+                        # Disassociate any remaining associations
                         REMAINING_ASSOCS=$(aws ec2 describe-route-tables --region "$AWS_REGION" \
                             --route-table-ids "$rt" \
-                            --query 'RouteTables[0].Associations[*].RouteTableAssociationId' \
+                            --query 'RouteTables[0].Associations[?Main!=`true`].RouteTableAssociationId' \
                             --output text 2>/dev/null || echo "")
                         if [ -n "$REMAINING_ASSOCS" ] && [ "$REMAINING_ASSOCS" != "None" ]; then
-                            echo "      Warning: Still has associations: $REMAINING_ASSOCS"
-                            # Try to disassociate any non-main associations
                             for assoc in $REMAINING_ASSOCS; do
+                                echo "      Disassociating $assoc from $rt"
                                 aws ec2 disassociate-route-table --region "$AWS_REGION" \
                                     --association-id "$assoc" 2>/dev/null || true
                             done
                         fi
+                        echo "    Deleting route table: $rt"
                         aws ec2 delete-route-table --region "$AWS_REGION" \
                             --route-table-id "$rt" 2>&1 || true
                     done

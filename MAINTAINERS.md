@@ -19,6 +19,7 @@ The current Maintainers Group for the Kagenti Project consists of:
 | [Rong Chang](https://github.com/webchang) | IBM | Identity, Attestation, Authorization and Policy Management |
 | [Ryan Jenkins](https://github.com/RyanJenkins99) | Red Hat | Automation, HyperShift CI |
 | [Varsha Prasad Narsing](https://github.com/varshaprasad96) | Red Hat | Agent Runtime |
+| [Kevin Cogan](https://github.com/kevincogan) | Red Hat | Agent Runtime |
 
 ## Contact
 

@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openshell-gateway-config
+  namespace: {{ .Values.tenant }}
+  labels:
+    {{- include "openshell.labels" . | nindent 4 }}
+data:
+  gateway.toml: |
+    [openshell]
+    version = 1
+
+    [openshell.gateway]
+    bind_address      = "0.0.0.0:8080"
+    log_level         = "info"
+    sandbox_namespace = {{ include "openshell.driverNamespace" . | quote }}
+    supervisor_image  = "{{ .Values.supervisorImage.repository }}:{{ .Values.supervisorImage.tag }}"
+    client_tls_secret_name = "openshell-client-tls"
+
+    [openshell.gateway.tls]
+    cert_path      = "/etc/openshell-tls/server/tls.crt"
+    key_path       = "/etc/openshell-tls/server/tls.key"
+    client_ca_path = "/etc/openshell-tls/server/ca.crt"
+
+    {{- if .Values.gatewayJwt.enabled }}
+
+    [openshell.gateway.gateway_jwt]
+    signing_key_path = "/etc/openshell-jwt/signing.pem"
+    public_key_path  = "/etc/openshell-jwt/public.pem"
+    kid_path         = "/etc/openshell-jwt/kid"
+    gateway_id       = {{ .Values.gatewayJwt.gatewayId | default (printf "openshell-%s" .Values.tenant) | quote }}
+    ttl_secs         = {{ .Values.gatewayJwt.ttlSecs }}
+    {{- end }}
+
+    {{- if .Values.oidc.enabled }}
+
+    [openshell.gateway.oidc]
+    issuer   = {{ .Values.oidc.issuer | quote }}
+    audience = {{ include "openshell.oidcAudience" . | quote }}
+    {{- end }}
+
+    [openshell.drivers.kubernetes]
+    grpc_endpoint        = "https://openshell-server.{{ .Values.tenant }}.svc:8080"
+    service_account_name = {{ .Values.sandboxServiceAccount.name | quote }}
+    sa_token_ttl_secs    = {{ .Values.sandboxServiceAccount.tokenTtlSecs }}
+    {{- if .Values.sandboxImagePullPolicy }}
+    image_pull_policy    = {{ .Values.sandboxImagePullPolicy | quote }}
+    {{- end }}

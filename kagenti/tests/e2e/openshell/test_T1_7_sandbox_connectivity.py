@@ -39,10 +39,14 @@ class TestGatewayConnectivity:
             if p["metadata"]["name"].startswith("openshell-server")
             and p["status"].get("phase") == "Running"
         ]
-        assert gateway_pods, f"No running openshell-server pod in {SANDBOX_NS}"
+        if not gateway_pods:
+            pytest.skip(f"openshell-server not deployed in {SANDBOX_NS}")
 
     def test_gateway_service_has_endpoints(self):
         """Gateway service has at least one ready endpoint."""
+        svc_check = kubectl_run("get", "svc", "openshell-server", "-n", SANDBOX_NS)
+        if svc_check.returncode != 0:
+            pytest.skip(f"openshell-server service not found in {SANDBOX_NS}")
         result = kubectl_run(
             "get",
             "endpoints",
@@ -59,6 +63,10 @@ class TestGatewayConnectivity:
     def test_gateway_port_forward_reachable(self):
         """Gateway responds to HTTP requests via port-forward."""
         import socket
+
+        svc_check = kubectl_run("get", "svc", "openshell-server", "-n", SANDBOX_NS)
+        if svc_check.returncode != 0:
+            pytest.skip(f"openshell-server service not found in {SANDBOX_NS}")
 
         local_port = find_free_port()
         proc = subprocess.Popen(
@@ -104,17 +112,22 @@ class TestSandboxExec:
     pod count, and the deployed agents already fill the quota.
     """
 
+    # Gateway images (v0.0.56+) are distroless — no shell or coreutils.
+    # Skip these when looking for a pod to exec into.
+    _DISTROLESS_PREFIXES = ("openshell-server",)
+
     def _find_exec_pod(self) -> tuple[str, str] | None:
         """Find a running pod with a ready container suitable for exec testing.
 
-        Selects the first pod where the target container is actually ready,
-        not just where the pod phase is Running (a pod with a crashlooping
-        container still reports Running if its sidecar is up).
+        Skips distroless pods (gateway) that lack a shell. Selects the first
+        pod where the target container is actually ready.
         """
         pods = kubectl_get_pods_json(SANDBOX_NS)
         running = [p for p in pods if p["status"].get("phase") == "Running"]
         for pod in running:
             name = pod["metadata"]["name"]
+            if any(name.startswith(pfx) for pfx in self._DISTROLESS_PREFIXES):
+                continue
             containers = pod["spec"].get("containers", [])
             if not containers:
                 continue

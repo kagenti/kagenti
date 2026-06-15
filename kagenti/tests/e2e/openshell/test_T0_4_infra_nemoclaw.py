@@ -21,9 +21,10 @@ Environment:
     OPENSHELL_LLM_AVAILABLE: Must be "true" for inference tests
 """
 
-import pytest
+import os
 
 import httpx
+import pytest
 
 from kagenti.tests.e2e.openshell.conftest import (
     NEMOCLAW_AGENTS,
@@ -166,11 +167,36 @@ class TestNemoClawInference:
                 data = response.json()
                 assert "choices" in data
                 assert len(data["choices"]) > 0
-            except (httpx.RemoteProtocolError, httpx.ReadError):
-                pytest.skip(
-                    "Hermes gateway uses internal protocol — "
-                    "HTTP API requires NemoClaw plugin"
+            except (httpx.RemoteProtocolError, httpx.ReadError, httpx.ConnectError):
+                # Hermes is a CLI agent routed via ACP bridge, not HTTP.
+                # Verify the pod is running and hermes binary works.
+                from kagenti.tests.e2e.openshell.conftest import kubectl_run
+
+                ns = os.getenv("OPENSHELL_AGENT_NAMESPACE", "team1")
+                pods = kubectl_run("get", "pods", "-n", ns, "--no-headers")
+                hermes_pod = ""
+                for line in pods.stdout.strip().split("\n"):
+                    if "nemoclaw-hermes" in line and "Running" in line:
+                        hermes_pod = line.split()[0]
+                        break
+                assert hermes_pod, "nemoclaw-hermes pod not Running"
+
+                # Verify ACP adapter is functional
+                result = kubectl_run(
+                    "exec",
+                    hermes_pod,
+                    "-n",
+                    ns,
+                    "--",
+                    "hermes",
+                    "acp",
+                    "--check",
+                    timeout=10,
                 )
+                assert result.returncode == 0, (
+                    f"hermes ACP check failed: {result.stderr[-300:]}"
+                )
+                assert "OK" in result.stdout, f"hermes ACP not ready: {result.stdout}"
 
     @pytest.mark.asyncio
     async def test_openclaw_gateway_interaction(

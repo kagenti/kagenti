@@ -108,6 +108,27 @@ data:
   .dockerconfigjson: {{ (printf "{\"auths\":{\"quay.io\":{\"username\":\"%s\",\"password\":\"%s\",\"auth\":\"%s\"}}}" $.Values.secrets.quayUser $.Values.secrets.quayToken (printf "%s:%s" $.Values.secrets.quayUser $.Values.secrets.quayToken | b64enc)) | b64enc }}
 ---
 # ——————————————————————————————————————————————————————————————————————————————
+#  AuthBridge Config for operator in Namespace: {{ . }}
+#  The kagenti-operator ClientRegistrationReconciler reads KEYCLOAK_URL and
+#  KEYCLOAK_REALM from this ConfigMap to register workload clients in Keycloak.
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authbridge-config
+  namespace: {{ . }}
+data:
+  KEYCLOAK_URL: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080"
+  KEYCLOAK_REALM: {{ $root.Values.keycloak.realm | quote }}
+  KEYCLOAK_NAMESPACE: "{{ $root.Values.keycloak.namespace }}"
+  ISSUER: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
+  SPIRE_ENABLED: {{ if $root.Values.spire.enabled }}"true"{{ else }}"false"{{ end }}
+  CLIENT_AUTH_TYPE: "{{ $root.Values.authBridge.clientAuthType }}"
+  SPIFFE_IDP_ALIAS: "{{ $root.Values.authBridge.spiffeIdpAlias }}"
+  EXPECTED_AUDIENCE: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
+  CREDENTIAL_WAIT_TIMEOUT: {{ $root.Values.authBridge.credentialWaitTimeout | quote }}
+---
+# ——————————————————————————————————————————————————————————————————————————————
 #  ConfigMap for Envoy in Namespace: {{ . }}
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: v1
