@@ -74,6 +74,10 @@ charts:
       ui:
         auth:
           enabled: true
+      # Enable tool workload sidecar injection for token-exchange E2E tests
+      kagenti-operator-chart:
+        featureGates:
+          injectTools: true
       # MLflow auth disabled for Kind (no Keycloak OAuth needed locally)
       mlflow:
         auth:
