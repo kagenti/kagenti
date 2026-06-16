@@ -1,0 +1,8 @@
+target/
+.idea/
+.vscode/
+.git/
+.gitignore
+*.iml
+README.md
+Makefile
