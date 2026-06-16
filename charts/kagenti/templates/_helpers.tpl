@@ -31,23 +31,11 @@ Create chart name and version as used by the chart label.
 {{- end }}
 
 {{/*
-Common labels
-*/}}
-{{- define "kagenti.labels" -}}
-helm.sh/chart: {{ include "kagenti.chart" . }}
-{{ include "kagenti.selectorLabels" . }}
-{{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-{{- end }}
-app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{- end }}
-
-{{/*
 Common labels WITHOUT app.kubernetes.io/name. Use this on resources that set
 their own per-component name (e.g. kagenti-ui, kagenti-backend) so the name is
-emitted exactly once. Mixing an explicit name with "kagenti.labels" (which adds
-app.kubernetes.io/name via selectorLabels) produces a duplicate YAML map key.
-Keep the non-name keys here in sync with "kagenti.labels".
+emitted exactly once. Mixing an explicit name with "kagenti.labels" (which also
+adds app.kubernetes.io/name) would otherwise produce a duplicate YAML map key.
+This is the single source of truth for the shared (non-name) label keys.
 */}}
 {{- define "kagenti.commonLabels" -}}
 helm.sh/chart: {{ include "kagenti.chart" . }}
@@ -56,6 +44,15 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
+Common labels, including app.kubernetes.io/name. Composed from
+kagenti.commonLabels so the shared keys are defined in one place.
+*/}}
+{{- define "kagenti.labels" -}}
+app.kubernetes.io/name: {{ include "kagenti.name" . }}
+{{ include "kagenti.commonLabels" . }}
 {{- end }}
 
 {{/*

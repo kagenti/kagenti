@@ -156,19 +156,6 @@ jobs:
           helm unittest charts/kagenti-deps
           helm unittest charts/kagenti
 
-      - name: Verify nginx worker_processes is pinned (kagenti#1991)
-        # Guards the OOMKill fix: the base nginx image defaults to
-        # `worker_processes auto`, which spawns one worker per *host* CPU and
-        # ignores the container CPU limit. On large nodes that OOMKilled the
-        # kagenti-ui pod. The image must pin worker_processes to a fixed count.
-        run: |
-          dockerfile=kagenti/ui-v2/Dockerfile
-          if ! grep -Eq 'worker_processes[[:space:]]+[0-9]+' "$dockerfile"; then
-            echo "::error file=${dockerfile}::nginx worker_processes must be pinned to a fixed count (not 'auto'). See kagenti#1991."
-            exit 1
-          fi
-          echo "OK: worker_processes is pinned in ${dockerfile}"
-
       - name: Install kubeconform
         run: |
           ARCH=$(dpkg --print-architecture)
@@ -184,3 +171,46 @@ jobs:
               -schema-location default \
               -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
               -ignore-missing-schemas
+
+  ui-image-smoke:
+    # Builds the kagenti-ui image and actually boots nginx. Manifest-only tests
+    # (helm unittest/template) never start the container, so they cannot catch
+    # nginx config errors — e.g. a duplicate worker_processes directive, which
+    # is what regressed the kagenti#1991 fix. This job validates the config and
+    # asserts worker_processes is pinned to a fixed count (not host-CPU `auto`).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
+
+      - name: Build kagenti-ui image (load locally, no push)
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7.2.0
+        with:
+          context: ./kagenti
+          file: ./kagenti/ui-v2/Dockerfile
+          push: false
+          load: true
+          tags: kagenti-ui-v2:ci-smoke
+
+      - name: Smoke test - nginx config is valid and workers are pinned (kagenti#1991)
+        run: |
+          set -euo pipefail
+          # `nginx -t` runs the base-image entrypoint then validates the full
+          # config; a duplicate/invalid directive fails here with [emerg].
+          docker run --rm kagenti-ui-v2:ci-smoke nginx -t
+          # Dump the effective config and assert worker_processes is a fixed
+          # count, not the host-CPU `auto` that OOMKilled the pod on large nodes.
+          workers=$(docker run --rm kagenti-ui-v2:ci-smoke nginx -T 2>/dev/null \
+            | awk '/^worker_processes/{gsub(/;/,"",$2); print $2; exit}')
+          echo "effective worker_processes = '${workers}'"
+          case "${workers}" in
+            ''|auto)
+              echo "::error::nginx worker_processes must be pinned to a fixed count (got '${workers}'). See kagenti#1991."
+              exit 1
+              ;;
+          esac
