@@ -92,6 +92,31 @@ quota:
   defaultRequestCpu: 100m
   defaultRequestMemory: 128Mi
 
+# -- OpenShift-specific settings.
+# When enabled, creates a SecurityContextConstraints resource scoped to
+# OpenShell service accounts so pods can run without granting broad anyuid.
+openshift:
+  enabled: false
+
+# -- Persistence settings for the gateway StatefulSet PVC.
+# If your cluster has no default StorageClass, set storageClassName to a valid
+# provisioner name (e.g. "ocs-storagecluster-ceph-rbd"). Leaving it unset lets
+# the cluster use its default provisioner.
+persistence:
+  size: 1Gi
+  storageClassName: ""
+
+# -- Pod security context applied to the gateway StatefulSet and certgen Job.
+# These defaults work on vanilla Kubernetes (Kind, EKS, GKE, etc.).
+# On OpenShift, set openshift.enabled=true — the template skips runAsUser/fsGroup/
+# seccompProfile and emits only runAsNonRoot:true, letting the platform assign UIDs.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
 # -- Gateway resources
 resources:
   gateway:
