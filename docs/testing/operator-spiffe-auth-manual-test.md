@@ -529,10 +529,29 @@ All of the following must be true for the test to pass:
 
 If any of these issues appear during testing, they are **BUGS** that must be fixed:
 
-### Issue 1: CSI Volume Missing volumeAttributes
-**Symptom**: Operator can't access SPIRE socket - `dial unix /run/spire/sockets/agent.sock: connect: no such file or directory`  
-**Root Cause**: SPIRE CSI volume definition lacks `volumeAttributes` needed for the CSI driver to provide the socket  
-**Fix Required**: Add `volumeAttributes` (podKind, podName, podNamespace) to the CSI volume spec in operator chart
+### Issue 1: SPIRE CSI Driver Not Creating Socket File
+**Symptom**: Operator can't access SPIRE socket - `dial unix /run/spire/sockets/agent.sock: connect: no such file or directory`
+
+**Root Cause**: The SPIRE CSI volume mounts correctly, but the socket file is never created inside the mounted directory.
+
+**Details**:
+- Volume mount exists: ✅ `/run/spire/sockets` is mounted in the container
+- CSI driver status: ✅ Reports volume as "healthy" 
+- Socket file exists: ❌ `/run/spire/sockets/agent.sock` file doesn't exist (directory is empty)
+
+**Why This Happens**: 
+The SPIRE CSI driver is supposed to dynamically create the `agent.sock` file inside the mounted volume. This socket acts as a proxy to the SPIRE agent. The CSI driver mounts the volume but never creates the socket file.
+
+**Possible Causes**:
+- SPIRE Controller Manager not running or misconfigured
+- Pod doesn't properly match ClusterSPIFFEID selection criteria
+- SPIRE CSI driver version incompatibility
+- CSI driver can't connect to SPIRE agent for this pod
+
+**Fix Required**: 
+- Debug SPIRE Controller Manager: `kubectl get deployment -n spire-mgmt spire-controller-manager`
+- Check ClusterSPIFFEID selection: `kubectl get clusterspiffeid spire-mgmt-spire-default -o yaml`
+- Alternative: Use hostPath instead of CSI to directly mount SPIRE agent socket from node
 
 ### Issue 2: Bootstrap Job Failed or Didn't Register Operator
 **Symptom**: Job exists or ServiceAccount exists but operator client not in Keycloak  
