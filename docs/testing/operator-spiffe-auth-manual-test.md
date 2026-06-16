@@ -529,10 +529,10 @@ All of the following must be true for the test to pass:
 
 If any of these issues appear during testing, they are **BUGS** that must be fixed:
 
-### Issue 1: ClusterSPIFFEID Not Created Automatically
-**Symptom**: Operator has no SPIRE identity, can't fetch JWT-SVIDs  
-**Root Cause**: Deployment doesn't automatically create ClusterSPIFFEID for operator  
-**Fix Required**: Automation should create this resource
+### Issue 1: CSI Volume Missing volumeAttributes
+**Symptom**: Operator can't access SPIRE socket - `dial unix /run/spire/sockets/agent.sock: connect: no such file or directory`  
+**Root Cause**: SPIRE CSI volume definition lacks `volumeAttributes` needed for the CSI driver to provide the socket  
+**Fix Required**: Add `volumeAttributes` (podKind, podName, podNamespace) to the CSI volume spec in operator chart
 
 ### Issue 2: Bootstrap Job Failed or Didn't Register Operator
 **Symptom**: Job exists or ServiceAccount exists but operator client not in Keycloak  
@@ -544,12 +544,9 @@ If any of these issues appear during testing, they are **BUGS** that must be fix
   - Keycloak not ready when job starts
   - Connection errors to Keycloak or SPIRE services
 
-### Issue 3: Operator Can't Access SPIRE Socket
-**Symptom**: `dial unix /run/spire/sockets/agent.sock: no such file or directory`  
-**Root Cause**: Volume mount missing or CSI driver not working  
-**Fix Required**: Verify SPIRE CSI volume mounted in manager container
+### Issue 3: (Duplicate of Issue 1 - removed)
 
-### Issue 4: Webhook Timeouts
+### Issue 3: Webhook Timeouts
 **Symptom**: Pods fail to create with "context deadline exceeded"  
 **Root Cause**: Webhook performance issue or informer sync problem  
 **Fix Required**: Investigate webhook implementation
