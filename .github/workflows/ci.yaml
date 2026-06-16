@@ -145,10 +145,14 @@ jobs:
         run: helm plugin install https://github.com/helm-unittest/helm-unittest.git --version v1.0.3
 
       - name: Build chart dependencies
-        run: helm dependency build charts/kagenti-deps
+        run: |
+          helm dependency build charts/kagenti-deps
+          helm dependency build charts/kagenti
 
       - name: Run chart unit tests
-        run: helm unittest charts/kagenti-deps
+        run: |
+          helm unittest charts/kagenti-deps
+          helm unittest charts/kagenti
 
       - name: Install kubeconform
         run: |

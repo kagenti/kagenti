@@ -1,0 +1,65 @@
+name: UI Image Smoke
+
+# Builds the kagenti-ui image and actually boots nginx (`nginx -t`). Manifest-only
+# tests (helm unittest/template) never start the container, so they cannot catch
+# nginx config errors — e.g. a duplicate worker_processes directive, which is what
+# regressed the kagenti#1991 fix. Scoped to the ui-v2 image sources so unrelated
+# PRs don't pay for an image build.
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'kagenti/ui-v2/**'
+      - '.github/workflows/ui-image-smoke.yaml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'kagenti/ui-v2/**'
+      - '.github/workflows/ui-image-smoke.yaml'
+
+# Explicit permissions - principle of least privilege
+permissions:
+  contents: read
+
+jobs:
+  ui-image-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
+
+      - name: Build kagenti-ui image (load locally, no push)
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7.2.0
+        with:
+          context: ./kagenti
+          file: ./kagenti/ui-v2/Dockerfile
+          push: false
+          load: true
+          tags: kagenti-ui-v2:ci-smoke
+
+      - name: Smoke test - nginx config is valid and workers are pinned (kagenti#1991)
+        run: |
+          set -euo pipefail
+          # `nginx -t` runs the base-image entrypoint then validates the full
+          # config; a duplicate/invalid directive fails here with [emerg].
+          # nginx resolves proxy_pass upstreams at config-test time, so stub the
+          # backend host (there is no kagenti-backend Service in CI). A duplicate
+          # worker_processes still fails earlier, at main-conf parse time.
+          run_nginx() { docker run --rm --add-host kagenti-backend:127.0.0.1 kagenti-ui-v2:ci-smoke "$@"; }
+          run_nginx nginx -t
+          # Dump the effective config and assert worker_processes is a fixed
+          # count, not the host-CPU `auto` that OOMKilled the pod on large nodes.
+          workers=$(run_nginx nginx -T 2>/dev/null \
+            | awk '/^worker_processes/{gsub(/;/,"",$2); print $2; exit}')
+          echo "effective worker_processes = '${workers}'"
+          case "${workers}" in
+            ''|auto)
+              echo "::error::nginx worker_processes must be pinned to a fixed count (got '${workers}'). See kagenti#1991."
+              exit 1
+              ;;
+          esac

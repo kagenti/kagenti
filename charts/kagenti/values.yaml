@@ -101,7 +101,10 @@ ui:
     resources:
       limits:
         cpu: 100m
-        memory: 128Mi
+        # nginx worker_processes is pinned in the image (see kagenti/ui-v2/Dockerfile),
+        # so memory no longer scales with host CPU count. 256Mi is defense-in-depth
+        # headroom above the measured footprint. See kagenti#1991.
+        memory: 256Mi
       requests:
         cpu: 25m
         memory: 64Mi
