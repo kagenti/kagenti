@@ -2140,17 +2140,21 @@ async def _probe_mcp_reachability(mcp_endpoint: str, tool_url: str) -> None:
         )
         writer.close()
         await writer.wait_closed()
+    except asyncio.TimeoutError:
+        # Must precede the (OSError, ConnectionError) clause: asyncio.TimeoutError
+        # is builtin TimeoutError on 3.11+, which subclasses OSError. Catching
+        # OSError first would shadow this branch (pylint E0701) and wrongly
+        # return 502 for timeouts instead of 504.
+        logger.error("MCP server timeout (pre-check)")
+        raise HTTPException(
+            status_code=504,
+            detail=f"Timeout connecting to MCP server at {tool_url}",
+        )
     except (OSError, ConnectionError) as e:
         logger.error("MCP server unreachable (pre-check, %s)", type(e).__name__)
         raise HTTPException(
             status_code=502,
             detail=f"Failed to connect to MCP server at {tool_url}",
-        )
-    except asyncio.TimeoutError:
-        logger.error("MCP server timeout (pre-check)")
-        raise HTTPException(
-            status_code=504,
-            detail=f"Timeout connecting to MCP server at {tool_url}",
         )
 
 
