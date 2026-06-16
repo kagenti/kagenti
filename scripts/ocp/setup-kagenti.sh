@@ -1153,7 +1153,11 @@ EOF
   log_info "Ensuring MLflow OAuth proxy exists for browser access..."
   if ! $KUBECTL get deployment mlflow-oauth-proxy -n "$MLFLOW_NAMESPACE" &>/dev/null; then
     local oauth_proxy_image
-    oauth_proxy_image=$(oc adm release info --image-for=oauth-proxy 2>/dev/null)
+    # NOTE: keep `|| true` — under `set -euo pipefail` a bare assignment takes
+    # the command substitution's exit status, so a failing `oc adm release info`
+    # (disconnected cluster, missing pull secret, etc.) would abort the whole
+    # install before the empty-check fallback below can skip the proxy.
+    oauth_proxy_image=$(oc adm release info --image-for=oauth-proxy 2>/dev/null) || true
     if [ -z "$oauth_proxy_image" ]; then
       log_warn "Could not resolve oauth-proxy image — skipping MLflow OAuth proxy"
       return 0
