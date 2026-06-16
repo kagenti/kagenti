@@ -1,0 +1,24 @@
+# syntax=docker/dockerfile:1.7
+
+# 26.5.2 is the version Kagenti uses; we base our image on that
+# but allow it to be customized with KEYCLOAK_IMAGE argument.
+ARG KEYCLOAK_IMAGE=quay.io/keycloak/keycloak:26.5.2@sha256:fb31a59deb46f746f2aaa25adc5da39ceccac4fd22d36a519562b0bf02e8df20
+
+# Stage 1: build the SPI JAR.
+FROM maven:3.9-eclipse-temurin-17@sha256:e8ef73dbd33b69fe497fd96b3bbbd85aff84ac4c564a5784ab02ad941b32c12b AS jar-builder
+WORKDIR /build
+COPY pom.xml .
+COPY src ./src
+RUN --mount=type=cache,target=/root/.m2 mvn -B -DskipTests package
+
+# Stage 2: drop the JAR into Keycloak and run `kc.sh build` so the augmented
+# server is baked into the final image (no per-pod build at startup).
+FROM ${KEYCLOAK_IMAGE} AS keycloak-builder
+COPY --from=jar-builder /build/target/github-org-authenticator-*.jar /opt/keycloak/providers/
+RUN /opt/keycloak/bin/kc.sh build
+
+# Stage 3: final runtime image — copy the augmented Keycloak from stage 2.
+FROM ${KEYCLOAK_IMAGE}
+COPY --from=keycloak-builder /opt/keycloak/ /opt/keycloak/
+ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
+CMD ["start"]

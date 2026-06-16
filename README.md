@@ -158,6 +158,7 @@ To learn how to deploy agents and MCP tools, follow the **[Weather Agent Demo](h
 | **Installation** | [Installation Guide](./docs/install.md) (Kind & OpenShift) |
 | **Components** | [Component Details](./docs/components.md) |
 | **Demos & Tutorials** | [Demo Documentation](./docs/demos/README.md) |
+| **Developing Kagenti Apps** | [Application Development Guide](./docs/developing-kagenti-app.md) · [App Demo Example](./kagenti/examples/app-demo/README.md) |
 | **Import Your Own Agent** | [New Agent Guide](./docs/new-agent.md) |
 | **Import Your Own Tool** | [New Tool Guide](./docs/new-tool.md) |
 | **Skills Configuration & Usage** | [Skills Guide](./docs/skills.md) |
