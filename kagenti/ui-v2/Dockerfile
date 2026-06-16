@@ -51,5 +51,13 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1
 
-# Run nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Run nginx.
+# Pin worker_processes via -g rather than relying on the base image's default
+# `worker_processes auto;`. `auto` spawns one worker per *host* CPU and ignores
+# the container's cgroup CPU limit, so on large nodes (e.g. OpenShift) nginx
+# forked ~one worker per core, blowing past the memory limit and OOMKilling the
+# pod. The container is capped at a fraction of a CPU, so a single worker is
+# ample and keeps the memory footprint independent of node size. See kagenti#1991.
+# (worker_processes is a main-context directive, so it cannot live in the
+# server-block-only nginx.conf mounted at conf.d/default.conf.)
+CMD ["nginx", "-g", "daemon off; worker_processes 1;"]

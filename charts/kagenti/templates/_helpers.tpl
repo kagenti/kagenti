@@ -43,6 +43,22 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
+Common labels WITHOUT app.kubernetes.io/name. Use this on resources that set
+their own per-component name (e.g. kagenti-ui, kagenti-backend) so the name is
+emitted exactly once. Mixing an explicit name with "kagenti.labels" (which adds
+app.kubernetes.io/name via selectorLabels) produces a duplicate YAML map key.
+Keep the non-name keys here in sync with "kagenti.labels".
+*/}}
+{{- define "kagenti.commonLabels" -}}
+helm.sh/chart: {{ include "kagenti.chart" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
 Selector labels
 */}}
 {{- define "kagenti.selectorLabels" -}}

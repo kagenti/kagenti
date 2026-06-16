@@ -147,10 +147,27 @@ jobs:
         run: helm plugin install https://github.com/helm-unittest/helm-unittest.git --version v1.0.3
 
       - name: Build chart dependencies
-        run: helm dependency build charts/kagenti-deps
+        run: |
+          helm dependency build charts/kagenti-deps
+          helm dependency build charts/kagenti
 
       - name: Run chart unit tests
-        run: helm unittest charts/kagenti-deps
+        run: |
+          helm unittest charts/kagenti-deps
+          helm unittest charts/kagenti
+
+      - name: Verify nginx worker_processes is pinned (kagenti#1991)
+        # Guards the OOMKill fix: the base nginx image defaults to
+        # `worker_processes auto`, which spawns one worker per *host* CPU and
+        # ignores the container CPU limit. On large nodes that OOMKilled the
+        # kagenti-ui pod. The image must pin worker_processes to a fixed count.
+        run: |
+          dockerfile=kagenti/ui-v2/Dockerfile
+          if ! grep -Eq 'worker_processes[[:space:]]+[0-9]+' "$dockerfile"; then
+            echo "::error file=${dockerfile}::nginx worker_processes must be pinned to a fixed count (not 'auto'). See kagenti#1991."
+            exit 1
+          fi
+          echo "OK: worker_processes is pinned in ${dockerfile}"
 
       - name: Install kubeconform
         run: |
