@@ -202,10 +202,14 @@ jobs:
           set -euo pipefail
           # `nginx -t` runs the base-image entrypoint then validates the full
           # config; a duplicate/invalid directive fails here with [emerg].
-          docker run --rm kagenti-ui-v2:ci-smoke nginx -t
+          # nginx resolves proxy_pass upstreams at config-test time, so stub the
+          # backend host (there is no kagenti-backend Service in CI). A duplicate
+          # worker_processes still fails earlier, at main-conf parse time.
+          run_nginx() { docker run --rm --add-host kagenti-backend:127.0.0.1 kagenti-ui-v2:ci-smoke "$@"; }
+          run_nginx nginx -t
           # Dump the effective config and assert worker_processes is a fixed
           # count, not the host-CPU `auto` that OOMKilled the pod on large nodes.
-          workers=$(docker run --rm kagenti-ui-v2:ci-smoke nginx -T 2>/dev/null \
+          workers=$(run_nginx nginx -T 2>/dev/null \
             | awk '/^worker_processes/{gsub(/;/,"",$2); print $2; exit}')
           echo "effective worker_processes = '${workers}'"
           case "${workers}" in
