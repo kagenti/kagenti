@@ -626,18 +626,32 @@ type clientRequest struct {
 
 ---
 
-### Issue 4: Missing --spire-trust-domain Flag (CONFIGURATION REQUIRED)
+### Issue 4: Missing --spire-trust-domain Flag (FIXED ✅)
 **Symptom**: Operator logs show `cannot resolve Keycloak client id yet: SPIRE enabled: operator --spire-trust-domain is required`
 
 **Root Cause**: Operator needs trust domain to construct SPIFFE-shaped client IDs like `spiffe://localtest.me/ns/team1/sa/weather-agent`.
 
-**Fix Required**: Add flag to operator deployment when `operatorAuth.enabled=true`:
-```yaml
-args:
-  - "--spire-trust-domain=localtest.me"
-```
+**Fix Applied**: Added trust domain configuration to Helm chart:
 
-**Status**: ⚠️ Must be configured at deployment time
+1. **Values** (`values.yaml`):
+   ```yaml
+   spiffe:
+     operatorAuth:
+       spireTrustDomain: ""  # Required when operatorAuth.enabled=true
+   ```
+
+2. **Template** (`manager.yaml`):
+   ```yaml
+   args:
+     - "--spire-trust-domain={{ .Values.spiffe.operatorAuth.spireTrustDomain }}"
+   ```
+
+3. **Setup Script** (`setup-kagenti.sh`):
+   ```bash
+   HELM_SETS+=("kagentiOperator.spiffeAuth.spireTrustDomain=${DOMAIN}")
+   ```
+
+**Status**: ✅ Fixed in kagenti PR #1837 commit [hash]
 
 ---
 
