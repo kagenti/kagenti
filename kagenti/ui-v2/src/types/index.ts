@@ -407,6 +407,7 @@ export interface PodStorageStats {
 export interface SkillLabels {
   category?: string;
   type?: string;
+  autoSync?: string;
 }
 
 export interface ExternalSkillInfo {
@@ -469,6 +470,21 @@ export interface CreateExternalSkillRequest {
   registrySkillName: string;
   registrySkillVersion?: string;
   origin?: string;
+}
+
+export interface SkillAutoSyncConfig {
+  registryType: string;
+  registryUrl: string;
+  syncInterval: number;
+}
+
+export interface SkillAutoSyncStatus {
+  enabled: boolean;
+  registryType?: string;
+  registryUrl?: string;
+  syncInterval?: number;
+  lastSyncedAt?: string;
+  skillCount?: number;
 }
 
 // AuthBridge types

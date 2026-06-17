@@ -27,6 +27,8 @@ import type {
   CreateSkillRequest,
   CreateSkillResponse,
   CreateExternalSkillRequest,
+  SkillAutoSyncConfig,
+  SkillAutoSyncStatus,
   AuthBridgeConfig,
   AuthBridgeStats,
 } from '@/types';
@@ -1549,6 +1551,21 @@ export const skillService = {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  },
+
+  async getAutoSync(): Promise<SkillAutoSyncStatus> {
+    return apiFetch('/skills/autosync');
+  },
+
+  async enableAutoSync(cfg: SkillAutoSyncConfig): Promise<SkillAutoSyncStatus> {
+    return apiFetch('/skills/autosync', {
+      method: 'POST',
+      body: JSON.stringify(cfg),
+    });
+  },
+
+  async disableAutoSync(): Promise<void> {
+    await apiFetch('/skills/autosync', { method: 'DELETE' });
   },
 };
 
