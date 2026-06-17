@@ -85,6 +85,7 @@ export const ImportSkillPage: React.FC = () => {
   const [autoSyncRegistryUrl, setAutoSyncRegistryUrl] = React.useState('');
   const [autoSyncRegistryType, setAutoSyncRegistryType] = React.useState('skillberry');
   const [autoSyncInterval, setAutoSyncInterval] = React.useState(30);
+  const [autoSyncTags, setAutoSyncTags] = React.useState('kagenti-approved');
   const [disableConfirmOpen, setDisableConfirmOpen] = React.useState(false);
 
   const { data: autoSyncStatus } = useQuery<SkillAutoSyncStatus>({
@@ -593,6 +594,9 @@ export const ImportSkillPage: React.FC = () => {
                         {autoSyncStatus?.lastSyncedAt && (
                           <span> • Last synced: {new Date(autoSyncStatus.lastSyncedAt).toLocaleString()}</span>
                         )}
+                        {autoSyncStatus?.allowedTags && autoSyncStatus.allowedTags.length > 0 && (
+                          <span> • Tags: <strong>{autoSyncStatus.allowedTags.join(', ')}</strong></span>
+                        )}
                       </Alert>
 
                       <Modal
@@ -672,6 +676,19 @@ export const ImportSkillPage: React.FC = () => {
                             <SplitItem style={{ lineHeight: '36px' }}>seconds</SplitItem>
                           </Split>
                         </FormGroup>
+                        <FormGroup label="Allowed Tags" fieldId="as-tags">
+                          <TextInput
+                            id="as-tags"
+                            value={autoSyncTags}
+                            onChange={(_e, v) => setAutoSyncTags(v)}
+                            placeholder="kagenti-approved, production"
+                          />
+                          <HelperText>
+                            <HelperTextItem>
+                              Comma-separated. Only skills with at least one of these tags are synced. Leave empty to sync all skills.
+                            </HelperTextItem>
+                          </HelperText>
+                        </FormGroup>
                         {enableAutoSyncMutation.isError && (
                           <Alert variant="danger" isInline title="Failed to enable auto-sync">
                             {enableAutoSyncMutation.error instanceof Error
@@ -690,6 +707,10 @@ export const ImportSkillPage: React.FC = () => {
                                 registryType: autoSyncRegistryType,
                                 registryUrl: autoSyncRegistryUrl,
                                 syncInterval: autoSyncInterval,
+                                allowedTags: autoSyncTags
+                                  .split(',')
+                                  .map((t) => t.trim())
+                                  .filter(Boolean),
                               })
                             }
                           >

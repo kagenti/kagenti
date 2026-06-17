@@ -272,6 +272,22 @@ async def sync_skills_once(kube: KubernetesService) -> int:
         logger.warning("Auto-sync: failed to fetch skills from '%s': %s", registry_url, exc)
         return effective_interval
 
+    # Filter by allowed tags (AND-any: skill must have at least one allowed tag).
+    # If allowed-tags is absent or empty, no filtering is applied.
+    tags_raw = config.get("allowed-tags", "")
+    allowed_tags = {t.strip() for t in tags_raw.split(",") if t.strip()}
+    if allowed_tags:
+        before = len(registry_skills)
+        registry_skills = [
+            s for s in registry_skills if allowed_tags.intersection(set(s.get("tags") or []))
+        ]
+        logger.debug(
+            "Auto-sync: tag filter %s kept %d/%d skills",
+            allowed_tags,
+            len(registry_skills),
+            before,
+        )
+
     kagenti_namespaces = kube.list_enabled_namespaces()
     distribution = _namespace_distribution(registry_skills, kagenti_namespaces)
 

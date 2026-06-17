@@ -129,6 +129,7 @@ class SkillAutoSyncRequest(BaseModel):
     registryType: str = Field("skillberry", max_length=63)
     registryUrl: str = Field(..., max_length=2048)
     syncInterval: int = Field(30, ge=10, le=3600)
+    allowedTags: List[str] = Field(default_factory=lambda: ["kagenti-approved"])
 
     @field_validator("registryUrl")
     @classmethod
@@ -147,6 +148,7 @@ class SkillAutoSyncStatus(BaseModel):
     syncInterval: Optional[int] = None
     lastSyncedAt: Optional[str] = None
     skillCount: Optional[int] = None
+    allowedTags: Optional[List[str]] = None
 
 
 class CreateExternalSkillRequest(BaseModel):
@@ -723,6 +725,8 @@ def _get_autosync_configmap(kube: KubernetesService):
 def _configmap_to_autosync_status(cm) -> SkillAutoSyncStatus:
     data = cm.data or {}
     skill_count_raw = data.get("skill-count")
+    tags_raw = data.get("allowed-tags", "")
+    allowed_tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else None
     return SkillAutoSyncStatus(
         enabled=data.get("enabled") == "true",
         registryType=data.get("registry-type"),
@@ -730,6 +734,7 @@ def _configmap_to_autosync_status(cm) -> SkillAutoSyncStatus:
         syncInterval=int(data["sync-interval"]) if data.get("sync-interval") else None,
         lastSyncedAt=data.get("last-synced-at"),
         skillCount=int(skill_count_raw) if skill_count_raw else None,
+        allowedTags=allowed_tags,
     )
 
 
@@ -781,6 +786,7 @@ async def enable_autosync(
         "registry-type": request.registryType,
         "registry-url": request.registryUrl,
         "sync-interval": str(request.syncInterval),
+        "allowed-tags": ",".join(request.allowedTags),
     }
     body = k8s_client.V1ConfigMap(
         metadata=k8s_client.V1ObjectMeta(

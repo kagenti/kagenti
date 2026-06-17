@@ -476,6 +476,7 @@ export interface SkillAutoSyncConfig {
   registryType: string;
   registryUrl: string;
   syncInterval: number;
+  allowedTags: string[];
 }
 
 export interface SkillAutoSyncStatus {
@@ -485,6 +486,7 @@ export interface SkillAutoSyncStatus {
   syncInterval?: number;
   lastSyncedAt?: string;
   skillCount?: number;
+  allowedTags?: string[];
 }
 
 // AuthBridge types
