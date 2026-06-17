@@ -121,7 +121,7 @@ export const SkillDetailPage: React.FC = () => {
               trigger={skill.labels?.autoSync === 'true' ? 'mouseenter focus' : ''}
             >
               <Button
-                variant="danger"
+                variant={skill.labels?.autoSync === 'true' ? 'secondary' : 'danger'}
                 icon={<TrashIcon />}
                 onClick={() => setDeleteModalOpen(true)}
                 isDisabled={skill.labels?.autoSync === 'true'}
