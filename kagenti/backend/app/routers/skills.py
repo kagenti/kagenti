@@ -697,3 +697,146 @@ async def delete_skill(
             exc,
         )
         raise HTTPException(status_code=exc.status or 500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Auto-sync endpoints (feature-flagged: kagenti_feature_flag_external_skills)
+# ---------------------------------------------------------------------------
+
+_KAGENTI_SYSTEM = "kagenti-system"
+
+
+def _get_autosync_configmap(kube: KubernetesService):
+    """Read the auto-sync ConfigMap. Returns the CM object or None."""
+    try:
+        return kube.core_api.read_namespaced_config_map(
+            name=SKILL_AUTOSYNC_CONFIG_CM, namespace=_KAGENTI_SYSTEM
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            return None
+        raise HTTPException(status_code=exc.status or 500, detail=str(exc))
+
+
+def _configmap_to_autosync_status(cm) -> SkillAutoSyncStatus:
+    data = cm.data or {}
+    skill_count_raw = data.get("skill-count")
+    return SkillAutoSyncStatus(
+        enabled=data.get("enabled") == "true",
+        registryType=data.get("registry-type"),
+        registryUrl=data.get("registry-url"),
+        syncInterval=int(data["sync-interval"]) if data.get("sync-interval") else None,
+        lastSyncedAt=data.get("last-synced-at"),
+        skillCount=int(skill_count_raw) if skill_count_raw else None,
+    )
+
+
+@router.get(
+    "/autosync",
+    response_model=SkillAutoSyncStatus,
+)
+async def get_autosync_status(
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> SkillAutoSyncStatus:
+    """Return current auto-sync status. Returns enabled=false when not configured."""
+    if not settings.kagenti_feature_flag_external_skills:
+        raise HTTPException(status_code=404, detail="Not Found")
+    cm = _get_autosync_configmap(kube)
+    if cm is None:
+        return SkillAutoSyncStatus(enabled=False)
+    return _configmap_to_autosync_status(cm)
+
+
+@router.post(
+    "/autosync",
+    response_model=SkillAutoSyncStatus,
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def enable_autosync(
+    request: SkillAutoSyncRequest,
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> SkillAutoSyncStatus:
+    """Enable cluster-wide auto-sync. Rejects if any skills already exist."""
+    if not settings.kagenti_feature_flag_external_skills:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    for namespace in kube.list_enabled_namespaces():
+        try:
+            existing = kube.core_api.list_namespaced_config_map(
+                namespace=namespace,
+                label_selector=f"{SKILL_TYPE_LABEL}={SKILL_TYPE_VALUE}",
+            )
+            if existing.items:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Remove all existing skills before enabling auto-sync",
+                )
+        except ApiException as exc:
+            raise HTTPException(status_code=exc.status or 500, detail=str(exc))
+
+    data = {
+        "enabled": "true",
+        "registry-type": request.registryType,
+        "registry-url": request.registryUrl,
+        "sync-interval": str(request.syncInterval),
+    }
+    body = k8s_client.V1ConfigMap(
+        metadata=k8s_client.V1ObjectMeta(
+            name=SKILL_AUTOSYNC_CONFIG_CM,
+            namespace=_KAGENTI_SYSTEM,
+            labels={"kagenti.io/type": "skill-autosync"},
+        ),
+        data=data,
+    )
+    try:
+        kube.core_api.create_namespaced_config_map(namespace=_KAGENTI_SYSTEM, body=body)
+    except ApiException as exc:
+        if exc.status == 409:
+            kube.core_api.patch_namespaced_config_map(
+                name=SKILL_AUTOSYNC_CONFIG_CM, namespace=_KAGENTI_SYSTEM, body={"data": data}
+            )
+        else:
+            raise HTTPException(status_code=exc.status or 500, detail=str(exc))
+
+    cm = _get_autosync_configmap(kube)
+    return _configmap_to_autosync_status(cm)
+
+
+@router.delete(
+    "/autosync",
+    status_code=204,
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def disable_autosync(
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> None:
+    """Disable auto-sync and delete all auto-synced skills across all namespaces."""
+    if not settings.kagenti_feature_flag_external_skills:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    for namespace in kube.list_enabled_namespaces():
+        try:
+            cms = kube.core_api.list_namespaced_config_map(
+                namespace=namespace,
+                label_selector=f"{SKILL_TYPE_LABEL}={SKILL_TYPE_VALUE},{SKILL_AUTOSYNC_LABEL}=true",
+            )
+            for cm in cms.items:
+                try:
+                    kube.core_api.delete_namespaced_config_map(
+                        name=cm.metadata.name, namespace=namespace
+                    )
+                except ApiException as exc:
+                    if exc.status != 404:
+                        logger.warning(
+                            "Failed to delete auto-sync skill '%s': %s", cm.metadata.name, exc
+                        )
+        except ApiException as exc:
+            logger.warning("Failed to list auto-sync skills in '%s': %s", namespace, exc)
+
+    try:
+        kube.core_api.delete_namespaced_config_map(
+            name=SKILL_AUTOSYNC_CONFIG_CM, namespace=_KAGENTI_SYSTEM
+        )
+    except ApiException as exc:
+        if exc.status != 404:
+            logger.warning("Failed to delete auto-sync config CM: %s", exc)
