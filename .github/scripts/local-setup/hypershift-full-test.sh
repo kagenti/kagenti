@@ -34,7 +34,7 @@
 #   Other options:
 #     --clean-kagenti    Uninstall Kagenti before installing (fresh install)
 #     --env ENV          Environment for Kagenti installer (default: ocp)
-#     --with-all         Enable all optional components (Kiali, Builds, Kuadrant, Agent Sandbox)
+#     --with-all         Enable all optional components (Kiali, Builds, Kuadrant, MCP Gateway, Agent Sandbox)
 #     --with-kiali       Enable Kiali + Prometheus
 #     --with-builds      Enable Tekton + Shipwright
 #     --with-kuadrant    Enable Kuadrant operator
@@ -119,7 +119,7 @@ OPTIONS:
     Other options:
         --clean-kagenti              Uninstall Kagenti before installing
         --env ENV                    Environment for installer (default: ocp)
-        --with-all                   Enable all optional components (Kiali, Builds, Kuadrant, Agent Sandbox)
+        --with-all                   Enable all optional components (Kiali, Builds, Kuadrant, MCP Gateway, Agent Sandbox)
         --with-kiali                 Enable Kiali + Prometheus
         --with-builds                Enable Tekton + Shipwright
         --with-kuadrant              Enable Kuadrant operator
