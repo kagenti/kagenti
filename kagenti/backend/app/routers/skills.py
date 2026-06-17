@@ -38,6 +38,8 @@ from app.core.constants import (
     SKILL_REGISTRY_URL_ANNOTATION,
     SKILL_REGISTRY_SKILL_NAME_ANNOTATION,
     SKILL_REGISTRY_SKILL_VERSION_ANNOTATION,
+    SKILL_AUTOSYNC_CONFIG_CM,
+    SKILL_AUTOSYNC_LABEL,
 )
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
 
@@ -118,6 +120,32 @@ class CreateSkillResponse(BaseModel):
     name: str
     namespace: str
     message: str
+
+
+class SkillAutoSyncRequest(BaseModel):
+    """Request model for enabling skill auto-sync."""
+
+    registryType: str = Field("skillberry", max_length=63)
+    registryUrl: str = Field(..., max_length=2048)
+    syncInterval: int = Field(30, ge=10, le=3600)
+
+    @field_validator("registryUrl")
+    @classmethod
+    def validate_registry_url(cls, v: str) -> str:
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("registryUrl must use http:// or https:// scheme")
+        return v
+
+
+class SkillAutoSyncStatus(BaseModel):
+    """Response model for auto-sync status."""
+
+    enabled: bool
+    registryType: Optional[str] = None
+    registryUrl: Optional[str] = None
+    syncInterval: Optional[int] = None
+    lastSyncedAt: Optional[str] = None
+    skillCount: Optional[int] = None
 
 
 class CreateExternalSkillRequest(BaseModel):
