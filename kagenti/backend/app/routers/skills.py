@@ -334,6 +334,7 @@ def _configmap_to_skill_detail(cm) -> SkillDetail:
         labels=SkillLabels(
             category=labels.get(SKILL_CATEGORY_LABEL),
             type=labels.get("kagenti.io/skill-type"),
+            autoSync=labels.get(SKILL_AUTOSYNC_LABEL),
         ),
         createdAt=(md.creation_timestamp.isoformat() if md.creation_timestamp else None),
         origin=annos.get(SKILL_ORIGIN_ANNOTATION),
