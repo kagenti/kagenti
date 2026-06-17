@@ -648,10 +648,15 @@ type clientRequest struct {
 
 3. **Setup Script** (`setup-kagenti.sh`):
    ```bash
-   HELM_SETS+=("kagentiOperator.spiffeAuth.spireTrustDomain=${DOMAIN}")
+   if [ "${ENABLE_OPERATOR_SPIFFE_AUTH}" = "true" ]; then
+     KAGENTI_FLAGS+=(
+       --set "kagenti-operator-chart.spiffe.operatorAuth.spireTrustDomain=${DOMAIN}"
+       --set "kagenti-operator-chart.spiffe.operatorAuth.spiffeHelper.jwtAudience=http://keycloak.${DOMAIN}:8080/realms/kagenti"
+     )
+   fi
    ```
 
-**Status**: ✅ Fixed in kagenti PR #1837 commit [hash]
+**Status**: ✅ Fixed in kagenti PR #1837 commit f291be7b
 
 ---
 
