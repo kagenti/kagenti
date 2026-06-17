@@ -750,10 +750,12 @@ _adopt_for_helm() {
   local kind="$1" name="$2" ns="${3:-}"
   local ns_flag=()
   if [ -n "$ns" ]; then ns_flag=(-n "$ns"); fi
-  if $KUBECTL get "$kind" "$name" "${ns_flag[@]}" &>/dev/null; then
-    $KUBECTL label "$kind" "$name" "${ns_flag[@]}" \
+  # Use the ${arr[@]+...} guard so expanding an empty array does not trip
+  # `set -u` on Bash < 4.4 (e.g. macOS system Bash 3.2). See issue #1822.
+  if $KUBECTL get "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" &>/dev/null; then
+    $KUBECTL label "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" \
       app.kubernetes.io/managed-by=Helm --overwrite || true
-    $KUBECTL annotate "$kind" "$name" "${ns_flag[@]}" \
+    $KUBECTL annotate "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" \
       meta.helm.sh/release-name=kagenti-deps \
       meta.helm.sh/release-namespace=kagenti-system --overwrite || true
   fi
