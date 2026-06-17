@@ -66,9 +66,7 @@ def _get_autosync_config(kube: KubernetesService) -> Optional[Dict[str, str]]:
         return None
 
 
-def _update_sync_status(
-    kube: KubernetesService, skill_count: int, synced_at: str
-) -> None:
+def _update_sync_status(kube: KubernetesService, skill_count: int, synced_at: str) -> None:
     """Patch last-synced-at and skill-count into the auto-sync ConfigMap."""
     body = {"data": {"last-synced-at": synced_at, "skill-count": str(skill_count)}}
     try:
@@ -93,7 +91,7 @@ async def _fetch_registry_skills(registry_url: str) -> List[Dict[str, Any]]:
 def _get_namespace_tags(skill: Dict[str, Any]) -> List[str]:
     """Return the values of namespace: tags on a Skillberry skill."""
     tags = skill.get("tags") or []
-    return [t[len(SKILL_NS_TAG_PREFIX):] for t in tags if t.startswith(SKILL_NS_TAG_PREFIX)]
+    return [t[len(SKILL_NS_TAG_PREFIX) :] for t in tags if t.startswith(SKILL_NS_TAG_PREFIX)]
 
 
 def _namespace_distribution(
@@ -173,9 +171,7 @@ def _create_autosync_skill(
         logger.info("Auto-sync: created '%s' in '%s'", skill_name, namespace)
     except ApiException as exc:
         if exc.status == 409:
-            logger.debug(
-                "Auto-sync: '%s' already exists in '%s', skipping", skill_name, namespace
-            )
+            logger.debug("Auto-sync: '%s' already exists in '%s', skipping", skill_name, namespace)
         else:
             logger.warning(
                 "Auto-sync: failed to create '%s' in '%s': %s", skill_name, namespace, exc
@@ -197,22 +193,16 @@ def _patch_skill_version(
             new_version,
         )
     except ApiException as exc:
-        logger.warning(
-            "Auto-sync: failed to patch version for '%s': %s", resource_name, exc
-        )
+        logger.warning("Auto-sync: failed to patch version for '%s': %s", resource_name, exc)
 
 
-def _delete_autosync_skill(
-    kube: KubernetesService, namespace: str, resource_name: str
-) -> None:
+def _delete_autosync_skill(kube: KubernetesService, namespace: str, resource_name: str) -> None:
     try:
         kube.core_api.delete_namespaced_config_map(name=resource_name, namespace=namespace)
         logger.info("Auto-sync: deleted '%s' from '%s'", resource_name, namespace)
     except ApiException as exc:
         if exc.status != 404:
-            logger.warning(
-                "Auto-sync: failed to delete '%s': %s", resource_name, exc
-            )
+            logger.warning("Auto-sync: failed to delete '%s': %s", resource_name, exc)
 
 
 def _apply_diff(
@@ -293,9 +283,7 @@ async def sync_skills_once(kube: KubernetesService) -> int:
                 kube, namespace, target_skills, local_cms, registry_url, registry_type
             )
         except Exception:
-            logger.warning(
-                "Auto-sync: error in namespace '%s', skipping", namespace, exc_info=True
-            )
+            logger.warning("Auto-sync: error in namespace '%s', skipping", namespace, exc_info=True)
 
     synced_at = datetime.now(timezone.utc).isoformat()
     _update_sync_status(kube, total_count, synced_at)

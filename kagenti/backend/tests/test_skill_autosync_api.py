@@ -82,7 +82,11 @@ class TestEnableAutoSync:
         kube.core_api.list_namespaced_config_map.return_value = skill_cm
         resp = client.post(
             "/api/v1/skills/autosync",
-            json={"registryUrl": "http://reg:8000", "registryType": "skillberry", "syncInterval": 30},
+            json={
+                "registryUrl": "http://reg:8000",
+                "registryType": "skillberry",
+                "syncInterval": 30,
+            },
         )
         assert resp.status_code == 409
         assert "existing skills" in resp.json()["detail"].lower()
@@ -95,7 +99,11 @@ class TestEnableAutoSync:
         kube.core_api.list_namespaced_config_map.return_value = skill_cm
         resp = client.post(
             "/api/v1/skills/autosync",
-            json={"registryUrl": "http://reg:8000", "registryType": "skillberry", "syncInterval": 30},
+            json={
+                "registryUrl": "http://reg:8000",
+                "registryType": "skillberry",
+                "syncInterval": 30,
+            },
         )
         assert resp.status_code == 200
         assert resp.json()["enabled"] is True

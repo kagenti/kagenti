@@ -117,7 +117,9 @@ class TestApplyDiff:
         _apply_diff(kube, "team1", target, local, "http://reg", "skillberry")
         kube.core_api.patch_namespaced_config_map.assert_called_once()
         patch_body = kube.core_api.patch_namespaced_config_map.call_args[1]["body"]
-        assert patch_body["metadata"]["annotations"][SKILL_REGISTRY_SKILL_VERSION_ANNOTATION] == "2.0"
+        assert (
+            patch_body["metadata"]["annotations"][SKILL_REGISTRY_SKILL_VERSION_ANNOTATION] == "2.0"
+        )
 
     def test_no_op_when_version_unchanged(self):
         kube = MagicMock()
