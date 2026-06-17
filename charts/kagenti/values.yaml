@@ -75,7 +75,11 @@ secrets:
 
 common:
   kubectlImage: "quay.io/kubestellar/kubectl:1.30.14"
-  oseCLIImage: "registry.redhat.io/openshift4/ose-cli:v4.15"
+  # Empty by default: the route-processor hook (templates/ui-routes-job.yaml)
+  # auto-selects a version-matched ose-cli tag from the target cluster's
+  # Kubernetes version so the client is not skewed past the server (issue #1983).
+  # Set an explicit image ref to override — e.g. an air-gapped registry mirror.
+  oseCLIImage: ""
 
 # ------------------------------------------------------------------
 #  Components Configurations
