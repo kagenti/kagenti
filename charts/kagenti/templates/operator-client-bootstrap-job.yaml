@@ -102,7 +102,8 @@ spec:
         - name: OPERATOR_NAMESPACE
           value: "{{ .Values.kagentiOperator.namespace | default "kagenti-system" }}"
         - name: OPERATOR_SERVICE_ACCOUNT
-          value: "{{ .Values.kagentiOperator.serviceAccountName | default "kagenti-controller-manager" }}"
+          # Read from the operator subchart to ensure consistency with actual operator SA
+          value: "{{ index .Values "kagenti-operator-chart" "controllerManager" "serviceAccountName" | default "controller-manager" }}"
         resources:
           requests:
             cpu: 100m
