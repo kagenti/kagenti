@@ -29,6 +29,7 @@ import {
   ModalVariant,
   TextInput,
   FormGroup,
+  Tooltip,
 } from '@patternfly/react-core';
 import {
   ExclamationTriangleIcon,
@@ -115,13 +116,19 @@ export const SkillDetailPage: React.FC = () => {
             <Title headingLevel="h1">{skill.name}</Title>
           </SplitItem>
           <SplitItem>
-            <Button
-              variant="danger"
-              icon={<TrashIcon />}
-              onClick={() => setDeleteModalOpen(true)}
+            <Tooltip
+              content="Managed by auto-sync — disable auto-sync to delete this skill"
+              trigger={skill.labels?.autoSync === 'true' ? 'mouseenter focus' : ''}
             >
-              Delete
-            </Button>
+              <Button
+                variant="danger"
+                icon={<TrashIcon />}
+                onClick={() => setDeleteModalOpen(true)}
+                isDisabled={skill.labels?.autoSync === 'true'}
+              >
+                Delete
+              </Button>
+            </Tooltip>
           </SplitItem>
         </Split>
       </PageSection>
