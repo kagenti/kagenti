@@ -20,6 +20,8 @@ import {
   SearchInput,
   Label,
   Alert,
+  Modal,
+  ModalVariant,
 } from '@patternfly/react-core';
 import { PlusCircleIcon, WrenchIcon, ExternalLinkAltIcon } from '@patternfly/react-icons';
 import {
@@ -30,7 +32,7 @@ import {
   Tbody,
   Td,
 } from '@patternfly/react-table';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { Skill, SkillAutoSyncStatus } from '@/types';
 import { skillService } from '@/services/api';
@@ -39,8 +41,10 @@ import { getSkillberryUiUrl, getSkillberryStoreUrl } from '@/utils/validation';
 
 export const SkillCatalogPage: React.FC = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [namespace, setNamespace] = useState<string>('team1');
   const [searchQuery, setSearchQuery] = useState('');
+  const [disableConfirmOpen, setDisableConfirmOpen] = useState(false);
 
   const { data: skills = [], isLoading, error } = useQuery({
     queryKey: ['skills', namespace, searchQuery],
@@ -50,6 +54,15 @@ export const SkillCatalogPage: React.FC = () => {
   const { data: autoSyncStatus } = useQuery<SkillAutoSyncStatus>({
     queryKey: ['skillAutoSync'],
     queryFn: () => skillService.getAutoSync(),
+  });
+
+  const disableAutoSyncMutation = useMutation({
+    mutationFn: () => skillService.disableAutoSync(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['skillAutoSync'] });
+      queryClient.invalidateQueries({ queryKey: ['skills'] });
+      setDisableConfirmOpen(false);
+    },
   });
 
   const isAutoSyncActive = autoSyncStatus?.enabled === true;
@@ -68,18 +81,50 @@ export const SkillCatalogPage: React.FC = () => {
             title={`Auto-sync active — syncing from ${autoSyncStatus?.registryUrl}`}
             style={{ marginBottom: '1rem' }}
             actionLinks={
-              <Button
-                variant="link"
-                component="a"
-                href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '')}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Manage in Skillberry Store ↗
-              </Button>
+              <>
+                <Button
+                  variant="link"
+                  component="a"
+                  href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '')}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Manage in Skillberry Store ↗
+                </Button>
+                <Button
+                  variant="link"
+                  isDanger
+                  onClick={() => setDisableConfirmOpen(true)}
+                >
+                  Disable Auto-Sync
+                </Button>
+              </>
             }
           />
         )}
+
+        <Modal
+          variant={ModalVariant.small}
+          title="Disable auto-sync?"
+          isOpen={disableConfirmOpen}
+          onClose={() => setDisableConfirmOpen(false)}
+          actions={[
+            <Button
+              key="confirm"
+              variant="danger"
+              isLoading={disableAutoSyncMutation.isPending}
+              onClick={() => disableAutoSyncMutation.mutate()}
+            >
+              Disable and remove {autoSyncStatus?.skillCount ?? 'all'} synced skills
+            </Button>,
+            <Button key="cancel" variant="link" onClick={() => setDisableConfirmOpen(false)}>
+              Cancel
+            </Button>,
+          ]}
+        >
+          This will remove all auto-synced skills from Kagenti. Skills managed in
+          Skillberry Store will not be affected.
+        </Modal>
         <Toolbar>
           <ToolbarContent>
             <ToolbarItem>
