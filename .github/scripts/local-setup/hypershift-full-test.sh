@@ -38,6 +38,7 @@
 #     --with-kiali       Enable Kiali + Prometheus
 #     --with-builds      Enable Tekton + Shipwright
 #     --with-kuadrant    Enable Kuadrant operator
+#     --with-mcp-gateway Enable MCP Gateway
 #     --with-agent-sandbox Enable agent-sandbox controller
 #     --pytest-filter, -k FILTER  Filter tests with pytest -k expression
 #     --pytest-args ARGS Additional pytest arguments (e.g., "-x" to stop on first failure)
@@ -123,6 +124,7 @@ OPTIONS:
         --with-kiali                 Enable Kiali + Prometheus
         --with-builds                Enable Tekton + Shipwright
         --with-kuadrant              Enable Kuadrant operator
+        --with-mcp-gateway           Enable MCP Gateway
         --with-agent-sandbox         Enable agent-sandbox controller
         --rhoai-profile <profile>    Set RHOAI profile (minimal|full). Default: from env values.
         --no-rhoai                   Disable RHOAI installation.
@@ -210,6 +212,7 @@ WITH_ALL=false
 WITH_KIALI=false
 WITH_BUILDS=false
 WITH_KUADRANT=false
+WITH_MCP_GATEWAY=false
 WITH_AGENT_SANDBOX=false
 
 while [[ $# -gt 0 ]]; do
@@ -349,6 +352,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --with-kuadrant)
             WITH_KUADRANT=true
+            shift
+            ;;
+        --with-mcp-gateway)
+            WITH_MCP_GATEWAY=true
             shift
             ;;
         --with-agent-sandbox)
@@ -1003,6 +1010,7 @@ if [ "$RUN_INSTALL" = "true" ]; then
         [ "$WITH_KIALI" = "true" ] && SETUP_ARGS+=(--with-kiali)
         [ "$WITH_BUILDS" = "true" ] && SETUP_ARGS+=(--with-builds)
         [ "$WITH_KUADRANT" = "true" ] && SETUP_ARGS+=(--with-kuadrant)
+        [ "$WITH_MCP_GATEWAY" = "true" ] && SETUP_ARGS+=(--with-mcp-gateway)
         [ "$WITH_AGENT_SANDBOX" = "true" ] && SETUP_ARGS+=(--with-agent-sandbox)
     fi
 
