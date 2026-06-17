@@ -3,10 +3,12 @@
 """Tests for skill auto-sync REST endpoints."""
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kubernetes.client.exceptions import ApiException
 
+from app.routers.skills import router
 from app.services.kubernetes import get_kubernetes_service
 
 
@@ -41,22 +43,15 @@ def kube():
 
 @pytest.fixture
 def client(kube):
-    import app.core.config as cfg
-
-    original_external = cfg.settings.kagenti_feature_flag_external_skills
-    original_skills = cfg.settings.kagenti_feature_flag_skills
-    cfg.settings.kagenti_feature_flag_external_skills = True
-    cfg.settings.kagenti_feature_flag_skills = True
-
-    # Import app after patching settings so feature-flagged routers are loaded
-    from app.main import app
-
+    """Build a minimal test app with just the skills router and feature flags enabled."""
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
     app.dependency_overrides[get_kubernetes_service] = lambda: kube
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
-    cfg.settings.kagenti_feature_flag_external_skills = original_external
-    cfg.settings.kagenti_feature_flag_skills = original_skills
+    with patch("app.routers.skills.settings") as mock_settings:
+        mock_settings.kagenti_feature_flag_external_skills = True
+        mock_settings.kagenti_feature_flag_skills = True
+        with TestClient(app) as c:
+            yield c
 
 
 class TestGetAutoSync:

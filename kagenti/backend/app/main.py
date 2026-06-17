@@ -158,6 +158,17 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Build reconciliation disabled (ENABLE_BUILD_RECONCILIATION=false)")
 
+    # Start skill auto-sync loop (only when external_skills feature is enabled)
+    skill_autosync_task = None
+    if settings.kagenti_feature_flag_external_skills:
+        from app.services.skill_autosync import run_skill_autosync_loop
+
+        skill_autosync_task = asyncio.create_task(run_skill_autosync_loop())
+        logger.info(
+            "Skill auto-sync started (default interval: %ds)",
+            settings.skill_autosync_interval,
+        )
+
     yield
 
     # Stop reconciliation
@@ -165,6 +176,14 @@ async def lifespan(app: FastAPI):
         reconciliation_task.cancel()
         try:
             await reconciliation_task
+        except asyncio.CancelledError:
+            pass
+
+    # Stop skill auto-sync
+    if skill_autosync_task:
+        skill_autosync_task.cancel()
+        try:
+            await skill_autosync_task
         except asyncio.CancelledError:
             pass
 
