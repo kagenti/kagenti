@@ -525,35 +525,145 @@ All of the following must be true for the test to pass:
 10. ✅ Weather agent client appears in Keycloak
 11. ✅ Operator used SPIFFE ID authentication (not admin credentials)
 
-## Known Issues to Fix
+## Known Issues (RESOLVED ✅)
 
-If any of these issues appear during testing, they are **BUGS** that must be fixed:
-
-### Issue 1: SPIRE CSI Driver Not Creating Socket File
+### Issue 1: Socket Filename Mismatch (FIXED ✅)
 **Symptom**: Operator can't access SPIRE socket - `dial unix /run/spire/sockets/agent.sock: connect: no such file or directory`
 
-**Root Cause**: The SPIRE CSI volume mounts correctly, but the socket file is never created inside the mounted directory.
+**Root Cause**: **Socket filename mismatch** - SPIRE CSI driver creates `spire-agent.sock` but operator configuration expected `agent.sock`.
 
-**Details**:
-- Volume mount exists: ✅ `/run/spire/sockets` is mounted in the container
-- CSI driver status: ✅ Reports volume as "healthy" 
-- Socket file exists: ❌ `/run/spire/sockets/agent.sock` file doesn't exist (directory is empty)
+**Investigation Findings**:
+- Volume mount: ✅ `/run/spire/sockets` mounted correctly
+- CSI driver: ✅ Reports volume as "healthy"
+- Socket file: ✅ **EXISTS** at `/run/spire/sockets/spire-agent.sock` (not `agent.sock`)
+- SPIRE infrastructure: ✅ All components working (Controller Manager, ClusterSPIFFEID, SPIRE agent)
 
-**Why This Happens**: 
-The SPIRE CSI driver is supposed to dynamically create the `agent.sock` file inside the mounted volume. This socket acts as a proxy to the SPIRE agent. The CSI driver mounts the volume but never creates the socket file.
+**What Was Wrong**:
+The CSI driver creates three files in the mounted volume:
+```
+spire-agent.sock  (the actual socket)
+api.sock          (symlink → spire-agent.sock)
+socket            (symlink → spire-agent.sock)
+```
 
-**Possible Causes**:
-- SPIRE Controller Manager not running or misconfigured
-- Pod doesn't properly match ClusterSPIFFEID selection criteria
-- SPIRE CSI driver version incompatibility
-- CSI driver can't connect to SPIRE agent for this pod
+But the operator was configured to look for `/run/spire/sockets/agent.sock` which doesn't exist.
 
-**Fix Required**: 
-- Debug SPIRE Controller Manager: `kubectl get deployment -n spire-mgmt spire-controller-manager`
-- Check ClusterSPIFFEID selection: `kubectl get clusterspiffeid spire-mgmt-spire-default -o yaml`
-- Alternative: Use hostPath instead of CSI to directly mount SPIRE agent socket from node
+**Fix Applied**:
+1. **Operator chart** (`values.yaml` line 236):
+   ```yaml
+   # Before
+   agentSocketPath: "/run/spire/sockets/agent.sock"
+   
+   # After
+   agentSocketPath: "/run/spire/sockets/spire-agent.sock"
+   ```
+
+2. **Operator code** (`cmd/main.go`):
+   ```go
+   flag.StringVar(&spireSocketPath, "spire-socket-path", 
+     "unix:///run/spire/sockets/spire-agent.sock",  // Fixed default
+   ```
+
+**Status**: ✅ Fixed in kagenti-operator PR #349 commit 6b13418
+
+**Lesson Learned**: The CSI driver was working perfectly all along. Always check the actual filesystem before diving into complex distributed systems debugging.
+
+---
+
+### Issue 2: Incorrect "DCR" Terminology (FIXED ✅)
+**Symptom**: Code and logs reference "DCR" (Dynamic Client Registration) when the feature is actually SPIFFE ID Authentication.
+
+**Root Cause**: Historical misnaming - this feature uses SPIFFE ID authentication with JWT-SVID, not Dynamic Client Registration.
+
+**What Was Wrong**:
+- Flag: `--enable-dcr-registration`
+- Type: `DCRClient`
+- Variables: `UseDCR`, `enableDCRRegistration`
+- Functions: `registerClientWithDCR()`
+- Messages: "DCR registration", "DCR enabled", "fetch JWT-SVID for DCR"
+
+**Fix Applied**: Comprehensive rename across 4 files:
+- `DCRClient` → `SpiffeAuthClient`
+- `--enable-dcr-registration` → `--enable-spiffe-id-auth`
+- `UseDCR` → `UseSpiffeIDAuth`
+- `registerClientWithDCR()` → `registerClientWithSpiffeID()`
+- `internal/keycloak/dcr.go` → `internal/keycloak/spiffe_auth.go`
+- All error messages and comments updated
+
+**Status**: ✅ Fixed in kagenti-operator PR #349 commit 6b13418
+
+---
+
+### Issue 3: Keycloak Client Registration JSON Format (FIXED ✅)
+**Symptom**: Keycloak rejects client registration with errors:
+- `Unrecognized field "clientName"`
+- `Unrecognized field "grantTypes"`
+
+**Root Cause**: Client registration payload used incorrect field names instead of standard Keycloak ClientRepresentation format.
+
+**What Was Wrong**:
+```go
+type dcrRequest struct {
+    ClientName    string   `json:"clientName,omitempty"`     // ❌ Wrong
+    GrantTypes    []string `json:"grantTypes,omitempty"`     // ❌ Wrong
+    ResponseTypes []string `json:"responseTypes,omitempty"`  // ❌ Wrong
+}
+```
+
+**Fix Applied**:
+```go
+type clientRequest struct {
+    Name                      string `json:"name,omitempty"`                  // ✅ Correct
+    StandardFlowEnabled       bool   `json:"standardFlowEnabled"`             // ✅ Correct
+    DirectAccessGrantsEnabled bool   `json:"directAccessGrantsEnabled"`       // ✅ Correct
+    ServiceAccountsEnabled    bool   `json:"serviceAccountsEnabled"`          // ✅ Correct
+    PublicClient              bool   `json:"publicClient"`                    // ✅ Correct
+    FullScopeAllowed          bool   `json:"fullScopeAllowed"`                // ✅ Correct
+}
+```
+
+**Status**: ✅ Fixed in kagenti-operator PR #349 commit 6b13418
+
+---
+
+### Issue 4: Missing --spire-trust-domain Flag (CONFIGURATION REQUIRED)
+**Symptom**: Operator logs show `cannot resolve Keycloak client id yet: SPIRE enabled: operator --spire-trust-domain is required`
+
+**Root Cause**: Operator needs trust domain to construct SPIFFE-shaped client IDs like `spiffe://localtest.me/ns/team1/sa/weather-agent`.
+
+**Fix Required**: Add flag to operator deployment when `operatorAuth.enabled=true`:
+```yaml
+args:
+  - "--spire-trust-domain=localtest.me"
+```
+
+**Status**: ⚠️ Must be configured at deployment time
+
+---
+
+## Legacy Issues (Not Real Problems)
+
+These were investigated but turned out NOT to be bugs:
+
+### ❌ volumeAttributes Not Needed
+The SPIRE CSI driver doesn't use `volumeAttributes` for pod identification. It uses ClusterSPIFFEID CRD matching instead. Adding volumeAttributes had no effect.
+
+### ❌ ClusterSPIFFEID Was Correct
+The operator pod matched the default ClusterSPIFFEID correctly all along.
+
+### ❌ SPIRE Controller Manager Was Working
+It was running and reconciling the operator pod correctly.
+
+### ❌ CSI Driver Was Healthy
+The driver reported volumes as "healthy" because they WERE healthy - the socket just had a different filename.
+
+---
+
+## Original Legacy Issue Descriptions
 
 ### Issue 2: Bootstrap Job Failed or Didn't Register Operator
+
+### Bootstrap Job Failed or Didn't Register Operator
 **Symptom**: Job exists or ServiceAccount exists but operator client not in Keycloak  
 **Root Cause**: Bootstrap job crashed, wrong environment variables, or image issue  
 **Fix Required**: Check bootstrap job logs immediately after deployment (job auto-deletes after 5 minutes)
@@ -563,9 +673,7 @@ The SPIRE CSI driver is supposed to dynamically create the `agent.sock` file ins
   - Keycloak not ready when job starts
   - Connection errors to Keycloak or SPIRE services
 
-### Issue 3: (Duplicate of Issue 1 - removed)
-
-### Issue 3: Webhook Timeouts
+### Webhook Timeouts
 **Symptom**: Pods fail to create with "context deadline exceeded"  
 **Root Cause**: Webhook performance issue or informer sync problem  
 **Fix Required**: Investigate webhook implementation
