@@ -99,8 +99,9 @@ spec:
           value: "{{ .Values.spireTrustDomain | default "localtest.me" }}"
         # Operator namespace and ServiceAccount - used to derive SPIFFE ID
         # The bootstrap script constructs: spiffe://<trust-domain>/ns/<namespace>/sa/<service-account>
+        # Namespace is where the operator subchart is actually deployed
         - name: OPERATOR_NAMESPACE
-          value: "{{ .Values.kagentiOperator.namespace | default "kagenti-system" }}"
+          value: "{{ .Release.Namespace }}"
         - name: OPERATOR_SERVICE_ACCOUNT
           # Read from the operator subchart to ensure consistency with actual operator SA
           value: "{{ index .Values "kagenti-operator-chart" "controllerManager" "serviceAccountName" | default "controller-manager" }}"

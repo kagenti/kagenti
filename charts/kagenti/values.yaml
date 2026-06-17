@@ -367,10 +367,9 @@ kagenti-operator-chart:
 # ------------------------------------------------------------------
 # Configuration for operator SPIFFE authentication to Keycloak
 # Shell scripts use ENABLE_OPERATOR_SPIFFE_AUTH env var to set this
+# Note: namespace and serviceAccountName are derived from the operator subchart deployment
+# to ensure the bootstrap job uses the correct SPIFFE ID
 kagentiOperator:
-  namespace: kagenti-system
-  # serviceAccountName is defined in the operator subchart (kagenti-operator-chart/values.yaml)
-  # and should not be duplicated here to avoid configuration drift
   spiffeAuth:
     # Enable SPIFFE authentication for operator (authenticates with JWT-SVID instead of admin credentials)
     # When enabled, runs bootstrap job to configure Keycloak with operator's SPIFFE client
