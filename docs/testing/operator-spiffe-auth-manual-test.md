@@ -660,6 +660,88 @@ type clientRequest struct {
 
 ---
 
+### Issue 5: Service Account Name Mismatch (FOUND DURING E2E TEST ❌ - BLOCKING)
+**Symptom**: Bootstrap job registers operator with wrong SPIFFE ID
+- Expected: `spiffe://localtest.me/ns/kagenti-system/sa/controller-manager`
+- Actual: `spiffe://localtest.me/ns/kagenti-system/sa/kagenti-controller-manager`
+
+**Root Cause**: Disconnected configuration between main chart and operator subchart
+- Main chart (`kagenti/values.yaml` line 299): `kagentiOperator.serviceAccountName: kagenti-controller-manager`
+- Bootstrap job template uses: `{{ .Values.kagentiOperator.serviceAccountName }}`
+- But operator subchart (`kagenti-operator-chart/values.yaml` line 47): `serviceAccountName: controller-manager`
+- These two values are NOT synchronized
+
+**Impact**: Operator's JWT-SVID has SPIFFE ID `controller-manager` but Keycloak client is registered as `kagenti-controller-manager`, causing authentication mismatch
+
+**Fix Required**: 
+1. **Option A**: Make bootstrap job read from operator subchart value
+   ```yaml
+   # In charts/kagenti/templates/operator-client-bootstrap-job.yaml
+   value: "{{ .Values.kagenti-operator-chart.controllerManager.serviceAccountName | default "controller-manager" }}"
+   ```
+
+2. **Option B**: Synchronize the values - make operator subchart use the main chart's SA name
+   ```yaml
+   # In charts/kagenti/charts/kagenti-operator-chart/values.yaml
+   serviceAccountName: {{ .Values.kagentiOperator.serviceAccountName | default "controller-manager" }}
+   ```
+
+3. **Option C** (Recommended): Remove the redundant value from main chart and always use the operator subchart's value
+
+**Workaround**: Manually update Keycloak client ID to match actual SA name
+
+**Status**: ❌ NOT FIXED - Chart requires update
+
+---
+
+### Issue 6: Wrong Keycloak API Endpoint for SPIFFE Auth (FOUND DURING E2E TEST ❌ - CRITICAL BLOCKING)
+**Symptom**: `status 401: {"error":"invalid_token","error_description":"Failed decode token"}`
+
+**Root Cause**: Operator uses **Client Registration endpoint** which does NOT support SPIFFE authentication
+- Current endpoint: `POST /realms/{realm}/clients-registrations/default`
+- This endpoint expects: Initial Access Token or Registration Access Token
+- This endpoint does NOT validate JWT-SVID tokens
+
+**What Actually Works**: Keycloak **Admin API** with federated-jwt client
+- Bootstrap job successfully uses Admin API: `POST /admin/realms/{realm}/clients`
+- Admin API authenticates the operator client's service account via federated-jwt
+- Admin API DOES support JWT-SVID when the client uses `clientAuthenticatorType: federated-jwt`
+
+**The Problem**: Two different patterns for the same operation
+1. Bootstrap creates operator client via Admin API ✅
+2. Operator creates agent clients via Client Registration endpoint ❌
+3. These endpoints have DIFFERENT authentication mechanisms!
+
+**Fix Required**: Operator must use Admin API for client registration when SPIFFE auth is enabled
+
+**Code Location**: `internal/keycloak/spiffe_auth.go`
+```go
+// WRONG: Uses Client Registration endpoint
+endpoint := fmt.Sprintf("%s/realms/%s/clients-registrations/default", base, params.Realm)
+
+// SHOULD BE: Use Admin API endpoint (same as bootstrap job)
+endpoint := fmt.Sprintf("%s/admin/realms/%s/clients", base, params.Realm)
+```
+
+**Additional Changes Needed**:
+1. Operator needs to authenticate as itself (get access token for its service account)
+2. Use that access token to call Admin API
+3. Requires the operator client to have `manage-clients` role (bootstrap already does this)
+
+**Testing Strategy**:
+1. Operator fetches JWT-SVID from SPIRE
+2. Operator exchanges JWT-SVID for Keycloak access token via token exchange
+3. Operator uses access token to call Admin API for agent client registration
+
+**Status**: ❌ NOT FIXED - Requires operator code changes
+
+**Tested Hypotheses** (all failed):
+- ❌ Hypothesis 1: Audience should match SPIRE issuer
+- ❌ Hypothesis 2: Audience should be trust domain
+- ❌ Root cause: Client Registration endpoint doesn't support JWT-SVID authentication at all
+
+---
+
 ## Legacy Issues (Not Real Problems)
 
 These were investigated but turned out NOT to be bugs:
