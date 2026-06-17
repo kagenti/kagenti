@@ -222,6 +222,68 @@ openshell sandbox connect
 openshell sandbox exec -n <sandbox-name> -- claude --print "Hello"
 ```
 
+## Per-User Sandbox Ownership
+
+When OIDC is enabled on the gateway (the default), each sandbox is owned by the
+user who created it. The gateway stamps an `openshell.ai/owner` label with the
+caller's JWT `sub` claim — this is server-enforced and cannot be spoofed by
+clients.
+
+### How it works
+
+| Operation | Behavior |
+|-----------|----------|
+| **Create** | Owner label set from verified OIDC identity. Client-supplied `openshell.ai/` labels are stripped. |
+| **List** | Returns only the caller's sandboxes (filtered by owner label). |
+| **Get / Delete / Connect / Exec** | Returns `PermissionDenied` if caller is not the owner. |
+| **Admin** | Users with the `openshell-admin` role bypass ownership checks and can manage all sandboxes. |
+
+### Shared gateway, multiple users
+
+A single gateway instance serves all team members. Each user sees only their own
+sandboxes:
+
+```bash
+# Alice creates her sandbox
+openshell sandbox create --provider claude -- claude
+# Alice's list shows only her sandboxes
+openshell sandbox list
+
+# Bob (on the same gateway) creates his sandbox
+openshell sandbox create --provider claude -- claude
+# Bob's list shows only his sandboxes — Alice's are not visible
+openshell sandbox list
+```
+
+No configuration is needed — ownership enforcement is automatic when OIDC is
+enabled.
+
+### Admin access
+
+Users with the `openshell-admin` Keycloak role can list and manage all sandboxes
+regardless of owner:
+
+```bash
+# Admin sees all sandboxes across all users
+openshell sandbox list
+
+# Admin can delete another user's sandbox
+openshell sandbox delete <sandbox-name>
+```
+
+The preconfigured Keycloak users in the `openshell` realm have admin access by
+default. To grant admin to a new user, assign the `openshell-admin` role in
+Keycloak.
+
+### Requirements
+
+- Gateway image `v0.0.56-rc.2` or later
+- OIDC enabled on the gateway (`oidc.enabled: true` in Helm values — the default)
+- Keycloak `sub` claim must be a UUID (the default for Keycloak realms)
+
+When OIDC is disabled (local development without authentication), ownership is
+skipped and all users share all sandboxes (backward-compatible behavior).
+
 ## Network Egress Policies
 
 By default, sandboxes have no outbound network access except to
