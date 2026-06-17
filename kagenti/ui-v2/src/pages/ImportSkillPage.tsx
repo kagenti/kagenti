@@ -46,7 +46,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { skillService } from '@/services/api';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
 import { importSkillFromGitHub, isValidGitHubUrl } from '@/utils/githubSkillImporter';
-import { isValidUrl, getSkillberryUiUrl } from '@/utils/validation';
+import { isValidUrl, getSkillberryUiUrl, getSkillberryStoreUrl } from '@/utils/validation';
 import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { CreateExternalSkillRequest, SkillAutoSyncConfig, SkillAutoSyncStatus } from '@/types';
 
@@ -569,7 +569,7 @@ export const ImportSkillPage: React.FC = () => {
                             <Button
                               variant="link"
                               component="a"
-                              href={autoSyncStatus?.registryUrl ? `${autoSyncStatus.registryUrl}/` : '#'}
+                              href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '')}
                               target="_blank"
                               rel="noreferrer"
                             >

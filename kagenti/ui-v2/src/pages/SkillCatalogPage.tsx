@@ -35,7 +35,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Skill, SkillAutoSyncStatus } from '@/types';
 import { skillService } from '@/services/api';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
-import { getSkillberryUiUrl } from '@/utils/validation';
+import { getSkillberryUiUrl, getSkillberryStoreUrl } from '@/utils/validation';
 
 export const SkillCatalogPage: React.FC = () => {
   const navigate = useNavigate();
@@ -71,7 +71,7 @@ export const SkillCatalogPage: React.FC = () => {
               <Button
                 variant="link"
                 component="a"
-                href={autoSyncStatus?.registryUrl ? `${autoSyncStatus.registryUrl}/` : '#'}
+                href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '')}
                 target="_blank"
                 rel="noreferrer"
               >
@@ -102,7 +102,7 @@ export const SkillCatalogPage: React.FC = () => {
                   variant="secondary"
                   icon={<ExternalLinkAltIcon />}
                   component="a"
-                  href={autoSyncStatus?.registryUrl ? `${autoSyncStatus.registryUrl}/` : '#'}
+                  href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '')}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -159,7 +159,7 @@ export const SkillCatalogPage: React.FC = () => {
                     variant="secondary"
                     icon={<ExternalLinkAltIcon />}
                     component="a"
-                    href={autoSyncStatus?.registryUrl ? `${autoSyncStatus.registryUrl}/` : '#'}
+                    href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '')}
                     target="_blank"
                     rel="noreferrer"
                   >
