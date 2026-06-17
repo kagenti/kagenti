@@ -1335,6 +1335,12 @@ if $WITH_SKILLS; then
   [[ -n "${SKILLBERRY_STORE_TAG:-}" ]]   && KAGENTI_FLAGS+=(--set "skillberryStore.image.tag=${SKILLBERRY_STORE_TAG}")
 fi
 
+if [ "${ENABLE_OPERATOR_SPIFFE_AUTH}" = "true" ]; then
+  KAGENTI_FLAGS+=(
+    --set "kagenti-operator-chart.spiffe.operatorAuth.spireTrustDomain=${DOMAIN}"
+    --set "kagenti-operator-chart.spiffe.operatorAuth.spiffeHelper.jwtAudience=http://keycloak.${DOMAIN}:8080/realms/kagenti"
+  )
+fi
 KAGENTI_FLAGS=( "${KAGENTI_FLAGS[@]}" ${KAGENTI_VALUES_FILES[@]+"${KAGENTI_VALUES_FILES[@]}"} )
 
 # When --build-images is set, the build step tags images ":latest" and loads
