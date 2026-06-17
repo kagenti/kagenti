@@ -200,16 +200,14 @@ spec:
       containers:
       - name: script-runner
         {{- /*
-          Pick an ose-cli tag that matches the target cluster so the client is
-          not skewed past the API server's ±1 minor support window (issue #1983).
-          OpenShift minor = Kubernetes minor - 13 (stable since OCP 4.5:
-          k8s 1.28 -> v4.15, k8s 1.33 -> v4.20). regexFind strips any "+" build
-          suffix the server may report (e.g. "33+"). An explicit
-          common.oseCLIImage value (e.g. an air-gapped mirror) always wins.
+          Pinned to an ose-cli tag known to exist on registry.redhat.io. Do NOT
+          derive it from the cluster version: ose-cli is not published for every
+          OCP release (v4.20 is absent -> "manifest unknown" -> ImagePullBackOff,
+          issue #1983). Version skew against a newer API server is harmless here
+          because the ConfigMap apply below uses --validate=false on a fixed
+          core/v1 object. An explicit common.oseCLIImage value always wins.
         */}}
-        {{- $k8sMinor := .Capabilities.KubeVersion.Minor | toString | regexFind "[0-9]+" | int }}
-        {{- $oseDefault := printf "registry.redhat.io/openshift4/ose-cli:v4.%d" (sub $k8sMinor 13) }}
-        image: {{ .Values.common.oseCLIImage | default $oseDefault }}
+        image: {{ .Values.common.oseCLIImage | default "registry.redhat.io/openshift4/ose-cli:v4.15" }}
         command: ["/bin/bash", "-c", "/scripts/process_routes.sh"]
         volumeMounts:
         - name: script-volume

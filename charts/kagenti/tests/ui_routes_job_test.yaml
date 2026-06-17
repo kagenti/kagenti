@@ -8,9 +8,12 @@
 # ConfigMap failed client-side schema validation. The hook still exited 0, so
 # the install falsely reported success while the backend never started.
 #
-# Fix: derive the ose-cli tag from the live cluster's Kubernetes version
-# (OCP minor = k8s minor - 13) and disable validation on the ConfigMap apply
-# (the applied object is a fixed core/v1 ConfigMap — validation adds no value).
+# Fix: disable validation on the ConfigMap apply (--validate=false) — the object
+# is a fixed core/v1 ConfigMap, so a version-skewed client applies it fine once
+# client-side schema validation is off. The image tag must stay PINNED to one
+# known to exist on registry.redhat.io: deriving it from the cluster version
+# produced ose-cli:v4.20, which is unpublished ("manifest unknown") and caused
+# ImagePullBackOff.
 suite: kagenti route-processor hook (OCP)
 templates:
   - templates/ui-routes-job.yaml
@@ -26,7 +29,21 @@ set:
   # but needed so the full-chart render helm-unittest performs does not abort.
   mcpGateway.openshiftDomain: apps.example.com
 tests:
-  - it: matches the ose-cli image tag to an OCP 4.20 server (k8s 1.33, #1983)
+  - it: applies the ConfigMap with validation disabled (the real #1983 fix)
+    documentSelector:
+      path: metadata.name
+      value: kagenti-process-routes-script
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - matchRegex:
+          path: data["process_routes.sh"]
+          pattern: kubectl apply --validate=false -f -
+
+  - it: pins the ose-cli tag and does NOT derive it from the cluster version (#1983)
+    # registry.redhat.io/openshift4/ose-cli has no v4.20 tag, so computing the tag
+    # from .Capabilities.KubeVersion caused ImagePullBackOff on OCP 4.20. Even on a
+    # 1.33 cluster the image must stay the pinned, known-pullable v4.15.
     capabilities:
       majorVersion: 1
       minorVersion: "33"
@@ -38,9 +55,9 @@ tests:
           of: Job
       - equal:
           path: spec.template.spec.containers[0].image
-          value: registry.redhat.io/openshift4/ose-cli:v4.20
+          value: registry.redhat.io/openshift4/ose-cli:v4.15
 
-  - it: matches the ose-cli image tag to an OCP 4.15 server (k8s 1.28)
+  - it: keeps the same pinned tag on a different cluster version (no auto-derivation)
     capabilities:
       majorVersion: 1
       minorVersion: "28"
@@ -52,22 +69,7 @@ tests:
           path: spec.template.spec.containers[0].image
           value: registry.redhat.io/openshift4/ose-cli:v4.15
 
-  - it: tolerates a "+" suffix on the server minor version (e.g. "33+")
-    capabilities:
-      majorVersion: 1
-      minorVersion: "33+"
-    documentSelector:
-      path: metadata.name
-      value: kagenti-process-routes-job
-    asserts:
-      - equal:
-          path: spec.template.spec.containers[0].image
-          value: registry.redhat.io/openshift4/ose-cli:v4.20
-
   - it: honors an explicit common.oseCLIImage override
-    capabilities:
-      majorVersion: 1
-      minorVersion: "33"
     set:
       common.oseCLIImage: my.registry.example.com/openshift4/ose-cli:v4.99
     documentSelector:
@@ -77,14 +79,3 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].image
           value: my.registry.example.com/openshift4/ose-cli:v4.99
-
-  - it: applies the ConfigMap with validation disabled (safe for a core/v1 ConfigMap)
-    documentSelector:
-      path: metadata.name
-      value: kagenti-process-routes-script
-    asserts:
-      - isKind:
-          of: ConfigMap
-      - matchRegex:
-          path: data["process_routes.sh"]
-          pattern: kubectl apply --validate=false -f -
