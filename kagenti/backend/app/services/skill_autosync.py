@@ -85,7 +85,10 @@ async def _fetch_registry_skills(registry_url: str) -> List[Dict[str, Any]]:
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.get(url)
         response.raise_for_status()
-        return response.json()
+        result = response.json()
+        if not isinstance(result, list):
+            raise ValueError(f"Registry returned non-list response: {type(result).__name__}")
+        return result
 
 
 def _get_namespace_tags(skill: Dict[str, Any]) -> List[str]:
