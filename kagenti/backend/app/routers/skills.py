@@ -7,10 +7,13 @@ Skill API endpoints.
 Skills are stored as Kubernetes ConfigMaps labeled with `kagenti.io/type=skill`.
 """
 
+import ipaddress
 import json
 import logging
 import re
+import socket
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 import kubernetes.client as k8s_client
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -123,6 +126,23 @@ class CreateSkillResponse(BaseModel):
     message: str
 
 
+def _validate_registry_url(v: str) -> str:
+    """Validate a registry URL: require http(s) scheme and reject private/internal hosts."""
+    if not v.startswith(("http://", "https://")):
+        raise ValueError("registryUrl must use http:// or https:// scheme")
+    hostname = urlparse(v).hostname or ""
+    if not hostname:
+        raise ValueError("registryUrl must contain a valid hostname")
+    try:
+        for info in socket.getaddrinfo(hostname, None):
+            addr = ipaddress.ip_address(info[4][0])
+            if addr.is_private or addr.is_loopback or addr.is_link_local:
+                raise ValueError("registryUrl resolves to a private/internal address")
+    except socket.gaierror:
+        raise ValueError("registryUrl hostname is not resolvable")
+    return v
+
+
 class SkillAutoSyncRequest(BaseModel):
     """Request model for enabling skill auto-sync."""
 
@@ -134,9 +154,7 @@ class SkillAutoSyncRequest(BaseModel):
     @field_validator("registryUrl")
     @classmethod
     def validate_registry_url(cls, v: str) -> str:
-        if not v.startswith(("http://", "https://")):
-            raise ValueError("registryUrl must use http:// or https:// scheme")
-        return v
+        return _validate_registry_url(v)
 
 
 class SkillAutoSyncStatus(BaseModel):
@@ -167,9 +185,7 @@ class CreateExternalSkillRequest(BaseModel):
     @field_validator("registryUrl")
     @classmethod
     def validate_registry_url(cls, v: str) -> str:
-        if not v.startswith(("http://", "https://")):
-            raise ValueError("registryUrl must use http:// or https:// scheme")
-        return v
+        return _validate_registry_url(v)
 
     @field_validator("registrySkillName")
     @classmethod
