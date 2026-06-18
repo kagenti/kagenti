@@ -62,7 +62,6 @@ spec:
         # See https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments
         checksum/config: {{ printf "%s|%s|%s|%s|%s|%t|%t" .Values.ui.domainName .Values.ui.api.hostname .Values.ui.namespace .Values.ui.configmap .Values.keycloak.realm .Values.components.phoenix.enabled .Values.components.mlflow.enabled | sha256sum }}
         checksum/oauth-config: {{ printf "%s|%s|%s|%s" .Values.keycloak.url .Values.keycloak.publicUrl .Values.keycloak.realm .Values.ui.namespace | sha256sum }}
-        checksum/authbridge-runtime-config: {{ include "kagenti.authbridge-runtime-config-yaml" . | sha256sum }}
       labels:
         app.kubernetes.io/name: kagenti-backend
         app.kubernetes.io/component: backend
