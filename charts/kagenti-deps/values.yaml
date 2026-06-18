@@ -105,7 +105,7 @@ spiffeIdp:
   # - Standalone Helm users must create job manually (see docs)
   image:
     repository: ghcr.io/kagenti/kagenti/spiffe-idp-setup
-    tag: v0.6.1-rc.1
+    tag: v0.6.1-rc.2
     pullPolicy: IfNotPresent
 # ------------------------------------------------------------------
 #  Istio Configuration
