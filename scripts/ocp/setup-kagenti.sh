@@ -764,10 +764,12 @@ _adopt_for_helm() {
   local kind="$1" name="$2" ns="${3:-}"
   local ns_flag=()
   if [ -n "$ns" ]; then ns_flag=(-n "$ns"); fi
-  if $KUBECTL get "$kind" "$name" "${ns_flag[@]}" &>/dev/null; then
-    $KUBECTL label "$kind" "$name" "${ns_flag[@]}" \
+  # Use the ${arr[@]+...} guard so expanding an empty array does not trip
+  # `set -u` on Bash < 4.4 (e.g. macOS system Bash 3.2). See issue #1822.
+  if $KUBECTL get "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" &>/dev/null; then
+    $KUBECTL label "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" \
       app.kubernetes.io/managed-by=Helm --overwrite || true
-    $KUBECTL annotate "$kind" "$name" "${ns_flag[@]}" \
+    $KUBECTL annotate "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" \
       meta.helm.sh/release-name=kagenti-deps \
       meta.helm.sh/release-namespace=kagenti-system --overwrite || true
   fi
@@ -1104,7 +1106,11 @@ EOF
   log_info "Ensuring MLflow OAuth proxy exists for browser access..."
   if ! $KUBECTL get deployment mlflow-oauth-proxy -n "$MLFLOW_NAMESPACE" &>/dev/null; then
     local oauth_proxy_image
-    oauth_proxy_image=$(oc adm release info --image-for=oauth-proxy 2>/dev/null)
+    # NOTE: keep `|| true` — under `set -euo pipefail` a bare assignment takes
+    # the command substitution's exit status, so a failing `oc adm release info`
+    # (disconnected cluster, missing pull secret, etc.) would abort the whole
+    # install before the empty-check fallback below can skip the proxy.
+    oauth_proxy_image=$(oc adm release info --image-for=oauth-proxy 2>/dev/null) || true
     if [ -z "$oauth_proxy_image" ]; then
       log_warn "Could not resolve oauth-proxy image — skipping MLflow OAuth proxy"
       return 0
@@ -1338,6 +1344,7 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set "components.mlflow.enabled=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
   --set "components.mlflow.routeNamespace=${MLFLOW_NAMESPACE}" \
   --set "kagenti-operator-chart.mlflow.enable=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
+  --set "kagenti-operator-chart.featureGates.injectTools=true" \
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
 
 log_success "Kagenti installed"
@@ -1606,10 +1613,10 @@ log_info "Step 5b: Install MCP Gateway"
 if $SKIP_MCP_GATEWAY; then
   log_info "Skipped (--skip-mcp-gateway)"
 else
-  # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior
-  # version that used a different API group). A stuck finalizer prevents the controller
-  # from creating the broker-router deployment on reinstall.
   if ! $DRY_RUN; then
+    # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior
+    # version that used a different API group). A stuck finalizer prevents the controller
+    # from creating the broker-router deployment on reinstall.
     for _crd_group in mcp.kuadrant.io mcp.kagenti.com; do
       _stuck=$($KUBECTL get mcpgatewayextensions.${_crd_group} -n mcp-system -o json 2>/dev/null \
         | python3 -c "
@@ -1628,6 +1635,41 @@ for item in data.get('items', []):
         sleep 2
       fi
     done
+
+    # Helm does not update CRDs on upgrade — pre-apply them from the chart
+    _mcp_gw_tmp=$(mktemp -d)
+    if helm pull oci://ghcr.io/kuadrant/charts/mcp-gateway \
+         --version "$MCP_GATEWAY_VERSION" --untar -d "$_mcp_gw_tmp" 2>/dev/null; then
+      if [ -d "$_mcp_gw_tmp/mcp-gateway/crds" ]; then
+        log_info "Applying MCP Gateway CRDs..."
+        $KUBECTL apply -f "$_mcp_gw_tmp/mcp-gateway/crds/" 2>/dev/null || true
+      fi
+
+      # Kubernetes does not allow changing spec.selector on existing Deployments.
+      # If the chart changed selectors between versions, delete affected Deployments
+      # so Helm can recreate them.
+      _chart_yaml=$(helm template mcp-gateway "$_mcp_gw_tmp/mcp-gateway" 2>/dev/null || true)
+      for _deploy in mcp-gateway-controller mcp-gateway-broker-router; do
+        if $KUBECTL get deployment "$_deploy" -n mcp-system &>/dev/null; then
+          _current_selector=$($KUBECTL get deployment "$_deploy" -n mcp-system \
+            -o jsonpath='{.spec.selector.matchLabels}' 2>/dev/null || echo "")
+          _chart_selector=$(echo "$_chart_yaml" | python3 -c "
+import sys, yaml, json
+for doc in yaml.safe_load_all(sys.stdin):
+    if doc and doc.get('kind') == 'Deployment' and doc.get('metadata',{}).get('name') == '$_deploy':
+        print(json.dumps(doc['spec']['selector']['matchLabels'], sort_keys=True, separators=(',',':')))
+        break
+" 2>/dev/null || echo "")
+          if [ -n "$_chart_selector" ] && [ -n "$_current_selector" ] && [ "$_current_selector" != "$_chart_selector" ]; then
+            log_warn "Selector changed for $_deploy — deleting to allow upgrade"
+            $KUBECTL delete deployment "$_deploy" -n mcp-system --ignore-not-found
+          fi
+        fi
+      done
+    else
+      log_warn "Failed to pull MCP Gateway chart v${MCP_GATEWAY_VERSION} — skipping CRD pre-apply and selector check"
+    fi
+    rm -rf "$_mcp_gw_tmp"
   fi
 
   MCP_GW_PUBLIC_HOST="mcp-gateway-gateway-system.${DOMAIN}"

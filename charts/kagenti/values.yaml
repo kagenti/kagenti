@@ -75,6 +75,11 @@ secrets:
 
 common:
   kubectlImage: "quay.io/kubestellar/kubectl:1.30.14"
+  # Pinned to a tag that exists on registry.redhat.io. Do NOT bump blindly to
+  # match the cluster's OCP version — ose-cli is not published for every release
+  # (e.g. v4.20 is absent), and the route-processor apply uses --validate=false
+  # so a version-skewed client still works (issue #1983). Override for air-gapped
+  # mirrors or to pin a newer tag once it is known to be published.
   oseCLIImage: "registry.redhat.io/openshift4/ose-cli:v4.15"
 
 # ------------------------------------------------------------------
@@ -108,7 +113,10 @@ ui:
     resources:
       limits:
         cpu: 100m
-        memory: 128Mi
+        # nginx worker_processes is pinned in the image (see kagenti/ui-v2/Dockerfile),
+        # so memory no longer scales with host CPU count. 256Mi is defense-in-depth
+        # headroom above the measured footprint. See kagenti#1991.
+        memory: 256Mi
       requests:
         cpu: 25m
         memory: 64Mi
@@ -267,7 +275,7 @@ kagenti-operator-chart:
     container:
       cmd: /manager
       image:
-        tag: 0.3.0-alpha.4
+        tag: 0.3.0-alpha.5
       args:
       - "--leader-elect"
       - "--metrics-bind-address=:8443"
@@ -303,10 +311,10 @@ kagenti-operator-chart:
   # sidecar. Client registration is operator-managed.
   defaults:
     images:
-      authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.7
-      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.7
-      authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.7
-      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.7
+      authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.9
+      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.9
+      authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.9
+      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.9
 
 # ------------------------------------------------------------------
 #  MCP Gateway Configuration
@@ -379,21 +387,3 @@ mlflowOAuthSecret:
 # ------------------------------------------------------------------
 spire:
   enabled: true
-
-# ------------------------------------------------------------------
-#  OpenShell Configuration
-# ------------------------------------------------------------------
-openshell:
-  enabled: false
-  gateway:
-    image: ghcr.io/kagenti/openshell/gateway
-    tag: v0.0.56
-    pullPolicy: IfNotPresent
-  computeDriver:
-    image: ghcr.io/kagenti/openshell-driver-openshift/compute-driver
-    tag: v0.1.0-rc.4
-    pullPolicy: IfNotPresent
-  credentialsDriver:
-    image: ghcr.io/kagenti/openshell-credentials-keycloak/credentials-driver
-    tag: main-d7d8306
-    pullPolicy: IfNotPresent

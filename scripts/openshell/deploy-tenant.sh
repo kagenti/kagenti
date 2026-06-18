@@ -152,6 +152,15 @@ INGRESS_TYPE=$(get_ingress_type)
 INGRESS_HOST=$(get_ingress_host)
 OIDC_ISSUER=$(get_keycloak_issuer)
 
+# ── Step 0 (early): Ensure namespace exists before platform-specific setup ──
+# On OpenShift the CA bundle step needs the tenant namespace to already exist.
+if ! kubectl get namespace "$TENANT" &>/dev/null; then
+  log_info "Creating namespace $TENANT (needed for platform setup)..."
+  if ! $DRY_RUN; then
+    kubectl create namespace "$TENANT"
+  fi
+fi
+
 # Kind: resolve Keycloak ClusterIP so we can inject hostAliases into the pod
 # (localtest.me resolves to 127.0.0.1 which is loopback inside the pod)
 KEYCLOAK_CLUSTER_IP=""
@@ -173,6 +182,7 @@ else
   ) | kubectl create configmap "$COMBINED_CA_CM" -n "$TENANT" \
         --from-file=ca-bundle.crt=/dev/stdin --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   EXTRA_HELM_SETS+=("trustedCABundle=$COMBINED_CA_CM")
+  EXTRA_HELM_SETS+=("openshift.enabled=true")
 fi
 
 # Override image tags only when explicitly requested (otherwise use values.yaml defaults)
@@ -180,6 +190,7 @@ if [[ -n "$IMAGE_TAG" ]]; then
   EXTRA_HELM_SETS+=("images.gateway.tag=$IMAGE_TAG")
   EXTRA_HELM_SETS+=("images.computeDriver.tag=$IMAGE_TAG")
   EXTRA_HELM_SETS+=("images.credentialsDriver.tag=$IMAGE_TAG")
+  EXTRA_HELM_SETS+=("supervisorImage.tag=$IMAGE_TAG")
 fi
 
 echo ""
