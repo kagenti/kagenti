@@ -271,8 +271,16 @@ async def sync_skills_once(kube: KubernetesService) -> int:
 
     try:
         registry_skills = await _fetch_registry_skills(registry_url)
+    except (httpx.TimeoutException, httpx.ConnectError) as exc:
+        logger.warning("Auto-sync: transient fetch error from '%s': %s", registry_url, exc)
+        return effective_interval
+    except (ValueError, httpx.HTTPStatusError) as exc:
+        # ValueError covers non-list JSON; HTTPStatusError covers 4xx/5xx — both are
+        # registry-side problems unlikely to resolve on the next cycle without intervention.
+        logger.error("Auto-sync: permanent error from '%s': %s", registry_url, exc)
+        return effective_interval
     except Exception as exc:
-        logger.warning("Auto-sync: failed to fetch skills from '%s': %s", registry_url, exc)
+        logger.warning("Auto-sync: unexpected error from '%s': %s", registry_url, exc)
         return effective_interval
 
     # Filter by allowed tags (AND-any: skill must have at least one allowed tag).
