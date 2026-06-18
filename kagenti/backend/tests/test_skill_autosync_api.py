@@ -51,8 +51,10 @@ def client(kube):
     # without requiring real network access. Tests here exercise handler logic, not
     # the URL validator (which has its own dedicated test).
     public_addr = [(None, None, None, None, ("93.184.216.34", 0))]
-    with patch("app.routers.skills.settings") as mock_settings, \
-         patch("app.routers.skills.socket.getaddrinfo", return_value=public_addr):
+    with (
+        patch("app.routers.skills.settings") as mock_settings,
+        patch("app.routers.skills.socket.getaddrinfo", return_value=public_addr),
+    ):
         mock_settings.kagenti_feature_flag_external_skills = True
         mock_settings.kagenti_feature_flag_skills = True
         with TestClient(app) as c:
