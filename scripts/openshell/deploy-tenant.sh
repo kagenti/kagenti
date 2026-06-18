@@ -190,6 +190,7 @@ if [[ -n "$IMAGE_TAG" ]]; then
   EXTRA_HELM_SETS+=("images.gateway.tag=$IMAGE_TAG")
   EXTRA_HELM_SETS+=("images.computeDriver.tag=$IMAGE_TAG")
   EXTRA_HELM_SETS+=("images.credentialsDriver.tag=$IMAGE_TAG")
+  EXTRA_HELM_SETS+=("supervisorImage.tag=$IMAGE_TAG")
 fi
 
 echo ""
