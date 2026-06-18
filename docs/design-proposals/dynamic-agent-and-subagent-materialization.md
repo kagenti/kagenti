@@ -335,7 +335,7 @@ For the MVP, artifact storage should use Kubernetes-native resources in the same
 - a controller-created `Secret` for sensitive output;
 - an existing or request-owned PVC path only when the selected workload already uses workspace storage.
 
-Richer artifact storage backends may be implemented as future extensions. 
+Richer artifact storage backends may be implemented as future extensions.
 
 The controller should enforce a configurable result-size limit for `status.result` and set `result.truncated: true` when content is summarized or moved to an artifact.
 
@@ -615,7 +615,6 @@ For Jobs, deletion should use normal Kubernetes background propagation. For Sand
 Generated resources must be traceable to the request. The following labels are required on generated workloads and Services where Kubernetes label constraints allow them:
 
 ```yaml
-kagenti.io/type: agent
 kagenti.io/dynamic-agent: "true"
 kagenti.io/dynamic-request: <request-name>
 kagenti.io/dynamic-mode: standalone | subagent
