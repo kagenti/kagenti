@@ -122,6 +122,13 @@ export const SkillCatalogPage: React.FC = () => {
             </Button>,
           ]}
         >
+          {disableAutoSyncMutation.isError && (
+            <Alert variant="danger" isInline title="Failed to disable auto-sync">
+              {disableAutoSyncMutation.error instanceof Error
+                ? disableAutoSyncMutation.error.message
+                : 'An error occurred'}
+            </Alert>
+          )}
           This will remove all auto-synced skills from Kagenti. Skills managed in
           Skillberry Store will not be affected.
         </Modal>
