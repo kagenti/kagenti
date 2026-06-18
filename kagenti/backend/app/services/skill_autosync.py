@@ -315,7 +315,14 @@ async def sync_skills_once(kube: KubernetesService) -> int:
 
 
 async def run_skill_autosync_loop() -> None:
-    """Background loop that periodically syncs skills from the configured registry."""
+    """Background loop that periodically syncs skills from the configured registry.
+
+    Multi-replica note: each replica runs this loop independently. Concurrent syncs
+    are safe — 409 conflicts on ConfigMap writes are handled gracefully — but result
+    in N×registry fetches and N-1 redundant K8s writes per interval. Leader election
+    is a known future improvement; acceptable for single-replica deployments behind
+    the feature flag.
+    """
     await asyncio.sleep(settings.skill_autosync_interval)
     while True:
         interval = settings.skill_autosync_interval
