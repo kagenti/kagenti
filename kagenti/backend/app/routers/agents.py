@@ -3950,6 +3950,22 @@ class FinalizeShipwrightBuildRequest(BaseModel):
         """
         return self
 
+    @model_validator(mode="after")
+    def _check_tlsbridge_compatible_with_mode(self) -> "FinalizeShipwrightBuildRequest":
+        """Mirror of CreateAgentRequest._check_tlsbridge_compatible_with_mode at
+        the Shipwright finalize boundary, so a direct finalize caller (or a combo
+        inherited from the BuildRun's stored config) with tlsBridgeEnabled +
+        envoy-sidecar/waypoint gets the same fast 422 instead of a later webhook
+        denial. Same allowlist as the operator (empty → defaults to proxy-sidecar).
+        """
+        allowed = (None, "", "proxy-sidecar", "lite")
+        if self.tlsBridgeEnabled and self.authBridgeMode not in allowed:
+            raise ValueError(
+                "tlsBridgeEnabled requires authBridgeMode proxy-sidecar or lite "
+                f"(the TLS bridge lives in the Go forward proxy); got {self.authBridgeMode!r}"
+            )
+        return self
+
 
 @router.post(
     "/{namespace}/{name}/finalize-shipwright-build",

@@ -218,3 +218,19 @@ def test_create_agent_request_allows_tls_bridge_with_proxy_sidecar():
     # empty mode defaults to proxy-sidecar and is allowed
     r2 = CreateAgentRequest(name="a", namespace="ns", tlsBridgeEnabled=True)
     assert r2.tlsBridgeEnabled is True
+
+
+def test_finalize_request_rejects_tls_bridge_with_envoy():
+    """The same fast-422 must hold on the Shipwright finalize boundary, so a
+    direct finalize call (or a stored-config combo) can't bypass it."""
+    from app.routers.agents import FinalizeShipwrightBuildRequest
+
+    with pytest.raises(ValidationError):
+        FinalizeShipwrightBuildRequest(authBridgeMode="envoy-sidecar", tlsBridgeEnabled=True)
+
+
+def test_finalize_request_allows_tls_bridge_with_proxy_sidecar():
+    from app.routers.agents import FinalizeShipwrightBuildRequest
+
+    r = FinalizeShipwrightBuildRequest(authBridgeMode="proxy-sidecar", tlsBridgeEnabled=True)
+    assert r.tlsBridgeEnabled is True
