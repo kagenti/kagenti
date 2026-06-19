@@ -80,7 +80,7 @@ function pluginsToTreeData(plugins: PluginConfig[]): TreeViewDataItem[] {
     id: `plugin-${idx}`,
     name: plugin.name,
     defaultExpanded: true,
-    children: Object.entries(plugin.config).map(([key, value]) => {
+    children: Object.entries(plugin.config || {}).map(([key, value]) => {
       if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
         return {
           id: `plugin-${idx}-${key}`,
