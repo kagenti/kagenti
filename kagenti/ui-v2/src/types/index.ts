@@ -483,6 +483,8 @@ export interface AuthBridgeConfig {
   AuthBridge: boolean | null;
   mode: AuthBridgeMode | null;
   pipeline: PipelineConfig | null;
+  /** Outbound TLS bridge config from the sidecar; present + mode "enabled" when active. */
+  tls_bridge?: { mode?: string } | null;
 }
 
 export interface PipelineConfig {

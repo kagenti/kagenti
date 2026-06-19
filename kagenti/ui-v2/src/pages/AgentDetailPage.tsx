@@ -1084,6 +1084,14 @@ export const AgentDetailPage: React.FC = () => {
                                 <Label isCompact color="blue">{authBridgeConfig.mode}</Label>
                               </DescriptionListDescription>
                             </DescriptionListGroup>
+                            {authBridgeConfig.tls_bridge?.mode === 'enabled' && (
+                              <DescriptionListGroup>
+                                <DescriptionListTerm>TLS bridge</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                  <Label isCompact color="green">Active</Label>
+                                </DescriptionListDescription>
+                              </DescriptionListGroup>
+                            )}
                             {(authBridgeConfig.pipeline?.inbound?.plugins?.length ?? 0) > 0 && (
                               <DescriptionListGroup>
                                 <DescriptionListTerm>Inbound Plugins</DescriptionListTerm>
