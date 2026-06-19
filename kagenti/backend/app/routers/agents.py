@@ -2951,6 +2951,15 @@ def _build_selector_labels(request: "CreateAgentRequest") -> Dict[str, str]:
     }
 
 
+def _agentruntime_supported_workload(workload_type: str) -> bool:
+    """Whether a workload type gets an AgentRuntime CR (per-agent AuthBridge
+    config). Sandbox, deployment, and statefulset are supported; Job is not —
+    a run-to-completion Job doesn't fit the attach / config-rollout model.
+    Single source of truth for the two _ensure_agentruntime call sites
+    (create_agent and finalize_shipwright_build)."""
+    return workload_type not in (WORKLOAD_TYPE_JOB,)
+
+
 def _build_agentruntime_manifest(
     name: str,
     namespace: str,
@@ -3798,7 +3807,7 @@ async def create_agent(
             # authBridgeMode / tlsBridgeMode) is applied. Sandbox is included
             # (targetRef -> agents.x-k8s.io Sandbox); only Job is excluded —
             # a run-to-completion Job doesn't fit the attach/restart model.
-            if request.workloadType not in (WORKLOAD_TYPE_JOB,):
+            if _agentruntime_supported_workload(request.workloadType):
                 _ensure_agentruntime(
                     kube=kube,
                     name=request.name,
@@ -4448,7 +4457,10 @@ async def finalize_shipwright_build(
         # Sandbox is included (targetRef -> agents.x-k8s.io Sandbox); only Job is
         # excluded. Agents only — tools don't need sidecar injection.
         resource_type = build_labels.get(KAGENTI_TYPE_LABEL, RESOURCE_TYPE_AGENT)
-        if final_workload_type not in (WORKLOAD_TYPE_JOB,) and resource_type == RESOURCE_TYPE_AGENT:
+        if (
+            _agentruntime_supported_workload(final_workload_type)
+            and resource_type == RESOURCE_TYPE_AGENT
+        ):
             _ensure_agentruntime(
                 kube=kube,
                 name=name,

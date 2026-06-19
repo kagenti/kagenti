@@ -255,6 +255,19 @@ def test_manifest_targetref_sandbox():
     assert m["spec"]["tlsBridgeMode"] == "enabled"
 
 
+def test_agentruntime_supported_workload_includes_sandbox_excludes_job():
+    """Lock the exclusion that both _ensure_agentruntime call sites (create_agent
+    and finalize_shipwright_build) gate on: sandbox/deployment/statefulset get an
+    AgentRuntime, job does not. Guards against a regression that re-adds sandbox
+    to the exclusion tuple (the bug this change fixes) or drops job from it."""
+    from app.routers.agents import _agentruntime_supported_workload
+
+    assert _agentruntime_supported_workload("sandbox") is True
+    assert _agentruntime_supported_workload("deployment") is True
+    assert _agentruntime_supported_workload("statefulset") is True
+    assert _agentruntime_supported_workload("job") is False
+
+
 def test_manifest_targetref_apps_v1_for_deployment_and_statefulset():
     """Regression: deployment/statefulset keep the apps/v1 targetRef. Locks the
     default branch of the per-kind apiVersion/kind maps so adding sandbox can't
