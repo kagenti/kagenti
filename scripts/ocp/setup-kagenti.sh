@@ -516,10 +516,10 @@ _wait_kagenti_deps_ready() {
   _wait_deployment_ready istiod istio-system Istio &
   local pid_istio=$!
 
-  # Keycloak chain — sequential (each step creates the next resource)
+  # RHBK operator is installed by kagenti-deps; wait for it here.
+  # postgres-kc and keycloak StatefulSets are created by the kagenti operator
+  # (KeycloakBootstrapRunnable), so they are waited on after `helm install kagenti`.
   _wait_deployment_ready rhbk-operator "$KC_NAMESPACE" "RHBK operator"
-  _wait_deployment_ready postgres-kc "$KC_NAMESPACE" "Keycloak PostgreSQL" statefulset
-  _wait_deployment_ready keycloak "$KC_NAMESPACE" Keycloak statefulset
 
   # Collect parallel results
   wait $pid_cm || log_warn "cert-manager readiness check failed"
@@ -1345,6 +1345,16 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
 
 log_success "Kagenti installed"
+
+# Wait for operator-managed Keycloak resources (postgres-kc + keycloak StatefulSets).
+# These are created by the kagenti operator's KeycloakBootstrapRunnable, which is
+# deployed by the kagenti chart above.
+_wait_keycloak_ready() {
+  if $DRY_RUN; then return; fi
+  _wait_deployment_ready postgres-kc "$KC_NAMESPACE" "Keycloak PostgreSQL" statefulset
+  _wait_deployment_ready keycloak "$KC_NAMESPACE" Keycloak statefulset
+}
+_wait_keycloak_ready
 
 # OTEL RoleBindings and MLflow experiment creation are now managed by
 # kagenti-operator's controllers. Wire the OTEL collector endpoint and
