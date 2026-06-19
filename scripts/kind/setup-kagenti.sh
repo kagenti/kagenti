@@ -1127,22 +1127,16 @@ spec:
               value: "${SPIFFE_IDP_ALIAS}"
 EOF
 
-  # Wait for job to complete
+  # Wait for job to complete (up to 10m — the job's wait_for_spire() retries
+  # for up to 5m if OIDC keys aren't ready, plus container startup overhead)
   log_info "Waiting for SPIFFE IdP setup job..."
-  tries=0
-  while true; do
-    SUCCEEDED=$(kubectl get job kagenti-spiffe-idp-setup-job -n "$KAGENTI_NS" \
-      -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "")
-    [ "$SUCCEEDED" = "1" ] && break
-    tries=$((tries + 1))
-    if [ $tries -ge 60 ]; then
-      log_warn "SPIFFE IdP setup job did not complete in 5m — check logs:"
-      log_warn "  kubectl logs -n $KAGENTI_NS job/kagenti-spiffe-idp-setup-job"
-      break
-    fi
-    sleep 5
-  done
-  [ "$SUCCEEDED" = "1" ] && log_success "SPIFFE IdP setup complete"
+  if kubectl wait --for=condition=complete job/kagenti-spiffe-idp-setup-job \
+       -n "$KAGENTI_NS" --timeout=600s 2>/dev/null; then
+    log_success "SPIFFE IdP setup complete"
+  else
+    log_warn "SPIFFE IdP setup job did not complete in 10m — check logs:"
+    log_warn "  kubectl logs -n $KAGENTI_NS job/kagenti-spiffe-idp-setup-job"
+  fi
   echo ""
 fi
 
