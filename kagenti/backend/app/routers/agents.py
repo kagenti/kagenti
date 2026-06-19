@@ -4448,10 +4448,7 @@ async def finalize_shipwright_build(
         # Sandbox is included (targetRef -> agents.x-k8s.io Sandbox); only Job is
         # excluded. Agents only — tools don't need sidecar injection.
         resource_type = build_labels.get(KAGENTI_TYPE_LABEL, RESOURCE_TYPE_AGENT)
-        if (
-            final_workload_type not in (WORKLOAD_TYPE_JOB,)
-            and resource_type == RESOURCE_TYPE_AGENT
-        ):
+        if final_workload_type not in (WORKLOAD_TYPE_JOB,) and resource_type == RESOURCE_TYPE_AGENT:
             _ensure_agentruntime(
                 kube=kube,
                 name=name,
