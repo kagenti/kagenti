@@ -941,14 +941,35 @@ if $WITH_SPIRE && ! $DRY_RUN; then
   SPIRE_SERVER_NS="zero-trust-workload-identity-manager"
   KAGENTI_NS="kagenti-system"
 
-  # 7a: Wait for OIDC discovery provider to be fully ready before starting IdP setup
-  # Note: set_key_use is already configured via Helm values (--set spiffe-oidc-discovery-provider.config.set_key_use=true)
-  # and --wait on the SPIRE install ensures the CSI driver + agent are ready before the provider starts.
+  # 7a: Patch OIDC ConfigMap to enable set_key_use (required for Keycloak to accept JWKS keys)
+  # The helm value spiffe-oidc-discovery-provider.config.set_key_use=true does not render into
+  # the ConfigMap with the current chart version, so we patch it directly.
   log_info "Waiting for OIDC discovery provider to be ready..."
   kubectl wait --for=condition=Available deployment/spire-spiffe-oidc-discovery-provider \
     -n "$SPIRE_SERVER_NS" --timeout=300s 2>/dev/null \
     && log_success "OIDC discovery provider ready" \
     || log_warn "OIDC discovery provider not ready after 5m — IdP setup may fail"
+
+  OIDC_CONF=$(kubectl get configmap spire-spiffe-oidc-discovery-provider \
+    -n "$SPIRE_SERVER_NS" \
+    -o jsonpath='{.data.oidc-discovery-provider\.conf}' 2>/dev/null || echo "")
+  if [ -n "$OIDC_CONF" ] && ! echo "$OIDC_CONF" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('set_key_use') else 1)" 2>/dev/null; then
+    log_info "Patching OIDC ConfigMap with set_key_use: true..."
+    PATCHED=$(echo "$OIDC_CONF" | python3 -c "import sys,json; d=json.load(sys.stdin); d['set_key_use']=True; json.dump(d,sys.stdout)")
+    kubectl get configmap spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS" -o json | \
+      python3 -c "
+import sys, json
+cm = json.load(sys.stdin)
+cm['data']['oidc-discovery-provider.conf'] = '''$PATCHED'''
+json.dump(cm, sys.stdout)
+" | kubectl apply -f -
+    kubectl rollout restart deployment/spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS"
+    kubectl rollout status deployment/spire-spiffe-oidc-discovery-provider \
+      -n "$SPIRE_SERVER_NS" --timeout=120s || true
+    log_success "OIDC ConfigMap patched with set_key_use: true"
+  else
+    log_success "OIDC ConfigMap already has set_key_use"
+  fi
 
   # 7b: Run SPIFFE IdP setup job (configures Keycloak with SPIRE identity provider)
   log_info "Setting up SPIFFE IdP..."
