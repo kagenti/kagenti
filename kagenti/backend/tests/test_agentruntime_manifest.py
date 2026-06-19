@@ -234,3 +234,34 @@ def test_finalize_request_allows_tls_bridge_with_proxy_sidecar():
 
     r = FinalizeShipwrightBuildRequest(authBridgeMode="proxy-sidecar", tlsBridgeEnabled=True)
     assert r.tlsBridgeEnabled is True
+
+
+# --- targetRef per workload type ---
+
+
+def test_manifest_targetref_sandbox():
+    """Sandbox is an agents.x-k8s.io CR, not apps/v1 — the targetRef must carry
+    the Sandbox kind + group so the operator's resolveTargetRef binds the real
+    workload (a wrong apps/v1 ref would dangle and never reconcile). Pairs with
+    the backend un-excluding sandbox from _ensure_agentruntime."""
+    from app.routers.agents import _build_agentruntime_manifest
+
+    m = _build_agentruntime_manifest("a", "ns", "sandbox", tls_bridge_enabled=True)
+    ref = m["spec"]["targetRef"]
+    assert ref["kind"] == "Sandbox"
+    assert ref["apiVersion"] == "agents.x-k8s.io/v1alpha1"
+    assert ref["name"] == "a"
+    # The AuthBridge knobs flow into the sandbox CR exactly like deployment.
+    assert m["spec"]["tlsBridgeMode"] == "enabled"
+
+
+def test_manifest_targetref_apps_v1_for_deployment_and_statefulset():
+    """Regression: deployment/statefulset keep the apps/v1 targetRef. Locks the
+    default branch of the per-kind apiVersion/kind maps so adding sandbox can't
+    silently change the existing kinds."""
+    from app.routers.agents import _build_agentruntime_manifest
+
+    for wt, kind in (("deployment", "Deployment"), ("statefulset", "StatefulSet")):
+        ref = _build_agentruntime_manifest("a", "ns", wt)["spec"]["targetRef"]
+        assert ref["apiVersion"] == "apps/v1"
+        assert ref["kind"] == kind

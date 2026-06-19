@@ -2964,11 +2964,18 @@ def _build_agentruntime_manifest(
     kind_map = {
         WORKLOAD_TYPE_DEPLOYMENT: "Deployment",
         WORKLOAD_TYPE_STATEFULSET: "StatefulSet",
+        WORKLOAD_TYPE_SANDBOX: "Sandbox",
+    }
+    # Sandbox is an agents.x-k8s.io CR, not apps/v1 — emit the right targetRef
+    # apiVersion per kind so the operator's resolveTargetRef finds the workload
+    # (a wrong apps/v1 ref for a Sandbox would dangle and never reconcile).
+    apiversion_map = {
+        WORKLOAD_TYPE_SANDBOX: f"{AGENT_SANDBOX_CRD_GROUP}/{AGENT_SANDBOX_CRD_VERSION}",
     }
     spec: dict = {
         "type": agent_type,
         "targetRef": {
-            "apiVersion": "apps/v1",
+            "apiVersion": apiversion_map.get(workload_type, "apps/v1"),
             "kind": kind_map.get(workload_type, "Deployment"),
             "name": name,
         },
@@ -3787,8 +3794,11 @@ async def create_agent(
                     request.workloadType,
                 )
 
-            # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
-            if request.workloadType not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX):
+            # Create AgentRuntime CR so the per-agent AuthBridge config (mtls /
+            # authBridgeMode / tlsBridgeMode) is applied. Sandbox is included
+            # (targetRef -> agents.x-k8s.io Sandbox); only Job is excluded —
+            # a run-to-completion Job doesn't fit the attach/restart model.
+            if request.workloadType not in (WORKLOAD_TYPE_JOB,):
                 _ensure_agentruntime(
                     kube=kube,
                     name=request.name,
@@ -4434,11 +4444,12 @@ async def finalize_shipwright_build(
         )
         _create_or_replace_service(kube, namespace, name, service_manifest, final_workload_type)
 
-        # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
-        # Only for agents — tools don't need sidecar injection
+        # Create AgentRuntime CR so the per-agent AuthBridge config is applied.
+        # Sandbox is included (targetRef -> agents.x-k8s.io Sandbox); only Job is
+        # excluded. Agents only — tools don't need sidecar injection.
         resource_type = build_labels.get(KAGENTI_TYPE_LABEL, RESOURCE_TYPE_AGENT)
         if (
-            final_workload_type not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX)
+            final_workload_type not in (WORKLOAD_TYPE_JOB,)
             and resource_type == RESOURCE_TYPE_AGENT
         ):
             _ensure_agentruntime(
