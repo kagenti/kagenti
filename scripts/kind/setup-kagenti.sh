@@ -1092,6 +1092,7 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
+              set -e
               echo "Waiting for SPIRE server..."
               kubectl wait --for=condition=ready pod \
                 -l app.kubernetes.io/name=server \
@@ -1103,6 +1104,18 @@ spec:
               echo "Waiting for Keycloak to be ready..."
               kubectl wait --for=condition=ready pod \
                 -l app=keycloak -n ${KC_NS} --timeout=300s
+              echo "Validating OIDC JWKS endpoint serves keys with 'use' field..."
+              OIDC_URL="http://spire-spiffe-oidc-discovery-provider.${SPIRE_SERVER_NS}.svc.cluster.local/keys"
+              for i in \$(seq 1 60); do
+                if curl -sf "\$OIDC_URL" | grep -q '"use"'; then
+                  echo "OIDC JWKS endpoint validated"
+                  exit 0
+                fi
+                echo "  Attempt \$i/60: OIDC keys not ready, retrying in 5s..."
+                sleep 5
+              done
+              echo "WARNING: OIDC keys validation timed out after 5m"
+              exit 1
       containers:
         - name: setup-spiffe-idp
           image: "${SPIFFE_IDP_IMAGE}"
