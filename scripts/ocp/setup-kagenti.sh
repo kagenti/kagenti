@@ -786,8 +786,10 @@ _ensure_rhoai_shared_trust_prerequisites() {
   log_success "cert-manager is ready"
 
   # --- Create shared trust resources (fallback if Helm lookup skipped them) ---
+  # Retry: cainjector may not have populated the webhook caBundle yet (x509 race)
   log_info "Creating shared trust cert-manager resources..."
-  $KUBECTL apply -f - <<'EOF'
+  tries=0
+  until $KUBECTL apply -f - <<'EOF'
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -813,6 +815,15 @@ spec:
     name: istio-mesh-root-selfsigned
     kind: ClusterIssuer
 EOF
+  do
+    tries=$((tries + 1))
+    if [ $tries -ge 6 ]; then
+      log_warn "Failed to create shared trust resources after $tries attempts"
+      return 1
+    fi
+    log_info "cert-manager webhook not ready yet, retrying in 10s... ($tries/6)"
+    sleep 10
+  done
 
   _adopt_for_helm clusterissuer istio-mesh-root-selfsigned
   _adopt_for_helm certificate istio-mesh-root-ca cert-manager
