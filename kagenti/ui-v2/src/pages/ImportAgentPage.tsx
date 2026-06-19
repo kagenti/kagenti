@@ -241,6 +241,12 @@ export const ImportAgentPage: React.FC = () => {
   useEffect(() => {
     if (!spireEnabled) setMtlsMode('disabled');
   }, [spireEnabled]);
+  // TLS bridge: decrypt the agent's outbound HTTPS so AuthBridge can inspect it.
+  // Default off. Only valid in proxy-sidecar mode, so force off in Envoy mode.
+  const [tlsBridgeEnabled, setTlsBridgeEnabled] = useState(false);
+  useEffect(() => {
+    if (useEnvoyMode) setTlsBridgeEnabled(false);
+  }, [useEnvoyMode]);
   const [showOutboundRouting, setShowOutboundRouting] = useState(false);
 
   // Validation state
@@ -547,6 +553,8 @@ export const ImportAgentPage: React.FC = () => {
         // and envoy-sidecar support the full disabled/permissive/strict
         // matrix end-to-end (kagenti-operator#381 + extensions#441).
         mtlsMode: authBridgeEnabled ? mtlsMode : undefined,
+        // Only when AuthBridge is on and not in Envoy mode (proxy-sidecar only).
+        tlsBridgeEnabled: authBridgeEnabled && !useEnvoyMode && tlsBridgeEnabled,
         outboundRoutes: authBridgeEnabled && outboundRoutes.some(isCommittedRoute)
           ? outboundRoutes.filter(isCommittedRoute).map(serializeRoute)
           : undefined,
@@ -589,6 +597,8 @@ export const ImportAgentPage: React.FC = () => {
         // and envoy-sidecar support the full disabled/permissive/strict
         // matrix end-to-end (kagenti-operator#381 + extensions#441).
         mtlsMode: authBridgeEnabled ? mtlsMode : undefined,
+        // Only when AuthBridge is on and not in Envoy mode (proxy-sidecar only).
+        tlsBridgeEnabled: authBridgeEnabled && !useEnvoyMode && tlsBridgeEnabled,
         outboundRoutes: authBridgeEnabled && outboundRoutes.some(isCommittedRoute)
           ? outboundRoutes.filter(isCommittedRoute).map(serializeRoute)
           : undefined,
@@ -1167,10 +1177,27 @@ export const ImportAgentPage: React.FC = () => {
                 <FormGroup fieldId="useEnvoyMode" style={{ marginLeft: '24px' }}>
                   <Checkbox
                     id="useEnvoyMode"
-                    label="Use Envoy + iptables interception"
+                    label="Use Envoy sidecar interception"
                     isChecked={useEnvoyMode}
                     onChange={(_e, checked) => setUseEnvoyMode(checked)}
-                    description="Enforce transparent outbound interception (vs HTTP_PROXY env vars)"
+                    description="Run the Envoy data plane (ext_proc) instead of the default Go forward/reverse proxy sidecar"
+                  />
+                </FormGroup>
+              )}
+
+              {authBridgeEnabled && (
+                <FormGroup fieldId="tlsBridgeEnabled" style={{ marginLeft: '24px' }}>
+                  <Checkbox
+                    id="tlsBridgeEnabled"
+                    label="Decrypt outbound TLS for inspection (TLS bridge)"
+                    isChecked={tlsBridgeEnabled && !useEnvoyMode}
+                    isDisabled={useEnvoyMode}
+                    onChange={(_e, checked) => setTlsBridgeEnabled(checked)}
+                    description={
+                      useEnvoyMode
+                        ? 'Requires proxy-sidecar mode (uncheck Envoy interception to enable)'
+                        : 'Terminate the agent’s outbound HTTPS at the sidecar so the AuthBridge pipeline can see request payloads. Requires cert-manager.'
+                    }
                   />
                 </FormGroup>
               )}

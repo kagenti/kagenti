@@ -289,6 +289,16 @@ class CreateAgentRequest(BaseModel):
     # webhook denial after the manifest is built.
     mtlsMode: Optional[Literal["disabled", "permissive", "strict"]] = None
 
+    # Per-workload TLS bridge: decrypt the agent's outbound HTTPS so AuthBridge's
+    # pipeline can inspect it. Maps to AgentRuntime.Spec.TLSBridgeMode (enabled
+    # when True; left unset → operator default "disabled"). Like mtlsMode, it's a
+    # plain per-agent field — no operator feature gate and no UI feature flag; the
+    # import-form checkbox shows whenever AuthBridge is enabled. The bridge lives
+    # in the Go forward proxy, so it requires proxy-sidecar/lite mode — the
+    # validator below mirrors the operator webhook's reject of envoy-sidecar. It
+    # also needs cert-manager and an operator build that supports the bridge.
+    tlsBridgeEnabled: bool = False
+
     # Port exclusion annotations
     outboundPortsExclude: Optional[str] = None
     inboundPortsExclude: Optional[str] = None
@@ -347,6 +357,24 @@ class CreateAgentRequest(BaseModel):
         API call) submitting that combination is valid and the
         operator turns SPIRE on for them.
         """
+        return self
+
+    @model_validator(mode="after")
+    def _check_tlsbridge_compatible_with_mode(self) -> "CreateAgentRequest":
+        """Reject tlsBridgeEnabled with an authBridgeMode that can't host the
+        bridge, mirroring the operator's checkTLSBridgeCompatibleWithMode
+        (agentruntime_webhook.go). The TLS bridge lives in the Go forward proxy,
+        which only exists in proxy-sidecar / lite. Uses the same ALLOWLIST as the
+        operator (empty → defaults to proxy-sidecar) rather than a denylist, so a
+        future authBridgeMode can't slip past this fast-422 and only get rejected
+        at the webhook.
+        """
+        allowed = (None, "", "proxy-sidecar", "lite")
+        if self.tlsBridgeEnabled and self.authBridgeMode not in allowed:
+            raise ValueError(
+                "tlsBridgeEnabled requires authBridgeMode proxy-sidecar or lite "
+                f"(the TLS bridge lives in the Go forward proxy); got {self.authBridgeMode!r}"
+            )
         return self
 
 
@@ -2505,6 +2533,8 @@ def _build_agent_shipwright_build_manifest(
         resource_config["defaultOutboundPolicy"] = request.defaultOutboundPolicy
     if request.mtlsMode:
         resource_config["mtlsMode"] = request.mtlsMode
+    if request.tlsBridgeEnabled:
+        resource_config["tlsBridgeEnabled"] = True
     if request.persistentStorage:
         resource_config["persistentStorage"] = request.persistentStorage.model_dump()
     # Add env vars if present
@@ -2928,6 +2958,7 @@ def _build_agentruntime_manifest(
     agent_type: str = RESOURCE_TYPE_AGENT,
     auth_bridge_mode: Optional[str] = None,
     mtls_mode: Optional[str] = None,
+    tls_bridge_enabled: bool = False,
 ) -> dict:
     """Build an AgentRuntime CR manifest for the given workload."""
     kind_map = {
@@ -2946,6 +2977,10 @@ def _build_agentruntime_manifest(
         spec["authBridgeMode"] = auth_bridge_mode
     if mtls_mode:
         spec["mtlsMode"] = mtls_mode
+    # Only set when enabled; unset → operator default "disabled" (also keeps the
+    # CRD field off envoy-sidecar agents so the validating webhook doesn't reject).
+    if tls_bridge_enabled:
+        spec["tlsBridgeMode"] = "enabled"
     return {
         "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
         "kind": "AgentRuntime",
@@ -2969,10 +3004,17 @@ def _ensure_agentruntime(
     agent_type: str = RESOURCE_TYPE_AGENT,
     auth_bridge_mode: Optional[str] = None,
     mtls_mode: Optional[str] = None,
+    tls_bridge_enabled: bool = False,
 ) -> None:
     """Create an AgentRuntime CR for the workload. Skip if it already exists."""
     manifest = _build_agentruntime_manifest(
-        name, namespace, workload_type, agent_type, auth_bridge_mode, mtls_mode
+        name,
+        namespace,
+        workload_type,
+        agent_type,
+        auth_bridge_mode,
+        mtls_mode,
+        tls_bridge_enabled,
     )
     try:
         kube.create_custom_resource(
@@ -3754,6 +3796,7 @@ async def create_agent(
                     workload_type=request.workloadType,
                     auth_bridge_mode=request.authBridgeMode,
                     mtls_mode=request.mtlsMode,
+                    tls_bridge_enabled=request.tlsBridgeEnabled,
                 )
 
             message = f"Agent '{request.name}' deployed as {request.workloadType} successfully."
@@ -3884,6 +3927,9 @@ class FinalizeShipwrightBuildRequest(BaseModel):
     # the user picked at form-submit time (stashed on the BuildRun via
     # kagenti.io/agent-config annotation).
     mtlsMode: Optional[Literal["disabled", "permissive", "strict"]] = None
+    # Mirrors CreateAgentRequest.tlsBridgeEnabled. None → inherit the value
+    # stashed on the BuildRun annotation at form-submit time.
+    tlsBridgeEnabled: Optional[bool] = None
     outboundRoutes: Optional[List[OutboundRoute]] = None
     outboundPortsExclude: Optional[str] = None
     inboundPortsExclude: Optional[str] = None
@@ -3902,6 +3948,22 @@ class FinalizeShipwrightBuildRequest(BaseModel):
         for the full rationale (including why SPIRE-vs-mTLS coupling
         is handled at the operator data-plane layer rather than here).
         """
+        return self
+
+    @model_validator(mode="after")
+    def _check_tlsbridge_compatible_with_mode(self) -> "FinalizeShipwrightBuildRequest":
+        """Mirror of CreateAgentRequest._check_tlsbridge_compatible_with_mode at
+        the Shipwright finalize boundary, so a direct finalize caller (or a combo
+        inherited from the BuildRun's stored config) with tlsBridgeEnabled +
+        envoy-sidecar/waypoint gets the same fast 422 instead of a later webhook
+        denial. Same allowlist as the operator (empty → defaults to proxy-sidecar).
+        """
+        allowed = (None, "", "proxy-sidecar", "lite")
+        if self.tlsBridgeEnabled and self.authBridgeMode not in allowed:
+            raise ValueError(
+                "tlsBridgeEnabled requires authBridgeMode proxy-sidecar or lite "
+                f"(the TLS bridge lives in the Go forward proxy); got {self.authBridgeMode!r}"
+            )
         return self
 
 
@@ -4190,6 +4252,14 @@ async def finalize_shipwright_build(
             request.mtlsMode if request.mtlsMode is not None else stored_config.get("mtlsMode")
         )
 
+        # Per-workload TLS bridge (bool; None on the finalize request → inherit
+        # the stored value). Same store-then-read-back flow as mtlsMode.
+        final_tls_bridge_enabled = (
+            request.tlsBridgeEnabled
+            if request.tlsBridgeEnabled is not None
+            else bool(stored_config.get("tlsBridgeEnabled"))
+        )
+
         # Persistent storage
         final_persistent_storage = request.persistentStorage
         if final_persistent_storage is None and stored_config.get("persistentStorage"):
@@ -4214,6 +4284,7 @@ async def finalize_shipwright_build(
             spireEnabled=final_spire_enabled,
             authBridgeMode=final_auth_bridge_mode,
             mtlsMode=final_mtls_mode,
+            tlsBridgeEnabled=final_tls_bridge_enabled,
             outboundRoutes=final_outbound_routes,
             outboundPortsExclude=final_outbound_ports_exclude,
             inboundPortsExclude=final_inbound_ports_exclude,
@@ -4377,6 +4448,7 @@ async def finalize_shipwright_build(
                 workload_type=final_workload_type,
                 auth_bridge_mode=final_auth_bridge_mode,
                 mtls_mode=final_mtls_mode,
+                tls_bridge_enabled=final_tls_bridge_enabled,
             )
 
         message = f"Agent '{name}' deployed as {final_workload_type} with image '{output_image}'."

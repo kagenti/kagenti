@@ -174,3 +174,63 @@ def test_create_agent_request_unknown_mtls_value_rejected():
 
     with pytest.raises(ValidationError):
         CreateAgentRequest(name="a", namespace="ns", mtlsMode="loose")
+
+
+# --- TLS bridge ---
+
+
+def test_manifest_omits_tls_bridge_mode_when_unset():
+    """Default (tls_bridge_enabled=False) → no spec.tlsBridgeMode key, so the
+    operator default 'disabled' applies and envoy agents aren't webhook-rejected."""
+    from app.routers.agents import _build_agentruntime_manifest
+
+    m = _build_agentruntime_manifest("a", "ns", "deployment")
+    assert "tlsBridgeMode" not in m["spec"]
+
+
+def test_manifest_sets_tls_bridge_mode_when_enabled():
+    """tls_bridge_enabled=True → spec.tlsBridgeMode == 'enabled'."""
+    from app.routers.agents import _build_agentruntime_manifest
+
+    m = _build_agentruntime_manifest("a", "ns", "deployment", tls_bridge_enabled=True)
+    assert m["spec"]["tlsBridgeMode"] == "enabled"
+
+
+def test_create_agent_request_rejects_tls_bridge_with_envoy():
+    """The TLS bridge lives in the Go forward proxy, so enabling it with
+    envoy-sidecar is rejected at the API layer (mirrors the operator webhook)."""
+    from app.routers.agents import CreateAgentRequest
+
+    with pytest.raises(ValidationError):
+        CreateAgentRequest(
+            name="a", namespace="ns", authBridgeMode="envoy-sidecar", tlsBridgeEnabled=True
+        )
+
+
+def test_create_agent_request_allows_tls_bridge_with_proxy_sidecar():
+    """proxy-sidecar (and the empty default) accept tlsBridgeEnabled."""
+    from app.routers.agents import CreateAgentRequest
+
+    r = CreateAgentRequest(
+        name="a", namespace="ns", authBridgeMode="proxy-sidecar", tlsBridgeEnabled=True
+    )
+    assert r.tlsBridgeEnabled is True
+    # empty mode defaults to proxy-sidecar and is allowed
+    r2 = CreateAgentRequest(name="a", namespace="ns", tlsBridgeEnabled=True)
+    assert r2.tlsBridgeEnabled is True
+
+
+def test_finalize_request_rejects_tls_bridge_with_envoy():
+    """The same fast-422 must hold on the Shipwright finalize boundary, so a
+    direct finalize call (or a stored-config combo) can't bypass it."""
+    from app.routers.agents import FinalizeShipwrightBuildRequest
+
+    with pytest.raises(ValidationError):
+        FinalizeShipwrightBuildRequest(authBridgeMode="envoy-sidecar", tlsBridgeEnabled=True)
+
+
+def test_finalize_request_allows_tls_bridge_with_proxy_sidecar():
+    from app.routers.agents import FinalizeShipwrightBuildRequest
+
+    r = FinalizeShipwrightBuildRequest(authBridgeMode="proxy-sidecar", tlsBridgeEnabled=True)
+    assert r.tlsBridgeEnabled is True
