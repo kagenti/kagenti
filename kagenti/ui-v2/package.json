@@ -29,7 +29,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
-    "react-router-dom": "^7.17.0",
+    "react-router-dom": "^7.18.0",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
