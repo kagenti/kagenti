@@ -170,7 +170,11 @@ data:
       configmap_yaml+="  $key: \"$value\""
     done
 
-    echo "$configmap_yaml" | kubectl apply -f -
+    # --validate=false: the applied object is a fixed core/v1 ConfigMap, so
+    # client-side schema validation adds no value — and it fails outright when
+    # the ose-cli client trails the API server by several minor versions
+    # (issue #1983). Disabling it makes the apply robust to client/server skew.
+    echo "$configmap_yaml" | kubectl apply --validate=false -f -
     if [[ $? -eq 0 ]]; then
         echo "ConfigMap '$CONFIGMAP_NAME' applied successfully in namespace '$CONFIGMAP_NAMESPACE'."
     else
@@ -195,6 +199,14 @@ spec:
       serviceAccountName: {{ include "kagenti.fullname" . }}-route-processor-sa
       containers:
       - name: script-runner
+        {{- /*
+          Pinned to an ose-cli tag known to exist on registry.redhat.io. Do NOT
+          derive it from the cluster version: ose-cli is not published for every
+          OCP release (v4.20 is absent -> "manifest unknown" -> ImagePullBackOff,
+          issue #1983). Version skew against a newer API server is harmless here
+          because the ConfigMap apply below uses --validate=false on a fixed
+          core/v1 object. An explicit common.oseCLIImage value always wins.
+        */}}
         image: {{ .Values.common.oseCLIImage | default "registry.redhat.io/openshift4/ose-cli:v4.15" }}
         command: ["/bin/bash", "-c", "/scripts/process_routes.sh"]
         volumeMounts:

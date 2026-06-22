@@ -669,12 +669,41 @@ for doc in docs:
 " | $KUBECTL apply -f - || true
 }
 
+# Remove orphaned Istio validation webhooks left behind by a previous teardown.
+# Deleting the istio-system namespace does NOT remove the cluster-scoped
+# ValidatingWebhookConfigurations that back "validation.istio.io". With
+# failurePolicy=Fail and no istiod Service to call, they reject every Istio
+# config resource (e.g. the otel-collector AuthorizationPolicy) the kagenti-deps
+# chart creates during `helm install`, aborting the release with:
+#   failed calling webhook "validation.istio.io": service "istiod" not found
+# These webhooks are recreated (with the correct caBundle) once the Sail operand
+# CRs in Step 3 bring istiod back up, so it is safe to drop the stale ones here.
+# Only touch the kagenti-managed webhooks — never the OpenShift ingress gateway's
+# (istio-validator-openshift-gateway-openshift-ingress).
+_clean_stale_istio_webhooks() {
+  if $DRY_RUN; then return; fi
+  # If istiod is present, the webhooks have a live backend — leave them alone.
+  if $KUBECTL get svc istiod -n istio-system &>/dev/null; then
+    return
+  fi
+  for _whc in istiod-default-validator istio-validator-istio-system; do
+    if $KUBECTL get validatingwebhookconfiguration "$_whc" &>/dev/null; then
+      log_warn "Removing stale Istio webhook $_whc (no istiod Service to back it)"
+      $KUBECTL delete validatingwebhookconfiguration "$_whc" --ignore-not-found || true
+    fi
+  done
+}
+
 _helm_kagenti_deps() {
   # Pre-flight: ensure namespaces managed by this chart are not stuck terminating
   # from a previous failed install/uninstall cycle
   for _ns in keycloak istio-cni istio-system istio-ztunnel; do
     _wait_ns_gone "$_ns"
   done
+
+  # Pre-flight: drop orphaned Istio validation webhooks that would otherwise
+  # block the chart's Istio config resources before istiod is provisioned.
+  _clean_stale_istio_webhooks
 
   # Build MLflow OTEL flags: enable the pipeline and point it at the DSC-managed endpoint.
   # When --otel-operator-managed is set, the operator handles ConfigMap assembly
@@ -764,10 +793,12 @@ _adopt_for_helm() {
   local kind="$1" name="$2" ns="${3:-}"
   local ns_flag=()
   if [ -n "$ns" ]; then ns_flag=(-n "$ns"); fi
-  if $KUBECTL get "$kind" "$name" "${ns_flag[@]}" &>/dev/null; then
-    $KUBECTL label "$kind" "$name" "${ns_flag[@]}" \
+  # Use the ${arr[@]+...} guard so expanding an empty array does not trip
+  # `set -u` on Bash < 4.4 (e.g. macOS system Bash 3.2). See issue #1822.
+  if $KUBECTL get "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" &>/dev/null; then
+    $KUBECTL label "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" \
       app.kubernetes.io/managed-by=Helm --overwrite || true
-    $KUBECTL annotate "$kind" "$name" "${ns_flag[@]}" \
+    $KUBECTL annotate "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" \
       meta.helm.sh/release-name=kagenti-deps \
       meta.helm.sh/release-namespace=kagenti-system --overwrite || true
   fi
@@ -1303,6 +1334,24 @@ fi
 
 log_info "Keycloak: realm=$KC_REALM namespace=$KC_NAMESPACE"
 
+# Read the actual Keycloak admin credentials from the operator-managed secret.
+# The RHBK operator creates keycloak-initial-admin with a random password.
+# The kagenti chart creates keycloak-admin-secret in agent namespaces for the
+# client-registration sidecar — these must match, otherwise client-registration
+# can't authenticate to the master realm to register per-agent OAuth clients.
+KC_ADMIN_FLAGS=()
+_kc_admin_user=$($KUBECTL get secret keycloak-initial-admin -n "$KC_NAMESPACE" \
+  -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+_kc_admin_pass=$($KUBECTL get secret keycloak-initial-admin -n "$KC_NAMESPACE" \
+  -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+if [ -n "$_kc_admin_user" ] && [ -n "$_kc_admin_pass" ]; then
+  KC_ADMIN_FLAGS+=(--set "keycloak.adminUsername=${_kc_admin_user}")
+  KC_ADMIN_FLAGS+=(--set "keycloak.adminPassword=${_kc_admin_pass}")
+  log_success "Keycloak admin credentials read from keycloak-initial-admin"
+else
+  log_warn "Could not read keycloak-initial-admin — agent client-registration may fail"
+fi
+
 # Build operator image override flags
 OPERATOR_IMAGE_FLAGS=()
 if [ -n "$OPERATOR_IMAGE" ]; then
@@ -1330,6 +1379,7 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   -f "$SECRETS_FILE" \
   ${KAGENTI_UI_FLAGS[@]+"${KAGENTI_UI_FLAGS[@]}"} \
   ${OPERATOR_IMAGE_FLAGS[@]+"${OPERATOR_IMAGE_FLAGS[@]}"} \
+  ${KC_ADMIN_FLAGS[@]+"${KC_ADMIN_FLAGS[@]}"} \
   ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} \
   --set "agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa" \
   --set uiOAuthSecret.useServiceAccountCA=false \
@@ -1338,11 +1388,12 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set mlflow.auth.enabled=false \
   --set "keycloak.publicUrl=${KEYCLOAK_PUBLIC_URL}" \
   --set "keycloak.realm=${KC_REALM}" \
-  --set "mcpGateway.openshiftDomain=${DOMAIN}" \
   --set "components.mlflow.enabled=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
   --set "components.mlflow.routeNamespace=${MLFLOW_NAMESPACE}" \
   --set "kagenti-operator-chart.mlflow.enable=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
   --set "kagenti-operator-chart.featureGates.injectTools=true" \
+  --set "kagenti-operator-chart.kuadrant.enable=${WITH_KUADRANT}" \
+  --set "mcpGateway.openshiftDomain=${DOMAIN}" \
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
 
 log_success "Kagenti installed"
@@ -1581,20 +1632,13 @@ if $WITH_KUADRANT; then
 
   if ! $DRY_RUN; then
     _wait_deployment_ready kuadrant-operator-controller-manager "$KUADRANT_NS" "Kuadrant operator"
-
-    if $KUBECTL get crd kuadrants.kuadrant.io &>/dev/null; then
-      log_info "Creating Kuadrant CR..."
-      _kuadrant_api=$($KUBECTL get crd kuadrants.kuadrant.io -o jsonpath='{.spec.versions[?(@.served==true)].name}' | awk '{print $NF}')
-      $KUBECTL apply -f - <<EOF
-apiVersion: kuadrant.io/${_kuadrant_api}
-kind: Kuadrant
-metadata:
-  name: kuadrant
-  namespace: ${KUADRANT_NS}
-EOF
-    else
-      log_info "Kuadrant CRD not present (v1.4+) — skipping CR creation"
-    fi
+    # Kuadrant CR is created by the kagenti-operator's Kuadrant operand controller
+    # when --enable-kuadrant is set (see kagenti-operator chart values).
+    # The operator was installed before the Kuadrant CRD existed, so restart it
+    # to trigger KuadrantCRDExists() re-evaluation and controller registration.
+    log_info "Restarting kagenti-operator to pick up Kuadrant CRD..."
+    $KUBECTL rollout restart deployment/kagenti-controller-manager -n kagenti-system
+    _wait_deployment_ready kagenti-controller-manager kagenti-system "kagenti-operator"
   fi
 
   log_success "Kuadrant installed"
@@ -1610,6 +1654,8 @@ log_info "Step 5b: Install MCP Gateway"
 
 if $SKIP_MCP_GATEWAY; then
   log_info "Skipped (--skip-mcp-gateway)"
+elif helm status mcp-gateway -n mcp-system &>/dev/null; then
+  log_info "MCP Gateway already installed — skipping"
 else
   if ! $DRY_RUN; then
     # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior
