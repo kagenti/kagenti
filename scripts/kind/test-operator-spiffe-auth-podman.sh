@@ -155,11 +155,10 @@ helm upgrade --install kagenti ./charts/kagenti/ \
   --set "components.mlflow.enabled=true" \
   --set "featureFlags.agentSandbox=false" \
   --set "featureFlags.skills=false" \
-  --set "kagentiOperator.spiffeAuth.enabled=true" \
   --set "kagenti-operator-chart.spiffe.enabled=true" \
   --set "kagenti-operator-chart.spiffe.operatorAuth.enabled=true" \
+  --set "kagenti-operator-chart.spiffe.operatorAuth.bootstrapImage=ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest" \
   --set "agentOAuthSecret.tag=latest" \
-  --set "kagentiOperator.spiffeAuth.bootstrapImage=ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest" \
   --set "ui.backend.tag=latest" \
   --set "mlflowOAuthSecret.tag=latest" \
   --values ./deployments/envs/kind_values.yaml

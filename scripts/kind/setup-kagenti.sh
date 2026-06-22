@@ -61,7 +61,7 @@ DRY_RUN=false
 SECRETS_FILE_ARG=""
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
 # Enable operator SPIFFE authentication (JWT-SVID instead of admin credentials)
-# Maps to Helm value: kagentiOperator.spiffeAuth.enabled
+# Maps to Helm value: kagenti-operator-chart.spiffe.operatorAuth.enabled
 ENABLE_OPERATOR_SPIFFE_AUTH=false
 
 # Versions
@@ -961,14 +961,51 @@ if $WITH_SPIRE && ! $DRY_RUN; then
   SPIRE_SERVER_NS="zero-trust-workload-identity-manager"
   KAGENTI_NS="kagenti-system"
 
-  # 7a: Patch OIDC ConfigMap to enable set_key_use (required for Keycloak to accept JWKS keys)
-  # The helm value spiffe-oidc-discovery-provider.config.set_key_use=true does not render into
-  # the ConfigMap with the current chart version, so we patch it directly.
+  # 7a: Patch SPIRE OIDC ConfigMap to add set_key_use if missing
+  log_info "Checking SPIRE OIDC ConfigMap..."
+  tries=0
+  while ! kubectl get configmap spire-spiffe-oidc-discovery-provider \
+    -n "$SPIRE_SERVER_NS" &>/dev/null; do
+    tries=$((tries + 1))
+    [ $tries -ge 90 ] && { log_warn "SPIRE OIDC ConfigMap not found after 3m"; break; }
+    sleep 2
+  done
+
+  if kubectl get configmap spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS" &>/dev/null; then
+    OIDC_CONF=$(kubectl get configmap spire-spiffe-oidc-discovery-provider \
+      -n "$SPIRE_SERVER_NS" \
+      -o jsonpath='{.data.oidc-discovery-provider\.conf}' 2>/dev/null || echo "")
+    if [ -n "$OIDC_CONF" ] && ! echo "$OIDC_CONF" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('set_key_use') else 1)" 2>/dev/null; then
+      log_info "Patching OIDC ConfigMap with set_key_use: true..."
+      PATCHED=$(echo "$OIDC_CONF" | python3 -c "import sys,json; d=json.load(sys.stdin); d['set_key_use']=True; json.dump(d,sys.stdout)")
+      kubectl get configmap spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS" -o json | \
+        python3 -c "
+import sys, json
+cm = json.load(sys.stdin)
+cm['data']['oidc-discovery-provider.conf'] = '''$PATCHED'''
+json.dump(cm, sys.stdout)
+" | kubectl apply -f -
+      kubectl rollout restart deployment/spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS"
+      kubectl rollout status deployment/spire-spiffe-oidc-discovery-provider \
+        -n "$SPIRE_SERVER_NS" --timeout=120s || true
+      log_success "OIDC ConfigMap patched"
+    else
+      log_success "OIDC ConfigMap already has set_key_use"
+    fi
+  fi
+
+  # Wait for OIDC discovery provider to be fully ready before starting IdP setup
+  # Use shell timeout command as a reliable backstop since kubectl wait --timeout
+  # can hang indefinitely when deployment is in ImagePullBackOff
   log_info "Waiting for OIDC discovery provider to be ready..."
-  kubectl wait --for=condition=Available deployment/spire-spiffe-oidc-discovery-provider \
-    -n "$SPIRE_SERVER_NS" --timeout=300s 2>/dev/null \
-    && log_success "OIDC discovery provider ready" \
-    || log_warn "OIDC discovery provider not ready after 5m — IdP setup may fail"
+  if timeout 300 kubectl wait --for=condition=Available deployment/spire-spiffe-oidc-discovery-provider \
+    -n "$SPIRE_SERVER_NS" --timeout=300s 2>/dev/null; then
+    log_success "OIDC discovery provider ready"
+  else
+    log_warn "OIDC discovery provider not ready after 5m — IdP setup may fail"
+    log_info "Checking pod status..."
+    kubectl get pods -n "$SPIRE_SERVER_NS" -l app.kubernetes.io/name=spiffe-oidc-discovery-provider 2>/dev/null || true
+  fi
 
   OIDC_CONF=$(kubectl get configmap spire-spiffe-oidc-discovery-provider \
     -n "$SPIRE_SERVER_NS" \
@@ -1316,7 +1353,6 @@ KAGENTI_FLAGS=(
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
   --set "kagenti-operator-chart.featureGates.injectTools=true"
   --set "kagenti-operator-chart.kuadrant.enable=${WITH_KUADRANT}"
-  --set "kagentiOperator.spiffeAuth.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
   --set "kagenti-operator-chart.spiffe.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
   --set "kagenti-operator-chart.spiffe.operatorAuth.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
 )

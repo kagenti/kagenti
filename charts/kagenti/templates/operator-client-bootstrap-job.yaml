@@ -1,4 +1,4 @@
-{{- if and .Values.kagentiOperator .Values.kagentiOperator.spiffeAuth .Values.kagentiOperator.spiffeAuth.enabled }}
+{{- if and (index .Values "kagenti-operator-chart") (index .Values "kagenti-operator-chart" "spiffe") (index .Values "kagenti-operator-chart" "spiffe" "operatorAuth") (index .Values "kagenti-operator-chart" "spiffe" "operatorAuth" "enabled") }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -75,7 +75,7 @@ spec:
       restartPolicy: OnFailure
       containers:
       - name: bootstrap
-        image: {{ .Values.kagentiOperator.spiffeAuth.bootstrapImage | default "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest" }}
+        image: {{ (index .Values "kagenti-operator-chart" "spiffe" "operatorAuth" "bootstrapImage") | default "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest" }}
         imagePullPolicy: IfNotPresent
         env:
         - name: KEYCLOAK_URL

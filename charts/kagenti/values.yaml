@@ -363,24 +363,12 @@ kagenti-operator-chart:
     spireTrustDomain: localtest.me
 
 # ------------------------------------------------------------------
-#  Kagenti Operator SPIFFE Authentication
-# ------------------------------------------------------------------
-# Configuration for operator SPIFFE authentication to Keycloak
-# Shell scripts use ENABLE_OPERATOR_SPIFFE_AUTH env var to set this
-# Note: namespace and serviceAccountName are derived from the operator subchart deployment
-# to ensure the bootstrap job uses the correct SPIFFE ID
-kagentiOperator:
-  spiffeAuth:
-    # Enable SPIFFE authentication for operator (authenticates with JWT-SVID instead of admin credentials)
-    # When enabled, runs bootstrap job to configure Keycloak with operator's SPIFFE client
-    # Operator must be configured to read this value and use JWT-SVID authentication
-    enabled: false
-    # Bootstrap job image (Python-based Keycloak configuration)
-    # Uses :latest for development (local builds), override with versioned tag for production
-    bootstrapImage: "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest"
-
-# ------------------------------------------------------------------
 #  SPIFFE Configuration
+# ------------------------------------------------------------------
+# NOTE: Operator SPIFFE authentication is now configured under
+# kagenti-operator-chart.spiffe.operatorAuth (see line 265 below).
+# This consolidation eliminates the duplicate kagentiOperator.spiffeAuth
+# section that previously existed here.
 # ------------------------------------------------------------------
 spiffe:
   # SPIFFE Identity Provider alias in Keycloak
