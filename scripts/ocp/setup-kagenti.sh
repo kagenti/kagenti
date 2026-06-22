@@ -669,12 +669,41 @@ for doc in docs:
 " | $KUBECTL apply -f - || true
 }
 
+# Remove orphaned Istio validation webhooks left behind by a previous teardown.
+# Deleting the istio-system namespace does NOT remove the cluster-scoped
+# ValidatingWebhookConfigurations that back "validation.istio.io". With
+# failurePolicy=Fail and no istiod Service to call, they reject every Istio
+# config resource (e.g. the otel-collector AuthorizationPolicy) the kagenti-deps
+# chart creates during `helm install`, aborting the release with:
+#   failed calling webhook "validation.istio.io": service "istiod" not found
+# These webhooks are recreated (with the correct caBundle) once the Sail operand
+# CRs in Step 3 bring istiod back up, so it is safe to drop the stale ones here.
+# Only touch the kagenti-managed webhooks — never the OpenShift ingress gateway's
+# (istio-validator-openshift-gateway-openshift-ingress).
+_clean_stale_istio_webhooks() {
+  if $DRY_RUN; then return; fi
+  # If istiod is present, the webhooks have a live backend — leave them alone.
+  if $KUBECTL get svc istiod -n istio-system &>/dev/null; then
+    return
+  fi
+  for _whc in istiod-default-validator istio-validator-istio-system; do
+    if $KUBECTL get validatingwebhookconfiguration "$_whc" &>/dev/null; then
+      log_warn "Removing stale Istio webhook $_whc (no istiod Service to back it)"
+      $KUBECTL delete validatingwebhookconfiguration "$_whc" --ignore-not-found || true
+    fi
+  done
+}
+
 _helm_kagenti_deps() {
   # Pre-flight: ensure namespaces managed by this chart are not stuck terminating
   # from a previous failed install/uninstall cycle
   for _ns in keycloak istio-cni istio-system istio-ztunnel; do
     _wait_ns_gone "$_ns"
   done
+
+  # Pre-flight: drop orphaned Istio validation webhooks that would otherwise
+  # block the chart's Istio config resources before istiod is provisioned.
+  _clean_stale_istio_webhooks
 
   # Build MLflow OTEL flags: enable the pipeline and point it at the DSC-managed endpoint.
   # When --otel-operator-managed is set, the operator handles ConfigMap assembly
