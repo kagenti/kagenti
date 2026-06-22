@@ -1161,7 +1161,7 @@ export const ImportAgentPage: React.FC = () => {
               <FormGroup fieldId="authBridgeEnabled">
                 <Checkbox
                   id="authBridgeEnabled"
-                  label="Secure with Kagenti AuthBridge"
+                  label="Secure with AuthBridge"
                   isChecked={authBridgeEnabled}
                   onChange={(_e, checked) => {
                     setAuthBridgeEnabled(checked);
@@ -1172,35 +1172,6 @@ export const ImportAgentPage: React.FC = () => {
                   description="When enabled, the agent will reject inbound messages without valid JWT and can perform outbound token exchange."
               />
               </FormGroup>
-
-              {authBridgeEnabled && (
-                <FormGroup fieldId="useEnvoyMode" style={{ marginLeft: '24px' }}>
-                  <Checkbox
-                    id="useEnvoyMode"
-                    label="Use Envoy sidecar interception"
-                    isChecked={useEnvoyMode}
-                    onChange={(_e, checked) => setUseEnvoyMode(checked)}
-                    description="Run the Envoy data plane (ext_proc) instead of the default Go forward/reverse proxy sidecar"
-                  />
-                </FormGroup>
-              )}
-
-              {authBridgeEnabled && (
-                <FormGroup fieldId="tlsBridgeEnabled" style={{ marginLeft: '24px' }}>
-                  <Checkbox
-                    id="tlsBridgeEnabled"
-                    label="Decrypt outbound TLS for inspection (TLS bridge)"
-                    isChecked={tlsBridgeEnabled && !useEnvoyMode}
-                    isDisabled={useEnvoyMode}
-                    onChange={(_e, checked) => setTlsBridgeEnabled(checked)}
-                    description={
-                      useEnvoyMode
-                        ? 'Requires proxy-sidecar mode (uncheck Envoy interception to enable)'
-                        : 'Terminate the agent’s outbound HTTPS at the sidecar so the AuthBridge pipeline can see request payloads. Requires cert-manager.'
-                    }
-                  />
-                </FormGroup>
-              )}
 
               {/* SPIRE Identity */}
               <FormGroup fieldId="spireEnabled">
@@ -1319,6 +1290,29 @@ export const ImportAgentPage: React.FC = () => {
                     <FormSelectOption key="passthrough" value="passthrough" label="passthrough — pass traffic through unchanged (default)" />
                     <FormSelectOption key="exchange" value="exchange" label="exchange — require RFC 8693 / OAuth 2.0 Token Exchange for all outbound traffic" />
                   </FormSelect>
+                </FormGroup>
+                <FormGroup fieldId="useEnvoyMode">
+                  <Checkbox
+                    id="useEnvoyMode"
+                    label="Use Envoy sidecar interception"
+                    isChecked={useEnvoyMode}
+                    onChange={(_e, checked) => setUseEnvoyMode(checked)}
+                    description="Run the Envoy data plane (ext_proc) instead of the default Go forward/reverse proxy sidecar"
+                  />
+                </FormGroup>
+                <FormGroup fieldId="tlsBridgeEnabled">
+                  <Checkbox
+                    id="tlsBridgeEnabled"
+                    label="Decrypt outbound TLS for inspection (TLS bridge)"
+                    isChecked={tlsBridgeEnabled && !useEnvoyMode}
+                    isDisabled={useEnvoyMode}
+                    onChange={(_e, checked) => setTlsBridgeEnabled(checked)}
+                    description={
+                      useEnvoyMode
+                        ? 'Requires proxy-sidecar mode (uncheck Envoy interception to enable)'
+                        : 'Terminate the agent’s outbound HTTPS at the sidecar so the AuthBridge pipeline can see request payloads. Requires cert-manager.'
+                    }
+                  />
                 </FormGroup>
                 <FormGroup label="Mutual TLS (mTLS)" fieldId="mtlsMode">
                   <FormSelect
