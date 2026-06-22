@@ -7,10 +7,13 @@ Skill API endpoints.
 Skills are stored as Kubernetes ConfigMaps labeled with `kagenti.io/type=skill`.
 """
 
+import ipaddress
 import json
 import logging
 import re
+import socket
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 import kubernetes.client as k8s_client
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -38,6 +41,8 @@ from app.core.constants import (
     SKILL_REGISTRY_URL_ANNOTATION,
     SKILL_REGISTRY_SKILL_NAME_ANNOTATION,
     SKILL_REGISTRY_SKILL_VERSION_ANNOTATION,
+    SKILL_AUTOSYNC_CONFIG_CM,
+    SKILL_AUTOSYNC_LABEL,
 )
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
 
@@ -50,6 +55,7 @@ class SkillLabels(BaseModel):
 
     category: Optional[str] = None
     type: Optional[str] = None
+    autoSync: Optional[str] = None
 
 
 class ExternalSkillInfo(BaseModel):
@@ -120,6 +126,81 @@ class CreateSkillResponse(BaseModel):
     message: str
 
 
+def _parse_allowed_hosts() -> List[str]:
+    """Parse the comma-separated SKILL_REGISTRY_ALLOWED_HOSTS setting into entries."""
+    return [
+        e.strip() for e in (settings.skill_registry_allowed_hosts or "").split(",") if e.strip()
+    ]
+
+
+def _is_allowlisted(hostname: str, addr: "ipaddress._BaseAddress", allowed: List[str]) -> bool:
+    """True if the URL hostname or resolved IP matches an allow-list entry.
+
+    An entry matches when it equals the hostname (case-insensitive) or, when parsed
+    as an IP/CIDR, contains the resolved address.
+    """
+    host_lower = hostname.lower()
+    for entry in allowed:
+        if entry.lower() == host_lower:
+            return True
+        try:
+            if addr in ipaddress.ip_network(entry, strict=False):
+                return True
+        except ValueError:
+            # Entry is a hostname, not an IP/CIDR — already compared above.
+            continue
+    return False
+
+
+def _validate_registry_url(v: str) -> str:
+    """Validate a registry URL: require http(s) scheme and reject private/internal hosts.
+
+    Private/loopback/link-local addresses are rejected unless the hostname or resolved
+    IP is in the operator-configured SKILL_REGISTRY_ALLOWED_HOSTS allow-list.
+    """
+    if not v.startswith(("http://", "https://")):
+        raise ValueError("registryUrl must use http:// or https:// scheme")
+    hostname = urlparse(v).hostname or ""
+    if not hostname:
+        raise ValueError("registryUrl must contain a valid hostname")
+    allowed = _parse_allowed_hosts()
+    try:
+        for info in socket.getaddrinfo(hostname, None):
+            addr = ipaddress.ip_address(info[4][0])
+            if addr.is_private or addr.is_loopback or addr.is_link_local:
+                if not _is_allowlisted(hostname, addr, allowed):
+                    raise ValueError("registryUrl resolves to a private/internal address")
+    except socket.gaierror:
+        raise ValueError("registryUrl hostname is not resolvable")
+    return v
+
+
+class SkillAutoSyncRequest(BaseModel):
+    """Request model for enabling skill auto-sync."""
+
+    registryType: str = Field("skillberry", max_length=63)
+    registryUrl: str = Field(..., max_length=2048)
+    syncInterval: int = Field(30, ge=10, le=3600)
+    allowedTags: List[str] = Field(default_factory=lambda: ["kagenti-approved"])
+
+    @field_validator("registryUrl")
+    @classmethod
+    def validate_registry_url(cls, v: str) -> str:
+        return _validate_registry_url(v)
+
+
+class SkillAutoSyncStatus(BaseModel):
+    """Response model for auto-sync status."""
+
+    enabled: bool
+    registryType: Optional[str] = None
+    registryUrl: Optional[str] = None
+    syncInterval: Optional[int] = None
+    lastSyncedAt: Optional[str] = None
+    skillCount: Optional[int] = None
+    allowedTags: Optional[List[str]] = None
+
+
 class CreateExternalSkillRequest(BaseModel):
     """Request model for creating an external skill registry reference."""
 
@@ -136,9 +217,7 @@ class CreateExternalSkillRequest(BaseModel):
     @field_validator("registryUrl")
     @classmethod
     def validate_registry_url(cls, v: str) -> str:
-        if not v.startswith(("http://", "https://")):
-            raise ValueError("registryUrl must use http:// or https:// scheme")
-        return v
+        return _validate_registry_url(v)
 
     @field_validator("registrySkillName")
     @classmethod
@@ -242,6 +321,7 @@ def _configmap_to_skill(cm) -> Skill:
         labels=SkillLabels(
             category=labels.get(SKILL_CATEGORY_LABEL),
             type=labels.get("kagenti.io/skill-type"),
+            autoSync=labels.get(SKILL_AUTOSYNC_LABEL),
         ),
         createdAt=(md.creation_timestamp.isoformat() if md.creation_timestamp else None),
         origin=annos.get(SKILL_ORIGIN_ANNOTATION),
@@ -302,6 +382,7 @@ def _configmap_to_skill_detail(cm) -> SkillDetail:
         labels=SkillLabels(
             category=labels.get(SKILL_CATEGORY_LABEL),
             type=labels.get("kagenti.io/skill-type"),
+            autoSync=labels.get(SKILL_AUTOSYNC_LABEL),
         ),
         createdAt=(md.creation_timestamp.isoformat() if md.creation_timestamp else None),
         origin=annos.get(SKILL_ORIGIN_ANNOTATION),
@@ -669,3 +750,150 @@ async def delete_skill(
             exc,
         )
         raise HTTPException(status_code=exc.status or 500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Auto-sync endpoints (feature-flagged: kagenti_feature_flag_external_skills)
+# ---------------------------------------------------------------------------
+
+_KAGENTI_SYSTEM = "kagenti-system"
+
+
+def _get_autosync_configmap(kube: KubernetesService):
+    """Read the auto-sync ConfigMap. Returns the CM object or None."""
+    try:
+        return kube.core_api.read_namespaced_config_map(
+            name=SKILL_AUTOSYNC_CONFIG_CM, namespace=_KAGENTI_SYSTEM
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            return None
+        raise HTTPException(status_code=exc.status or 500, detail=str(exc))
+
+
+def _configmap_to_autosync_status(cm) -> SkillAutoSyncStatus:
+    data = cm.data or {}
+    skill_count_raw = data.get("skill-count")
+    tags_raw = data.get("allowed-tags", "")
+    allowed_tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else None
+    return SkillAutoSyncStatus(
+        enabled=data.get("enabled") == "true",
+        registryType=data.get("registry-type"),
+        registryUrl=data.get("registry-url"),
+        syncInterval=int(data["sync-interval"]) if data.get("sync-interval") else None,
+        lastSyncedAt=data.get("last-synced-at"),
+        skillCount=int(skill_count_raw) if skill_count_raw else None,
+        allowedTags=allowed_tags,
+    )
+
+
+@router.get(
+    "/autosync",
+    response_model=SkillAutoSyncStatus,
+)
+async def get_autosync_status(
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> SkillAutoSyncStatus:
+    """Return current auto-sync status. Returns enabled=false when not configured."""
+    if not settings.kagenti_feature_flag_external_skills:
+        raise HTTPException(status_code=404, detail="Not Found")
+    cm = _get_autosync_configmap(kube)
+    if cm is None:
+        return SkillAutoSyncStatus(enabled=False)
+    return _configmap_to_autosync_status(cm)
+
+
+@router.post(
+    "/autosync",
+    response_model=SkillAutoSyncStatus,
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def enable_autosync(
+    request: SkillAutoSyncRequest,
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> SkillAutoSyncStatus:
+    """Enable cluster-wide auto-sync. Rejects if any skills already exist."""
+    if not settings.kagenti_feature_flag_external_skills:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    for namespace in kube.list_enabled_namespaces():
+        try:
+            existing = kube.core_api.list_namespaced_config_map(
+                namespace=namespace,
+                label_selector=f"{SKILL_TYPE_LABEL}={SKILL_TYPE_VALUE}",
+            )
+            if existing.items:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Remove all existing skills before enabling auto-sync",
+                )
+        except ApiException as exc:
+            raise HTTPException(status_code=exc.status or 500, detail=str(exc))
+
+    data = {
+        "enabled": "true",
+        "registry-type": request.registryType,
+        "registry-url": request.registryUrl,
+        "sync-interval": str(request.syncInterval),
+        "allowed-tags": ",".join(request.allowedTags),
+    }
+    body = k8s_client.V1ConfigMap(
+        metadata=k8s_client.V1ObjectMeta(
+            name=SKILL_AUTOSYNC_CONFIG_CM,
+            namespace=_KAGENTI_SYSTEM,
+            labels={"kagenti.io/type": "skill-autosync"},
+        ),
+        data=data,
+    )
+    try:
+        kube.core_api.create_namespaced_config_map(namespace=_KAGENTI_SYSTEM, body=body)
+    except ApiException as exc:
+        if exc.status == 409:
+            kube.core_api.patch_namespaced_config_map(
+                name=SKILL_AUTOSYNC_CONFIG_CM, namespace=_KAGENTI_SYSTEM, body={"data": data}
+            )
+        else:
+            raise HTTPException(status_code=exc.status or 500, detail=str(exc))
+
+    cm = _get_autosync_configmap(kube)
+    return _configmap_to_autosync_status(cm)
+
+
+@router.delete(
+    "/autosync",
+    status_code=204,
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def disable_autosync(
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> None:
+    """Disable auto-sync and delete all auto-synced skills across all namespaces."""
+    if not settings.kagenti_feature_flag_external_skills:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    for namespace in kube.list_enabled_namespaces():
+        try:
+            cms = kube.core_api.list_namespaced_config_map(
+                namespace=namespace,
+                label_selector=f"{SKILL_TYPE_LABEL}={SKILL_TYPE_VALUE},{SKILL_AUTOSYNC_LABEL}=true",
+            )
+            for cm in cms.items:
+                try:
+                    kube.core_api.delete_namespaced_config_map(
+                        name=cm.metadata.name, namespace=namespace
+                    )
+                except ApiException as exc:
+                    if exc.status != 404:
+                        logger.warning(
+                            "Failed to delete auto-sync skill '%s': %s", cm.metadata.name, exc
+                        )
+        except ApiException as exc:
+            logger.warning("Failed to list auto-sync skills in '%s': %s", namespace, exc)
+
+    try:
+        kube.core_api.delete_namespaced_config_map(
+            name=SKILL_AUTOSYNC_CONFIG_CM, namespace=_KAGENTI_SYSTEM
+        )
+    except ApiException as exc:
+        if exc.status != 404:
+            logger.warning("Failed to delete auto-sync config CM: %s", exc)

@@ -49,6 +49,7 @@ WITH_KIALI=false
 WITH_KUADRANT=false
 WITH_AGENT_SANDBOX=false
 WITH_SKILLS=false
+SKILL_REGISTRY_ALLOWED_HOSTS=""
 WITH_ALL=false
 SKIP_CLUSTER=false
 SKIP_MLFLOW=false
@@ -209,6 +210,7 @@ while [[ $# -gt 0 ]]; do
     --with-kiali)       WITH_KIALI=true; shift ;;
     --with-agent-sandbox) WITH_AGENT_SANDBOX=true; shift ;;
     --with-skills)      WITH_SKILLS=true; shift ;;
+    --skill-registry-allowed-hosts) SKILL_REGISTRY_ALLOWED_HOSTS="$2"; shift 2 ;;
     --with-all)         WITH_ALL=true; shift ;;
     --skip-cluster)     SKIP_CLUSTER=true; shift ;;
     --skip-mlflow)      SKIP_MLFLOW=true; shift ;;
@@ -241,6 +243,10 @@ while [[ $# -gt 0 ]]; do
       echo "  --with-skills       Enable skills and external skill registries"
       echo "                      (enables featureFlags.skills and featureFlags.externalSkills;"
       echo "                      auto-enables --with-backend and --with-ui)"
+      echo "  --skill-registry-allowed-hosts HOSTS"
+      echo "                      Comma-separated hosts/IPs/CIDRs allowed past the registry-URL"
+      echo "                      SSRF block (e.g. \"192.168.50.16\" or \"192.168.0.0/16\")."
+      echo "                      Needed for self-hosted/LAN skill registries on private IPs."
       echo "  --with-all          Enable all optional components"
       echo ""
       echo "Skip flags (override --with-all for resource-constrained environments):"
@@ -330,6 +336,7 @@ echo "    Builds:        $WITH_BUILDS"
 echo "    Kiali:         $WITH_KIALI"
 echo "    Agent Sandbox: $WITH_AGENT_SANDBOX"
 echo "    Skills:        $WITH_SKILLS"
+echo "    Skill reg allow: ${SKILL_REGISTRY_ALLOWED_HOSTS:-<none>}"
 echo "    Skip cluster:  $SKIP_CLUSTER"
 echo "    Build images:  $BUILD_IMAGES"
 echo "    Preload imgs:  $PRELOAD_IMAGES"
@@ -1292,6 +1299,14 @@ KAGENTI_FLAGS=(
   --set "kagenti-operator-chart.featureGates.injectTools=true"
   --set "kagenti-operator-chart.kuadrant.enable=${WITH_KUADRANT}"
 )
+
+# Allow-list hosts/IPs/CIDRs past the registry-URL SSRF block (for LAN / in-cluster
+# skill registries on private IPs). Escape commas so Helm treats the value as a
+# single string rather than a list.
+if [[ -n "$SKILL_REGISTRY_ALLOWED_HOSTS" ]]; then
+  KAGENTI_FLAGS+=(--set-string "ui.backend.skillRegistryAllowedHosts=${SKILL_REGISTRY_ALLOWED_HOSTS//,/\\,}")
+fi
+
 KAGENTI_FLAGS=( "${KAGENTI_FLAGS[@]}" ${KAGENTI_VALUES_FILES[@]+"${KAGENTI_VALUES_FILES[@]}"} )
 
 # When --build-images is set, the build step tags images ":latest" and loads
