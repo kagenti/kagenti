@@ -277,12 +277,79 @@ Keycloak.
 
 ### Requirements
 
-- Gateway image `v0.0.56-rc.2` or later
+- Gateway image `v0.0.56-rc.2` or later (provider ownership requires `v0.0.56-rc.3`+)
 - OIDC enabled on the gateway (`oidc.enabled: true` in Helm values — the default)
 - Keycloak `sub` claim must be a UUID (the default for Keycloak realms)
 
 When OIDC is disabled (local development without authentication), ownership is
 skipped and all users share all sandboxes (backward-compatible behavior).
+
+## Per-User Provider Ownership
+
+When OIDC is enabled, providers are also scoped by ownership — the same pattern
+as sandboxes. Each user can create providers with any name, and those providers
+are isolated from other users. Admin-created providers remain shared and
+accessible to everyone.
+
+### Provider types
+
+| Provider type | Owner label | Visible to | Created by |
+|---------------|-------------|------------|------------|
+| Shared (team) | none | All users | Admin |
+| User-owned | `openshell.ai/owner=<sub>` | Owner + admin | User |
+
+### Resolution order (who wins)
+
+When a sandbox references a provider by name, the gateway resolves it in this
+order:
+
+1. **User's own provider** — if the caller owns a provider with that name, it wins
+2. **Shared provider** — fallback to an admin-created provider with the same name
+
+This means if an admin created a shared `openai` provider and Bob also creates
+his own `openai` provider, Bob's sandbox will always bind to Bob's provider.
+The shared one is only used when the user doesn't have their own with that name.
+
+### Example: per-user credentials on a shared gateway
+
+```bash
+# Bob creates his own GitHub provider with his personal PAT
+export GH_TOKEN="ghp_bob_xxx"
+openshell provider create --name gh --type custom \
+  --credential GH_TOKEN \
+  --config BASE_URL=https://api.github.com
+
+# Alice creates her own — no conflict, scoped by owner
+export GH_TOKEN="ghp_alice_yyy"
+openshell provider create --name gh --type custom \
+  --credential GH_TOKEN \
+  --config BASE_URL=https://api.github.com
+
+# Bob's sandbox uses Bob's key automatically
+openshell sandbox create --provider gh -- bash
+
+# Alice's sandbox uses Alice's key — no cross-contamination
+openshell sandbox create --provider gh -- bash
+
+# Neither user can see or bind to the other's provider
+openshell provider list   # Shows only own + shared providers
+```
+
+### Cross-user isolation guarantees
+
+- Users see only their own providers plus shared (admin-created) providers
+- A sandbox cannot bind to another user's provider — the gateway rejects it
+- Provider name uniqueness is scoped to `(owner, name)` — alice and bob can
+  both have a provider named `gh`
+- Admin users bypass ownership and can list/manage all providers
+
+### Requirements
+
+- Gateway image `v0.0.56-rc.3` or later
+- OIDC enabled on the gateway (`oidc.enabled: true` — the default)
+
+When OIDC is disabled, provider ownership is skipped and all providers are
+shared (backward-compatible behavior).
 
 ## Network Egress Policies
 
