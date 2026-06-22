@@ -67,6 +67,7 @@ This flow differs from the [local skill demo](./demo-generic-agent-skill.md): th
   - **FastAPI / REST API**: `http://localhost:8000/`
 - You have credentials or access to publish a skill to that instance (follow skillberry-store's own [onboarding documentation](https://github.com/skillberry-ai/skillberry-store/blob/main/README.md) and [CLI guide](https://github.com/skillberry-ai/skillberry-store/blob/main/docs/cli.md)).
 - **Kind cluster note**: the `sbs` CLI and `curl` commands in this guide run from your workstation and use `http://localhost:8000`. However, the registry URL you register in Kagenti (Step 2) is fetched by an init container running **inside** the Kind cluster — it cannot reach `localhost` on the host. Use `http://host.docker.internal:8000` (Docker Desktop / WSL2) or your host's LAN IP (e.g. `http://192.168.1.10:8000`) for that field.
+- **Private/LAN registry note (SSRF allow-list)**: the backend validates registry URLs and rejects ones that resolve to private/internal addresses (RFC-1918, loopback, link-local) to prevent SSRF. A LAN IP like `192.168.1.10` or an in-cluster `*.svc` name is private, so you must explicitly allow it via the `SKILL_REGISTRY_ALLOWED_HOSTS` setting (comma-separated hostnames, IPs, or CIDRs). Set the Helm value `ui.backend.skillRegistryAllowedHosts` (e.g. `"192.168.1.10"` or `"192.168.0.0/16"`), or the `SKILL_REGISTRY_ALLOWED_HOSTS` env var on the backend, then restart. Empty by default — public registries need no configuration.
 
 ## Repositories and paths used in this demo
 

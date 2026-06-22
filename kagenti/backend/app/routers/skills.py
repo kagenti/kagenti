@@ -126,18 +126,48 @@ class CreateSkillResponse(BaseModel):
     message: str
 
 
+def _parse_allowed_hosts() -> List[str]:
+    """Parse the comma-separated SKILL_REGISTRY_ALLOWED_HOSTS setting into entries."""
+    return [e.strip() for e in (settings.skill_registry_allowed_hosts or "").split(",") if e.strip()]
+
+
+def _is_allowlisted(hostname: str, addr: "ipaddress._BaseAddress", allowed: List[str]) -> bool:
+    """True if the URL hostname or resolved IP matches an allow-list entry.
+
+    An entry matches when it equals the hostname (case-insensitive) or, when parsed
+    as an IP/CIDR, contains the resolved address.
+    """
+    host_lower = hostname.lower()
+    for entry in allowed:
+        if entry.lower() == host_lower:
+            return True
+        try:
+            if addr in ipaddress.ip_network(entry, strict=False):
+                return True
+        except ValueError:
+            # Entry is a hostname, not an IP/CIDR — already compared above.
+            continue
+    return False
+
+
 def _validate_registry_url(v: str) -> str:
-    """Validate a registry URL: require http(s) scheme and reject private/internal hosts."""
+    """Validate a registry URL: require http(s) scheme and reject private/internal hosts.
+
+    Private/loopback/link-local addresses are rejected unless the hostname or resolved
+    IP is in the operator-configured SKILL_REGISTRY_ALLOWED_HOSTS allow-list.
+    """
     if not v.startswith(("http://", "https://")):
         raise ValueError("registryUrl must use http:// or https:// scheme")
     hostname = urlparse(v).hostname or ""
     if not hostname:
         raise ValueError("registryUrl must contain a valid hostname")
+    allowed = _parse_allowed_hosts()
     try:
         for info in socket.getaddrinfo(hostname, None):
             addr = ipaddress.ip_address(info[4][0])
             if addr.is_private or addr.is_loopback or addr.is_link_local:
-                raise ValueError("registryUrl resolves to a private/internal address")
+                if not _is_allowlisted(hostname, addr, allowed):
+                    raise ValueError("registryUrl resolves to a private/internal address")
     except socket.gaierror:
         raise ValueError("registryUrl hostname is not resolvable")
     return v

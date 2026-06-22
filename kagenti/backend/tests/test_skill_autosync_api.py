@@ -57,6 +57,7 @@ def client(kube):
     ):
         mock_settings.kagenti_feature_flag_external_skills = True
         mock_settings.kagenti_feature_flag_skills = True
+        mock_settings.skill_registry_allowed_hosts = ""
         with TestClient(app) as c:
             yield c
 
@@ -142,3 +143,53 @@ class TestDisableAutoSync:
         kube.core_api.delete_namespaced_config_map.side_effect = ApiException(status=404)
         resp = client.delete("/api/v1/skills/autosync")
         assert resp.status_code == 204
+
+
+def _addrinfo(ip):
+    """Build a getaddrinfo-style result resolving to a single IP."""
+    return [(None, None, None, None, (ip, 0))]
+
+
+class TestValidateRegistryUrl:
+    """Unit tests for the registry-URL SSRF validator and its allow-list."""
+
+    def _validate(self, url, allowed, ip):
+        from app.routers import skills
+
+        mock_settings = MagicMock()
+        mock_settings.skill_registry_allowed_hosts = allowed
+        with (
+            patch.object(skills, "settings", mock_settings),
+            patch("app.routers.skills.socket.getaddrinfo", return_value=_addrinfo(ip)),
+        ):
+            return skills._validate_registry_url(url)
+
+    def test_public_address_passes(self):
+        assert (
+            self._validate("https://skillberry.example.com", "", "93.184.216.34")
+            == "https://skillberry.example.com"
+        )
+
+    def test_private_address_blocked_by_default(self):
+        with pytest.raises(ValueError, match="private/internal"):
+            self._validate("http://192.168.50.16:8000", "", "192.168.50.16")
+
+    def test_private_address_allowed_by_ip(self):
+        url = "http://192.168.50.16:8000"
+        assert self._validate(url, "192.168.50.16", "192.168.50.16") == url
+
+    def test_private_address_allowed_by_cidr(self):
+        url = "http://192.168.50.16:8000"
+        assert self._validate(url, "10.0.0.0/8,192.168.0.0/16", "192.168.50.16") == url
+
+    def test_private_address_allowed_by_hostname(self):
+        url = "http://reg.svc.cluster.local:8000"
+        assert self._validate(url, "reg.svc.cluster.local", "10.96.0.5") == url
+
+    def test_non_matching_allowlist_still_blocks(self):
+        with pytest.raises(ValueError, match="private/internal"):
+            self._validate("http://192.168.50.16:8000", "10.0.0.0/8", "192.168.50.16")
+
+    def test_non_http_scheme_rejected(self):
+        with pytest.raises(ValueError, match="http"):
+            self._validate("ftp://192.168.50.16", "192.168.50.16", "192.168.50.16")

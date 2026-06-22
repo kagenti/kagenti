@@ -175,6 +175,7 @@ class TestCreateExternalSkill:
         ):
             mock_settings.kagenti_feature_flag_external_skills = True
             mock_settings.kagenti_feature_flag_skills = True
+            mock_settings.skill_registry_allowed_hosts = ""
             client = TestClient(self._make_app())
             resp = client.post(
                 "/skills/external",
@@ -206,6 +207,7 @@ class TestCreateExternalSkill:
             patch("app.routers.skills.settings") as mock_settings,
         ):
             mock_settings.kagenti_feature_flag_external_skills = False
+            mock_settings.skill_registry_allowed_hosts = ""
             client = TestClient(self._make_app())
             resp = client.post(
                 "/skills/external",
