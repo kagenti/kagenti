@@ -128,7 +128,9 @@ class CreateSkillResponse(BaseModel):
 
 def _parse_allowed_hosts() -> List[str]:
     """Parse the comma-separated SKILL_REGISTRY_ALLOWED_HOSTS setting into entries."""
-    return [e.strip() for e in (settings.skill_registry_allowed_hosts or "").split(",") if e.strip()]
+    return [
+        e.strip() for e in (settings.skill_registry_allowed_hosts or "").split(",") if e.strip()
+    ]
 
 
 def _is_allowlisted(hostname: str, addr: "ipaddress._BaseAddress", allowed: List[str]) -> bool:
