@@ -245,6 +245,9 @@ export const agentService = {
     // Per-workload mTLS posture (maps to AgentRuntime.Spec.MTLSMode).
     // Backend rejects mtlsMode != 'disabled' when authBridgeMode === 'envoy-sidecar'.
     mtlsMode?: 'disabled' | 'permissive' | 'strict';
+    // Per-workload TLS bridge (maps to AgentRuntime.Spec.TLSBridgeMode=enabled).
+    // Requires proxy-sidecar/lite; backend rejects it with envoy-sidecar.
+    tlsBridgeEnabled?: boolean;
     outboundRoutes?: Array<{ host: string; target_audience: string; token_scopes: string }>;
     outboundPortsExclude?: string;
     inboundPortsExclude?: string;
@@ -459,6 +462,7 @@ export const shipwrightService = {
       authBridgeEnabled?: boolean;
       authBridgeMode?: 'proxy-sidecar' | 'envoy-sidecar' | 'lite' | 'waypoint';
       mtlsMode?: 'disabled' | 'permissive' | 'strict';
+      tlsBridgeEnabled?: boolean;
       outboundRoutes?: Array<{ host: string; target_audience: string; token_scopes: string }>;
       outboundPortsExclude?: string;
       inboundPortsExclude?: string;

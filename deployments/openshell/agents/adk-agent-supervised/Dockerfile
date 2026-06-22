@@ -1,8 +1,8 @@
 # ADK agent with OpenShell supervisor as entrypoint
 # Supervisor applies Landlock + seccomp + netns + OPA before exec'ing the agent
-FROM ghcr.io/nvidia/openshell/supervisor:latest@sha256:70ad41288b905ae7b20d90da3a7709974ab9bc5fa9c699cdc32ea31facc552ed AS supervisor
+FROM ghcr.io/kagenti/openshell/supervisor:v0.0.36-kagenti.8 AS supervisor
 
-FROM python:3.12-slim@sha256:4386a385d81dba9f72ed72a6fe4237755d7f5440c84b417650f38336bbc43117
+FROM python:3.13-slim
 
 # iproute2 needed for supervisor netns creation, bash for entrypoint
 RUN apt-get update && apt-get install -y --no-install-recommends iproute2 bash && \

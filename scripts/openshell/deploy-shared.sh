@@ -403,6 +403,27 @@ if $STEP_KEYCLOAK; then
       -s 'attributes={\"pkce.code.challenge.method\":\"S256\"}' \
       2>/dev/null" 2>/dev/null || true
 
+    # 4b2: Create confidential client for backend → gateway gRPC
+    BACKEND_CLIENT_SECRET=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 40)
+    log_info "Creating client: kagenti-backend (confidential, service account)"
+    kc_exec "$KCADM create clients --config $KC_CONFIG -r openshell \
+      -s clientId=kagenti-backend \
+      -s enabled=true \
+      -s publicClient=false \
+      -s serviceAccountsEnabled=true \
+      -s clientAuthenticatorType=client-secret \
+      -s secret=$BACKEND_CLIENT_SECRET \
+      -s directAccessGrantsEnabled=false \
+      2>/dev/null" 2>/dev/null || true
+
+    # Store backend client credentials in each tenant namespace
+    for _ns in team1 team2; do
+      kubectl create secret generic kagenti-backend-oidc \
+        --from-literal=client-id=kagenti-backend \
+        --from-literal=client-secret="$BACKEND_CLIENT_SECRET" \
+        -n "$_ns" --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+    done
+
     # 4c: Create roles
     for role in openshell-admin openshell-user; do
       log_info "Creating role: $role"
@@ -456,10 +477,20 @@ if $STEP_KEYCLOAK; then
       done
     }
 
-    # 4e: Create users
-    create_openshell_user "alice" "alice123" "openshell-user" "team1"
-    create_openshell_user "bob"   "bob123"   "openshell-user" "team2"
-    create_openshell_user "admin" "admin123" "openshell-admin" "team1" "team2"
+    # 4e: Create users (generate passwords at deploy time, store in K8s secret)
+    ALICE_PW=$(head -c 16 /dev/urandom | base64 | tr -d '/+=' | head -c 20)
+    BOB_PW=$(head -c 16 /dev/urandom | base64 | tr -d '/+=' | head -c 20)
+    ADMIN_PW=$(head -c 16 /dev/urandom | base64 | tr -d '/+=' | head -c 20)
+
+    create_openshell_user "alice" "$ALICE_PW" "openshell-user" "team1"
+    create_openshell_user "bob"   "$BOB_PW"   "openshell-user" "team2"
+    create_openshell_user "admin" "$ADMIN_PW" "openshell-admin" "team1" "team2"
+
+    kubectl create secret generic openshell-test-users \
+      --from-literal=alice-password="$ALICE_PW" \
+      --from-literal=bob-password="$BOB_PW" \
+      --from-literal=admin-password="$ADMIN_PW" \
+      -n team1 --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
 
     # 4f: Create per-tenant client scopes with audience mappers
     # Each tenant gets a default client scope so the audience claim is always
@@ -500,6 +531,28 @@ if $STEP_KEYCLOAK; then
 
     if [[ -z "$CLIENT_ID" ]]; then
       log_warn "Could not find openshell-cli client ID — audience scopes created but not linked"
+    fi
+
+    # Also assign audience scopes to kagenti-backend client
+    BACKEND_CLIENT_ID=$(kc_exec "$KCADM get clients --config $KC_CONFIG -r openshell \
+      -q clientId=kagenti-backend --fields id 2>/dev/null" | \
+      grep '"id"' | head -1 | sed 's/.*: "\(.*\)".*/\1/')
+    if [[ -n "$BACKEND_CLIENT_ID" ]]; then
+      # Assign openshell-user role to the service account
+      kc_exec "$KCADM add-roles --config $KC_CONFIG -r openshell \
+        --uusername service-account-kagenti-backend \
+        --rolename openshell-user 2>/dev/null" 2>/dev/null || true
+
+      for tenant in team1 team2; do
+        SCOPE_ID=$(kc_exec "$KCADM get client-scopes --config $KC_CONFIG -r openshell \
+          --fields id,name 2>/dev/null" | \
+          grep -B1 "\"${tenant}-audience\"" | grep '"id"' | sed 's/.*: "\(.*\)".*/\1/')
+        if [[ -n "$SCOPE_ID" ]]; then
+          kc_exec "$KCADM update clients/$BACKEND_CLIENT_ID/default-client-scopes/$SCOPE_ID \
+            --config $KC_CONFIG -r openshell 2>/dev/null" 2>/dev/null || true
+        fi
+      done
+      log_info "Assigned audience scopes to kagenti-backend client"
     fi
 
     log_success "Keycloak openshell realm configured"
@@ -727,6 +780,8 @@ if $STEP_BACKEND; then
   else
     log_info "Deploying PostgreSQL sessions DB in $BACKEND_NS..."
 
+    PG_PASSWORD=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
+
     # Kind: use postgres:16-alpine (RedHat image needs registry auth)
     if ! is_openshift; then
       run_cmd kubectl apply -f - <<EOPG
@@ -744,7 +799,7 @@ stringData:
   port: "5432"
   database: sessions
   username: kagenti
-  password: kagenti-sessions-dev
+  password: $PG_PASSWORD
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -889,7 +944,7 @@ rules:
 - apiGroups: [""]
   resources: ["secrets"]
   verbs: ["get"]
-  resourceNames: ["postgres-sessions-secret", "litemaas-credentials", "litellm-virtual-keys"]
+  resourceNames: ["postgres-sessions-secret", "litemaas-credentials", "litellm-virtual-keys", "openshell-client-tls", "kagenti-backend-oidc"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

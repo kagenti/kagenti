@@ -669,12 +669,41 @@ for doc in docs:
 " | $KUBECTL apply -f - || true
 }
 
+# Remove orphaned Istio validation webhooks left behind by a previous teardown.
+# Deleting the istio-system namespace does NOT remove the cluster-scoped
+# ValidatingWebhookConfigurations that back "validation.istio.io". With
+# failurePolicy=Fail and no istiod Service to call, they reject every Istio
+# config resource (e.g. the otel-collector AuthorizationPolicy) the kagenti-deps
+# chart creates during `helm install`, aborting the release with:
+#   failed calling webhook "validation.istio.io": service "istiod" not found
+# These webhooks are recreated (with the correct caBundle) once the Sail operand
+# CRs in Step 3 bring istiod back up, so it is safe to drop the stale ones here.
+# Only touch the kagenti-managed webhooks — never the OpenShift ingress gateway's
+# (istio-validator-openshift-gateway-openshift-ingress).
+_clean_stale_istio_webhooks() {
+  if $DRY_RUN; then return; fi
+  # If istiod is present, the webhooks have a live backend — leave them alone.
+  if $KUBECTL get svc istiod -n istio-system &>/dev/null; then
+    return
+  fi
+  for _whc in istiod-default-validator istio-validator-istio-system; do
+    if $KUBECTL get validatingwebhookconfiguration "$_whc" &>/dev/null; then
+      log_warn "Removing stale Istio webhook $_whc (no istiod Service to back it)"
+      $KUBECTL delete validatingwebhookconfiguration "$_whc" --ignore-not-found || true
+    fi
+  done
+}
+
 _helm_kagenti_deps() {
   # Pre-flight: ensure namespaces managed by this chart are not stuck terminating
   # from a previous failed install/uninstall cycle
   for _ns in keycloak istio-cni istio-system istio-ztunnel; do
     _wait_ns_gone "$_ns"
   done
+
+  # Pre-flight: drop orphaned Istio validation webhooks that would otherwise
+  # block the chart's Istio config resources before istiod is provisioned.
+  _clean_stale_istio_webhooks
 
   # Build MLflow OTEL flags: enable the pipeline and point it at the DSC-managed endpoint.
   # When --otel-operator-managed is set, the operator handles ConfigMap assembly
@@ -764,10 +793,12 @@ _adopt_for_helm() {
   local kind="$1" name="$2" ns="${3:-}"
   local ns_flag=()
   if [ -n "$ns" ]; then ns_flag=(-n "$ns"); fi
-  if $KUBECTL get "$kind" "$name" "${ns_flag[@]}" &>/dev/null; then
-    $KUBECTL label "$kind" "$name" "${ns_flag[@]}" \
+  # Use the ${arr[@]+...} guard so expanding an empty array does not trip
+  # `set -u` on Bash < 4.4 (e.g. macOS system Bash 3.2). See issue #1822.
+  if $KUBECTL get "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" &>/dev/null; then
+    $KUBECTL label "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" \
       app.kubernetes.io/managed-by=Helm --overwrite || true
-    $KUBECTL annotate "$kind" "$name" "${ns_flag[@]}" \
+    $KUBECTL annotate "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" \
       meta.helm.sh/release-name=kagenti-deps \
       meta.helm.sh/release-namespace=kagenti-system --overwrite || true
   fi
@@ -1104,7 +1135,11 @@ EOF
   log_info "Ensuring MLflow OAuth proxy exists for browser access..."
   if ! $KUBECTL get deployment mlflow-oauth-proxy -n "$MLFLOW_NAMESPACE" &>/dev/null; then
     local oauth_proxy_image
-    oauth_proxy_image=$(oc adm release info --image-for=oauth-proxy 2>/dev/null)
+    # NOTE: keep `|| true` — under `set -euo pipefail` a bare assignment takes
+    # the command substitution's exit status, so a failing `oc adm release info`
+    # (disconnected cluster, missing pull secret, etc.) would abort the whole
+    # install before the empty-check fallback below can skip the proxy.
+    oauth_proxy_image=$(oc adm release info --image-for=oauth-proxy 2>/dev/null) || true
     if [ -z "$oauth_proxy_image" ]; then
       log_warn "Could not resolve oauth-proxy image — skipping MLflow OAuth proxy"
       return 0
@@ -1338,6 +1373,7 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set "components.mlflow.enabled=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
   --set "components.mlflow.routeNamespace=${MLFLOW_NAMESPACE}" \
   --set "kagenti-operator-chart.mlflow.enable=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
+  --set "kagenti-operator-chart.featureGates.injectTools=true" \
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
 
 log_success "Kagenti installed"
@@ -1376,7 +1412,184 @@ else
       fi
     fi
   fi
+  # Mount OpenShift trusted CA bundle into the operator so it can verify the
+  # MLflow gateway's TLS certificate (signed by the cluster ingress CA).
+  # Requires kagenti-operator >=0.3.0 with --mlflow-ca-file support.
+  if ! $DRY_RUN; then
+    _CA_CM="kagenti-operator-trusted-ca"
+    _CA_MOUNT="/etc/pki/ca-trust/extracted/pem"
+    _CA_PATH="${_CA_MOUNT}/tls-ca-bundle.pem"
+
+    # Create ConfigMap with injection label (OpenShift populates it with system CAs)
+    cat <<CACM | $KUBECTL apply -f - 2>/dev/null || true
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${_CA_CM}
+  namespace: kagenti-system
+  labels:
+    config.openshift.io/inject-trusted-cabundle: "true"
+data: {}
+CACM
+
+    # Patch operator deployment: add volume, volumeMount, and --mlflow-ca-file arg
+    # Guard: skip if already patched (idempotent on re-runs)
+    if $KUBECTL get deployment kagenti-controller-manager -n kagenti-system -o jsonpath='{.spec.template.spec.volumes[*].name}' 2>/dev/null | grep -q "trusted-ca"; then
+      log_success "Operator already has trusted-ca volume — skipping patch"
+    else
+      $KUBECTL patch deployment kagenti-controller-manager -n kagenti-system --type=json -p "[
+        {\"op\":\"add\",\"path\":\"/spec/template/spec/volumes/-\",\"value\":{\"name\":\"trusted-ca\",\"configMap\":{\"name\":\"${_CA_CM}\",\"optional\":true,\"items\":[{\"key\":\"ca-bundle.crt\",\"path\":\"tls-ca-bundle.pem\"}]}}},
+        {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/volumeMounts/-\",\"value\":{\"name\":\"trusted-ca\",\"mountPath\":\"${_CA_MOUNT}\",\"readOnly\":true}},
+        {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/args/-\",\"value\":\"--mlflow-ca-file=${_CA_PATH}\"}
+      ]" 2>/dev/null && log_success "Operator patched with trusted CA bundle for MLflow TLS" \
+        || log_warn "Could not patch operator with CA bundle (--mlflow-ca-file may not be supported yet)"
+    fi
+  fi
 fi
+echo ""
+
+# ============================================================================
+# Step 4b: Wait for operator SharedTrustReconciler (with fallback)
+# ============================================================================
+# The kagenti-operator's SharedTrustReconciler is responsible for:
+#   1. Creating cacerts secrets in istio-system and openshift-ingress
+#   2. Restarting istiod to pick up the shared CA
+#   3. Restarting ztunnel
+# We give the operator a window to complete. If it doesn't, we fall back to
+# performing the steps directly (same as the pre-PR#1800 behavior).
+_wait_shared_trust_reconciliation() {
+  if $DRY_RUN; then return; fi
+
+  # Wait for cacerts to exist (operator creates it, or fallback will)
+  if $KUBECTL get secret cacerts -n istio-system -o jsonpath='{.data.ca-cert\.pem}' 2>/dev/null | grep -q .; then
+    log_success "cacerts already exists in istio-system"
+  else
+    local WAIT_TIMEOUT=180  # 3 minutes for the operator to create cacerts
+    local tries=0
+    local max_tries=$(( WAIT_TIMEOUT / 10 ))
+    log_info "Waiting up to ${WAIT_TIMEOUT}s for operator SharedTrustReconciler to create cacerts..."
+
+    while ! $KUBECTL get secret cacerts -n istio-system -o jsonpath='{.data.ca-cert\.pem}' 2>/dev/null | grep -q .; do
+      tries=$((tries + 1))
+      if [ $tries -ge $max_tries ]; then
+        log_warn "Operator did not create cacerts within ${WAIT_TIMEOUT}s — falling back to direct creation"
+        _shared_trust_fallback
+        return $?
+      fi
+      sleep 10
+    done
+    log_success "Operator created cacerts in istio-system"
+  fi
+
+  # Verify istiod is serving the shared CA (not its original self-signed one).
+  # Compare the CA cert istiod is using with what's in the cacerts secret.
+  # If they differ, the operator created cacerts but didn't restart istiod.
+  log_info "Verifying istiod is serving the shared CA..."
+  local cacerts_fp istiod_ca_fp
+  cacerts_fp=$($KUBECTL get secret cacerts -n istio-system \
+    -o jsonpath='{.data.ca-cert\.pem}' | base64 -d | \
+    openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
+
+  # istiod exposes its CA via the istio-ca-root-cert ConfigMap it generates
+  istiod_ca_fp=$($KUBECTL get configmap istio-ca-root-cert -n istio-system \
+    -o jsonpath='{.data.root-cert\.pem}' 2>/dev/null | \
+    openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
+
+  if [ -n "$cacerts_fp" ] && [ -n "$istiod_ca_fp" ] && [ "$cacerts_fp" != "$istiod_ca_fp" ]; then
+    log_warn "istiod is still using its self-signed CA — forcing restart"
+    $KUBECTL rollout restart deployment/istiod -n istio-system
+    $KUBECTL rollout status deployment/istiod -n istio-system --timeout=300s || true
+
+    # Restart istiod for openshift-gateway mesh too if present
+    $KUBECTL rollout restart deployment/istiod-openshift-gateway -n openshift-ingress 2>/dev/null || true
+    $KUBECTL rollout status deployment/istiod-openshift-gateway -n openshift-ingress --timeout=300s 2>/dev/null || true
+
+    # Clear stale CA ConfigMaps and restart ztunnel to pick up new CA
+    log_info "Restarting ztunnel to pick up new CA..."
+    for ns in kagenti-system gateway-system keycloak mcp-system istio-system istio-ztunnel; do
+      $KUBECTL delete configmap istio-ca-root-cert -n "$ns" --ignore-not-found || true
+    done
+    $KUBECTL rollout restart daemonset/ztunnel -n istio-ztunnel 2>/dev/null || true
+    $KUBECTL rollout status daemonset/ztunnel -n istio-ztunnel --timeout=300s || true
+    log_success "Shared trust reconciliation complete (forced istiod + ztunnel restart)"
+  else
+    log_success "istiod is serving the shared CA — shared trust reconciliation complete"
+  fi
+}
+
+_shared_trust_fallback() {
+  # Detect stale intermediate CAs (root CA regenerated but intermediates not re-signed)
+  log_info "Checking intermediate CA consistency..."
+  local ROOT_FP CHANGED=false
+  ROOT_FP=$($KUBECTL get secret istio-mesh-root-ca-secret -n cert-manager \
+    -o jsonpath='{.data.tls\.crt}' | base64 -d | \
+    openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
+
+  for item in "istio-cacerts-default-cert:istio-system" "istio-cacerts-og-cert:openshift-ingress"; do
+    local secret="${item%%:*}" ns="${item##*:}"
+    local INTER_FP
+    INTER_FP=$($KUBECTL get secret "$secret" -n "$ns" \
+      -o jsonpath='{.data.ca\.crt}' | base64 -d | \
+      openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
+    if [ "$ROOT_FP" != "$INTER_FP" ]; then
+      log_warn "Root CA mismatch in $ns/$secret — forcing re-issuance"
+      $KUBECTL delete secret "$secret" -n "$ns"
+      CHANGED=true
+    fi
+  done
+
+  if $CHANGED; then
+    log_info "Waiting for re-issued intermediate CAs..."
+    _wait_secret_ready istio-cacerts-default-cert istio-system
+    _wait_secret_ready istio-cacerts-og-cert openshift-ingress
+    log_success "Intermediate CAs re-issued"
+  else
+    log_success "Intermediate CAs consistent with root"
+  fi
+
+  # Transform cert-manager secrets into Istio cacerts format
+  log_info "Creating Istio cacerts secrets (fallback)..."
+  for item in "istio-cacerts-default-cert:istio-system" "istio-cacerts-og-cert:openshift-ingress"; do
+    local secret="${item%%:*}" ns="${item##*:}"
+    local CA_CERT CA_KEY ROOT_CERT CERT_CHAIN
+    CA_CERT=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.tls\.crt}' | base64 -d)
+    CA_KEY=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.tls\.key}' | base64 -d)
+    ROOT_CERT=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.ca\.crt}' | base64 -d)
+    CERT_CHAIN="${CA_CERT}
+${ROOT_CERT}"
+    $KUBECTL create secret generic cacerts -n "$ns" \
+      --from-literal=ca-cert.pem="${CA_CERT}" \
+      --from-literal=ca-key.pem="${CA_KEY}" \
+      --from-literal=root-cert.pem="${ROOT_CERT}" \
+      --from-literal=cert-chain.pem="${CERT_CHAIN}" \
+      --dry-run=client -o yaml | $KUBECTL apply -f -
+  done
+  log_success "Istio cacerts secrets created (fallback)"
+
+  # Restart istiods to pick up shared CA
+  log_info "Restarting istiods..."
+  if $KUBECTL get deployment/istiod -n istio-system &>/dev/null; then
+    $KUBECTL rollout restart deployment/istiod -n istio-system
+    $KUBECTL rollout status deployment/istiod -n istio-system --timeout=300s || true
+  else
+    log_warn "deployment/istiod not found in istio-system — check kagenti-deps hooks"
+  fi
+  $KUBECTL rollout restart deployment/istiod-openshift-gateway -n openshift-ingress 2>/dev/null || true
+  $KUBECTL rollout status deployment/istiod-openshift-gateway -n openshift-ingress --timeout=300s || true
+
+  # Delete stale istio-ca-root-cert ConfigMaps and restart ztunnel
+  log_info "Cleaning up stale CA ConfigMaps and restarting ztunnel..."
+  for ns in kagenti-system gateway-system keycloak mcp-system istio-system istio-ztunnel; do
+    $KUBECTL delete configmap istio-ca-root-cert -n "$ns" --ignore-not-found || true
+  done
+
+  $KUBECTL rollout restart daemonset/ztunnel -n istio-ztunnel 2>/dev/null || true
+  $KUBECTL rollout status daemonset/ztunnel -n istio-ztunnel --timeout=300s || true
+  log_success "Shared trust reconciliation complete (fallback)"
+}
+
+log_info "Step 4b: Wait for shared trust reconciliation"
+_wait_shared_trust_reconciliation
 echo ""
 
 # ============================================================================
@@ -1429,10 +1642,10 @@ log_info "Step 5b: Install MCP Gateway"
 if $SKIP_MCP_GATEWAY; then
   log_info "Skipped (--skip-mcp-gateway)"
 else
-  # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior
-  # version that used a different API group). A stuck finalizer prevents the controller
-  # from creating the broker-router deployment on reinstall.
   if ! $DRY_RUN; then
+    # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior
+    # version that used a different API group). A stuck finalizer prevents the controller
+    # from creating the broker-router deployment on reinstall.
     for _crd_group in mcp.kuadrant.io mcp.kagenti.com; do
       _stuck=$($KUBECTL get mcpgatewayextensions.${_crd_group} -n mcp-system -o json 2>/dev/null \
         | python3 -c "
@@ -1451,6 +1664,41 @@ for item in data.get('items', []):
         sleep 2
       fi
     done
+
+    # Helm does not update CRDs on upgrade — pre-apply them from the chart
+    _mcp_gw_tmp=$(mktemp -d)
+    if helm pull oci://ghcr.io/kuadrant/charts/mcp-gateway \
+         --version "$MCP_GATEWAY_VERSION" --untar -d "$_mcp_gw_tmp" 2>/dev/null; then
+      if [ -d "$_mcp_gw_tmp/mcp-gateway/crds" ]; then
+        log_info "Applying MCP Gateway CRDs..."
+        $KUBECTL apply -f "$_mcp_gw_tmp/mcp-gateway/crds/" 2>/dev/null || true
+      fi
+
+      # Kubernetes does not allow changing spec.selector on existing Deployments.
+      # If the chart changed selectors between versions, delete affected Deployments
+      # so Helm can recreate them.
+      _chart_yaml=$(helm template mcp-gateway "$_mcp_gw_tmp/mcp-gateway" 2>/dev/null || true)
+      for _deploy in mcp-gateway-controller mcp-gateway-broker-router; do
+        if $KUBECTL get deployment "$_deploy" -n mcp-system &>/dev/null; then
+          _current_selector=$($KUBECTL get deployment "$_deploy" -n mcp-system \
+            -o jsonpath='{.spec.selector.matchLabels}' 2>/dev/null || echo "")
+          _chart_selector=$(echo "$_chart_yaml" | python3 -c "
+import sys, yaml, json
+for doc in yaml.safe_load_all(sys.stdin):
+    if doc and doc.get('kind') == 'Deployment' and doc.get('metadata',{}).get('name') == '$_deploy':
+        print(json.dumps(doc['spec']['selector']['matchLabels'], sort_keys=True, separators=(',',':')))
+        break
+" 2>/dev/null || echo "")
+          if [ -n "$_chart_selector" ] && [ -n "$_current_selector" ] && [ "$_current_selector" != "$_chart_selector" ]; then
+            log_warn "Selector changed for $_deploy — deleting to allow upgrade"
+            $KUBECTL delete deployment "$_deploy" -n mcp-system --ignore-not-found
+          fi
+        fi
+      done
+    else
+      log_warn "Failed to pull MCP Gateway chart v${MCP_GATEWAY_VERSION} — skipping CRD pre-apply and selector check"
+    fi
+    rm -rf "$_mcp_gw_tmp"
   fi
 
   MCP_GW_PUBLIC_HOST="mcp-gateway-gateway-system.${DOMAIN}"

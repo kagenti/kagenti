@@ -1,94 +1,113 @@
 # Teleport: Local Claude Code → Kagenti Sandbox
 
-Package your local Claude Code context (CLAUDE.md, skills, settings) and deploy
-it into a Kagenti OpenShell sandbox with full isolation (Landlock, seccomp, netns).
-Execute instructions remotely and retrieve results.
+Delegate tasks to a remote Claude Code or Hermes agent running in an
+isolated Kagenti OpenShell sandbox on Kind or HyperShift. The agent has
+LLM access via LiteLLM (MaaS or Vertex AI) but cannot see real API keys.
 
 ## Prerequisites
 
-- Kagenti cluster with OpenShell gateway deployed (Kind or HyperShift)
+- Kagenti cluster with OpenShell gateway (`kubectl get pods -n team1 | grep openshell`)
 - Sandbox CRD installed (`kubectl get crd sandboxes.agents.x-k8s.io`)
-- LiteLLM proxy running in the target namespace
-- `litellm-virtual-keys` secret with `api-key`
+- LiteLLM proxy running (`kubectl get pods -n team1 | grep litellm`)
 
-## Quick Start
+## Quick Delegation (one-shot)
 
-### Spawn a remote session (no local context)
-
-```bash
-scripts/openshell/teleport-session.sh --spawn
-# Output: session ID (e.g., 00ed517d)
-
-scripts/openshell/teleport-session.sh --session 00ed517d --prompt "your task"
-scripts/openshell/teleport-session.sh --cleanup --session 00ed517d
-```
-
-### Teleport local context + prompt (all-in-one)
+Send a task to a sandbox agent and get the result back:
 
 ```bash
-scripts/openshell/teleport-session.sh --full "What project is this? Summarize CLAUDE.md"
+scripts/openshell/teleport-session.sh --full "Analyze this error and suggest a fix: <paste error>"
 ```
 
-## Step-by-Step Usage
+## Spawn a Persistent Session
 
-### 1. Package context into a ConfigMap
+Create a sandbox that stays running. Send multiple prompts, then clean up:
 
 ```bash
-SESSION_ID=$(scripts/openshell/teleport-session.sh --package)
-echo "Session: $SESSION_ID"
+# Spawn (bare sandbox, no local context)
+SESSION=$(scripts/openshell/teleport-session.sh --spawn 2>/dev/null | tail -1)
+
+# Send tasks
+scripts/openshell/teleport-session.sh --session $SESSION --prompt "your task here"
+
+# Cleanup when done
+scripts/openshell/teleport-session.sh --cleanup --session $SESSION
 ```
 
-What gets packaged:
-- `CLAUDE.md` from repo root
-- Selected skills via `TELEPORT_SKILLS` env var (comma-separated names)
-- `.claude/settings.json` (sensitive fields stripped)
+## Teleport Local Context
 
-Size limit: 800KB total (ConfigMap max ~1MB).
-
-To include skills:
+Package CLAUDE.md and skills into the sandbox so the remote agent knows
+the project:
 
 ```bash
-TELEPORT_SKILLS="sandbox:teleport,graph-loop" \
-  scripts/openshell/teleport-session.sh --package
+# Package + deploy + prompt
+SESSION=$(scripts/openshell/teleport-session.sh --package 2>/dev/null | tail -1)
+scripts/openshell/teleport-session.sh --deploy --session $SESSION
+scripts/openshell/teleport-session.sh --session $SESSION --prompt "Read CLAUDE.md and run the E2E tests"
+scripts/openshell/teleport-session.sh --cleanup --session $SESSION
 ```
 
-### 2. Deploy sandbox with context
+Include specific skills:
 
 ```bash
-scripts/openshell/teleport-session.sh --deploy --session $SESSION_ID
+TELEPORT_SKILLS="sandbox:teleport,graph-loop" scripts/openshell/teleport-session.sh --package
 ```
 
-Creates a Sandbox CR with:
-- Base image: `ghcr.io/nvidia/openshell-community/sandboxes/base:latest`
-- Claude CLI pre-installed
-- Context mounted and unpacked into `$HOME` (`/sandbox`)
-- LiteLLM virtual key injected via K8s secret (real API keys never exposed)
-
-### 3. Send instruction
+## Use Hermes Agent Instead of Claude Code
 
 ```bash
-scripts/openshell/teleport-session.sh --session $SESSION_ID \
-  --prompt "Review the skills in .claude/skills/ and list the top 5 most useful ones"
+kubectl exec deploy/nemoclaw-hermes -n team1 -- hermes chat -q "your task here"
 ```
 
-Executes `claude --print --bare` inside the sandbox pod. The remote Claude Code
-has access to the teleported CLAUDE.md and skills.
+Hermes uses the same LiteLLM proxy → Vertex AI Claude path but with its
+own agent framework (17 tools, file access, code execution).
 
-### 4. Clean up
+## LiteLLM Model Configuration
+
+### Using MaaS (default, free tier)
+
+Models are pre-configured via `.env.maas`. Claude model names route to
+llama-scout-17b via MaaS.
+
+### Using Vertex AI (real Claude)
+
+To use real Anthropic Claude models via your Vertex AI project:
+
+1. Create credentials secret:
+```bash
+kubectl create secret generic vertex-ai-credentials \
+  --from-file=credentials.json=$HOME/.config/gcloud/application_default_credentials.json \
+  -n team1
+```
+
+2. Mount into LiteLLM and add model config — see `docs/agentic-runtime/teleport.md`
+   for the full LiteLLM Vertex AI setup.
+
+3. Available Vertex AI model IDs:
+   - `vertex_ai/claude-sonnet-4@20250514` (Sonnet 4, deprecated)
+   - `vertex_ai/claude-sonnet-4-6` (Sonnet 4.6, latest)
+   - `vertex_ai/claude-haiku-4-5@20251001` (Haiku 4.5)
+   - `vertex_ai/claude-opus-4-8` (Opus 4.8)
+
+## Credential Isolation
+
+The sandbox only sees a LiteLLM virtual key (`ANTHROPIC_AUTH_TOKEN`).
+Real API keys (MaaS, Vertex AI, OpenRouter) stay in LiteLLM's pod.
+
+## Agent Budget Control
+
+LiteLLM supports per-key budgets via virtual keys:
 
 ```bash
-scripts/openshell/teleport-session.sh --cleanup --session $SESSION_ID
+# Set max $5 budget on the sandbox virtual key
+curl -X POST http://localhost:4000/key/update \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+  -d '{"key": "sk-ZSFBf...", "max_budget": 5.0}'
 ```
 
-Deletes the Sandbox CR, ConfigMap, and waits for pod termination.
+Budget enforcement happens at the LiteLLM proxy level — the sandbox
+agent is unaware of limits. Requests exceeding budget return 429.
 
-## What Gets Teleported
-
-| Item | Source | Destination in sandbox |
-|------|--------|-----------------------|
-| CLAUDE.md | `$REPO_ROOT/CLAUDE.md` | `$HOME/CLAUDE.md` |
-| Skills | `.claude/skills/<name>/SKILL.md` | `$HOME/.claude/skills/<name>/SKILL.md` |
-| Settings | `.claude/settings.json` | `$HOME/.claude/settings.json` |
+See LiteLLM docs: https://docs.litellm.ai/docs/proxy/virtual_keys
 
 ## Actions
 
@@ -97,41 +116,26 @@ Deletes the Sandbox CR, ConfigMap, and waits for pod termination.
 | `--package` | Bundle local context into a ConfigMap |
 | `--deploy` | Create sandbox with mounted context |
 | `--spawn` | Create bare sandbox (no local context) |
-| `--prompt "text"` | Send instruction and get result |
+| `--prompt "text"` | Send instruction to running sandbox |
 | `--cleanup` | Delete sandbox and ConfigMap |
-| `--full "text"` | All-in-one: package → deploy → prompt → cleanup |
+| `--full "text"` | All-in-one: package, deploy, prompt, cleanup |
 
 ## Options
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--namespace <ns>` | Target namespace | `team1` |
-| `--session <id>` | Session ID (auto-generated for `--package`/`--spawn`) | — |
-| `--timeout <secs>` | Prompt timeout | `120` |
+| Flag | Default |
+|------|---------|
+| `--namespace <ns>` | `team1` |
+| `--session <id>` | auto-generated |
+| `--timeout <secs>` | `120` |
 
-Environment variables:
+| Env Var | Description |
+|---------|-------------|
+| `TELEPORT_NS` | Target namespace |
+| `TELEPORT_SKILLS` | Comma-separated skill names to include |
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `TELEPORT_NS` | Target namespace | `team1` |
-| `TELEPORT_SKILLS` | Comma-separated skill names to include | — (none) |
+## Full Documentation
 
-## Credential Isolation
-
-The sandbox only sees a LiteLLM virtual key (`ANTHROPIC_AUTH_TOKEN`), never
-real API keys. `ANTHROPIC_BASE_URL` points to the LiteLLM proxy, which
-routes to the actual provider (MaaS, Vertex AI, etc.).
-
-## Limitations
-
-- **One-shot execution**: each `--prompt` is a single Claude Code invocation
-  (`claude --print --bare`). No multi-turn or persistent sessions yet.
-- **ConfigMap size**: context must be under 800KB. For larger bundles, PVC
-  support is planned.
-- **No result sync**: changes made by Claude Code inside the sandbox are not
-  synced back to your local machine. Use `--prompt` to ask for specific outputs.
-
-## Full documentation
-
-See `docs/agentic-runtime/teleport.md` for architecture diagrams, test matrix,
-and credential isolation details.
+- Usage and architecture: `docs/agentic-runtime/teleport.md`
+- Credential isolation diagram: `docs/agentic-runtime/teleport.md#credential-isolation`
+- OpenShell fork analysis: `docs/research/openshell-fork-analysis.md`
+- Composable agents design: `docs/research/composable-agents-design.md`

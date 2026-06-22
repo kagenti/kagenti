@@ -41,8 +41,11 @@ helm version
 brew install podman    # recommended for macOS
 # or: brew install --cask docker   # Docker Desktop
 
-# If using Podman, create and start a machine with sufficient resources:
-podman machine init --memory 18432 --cpus 6
+# If using Podman, create and start a machine with sufficient resources.
+# Use --rootful: Kind's rootless provider requires the systemd property
+# Delegate=yes, which a fresh podman machine does not configure, so cluster
+# creation fails without it.
+podman machine init --rootful --memory 18432 --cpus 6
 podman machine start
 ```
 
@@ -50,7 +53,7 @@ podman machine start
 
 | Tool | Purpose |
 |------|---------|
-| Docker Desktop / Rancher Desktop / Podman | Container runtime (16GB RAM, 4 cores recommended) |
+| Docker Desktop / Rancher Desktop / Podman | Container runtime (18GB RAM, 6 cores recommended) |
 | [Kind](https://kind.sigs.k8s.io) | Local Kubernetes cluster |
 | [Ollama](https://ollama.com/download) | Local LLM inference |
 | [GitHub Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic) | **(Optional)** Only needed to deploy agents/tools from private GitHub repos or pull from private registries. Recommended scopes: `repo` for private repositories and `read:packages` for private registries (e.g., GHCR). |
@@ -438,7 +441,6 @@ kubectl get secret keycloak-admin-secret -n team1
 ```bash
 # SPIRE OIDC (Kind)
 curl http://spire-oidc.localtest.me:8080/keys
-curl http://spire.localtest.me:8080/.well-known/openid-configuration
 
 # Tornjak UI
 open http://spire-tornjak-ui.localtest.me:8080/

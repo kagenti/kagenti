@@ -987,6 +987,11 @@ if [ "$RUN_AGENTS" = "true" ]; then
 
     log_step "Deploying weather-agent..."
     ./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+
+    # ── Wait for pods and verify connectivity ──
+    log_step "Waiting for agent pods to be ready..."
+    kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=weather-tool -n team1 --timeout=120s 2>/dev/null || true
+    kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=weather-service -n team1 --timeout=120s 2>/dev/null || true
 else
     log_phase "PHASE 3: Skipping Agent Deployment"
 fi

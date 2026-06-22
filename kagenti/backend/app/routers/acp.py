@@ -39,7 +39,15 @@ async def acp_websocket(
     agent_name: str,
     token: str = Query(default=""),
 ):
-    if not _K8S_NAME.match(namespace) or not _K8S_NAME.match(agent_name):
+    if (
+        not _K8S_NAME.match(namespace)
+        or not _K8S_NAME.match(agent_name)
+        or len(namespace) > 63
+        or len(agent_name) > 63
+    ):
+        logger.warning(
+            "ACP rejected invalid K8s name: ns_len=%d agent_len=%d", len(namespace), len(agent_name)
+        )
         await websocket.close(code=4400, reason="Invalid namespace or agent_name")
         return
 
@@ -50,7 +58,21 @@ async def acp_websocket(
         try:
             from app.core.auth import validate_token
 
-            await validate_token(token)
+            token_data = await validate_token(token)
+            # Verify the token's audience or authorized party includes the namespace.
+            # Keycloak requirement: each tenant client must set azp to the namespace
+            # name, or use namespace-specific audiences via client scope mappers.
+            # The generic "account" audience alone is NOT sufficient.
+            aud = token_data.raw_token.get("aud", [])
+            if isinstance(aud, str):
+                aud = [aud]
+            azp = token_data.raw_token.get("azp", "")
+            allowed = {*aud, azp} if azp else set(aud)
+            allowed.discard("account")
+            if not allowed or namespace not in allowed:
+                logger.warning("ACP namespace denied (conn=%s)", uuid4().hex[:8])
+                await websocket.close(code=4003, reason="Access denied for this namespace")
+                return
         except Exception:
             await websocket.close(code=4003, reason="Invalid or expired token")
             return
@@ -79,9 +101,9 @@ async def acp_websocket(
 
             try:
                 await _dispatch(websocket, rpc_id, method, params, namespace, agent_name)
-            except Exception as e:
+            except Exception:
                 logger.exception("ACP dispatch error (conn=%s)", conn_id)
-                await _send_error(websocket, rpc_id, JSON_RPC_INTERNAL_ERROR, str(e))
+                await _send_error(websocket, rpc_id, JSON_RPC_INTERNAL_ERROR, "Internal error")
 
     except WebSocketDisconnect:
         logger.info("ACP WebSocket disconnected (conn=%s)", conn_id)
@@ -125,6 +147,11 @@ async def _dispatch(
             await _send_error(ws, rpc_id, JSON_RPC_INVALID_REQUEST, "sessionId and text required")
             return
 
+        session = await _bridge.get_session(session_id)
+        if not session or session.namespace != namespace:
+            await _send_error(ws, rpc_id, JSON_RPC_INVALID_REQUEST, "Session not found")
+            return
+
         async for update in _bridge.prompt(session_id, text):
             await ws.send_text(json.dumps(update))
 
@@ -132,6 +159,10 @@ async def _dispatch(
 
     elif method == "session/close":
         session_id = params.get("sessionId", "")
+        session = await _bridge.get_session(session_id)
+        if not session or session.namespace != namespace:
+            await _send_result(ws, rpc_id, {"closed": False})
+            return
         ok = await _bridge.close_session(session_id)
         await _send_result(ws, rpc_id, {"closed": ok})
 
@@ -155,7 +186,7 @@ async def _dispatch(
     elif method == "session/resume":
         session_id = params.get("sessionId", "")
         session = await _bridge.get_session(session_id)
-        if session and not session.closed:
+        if session and not session.closed and session.namespace == namespace:
             await _send_result(ws, rpc_id, {"sessionId": session.session_id, "resumed": True})
         else:
             await _send_error(ws, rpc_id, JSON_RPC_INVALID_REQUEST, "Session not found or closed")

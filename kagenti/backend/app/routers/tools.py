@@ -6,10 +6,12 @@
 Tool API endpoints.
 """
 
+import asyncio
 import logging
 import re
 from typing import Any, Dict, List, Literal, Optional
 from contextlib import AsyncExitStack
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -2089,6 +2091,43 @@ def _get_tool_url(name: str, namespace: str, kube: KubernetesService) -> str:
         return f"http://{name}.{domain}:8080"
 
 
+async def _probe_mcp_reachability(mcp_endpoint: str, tool_url: str) -> None:
+    """Raise HTTPException(502/504) if the MCP server is unreachable.
+
+    The MCP SDK uses anyio task groups inside streamablehttp_client; on
+    Python 3.14, connection failures there surface as
+    asyncio.CancelledError ("Cancelled via cancel scope") which escapes
+    the existing httpx-based except clauses and yields HTTP 500 instead
+    of 502. A raw asyncio.open_connection probe (no anyio task groups,
+    no HTTP request) lets us return a clean 502/504 here.
+    See issue #1144 / PR #1227 for the original handlers.
+    """
+    parsed = urlparse(mcp_endpoint)
+    try:
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(parsed.hostname, parsed.port or 80),
+            timeout=5.0,
+        )
+        writer.close()
+        await writer.wait_closed()
+    except asyncio.TimeoutError:
+        # Must precede the (OSError, ConnectionError) clause: asyncio.TimeoutError
+        # is builtin TimeoutError on 3.11+, which subclasses OSError. Catching
+        # OSError first would shadow this branch (pylint E0701) and wrongly
+        # return 502 for timeouts instead of 504.
+        logger.error("MCP server timeout (pre-check)")
+        raise HTTPException(
+            status_code=504,
+            detail=f"Timeout connecting to MCP server at {tool_url}",
+        )
+    except (OSError, ConnectionError) as e:
+        logger.error("MCP server unreachable (pre-check, %s)", type(e).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to connect to MCP server at {tool_url}",
+        )
+
+
 @router.post(
     "/{namespace}/{name}/connect",
     response_model=MCPToolsResponse,
@@ -2109,6 +2148,8 @@ async def connect_to_tool(
     mcp_endpoint = f"{tool_url}/mcp"
 
     logger.info("Connecting to MCP server at %s", sanitize_log(mcp_endpoint))
+
+    await _probe_mcp_reachability(mcp_endpoint, tool_url)
 
     exit_stack = AsyncExitStack()
     try:
@@ -2187,6 +2228,8 @@ async def invoke_tool(
     """
     tool_url = _get_tool_url(name, namespace, kube)
     mcp_endpoint = f"{tool_url}/mcp"
+
+    await _probe_mcp_reachability(mcp_endpoint, tool_url)
 
     exit_stack = AsyncExitStack()
     try:

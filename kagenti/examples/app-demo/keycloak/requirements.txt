@@ -1,0 +1,3 @@
+python-keycloak==4.5.1
+httpx>=0.24.0,<0.28.0
+kubernetes==31.0.0
