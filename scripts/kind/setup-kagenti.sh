@@ -1199,6 +1199,22 @@ kubectl delete job kagenti-ui-oauth-secret-job -n kagenti-system --ignore-not-fo
 kubectl delete job kagenti-agent-oauth-secret-job -n kagenti-system --ignore-not-found 2>/dev/null || true
 kubectl delete job mlflow-oauth-secret-job -n kagenti-system --ignore-not-found 2>/dev/null || true
 
+# Delete ClusterRoleBindings whose roleRef changed between chart versions.
+# Kubernetes forbids mutating roleRef — the binding must be deleted so Helm can
+# recreate it with the new reference. (Fixes #1838)
+_delete_stale_rolebinding() {
+  local binding="$1" expected_role="$2"
+  local current_role
+  current_role=$(kubectl get clusterrolebinding "$binding" -o jsonpath='{.roleRef.name}' 2>/dev/null || echo "")
+  if [ -n "$current_role" ] && [ "$current_role" != "$expected_role" ]; then
+    log_info "Deleting ClusterRoleBinding/$binding (roleRef changed: $current_role → $expected_role)"
+    kubectl delete clusterrolebinding "$binding" --ignore-not-found 2>/dev/null || true
+  fi
+}
+_delete_stale_rolebinding "kagenti-operator-httproute-binding-kagenti" "kagenti-operator-httproute-kagenti"
+_delete_stale_rolebinding "kagenti-manager-rolebinding" "kagenti-manager-role"
+_delete_stale_rolebinding "kagenti-mlflow-integration-kagenti" "mlflow-operator-mlflow-integration"
+
 # ── Wait for preload to finish (if running) ──
 if [ -n "$PRELOAD_LOAD_PID" ]; then
   log_info "Waiting for image preload to complete..."
