@@ -14,6 +14,12 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: {{ . }}
+  annotations:
+    # Create agent namespaces as pre-install hook BEFORE other hooks
+    # This ensures namespaces exist when agent-oauth-secret-job (weight 20, 50) runs
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
   labels:
     kagenti-enabled: "true"
     istio-discovery: enabled
