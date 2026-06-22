@@ -601,7 +601,7 @@ if $WITH_SPIRE; then
   log_info "Installing SPIRE ${SPIRE_VERSION}..."
   run_cmd helm upgrade --install spire spire \
     --repo "$SPIRE_REPO" --version "$SPIRE_VERSION" \
-    -n spire-mgmt --create-namespace \
+    -n spire-mgmt --create-namespace --wait --timeout=5m \
     --set global.spire.recommendations.enabled=true \
     --set global.spire.namespaces.create=true \
     --set global.spire.namespaces.server.name=zero-trust-workload-identity-manager \
@@ -941,45 +941,35 @@ if $WITH_SPIRE && ! $DRY_RUN; then
   SPIRE_SERVER_NS="zero-trust-workload-identity-manager"
   KAGENTI_NS="kagenti-system"
 
-  # 7a: Patch SPIRE OIDC ConfigMap to add set_key_use if missing
-  log_info "Checking SPIRE OIDC ConfigMap..."
-  tries=0
-  while ! kubectl get configmap spire-spiffe-oidc-discovery-provider \
-    -n "$SPIRE_SERVER_NS" &>/dev/null; do
-    tries=$((tries + 1))
-    [ $tries -ge 90 ] && { log_warn "SPIRE OIDC ConfigMap not found after 3m"; break; }
-    sleep 2
-  done
-
-  if kubectl get configmap spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS" &>/dev/null; then
-    OIDC_CONF=$(kubectl get configmap spire-spiffe-oidc-discovery-provider \
-      -n "$SPIRE_SERVER_NS" \
-      -o jsonpath='{.data.oidc-discovery-provider\.conf}' 2>/dev/null || echo "")
-    if [ -n "$OIDC_CONF" ] && ! echo "$OIDC_CONF" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('set_key_use') else 1)" 2>/dev/null; then
-      log_info "Patching OIDC ConfigMap with set_key_use: true..."
-      PATCHED=$(echo "$OIDC_CONF" | python3 -c "import sys,json; d=json.load(sys.stdin); d['set_key_use']=True; json.dump(d,sys.stdout)")
-      kubectl get configmap spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS" -o json | \
-        python3 -c "
-import sys, json
-cm = json.load(sys.stdin)
-cm['data']['oidc-discovery-provider.conf'] = '''$PATCHED'''
-json.dump(cm, sys.stdout)
-" | kubectl apply -f -
-      kubectl rollout restart deployment/spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS"
-      kubectl rollout status deployment/spire-spiffe-oidc-discovery-provider \
-        -n "$SPIRE_SERVER_NS" --timeout=120s || true
-      log_success "OIDC ConfigMap patched"
-    else
-      log_success "OIDC ConfigMap already has set_key_use"
-    fi
-  fi
-
-  # Wait for OIDC discovery provider to be fully ready before starting IdP setup
+  # 7a: Patch OIDC ConfigMap to enable set_key_use (required for Keycloak to accept JWKS keys)
+  # The helm value spiffe-oidc-discovery-provider.config.set_key_use=true does not render into
+  # the ConfigMap with the current chart version, so we patch it directly.
   log_info "Waiting for OIDC discovery provider to be ready..."
   kubectl wait --for=condition=Available deployment/spire-spiffe-oidc-discovery-provider \
     -n "$SPIRE_SERVER_NS" --timeout=300s 2>/dev/null \
     && log_success "OIDC discovery provider ready" \
     || log_warn "OIDC discovery provider not ready after 5m — IdP setup may fail"
+
+  OIDC_CONF=$(kubectl get configmap spire-spiffe-oidc-discovery-provider \
+    -n "$SPIRE_SERVER_NS" \
+    -o jsonpath='{.data.oidc-discovery-provider\.conf}' 2>/dev/null || echo "")
+  if [ -n "$OIDC_CONF" ] && ! echo "$OIDC_CONF" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('set_key_use') else 1)" 2>/dev/null; then
+    log_info "Patching OIDC ConfigMap with set_key_use: true..."
+    PATCHED=$(echo "$OIDC_CONF" | python3 -c "import sys,json; d=json.load(sys.stdin); d['set_key_use']=True; json.dump(d,sys.stdout)")
+    kubectl get configmap spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS" -o json | \
+      python3 -c "
+import sys, json
+cm = json.load(sys.stdin)
+cm['data']['oidc-discovery-provider.conf'] = '''$PATCHED'''
+json.dump(cm, sys.stdout)
+" | kubectl apply -f -
+    kubectl rollout restart deployment/spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS"
+    kubectl rollout status deployment/spire-spiffe-oidc-discovery-provider \
+      -n "$SPIRE_SERVER_NS" --timeout=120s || true
+    log_success "OIDC ConfigMap patched with set_key_use: true"
+  else
+    log_success "OIDC ConfigMap already has set_key_use"
+  fi
 
   # 7b: Run SPIFFE IdP setup job (configures Keycloak with SPIRE identity provider)
   log_info "Setting up SPIFFE IdP..."
@@ -1118,11 +1108,12 @@ spec:
       serviceAccountName: kagenti-spiffe-idp-setup
       restartPolicy: OnFailure
       initContainers:
-        - name: wait-for-spire
+        - name: wait-for-dependencies
           image: "${KUBECTL_IMAGE}"
           command: ["sh", "-c"]
           args:
             - |
+              set -e
               echo "Waiting for SPIRE server..."
               kubectl wait --for=condition=ready pod \
                 -l app.kubernetes.io/name=server \
@@ -1131,6 +1122,21 @@ spec:
               kubectl wait --for=condition=ready pod \
                 -l app.kubernetes.io/name=spiffe-oidc-discovery-provider \
                 -n ${SPIRE_SERVER_NS} --timeout=300s
+              echo "Waiting for Keycloak to be ready..."
+              kubectl wait --for=condition=ready pod \
+                -l app=keycloak -n ${KC_NS} --timeout=300s
+              echo "Validating OIDC JWKS endpoint serves keys with 'use' field..."
+              OIDC_URL="http://spire-spiffe-oidc-discovery-provider.${SPIRE_SERVER_NS}.svc.cluster.local/keys"
+              for i in \$(seq 1 60); do
+                if curl -sf "\$OIDC_URL" | grep -q '"use"'; then
+                  echo "OIDC JWKS endpoint validated"
+                  exit 0
+                fi
+                echo "  Attempt \$i/60: OIDC keys not ready, retrying in 5s..."
+                sleep 5
+              done
+              echo "WARNING: OIDC keys validation timed out after 5m"
+              exit 1
       containers:
         - name: setup-spiffe-idp
           image: "${SPIFFE_IDP_IMAGE}"
@@ -1155,22 +1161,16 @@ spec:
               value: "${SPIFFE_IDP_ALIAS}"
 EOF
 
-  # Wait for job to complete
+  # Wait for job to complete (up to 10m — the job's wait_for_spire() retries
+  # for up to 5m if OIDC keys aren't ready, plus container startup overhead)
   log_info "Waiting for SPIFFE IdP setup job..."
-  tries=0
-  while true; do
-    SUCCEEDED=$(kubectl get job kagenti-spiffe-idp-setup-job -n "$KAGENTI_NS" \
-      -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "")
-    [ "$SUCCEEDED" = "1" ] && break
-    tries=$((tries + 1))
-    if [ $tries -ge 60 ]; then
-      log_warn "SPIFFE IdP setup job did not complete in 5m — check logs:"
-      log_warn "  kubectl logs -n $KAGENTI_NS job/kagenti-spiffe-idp-setup-job"
-      break
-    fi
-    sleep 5
-  done
-  [ "$SUCCEEDED" = "1" ] && log_success "SPIFFE IdP setup complete"
+  if kubectl wait --for=condition=complete job/kagenti-spiffe-idp-setup-job \
+       -n "$KAGENTI_NS" --timeout=600s 2>/dev/null; then
+    log_success "SPIFFE IdP setup complete"
+  else
+    log_warn "SPIFFE IdP setup job did not complete in 10m — check logs:"
+    log_warn "  kubectl logs -n $KAGENTI_NS job/kagenti-spiffe-idp-setup-job"
+  fi
   echo ""
 fi
 
@@ -1290,6 +1290,7 @@ KAGENTI_FLAGS=(
   --set "ui.auth.enabled=$($WITH_SPIRE && echo true || echo false)"
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
   --set "kagenti-operator-chart.featureGates.injectTools=true"
+  --set "kagenti-operator-chart.kuadrant.enable=${WITH_KUADRANT}"
 )
 KAGENTI_FLAGS=( "${KAGENTI_FLAGS[@]}" ${KAGENTI_VALUES_FILES[@]+"${KAGENTI_VALUES_FILES[@]}"} )
 
@@ -1336,16 +1337,13 @@ if $WITH_KUADRANT; then
 
   if ! $DRY_RUN; then
     _wait_deployment_ready kuadrant-operator-controller-manager "$KUADRANT_NS" "Kuadrant operator"
-
-    # Create Kuadrant CR to instantiate Authorino
-    log_info "Creating Kuadrant CR..."
-    kubectl apply -f - <<EOF
-apiVersion: kuadrant.io/v1beta1
-kind: Kuadrant
-metadata:
-  name: kuadrant
-  namespace: ${KUADRANT_NS}
-EOF
+    # Kuadrant CR is created by the kagenti-operator's Kuadrant operand controller
+    # when --enable-kuadrant is set (see kagenti-operator chart values).
+    # The operator was installed before the Kuadrant CRD existed, so restart it
+    # to trigger KuadrantCRDExists() re-evaluation and controller registration.
+    log_info "Restarting kagenti-operator to pick up Kuadrant CRD..."
+    kubectl rollout restart deployment/kagenti-controller-manager -n kagenti-system
+    _wait_deployment_ready kagenti-controller-manager kagenti-system "kagenti-operator"
   fi
 
   log_success "Kuadrant installed"
