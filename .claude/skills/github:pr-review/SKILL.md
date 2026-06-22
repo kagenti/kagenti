@@ -177,14 +177,14 @@ Apply Kagenti-specific review criteria **only for areas the PR touches**.
 
 ### 3.1 Commit Conventions
 
-Check all commits against `git:commit` conventions:
-
 | Check | Criteria |
 |-------|----------|
-| Signed-off | Every commit has `Signed-off-by:` line |
-| Emoji prefix | Subject starts with recognized emoji (see `git:commit`) |
-| Imperative mood | "Add feature" not "Added feature" |
-| Length | Subject line under 72 characters |
+| Signed-off | Every commit has `Signed-off-by:` line (DCO — enforced, blocking) |
+| Subject prefix | Capitalized conventional prefix, e.g. `Fix:`, `Feat:`, `Docs:` (advisory) — same set as the PR title list in §3.2 |
+| Imperative mood | "Add feature" not "Added feature" (advisory) |
+| Length | Subject line under 72 characters (advisory) |
+
+> Note: the `git:commit` skill documents an emoji-prefix style, but actual practice across the org (and the `pr-verifier-required` workflow) is the capitalized conventional prefixes above. Prefer the prefix convention; treat any prefix deviation as a **nit**, not a blocker. Only DCO sign-off is blocking.
 
 ```bash
 # Check sign-off on all PR commits
@@ -197,9 +197,14 @@ Check against `repo:pr` conventions:
 
 | Check | Criteria |
 |-------|----------|
-| Title | Has emoji prefix, under 72 chars |
+| Title prefix | Starts with a capitalized conventional prefix, under 72 chars (advisory) |
 | Summary section | Body contains `## Summary` |
 | Issue linking | `Fixes #N` or `Closes #N` if applicable (optional) |
+
+**Title prefix** must be one of (case-sensitive, per `kagenti/.github` `pr-verifier-required.yml`):
+`Build, Chore, CI, Docs, Feat, Fix, Perf, Refactor, Revert, Style, Test, Feature, Bug fix, Proposal, Breaking change, Other`.
+
+This is **advisory only** — the title check is not a required/blocking status check, and only runs in repos that invoke `pr-verifier.yml`. Flag a non-conforming title as a **nit**, not a blocker. Do not flag it at all in repos that do not run the verifier workflow.
 
 ### 3.3 Python Changes
 
