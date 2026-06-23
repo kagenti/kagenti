@@ -239,6 +239,78 @@ kubectl get job -n kagenti-system kagenti-spiffe-idp-setup-job
 
 ---
 
+### Step 7b: Fix IdP Setup Job to Use Local Bootstrap Image
+
+**IMPORTANT:** The setup script creates an IdP setup job using a remote image (`spiffe-idp-setup:v0.6.0-rc.1`) which may have the OIDC wait bug. We need to recreate it with our local bootstrap image.
+
+```bash
+# Delete the job created by the setup script
+kubectl delete job -n kagenti-system kagenti-spiffe-idp-setup-job
+
+# Recreate it with our local bootstrap image
+cat > /tmp/idp-job-local.yaml << 'EOF'
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kagenti-spiffe-idp-setup-job
+  namespace: kagenti-system
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: kagenti-spiffe-idp-setup
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: kagenti-spiffe-idp-setup
+      containers:
+        - name: setup-spiffe-idp
+          image: ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest
+          imagePullPolicy: Never
+          env:
+            - name: KEYCLOAK_BASE_URL
+              value: "http://keycloak-service.keycloak.svc:8080"
+            - name: KEYCLOAK_REALM
+              value: "kagenti"
+            - name: KEYCLOAK_NAMESPACE
+              value: "keycloak"
+            - name: KEYCLOAK_ADMIN_SECRET_NAME
+              value: "keycloak-initial-admin"
+            - name: KEYCLOAK_ADMIN_USERNAME_KEY
+              value: "username"
+            - name: KEYCLOAK_ADMIN_PASSWORD_KEY
+              value: "password"
+            - name: SPIRE_OIDC_URL
+              value: "http://spire-spiffe-oidc-discovery-provider.zero-trust-workload-identity-manager.svc.cluster.local"
+            - name: SPIFFE_TRUST_DOMAIN
+              value: "localtest.me"
+            - name: SPIFFE_IDP_ALIAS
+              value: "spire-spiffe"
+            - name: OPERATOR_NAMESPACE
+              value: "kagenti-system"
+            - name: OPERATOR_SERVICE_ACCOUNT
+              value: "controller-manager"
+EOF
+
+kubectl apply -f /tmp/idp-job-local.yaml
+
+# Wait for completion (should take ~30 seconds)
+kubectl wait --for=condition=complete job/kagenti-spiffe-idp-setup-job -n kagenti-system --timeout=180s
+
+# Check logs
+kubectl logs -n kagenti-system job/kagenti-spiffe-idp-setup-job --tail=20
+```
+
+**Expected output:**
+```
+✓ SPIFFE Identity Provider 'spire-spiffe' already exists (or created)
+✓ Operator client created
+✓ manage-clients role assigned
+✓ Bootstrap completed successfully
+```
+
+---
+
 ### Step 8: Upgrade Kagenti with Operator SPIFFE Auth
 
 The setup script installed a base kagenti chart. Now upgrade it with our custom operator image and SPIFFE auth enabled:
