@@ -32,7 +32,7 @@ featureFlags:
   authbridgeAPI: true
   # Enables Platform Status card
   # on http://kagenti-ui.localtest.me:8080/admin
-  admin: false
+  admin: true
 
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
@@ -132,6 +132,11 @@ ui:
     # Default Shipwright build strategy for internal registries
     # Kind: "buildah-insecure-push" (no TLS), OCP: "buildah" (TLS-enabled registry)
     shipwrightDefaultStrategy: ""
+    # Hosts/IPs/CIDRs allowed to bypass the skill registry-URL private-address SSRF
+    # block (comma-separated). Empty by default — all private/internal addresses stay
+    # blocked. Set for self-hosted/in-cluster skill registries, e.g.
+    # "192.168.50.16,10.0.0.0/8".
+    skillRegistryAllowedHosts: ""
     resources:
       limits:
         cpu: 250m

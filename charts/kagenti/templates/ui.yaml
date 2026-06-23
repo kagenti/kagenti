@@ -134,6 +134,10 @@ spec:
             - name: SHIPWRIGHT_DEFAULT_STRATEGY
               value: {{ .Values.ui.backend.shipwrightDefaultStrategy | quote }}
             {{- end }}
+            {{- if .Values.ui.backend.skillRegistryAllowedHosts }}
+            - name: SKILL_REGISTRY_ALLOWED_HOSTS
+              value: {{ .Values.ui.backend.skillRegistryAllowedHosts | quote }}
+            {{- end }}
             # Feature flags
             - name: KAGENTI_FEATURE_FLAG_SANDBOX
               value: "{{ .Values.featureFlags.sandbox }}"
