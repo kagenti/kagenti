@@ -514,7 +514,25 @@ _ensure_user_workload_monitoring() {
   existing=$($KUBECTL get configmap cluster-monitoring-config -n openshift-monitoring \
     -o jsonpath='{.data.config\.yaml}' 2>/dev/null || echo "")
   if [ -z "$existing" ]; then
-    # ConfigMap doesn't exist or is empty — the hook can create it from scratch
+    # ConfigMap is absent (or has no config.yaml). We must NOT rely on the
+    # kiali-operand chart hook to create it: that hook is skipped on upgrades
+    # (--no-hooks) and on the fresh-install failure-recovery path (which also
+    # explicitly skips this ConfigMap as the conflict source). Relying on it
+    # silently leaves UWM disabled, so Kiali shows no mesh traffic. Create it
+    # here so the pre-flight is authoritative.
+    $KUBECTL apply -f - >/dev/null <<'EOF'
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    enableUserWorkload: true
+    prometheusK8s:
+      retentionSize: 10GB
+EOF
+    log_success "Created cluster-monitoring-config with enableUserWorkload: true"
     return
   fi
   if echo "$existing" | grep -q "enableUserWorkload: true"; then
