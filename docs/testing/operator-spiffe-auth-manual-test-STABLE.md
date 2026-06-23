@@ -171,8 +171,6 @@ kagenti-operator-chart:
       enabled: true
       spiffeHelper:
         jwtAudience: "http://keycloak.localtest.me:8080/realms/kagenti"
-  signatureVerification:
-    spireTrustDomain: "localtest.me"
 EOF
 ```
 
