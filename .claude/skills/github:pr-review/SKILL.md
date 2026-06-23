@@ -202,7 +202,7 @@ Check against `repo:pr` conventions:
 | Issue linking | `Fixes #N` or `Closes #N` if applicable (optional) |
 
 **Title prefix** must be one of (case-sensitive, per `kagenti/.github` `pr-verifier-required.yml`):
-`Build, Chore, CI, Docs, Feat, Fix, Perf, Refactor, Revert, Style, Test, Feature, Bug fix, Proposal, Breaking change, Other`.
+`Build, Chore, CI, Docs, Feat, Fix, Perf, Refactor, Revert, Style, Test, Feature, Bug fix, Proposal, Breaking change, Other, Other/Misc`.
 
 This is **advisory only** — the title check is not a required/blocking status check, and only runs in repos that invoke `pr-verifier.yml`. Flag a non-conforming title as a **nit**, not a blocker. Do not flag it at all in repos that do not run the verifier workflow.
 
