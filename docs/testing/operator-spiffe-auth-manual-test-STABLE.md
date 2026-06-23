@@ -237,7 +237,7 @@ kubectl get job -n kagenti-system kagenti-spiffe-idp-setup-job
 # Should show: COMPLETIONS 1/1
 ```
 
-**⚠️ Note:** SPIRE OIDC discovery provider may show ImagePullBackOff on some systems - this is expected and does NOT block the test.
+**⚠️ Note:** SPIRE OIDC discovery provider may show ImagePullBackOff on some systems - this is expected and does NOT block the test. The setup script skips waiting for OIDC provider readiness (the IdP setup only needs SPIRE server, not the OIDC provider).
 
 ---
 
