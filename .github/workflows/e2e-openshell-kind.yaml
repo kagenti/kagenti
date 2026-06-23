@@ -165,7 +165,7 @@ jobs:
           PLATFORM: kind
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
-          OPENSHELL_LLM_MODELS: "llama-scout-17b,deepseek-r1"
+          OPENSHELL_LLM_MODELS: "Qwen3.6-35B-A3B"
 
       - name: Collect logs on failure
         if: failure()
