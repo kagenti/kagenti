@@ -183,28 +183,14 @@ export DOCKER_HOST=unix://$(find /var/folders -name "podman-machine-default-api.
 
 **Time:** 15-20 minutes (Helm installs with `--wait` can be slow). 
 
-**⚠️ Known Issue:** If the script fails with `resource ServiceAccount/kagenti-system/kagenti-agent-oauth-secret-writer still exists`, you have leftover resources from a previous install. Clean up with:
+**⚠️ Known Issue:** If the script fails with `resource ServiceAccount/kagenti-system/kagenti-agent-oauth-secret-writer still exists`, you have leftover resources from a previous install. 
+
+**Solution:** Delete the cluster and start fresh from Step 1:
 ```bash
-kubectl delete serviceaccount -n kagenti-system kagenti-agent-oauth-secret-writer --ignore-not-found
-helm uninstall kagenti -n kagenti-system
+kind delete cluster --name kagenti
 ```
 
-Then enable the operator component and reinstall manually:
-```bash
-# Add operator enable flag to values
-cat >> /tmp/kagenti-spiffe-test-values.yaml << 'EOF'
-components:
-  agentOperator:
-    enabled: true
-EOF
-
-# Install kagenti chart
-helm dependency update charts/kagenti
-helm upgrade --install kagenti charts/kagenti/ -n kagenti-system \
-  --values deployments/envs/dev_values.yaml \
-  --values /tmp/kagenti-spiffe-test-values.yaml \
-  --timeout 15m --wait
-```
+This is faster and cleaner than trying to manually clean up failed helm installs.
 
 **When complete, verify the operator:**
 
@@ -543,13 +529,11 @@ helm upgrade kagenti charts/kagenti/ -n kagenti-system \
 Error: failed pre-install: resource ServiceAccount/kagenti-system/kagenti-agent-oauth-secret-writer still exists
 ```
 
-**Root Cause:** Leftover resources from previous test run
+**Root Cause:** Leftover resources from previous test run (helm install failed partway through)
 
-**Fix:**
+**Fix:** Delete the cluster and start fresh from Step 1:
 ```bash
-kubectl delete serviceaccount -n kagenti-system kagenti-agent-oauth-secret-writer --ignore-not-found
-helm uninstall kagenti -n kagenti-system
-# Then rerun the install from Step 6
+kind delete cluster --name kagenti
 ```
 
 ### Bootstrap Job Fails
