@@ -115,18 +115,26 @@ echo "✓ Bootstrap image built successfully"
 
 ### Step 4: Create Kind Cluster
 
+Create the cluster with port mappings so services are accessible from your browser:
+
 ```bash
 export KIND_EXPERIMENTAL_PROVIDER=podman
 export DOCKER_HOST=unix://$(find /var/folders -name "podman-machine-default-api.sock" 2>/dev/null | head -1)
 
-kind create cluster --name kagenti
+kind create cluster --name kagenti --config scripts/kind/kind-config-registry.yaml
 ```
+
+This config maps:
+- Port 30080 (NodePort) → 8080 (your Mac) - for HTTP services
+- Port 30443 (NodePort) → 9443 (your Mac) - for HTTPS services
 
 **Verify:**
 ```bash
 kubectl cluster-info
 # Expected: Kubernetes control plane is running
 ```
+
+**Note:** This uses the same config as `.github/scripts/local-setup/kind-full-test.sh` for consistency with the normal Kagenti install.
 
 ---
 
