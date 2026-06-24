@@ -198,8 +198,8 @@ This is faster and cleaner than trying to manually clean up failed helm installs
 # Check operator has 2/2 containers (manager + spiffe-helper)
 kubectl get pod -n kagenti-system -l control-plane=controller-manager
 
-# Check operator logs show SPIFFE auth enabled
-kubectl logs -n kagenti-system -l control-plane=controller-manager -c manager | grep -i "SPIFFE ID authentication enabled"
+# Check operator logs show SPIFFE auth enabled (look for the message in first ~50 lines)
+kubectl logs -n kagenti-system -l control-plane=controller-manager -c manager --tail=50 | grep "SPIFFE ID authentication enabled"
 ```
 
 **Expected output:**
@@ -261,32 +261,46 @@ kubectl apply -f /tmp/test-agent.yaml
 
 ---
 
-### Step 8: Verify Operator Attempts SPIFFE Registration
+### Step 8: Verify Operator Registration
 
-Watch operator logs for registration attempts:
+Watch operator logs for registration activity:
 
 ```bash
 kubectl logs -n kagenti-system -l control-plane=controller-manager -c manager --follow | grep -iE "test-agent|spiffe|client.*registration"
 ```
 
-**Expected (with PR #349 fixes):**
+**Expected output:**
 
-You should see the operator successfully registering the agent:
+You'll see multiple reconciliations showing "operator client registration applied":
 
 ```json
-{
-  "level":"info",
-  "msg":"Successfully registered client with SPIFFE ID",
-  "clientId":"spiffe://localtest.me/ns/team1/sa/test-agent",
-  "namespace":"team1"
-}
+{"level":"info","msg":"operator client registration applied","controller":"clientregistration",...,"workload":"test-agent","namespace":"team1","secret":"kagenti-keycloak-client-credentials-59cb4144e6505e3b"}
 ```
 
+**Note:** The message "Client registered via SPIFFE ID auth" only appears on the *first* registration. Subsequent reconciliations (triggered by Deployment status updates) show "applied" without errors - this is correct idempotent behavior from the Issue #7 fix (commit 22fb1fa).
+
+**Verify the registration succeeded by checking the secret:**
+
+```bash
+# Find the secret name from the logs or list them
+kubectl get secret -n team1 | grep kagenti-keycloak-client-credentials
+
+# Check it has BOTH client-id and client-secret (non-empty)
+SECRET_NAME=$(kubectl get secret -n team1 -o name | grep kagenti-keycloak-client-credentials | head -1)
+kubectl get $SECRET_NAME -n team1 -o jsonpath='{.data.client-id\.txt}' | base64 -d && echo ""
+kubectl get $SECRET_NAME -n team1 -o jsonpath='{.data.client-secret\.txt}' | base64 -d && echo ""
+```
+
+**Expected:**
+- Client ID: `spiffe://localtest.me/ns/team1/sa/test-agent`
+- Client Secret: (non-empty string - confirms Issue #8 fix working)
+
 **This confirms:**
-- ✅ Operator is detecting agent deployments
-- ✅ Operator is constructing SPIFFE-shaped client IDs
-- ✅ Operator is using JWT-SVID authentication
-- ✅ Token exchange flow is working (Issue #6 was fixed in commit e33f4c1)
+- ✅ Operator detected agent deployment
+- ✅ Operator constructed SPIFFE-shaped client ID
+- ✅ Operator used JWT-SVID authentication (Issue #6 fix - commit e33f4c1)
+- ✅ Client secret was fetched from Keycloak (Issue #8 fix - commit 962a313)
+- ✅ No 409 errors on reconciliation (Issue #7 fix - commit 22fb1fa)
 
 ---
 
