@@ -242,11 +242,15 @@ while [[ $# -gt 0 ]]; do
       echo "  --with-agent-sandbox Install agent-sandbox controller (kubernetes-sigs)"
       echo "  --with-skills       Enable skills and external skill registries"
       echo "                      (enables featureFlags.skills and featureFlags.externalSkills;"
-      echo "                      auto-enables --with-backend and --with-ui)"
+      echo "                      deploys an in-cluster skillberry-store and auto-enables"
+      echo "                      autosync against it; auto-enables --with-backend and --with-ui)."
+      echo "                      Override the store image with the SKILLBERRY_STORE_IMAGE /"
+      echo "                      SKILLBERRY_STORE_TAG env vars (default tag 0.2.0)."
       echo "  --skill-registry-allowed-hosts HOSTS"
       echo "                      Comma-separated hosts/IPs/CIDRs allowed past the registry-URL"
       echo "                      SSRF block (e.g. \"192.168.50.16\" or \"192.168.0.0/16\")."
-      echo "                      Needed for self-hosted/LAN skill registries on private IPs."
+      echo "                      Needed only for EXTERNAL skill registries on private IPs;"
+      echo "                      the in-cluster store needs no allow-listing."
       echo "  --with-all          Enable all optional components"
       echo ""
       echo "Skip flags (override --with-all for resource-constrained environments):"
@@ -1293,6 +1297,7 @@ KAGENTI_FLAGS=(
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
   --set "featureFlags.skills=${WITH_SKILLS}"
   --set "featureFlags.externalSkills=${WITH_SKILLS}"
+  --set "components.skillberryStore.enabled=${WITH_SKILLS}"
   --set "components.mlflow.enabled=${WITH_MLFLOW}"
   --set "ui.auth.enabled=$($WITH_SPIRE && echo true || echo false)"
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
@@ -1305,6 +1310,13 @@ KAGENTI_FLAGS=(
 # single string rather than a list.
 if [[ -n "$SKILL_REGISTRY_ALLOWED_HOSTS" ]]; then
   KAGENTI_FLAGS+=(--set-string "ui.backend.skillRegistryAllowedHosts=${SKILL_REGISTRY_ALLOWED_HOSTS//,/\\,}")
+fi
+
+# Optional in-cluster skillberry-store image override (no dedicated flag).
+# Defaults come from charts/kagenti/values.yaml (tag 0.2.0).
+if $WITH_SKILLS; then
+  [[ -n "${SKILLBERRY_STORE_IMAGE:-}" ]] && KAGENTI_FLAGS+=(--set "skillberryStore.image.repository=${SKILLBERRY_STORE_IMAGE}")
+  [[ -n "${SKILLBERRY_STORE_TAG:-}" ]]   && KAGENTI_FLAGS+=(--set "skillberryStore.image.tag=${SKILLBERRY_STORE_TAG}")
 fi
 
 KAGENTI_FLAGS=( "${KAGENTI_FLAGS[@]}" ${KAGENTI_VALUES_FILES[@]+"${KAGENTI_VALUES_FILES[@]}"} )
