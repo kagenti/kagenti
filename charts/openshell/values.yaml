@@ -1,6 +1,10 @@
 # -- Tenant name (used as namespace and audience)
 tenant: ""
 
+# -- Compute driver mode: "external" uses the Go sidecar (openshell-driver-openshift),
+# "kubernetes" uses the in-process Rust K8s driver built into the gateway binary.
+driverMode: "kubernetes"
+
 # -- Container images
 images:
   gateway:

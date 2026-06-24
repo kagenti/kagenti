@@ -60,9 +60,11 @@ spec:
                   name: openshell-gateway-secrets
                   key: ssh-handshake-secret
             - name: OPENSHELL_DRIVERS
-              value: "external"
+              value: {{ .Values.driverMode | quote }}
+            {{- if eq .Values.driverMode "external" }}
             - name: OPENSHELL_COMPUTE_DRIVER_SOCKET
               value: "/run/drivers/compute.sock"
+            {{- end }}
             - name: OPENSHELL_CREDENTIALS_DRIVER_SOCKET
               value: "/run/drivers/credentials.sock"
             {{- if .Values.trustedCABundle }}
@@ -95,6 +97,7 @@ spec:
             {{- end }}
           resources:
             {{- toYaml .Values.resources.gateway | nindent 12 }}
+        {{- if eq .Values.driverMode "external" }}
         - name: compute-driver
           image: "{{ .Values.images.computeDriver.repository }}:{{ .Values.images.computeDriver.tag }}"
           imagePullPolicy: {{ .Values.images.computeDriver.pullPolicy }}
@@ -120,6 +123,7 @@ spec:
               mountPath: /run/drivers
           resources:
             {{- toYaml .Values.resources.computeDriver | nindent 12 }}
+        {{- end }}
         - name: credentials-driver
           image: "{{ .Values.images.credentialsDriver.repository }}:{{ .Values.images.credentialsDriver.tag }}"
           imagePullPolicy: {{ .Values.images.credentialsDriver.pullPolicy }}
