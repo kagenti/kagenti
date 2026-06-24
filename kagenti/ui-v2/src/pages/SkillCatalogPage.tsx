@@ -85,7 +85,7 @@ export const SkillCatalogPage: React.FC = () => {
                 <Button
                   variant="link"
                   component="a"
-                  href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '')}
+                  href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '', autoSyncStatus?.storeUiUrl)}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -154,7 +154,7 @@ export const SkillCatalogPage: React.FC = () => {
                   variant="secondary"
                   icon={<ExternalLinkAltIcon />}
                   component="a"
-                  href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '')}
+                  href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '', autoSyncStatus?.storeUiUrl)}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -211,7 +211,7 @@ export const SkillCatalogPage: React.FC = () => {
                     variant="secondary"
                     icon={<ExternalLinkAltIcon />}
                     component="a"
-                    href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '')}
+                    href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '', autoSyncStatus?.storeUiUrl)}
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -284,9 +284,9 @@ export const SkillCatalogPage: React.FC = () => {
                   <Td dataLabel="Registry">
                     {skill.source === 'external' &&
                     skill.externalInfo?.registryType === 'skillberry' &&
-                    getSkillberryUiUrl(skill.externalInfo.registryUrl, skill.externalInfo.registrySkillName) ? (
+                    getSkillberryUiUrl(skill.externalInfo.registryUrl, skill.externalInfo.registrySkillName, autoSyncStatus?.storeUiUrl) ? (
                       <a
-                        href={getSkillberryUiUrl(skill.externalInfo.registryUrl, skill.externalInfo.registrySkillName)}
+                        href={getSkillberryUiUrl(skill.externalInfo.registryUrl, skill.externalInfo.registrySkillName, autoSyncStatus?.storeUiUrl)}
                         target="_blank"
                         rel="noreferrer"
                         onClick={(e) => e.stopPropagation()}

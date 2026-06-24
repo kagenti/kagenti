@@ -19,6 +19,9 @@ data:
   enabled: "true"
   registry-type: "skillberry"
   registry-url: "http://skillberry-store.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.skillberryStore.apiPort }}"
+  # Browser-facing store UI URL (via the gateway), surfaced by the backend to the
+  # UI. The registry-url above is server-side only and not browser-reachable.
+  store-ui-url: "{{ .Values.skillberryStore.uiUrl | default (printf "http://skillberry-store.%s:%v" (.Values.domain | default "localtest.me") (.Values.ingressPort | default 8080)) }}"
   sync-interval: "{{ .Values.skillberryStore.autosync.syncInterval }}"
   allowed-tags: "{{ .Values.skillberryStore.autosync.allowedTags }}"
 {{- end }}

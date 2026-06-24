@@ -67,11 +67,24 @@ export const isValidUrl = (url: string): boolean => {
 };
 
 /**
- * Derive the skillberry-store web UI URL from the API URL.
- * Substitutes port 8002 (UI) for the stored API port and appends the skill path.
- * Returns '' if registryUrl is not a valid URL.
+ * Derive the skillberry-store web UI URL for a single skill.
+ *
+ * Prefers an explicit browser-facing store UI URL (e.g. the in-cluster store
+ * exposed via the gateway), since the API registryUrl may be an in-cluster
+ * address that is not reachable from a browser. Falls back to deriving the URL
+ * from the API registryUrl by substituting the UI port 8002 (external
+ * registries whose host:port the browser can reach).
+ *
+ * Returns '' if no usable URL can be built.
  */
-export const getSkillberryUiUrl = (registryUrl: string, skillName: string): string => {
+export const getSkillberryUiUrl = (
+  registryUrl: string,
+  skillName: string,
+  storeUiUrl?: string,
+): string => {
+  if (storeUiUrl && isValidUrl(storeUiUrl)) {
+    return `${storeUiUrl.replace(/\/+$/, '')}/skills/${skillName}`;
+  }
   try {
     const url = new URL(registryUrl);
     url.port = '8002';
@@ -82,11 +95,16 @@ export const getSkillberryUiUrl = (registryUrl: string, skillName: string): stri
 };
 
 /**
- * Derive the skillberry-store root UI URL from the API URL.
- * Substitutes port 8002 (UI) for the stored API port.
- * Returns '#' if registryUrl is not a valid URL.
+ * Derive the skillberry-store root UI URL.
+ *
+ * Prefers an explicit browser-facing store UI URL when provided; otherwise
+ * derives it from the API registryUrl by substituting the UI port 8002.
+ * Returns '#' if no usable URL can be built.
  */
-export const getSkillberryStoreUrl = (registryUrl: string): string => {
+export const getSkillberryStoreUrl = (registryUrl: string, storeUiUrl?: string): string => {
+  if (storeUiUrl && isValidUrl(storeUiUrl)) {
+    return storeUiUrl.replace(/\/+$/, '') + '/';
+  }
   try {
     const url = new URL(registryUrl);
     url.port = '8002';

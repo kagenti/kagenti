@@ -80,6 +80,17 @@ skillberryStore:
   apiPort: 8000
   uiPort: 8002
   baseDir: /data              # SBS_BASE_DIR; PVC mount point
+  # Hosts the store's Vite dev server accepts in the Host header
+  # (VITE_ALLOWED_HOSTS). The UI is reached through the gateway under a
+  # non-localhost hostname, which Vite blocks by default. Empty = derive the
+  # gateway host from domain (skillberry-store.<domain>). Set to "true" to allow
+  # any host. Requires a store image with VITE_ALLOWED_HOSTS support (>= 0.2.0).
+  allowedHosts: ""
+  # Browser-facing store UI URL surfaced in the Kagenti UI (the in-cluster
+  # registry-url is server-side only and not browser-reachable). Empty = derive
+  # from domain: http://skillberry-store.<domain>:<ingressPort>. Set explicitly
+  # for OpenShift routes or custom ingress.
+  uiUrl: ""
   # Extra environment variables appended to the store container, after the
   # chart-managed SBS_* / ENABLE_UI vars. Standard core/v1 EnvVar entries, so
   # both literal values and valueFrom (secretKeyRef/configMapKeyRef) work.

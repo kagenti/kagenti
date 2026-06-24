@@ -90,6 +90,27 @@ tests:
           content:
             name: SBS_BASE_DIR
             value: "/data"
+      # VITE_ALLOWED_HOSTS defaults to the gateway host derived from domain.
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: VITE_ALLOWED_HOSTS
+            value: skillberry-store.localtest.me
+
+  - it: honors a skillberryStore.allowedHosts override for VITE_ALLOWED_HOSTS
+    set:
+      components.skillberryStore.enabled: true
+      skillberryStore.allowedHosts: "true"
+    template: templates/skillberry-store.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: VITE_ALLOWED_HOSTS
+            value: "true"
 
   - it: appends extraEnv entries to the store container
     set:
@@ -170,6 +191,9 @@ tests:
       - equal:
           path: data["registry-url"]
           value: http://skillberry-store.kagenti-system.svc.cluster.local:8000
+      - equal:
+          path: data["store-ui-url"]
+          value: http://skillberry-store.localtest.me:8080
 
   - it: does not seed the autosync ConfigMap when autosync is disabled
     set:

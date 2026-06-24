@@ -39,6 +39,10 @@ spec:
           value: "{{ .Values.skillberryStore.uiPort }}"
         - name: ENABLE_UI
           value: "true"
+        # Allow the gateway hostname through the store's Vite dev server host
+        # check. Defaults to the HTTPRoute host derived from .Values.domain.
+        - name: VITE_ALLOWED_HOSTS
+          value: {{ .Values.skillberryStore.allowedHosts | default (printf "skillberry-store.%s" (.Values.domain | default "localtest.me")) | quote }}
         {{- with .Values.skillberryStore.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
