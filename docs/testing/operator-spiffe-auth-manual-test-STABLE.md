@@ -32,8 +32,13 @@ This document provides **working** instructions for manually testing operator SP
 
 ```bash
 export KIND_EXPERIMENTAL_PROVIDER=podman
-export DOCKER_HOST=unix:///var/folders/jt/b_5yc_tn32sc7n60d6dht_3c0000gn/T/podman/podman-machine-default-api.sock
+# Find your podman socket path (machine-specific):
+export DOCKER_HOST=unix://$(find /var/folders -name "podman-machine-default-api.sock" 2>/dev/null | head -1)
+# Verify it's set correctly:
+echo "DOCKER_HOST=$DOCKER_HOST"
 ```
+
+**Note:** The DOCKER_HOST path is in a temporary directory with a machine-specific UUID. The `find` command locates it automatically.
 
 **Time Required:** 30-45 minutes (including troubleshooting)
 
@@ -76,12 +81,13 @@ git checkout pr-349
 git pull origin pr-349
 
 podman build -t localhost/kagenti-operator:spiffe-test -f Dockerfile .
-```
 
-**Verify:**
-```bash
-podman images | grep kagenti-operator
-# Expected: localhost/kagenti-operator  spiffe-test
+# Verify build succeeded
+if ! podman images | grep -q "localhost/kagenti-operator.*spiffe-test"; then
+  echo "ERROR: Operator image build failed"
+  exit 1
+fi
+echo "✓ Operator image built successfully"
 ```
 
 ---
@@ -96,12 +102,13 @@ git pull origin feat/operator-spiffe-auth-bootstrap
 
 podman build -t ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest \
   -f auth/operator-spiffe-bootstrap/Dockerfile .
-```
 
-**Verify:**
-```bash
-podman images | grep operator-spiffe-bootstrap
-# Expected: ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap  latest
+# Verify build succeeded
+if ! podman images | grep -q "operator-spiffe-bootstrap.*latest"; then
+  echo "ERROR: Bootstrap image build failed"
+  exit 1
+fi
+echo "✓ Bootstrap image built successfully"
 ```
 
 ---
@@ -110,7 +117,7 @@ podman images | grep operator-spiffe-bootstrap
 
 ```bash
 export KIND_EXPERIMENTAL_PROVIDER=podman
-export DOCKER_HOST=unix:///var/folders/jt/b_5yc_tn32sc7n60d6dht_3c0000gn/T/podman/podman-machine-default-api.sock
+export DOCKER_HOST=unix://$(find /var/folders -name "podman-machine-default-api.sock" 2>/dev/null | head -1)
 
 kind create cluster --name kagenti
 ```
@@ -205,9 +212,9 @@ Use the setup script to install kagenti-deps (Keycloak, SPIRE, Istio, etc.):
 ```bash
 cd /Users/alan/Documents/Work/kagenti
 
-# Set environment
+# Set environment (use same values from Step 4)
 export KIND_EXPERIMENTAL_PROVIDER=podman
-export DOCKER_HOST=unix:///var/folders/jt/b_5yc_tn32sc7n60d6dht_3c0000gn/T/podman/podman-machine-default-api.sock
+export DOCKER_HOST=unix://$(find /var/folders -name "podman-machine-default-api.sock" 2>/dev/null | head -1)
 
 # Run setup script with SPIRE enabled
 # This installs deps and base kagenti (we'll upgrade kagenti in next step)
@@ -242,6 +249,10 @@ kubectl get pods -n zero-trust-workload-identity-manager
 **IMPORTANT:** The setup script creates an IdP setup job using a remote image (`spiffe-idp-setup:v0.6.0-rc.1`). We MUST replace it with our local bootstrap image to test the fixes in PR #349.
 
 ```bash
+# Wait for Keycloak to be ready (IdP setup needs it)
+echo "Waiting for Keycloak to be ready..."
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=keycloak -n keycloak --timeout=300s
+
 # Delete the job created by the setup script (may still be running)
 kubectl delete job -n kagenti-system kagenti-spiffe-idp-setup-job --ignore-not-found=true
 
