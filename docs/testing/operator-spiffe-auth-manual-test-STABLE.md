@@ -155,7 +155,50 @@ docker exec -i kagenti-control-plane crictl images | grep -E "kagenti-operator|o
 
 ---
 
-### Step 6: Create Helm Values Files
+### Step 6: Deploy Kagenti with Operator SPIFFE Auth
+
+Run the dedicated test setup script that installs everything with your local images:
+
+```bash
+cd /Users/alan/Documents/Work/kagenti
+
+# Set environment (use same values from Step 4)
+export KIND_EXPERIMENTAL_PROVIDER=podman
+export DOCKER_HOST=unix://$(find /var/folders -name "podman-machine-default-api.sock" 2>/dev/null | head -1)
+
+# Run the test setup script
+./docs/testing/setup-operator-spiffe-test.sh
+```
+
+**The script will:**
+1. Install cert-manager, Gateway API, Istio
+2. Install SPIRE with CSI driver
+3. Install Keycloak with PostgreSQL
+4. Run SPIFFE IdP setup with YOUR local bootstrap image
+5. Install kagenti with YOUR local operator image and SPIFFE auth enabled
+
+**Time:** 10-15 minutes. When complete, verify the operator:
+
+```bash
+# Check operator has 2/2 containers (manager + spiffe-helper)
+kubectl get pod -n kagenti-system -l control-plane=controller-manager
+
+# Check operator logs show SPIFFE auth enabled
+kubectl logs -n kagenti-system -l control-plane=controller-manager -c manager | grep -i "SPIFFE ID authentication enabled"
+```
+
+**Expected:** Operator pod shows `2/2 Running` and logs show SPIFFE auth enabled.
+
+**⚠️ Note:** If the script fails, check the error message and verify your custom images are loaded in Kind (Step 5).
+
+---
+
+### Step 7 (DEPRECATED - see Step 6 instead): Create Helm Values Files
+
+**This step is no longer needed** - the setup script in Step 6 handles everything. This section is kept for reference only.
+
+<details>
+<summary>Old manual values file approach (click to expand)</summary>
 
 You need **TWO** values files for Kind deployment:
 
@@ -323,11 +366,11 @@ kubectl logs -n kagenti-system job/kagenti-spiffe-idp-setup-job --tail=20
 ✓ Bootstrap completed successfully
 ```
 
+</details>
+
 ---
 
-### Step 8: Upgrade Kagenti with Operator SPIFFE Auth
-
-The setup script installed a base kagenti chart. Now upgrade it with our custom operator image and SPIFFE auth enabled:
+### Step 8 (NOW Step 7): Deploy Test Agent
 
 ```bash
 cd /Users/alan/Documents/Work/kagenti
