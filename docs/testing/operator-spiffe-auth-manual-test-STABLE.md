@@ -251,7 +251,7 @@ kubectl get pods -n zero-trust-workload-identity-manager
 ```bash
 # Wait for Keycloak to be ready (IdP setup needs it)
 echo "Waiting for Keycloak to be ready..."
-kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=keycloak -n keycloak --timeout=300s
+kubectl wait --for=condition=ready pod -l app=keycloak -n keycloak --timeout=300s
 
 # Delete the job created by the setup script (may still be running)
 kubectl delete job -n kagenti-system kagenti-spiffe-idp-setup-job --ignore-not-found=true
