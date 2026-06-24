@@ -256,8 +256,10 @@ kubectl wait --for=condition=ready pod -l app=keycloak -n keycloak --timeout=300
 # Delete the job created by the setup script (may still be running)
 kubectl delete job -n kagenti-system kagenti-spiffe-idp-setup-job --ignore-not-found=true
 
-# Wait for job to fully terminate
-sleep 3
+# Wait for job and its pods to fully terminate
+kubectl wait --for=delete job/kagenti-spiffe-idp-setup-job -n kagenti-system --timeout=30s 2>/dev/null || true
+kubectl wait --for=delete pod -l app=kagenti-spiffe-idp-setup -n kagenti-system --timeout=30s 2>/dev/null || true
+sleep 2
 
 # Create job with our local bootstrap image
 cat > /tmp/idp-job-local.yaml << 'EOF'
