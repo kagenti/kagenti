@@ -244,8 +244,20 @@ kubectl get job -n kagenti-system kagenti-spiffe-idp-setup-job
 **IMPORTANT:** The setup script creates an IdP setup job using a remote image (`spiffe-idp-setup:v0.6.0-rc.1`) which may have the OIDC wait bug. We need to recreate it with our local bootstrap image.
 
 ```bash
-# Delete the job created by the setup script
-kubectl delete job -n kagenti-system kagenti-spiffe-idp-setup-job
+# First, check if the job completed successfully
+JOB_STATUS=$(kubectl get job -n kagenti-system kagenti-spiffe-idp-setup-job -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null || echo "NotFound")
+
+if [ "$JOB_STATUS" = "True" ]; then
+  echo "✓ IdP setup job already completed successfully - skipping recreation"
+  kubectl logs -n kagenti-system job/kagenti-spiffe-idp-setup-job --tail=20
+else
+  echo "IdP setup job not complete (status: $JOB_STATUS) - recreating with local image"
+  
+  # Delete the job created by the setup script
+  kubectl delete job -n kagenti-system kagenti-spiffe-idp-setup-job --ignore-not-found=true
+  
+  # Wait for job to fully terminate
+  sleep 2
 
 # Recreate it with our local bootstrap image
 cat > /tmp/idp-job-local.yaml << 'EOF'
@@ -292,13 +304,14 @@ spec:
               value: "controller-manager"
 EOF
 
-kubectl apply -f /tmp/idp-job-local.yaml
+  kubectl apply -f /tmp/idp-job-local.yaml
 
-# Wait for completion (should take ~30 seconds)
-kubectl wait --for=condition=complete job/kagenti-spiffe-idp-setup-job -n kagenti-system --timeout=180s
+  # Wait for completion (should take ~30 seconds)
+  kubectl wait --for=condition=complete job/kagenti-spiffe-idp-setup-job -n kagenti-system --timeout=180s
 
-# Check logs
-kubectl logs -n kagenti-system job/kagenti-spiffe-idp-setup-job --tail=20
+  # Check logs
+  kubectl logs -n kagenti-system job/kagenti-spiffe-idp-setup-job --tail=20
+fi
 ```
 
 **Expected output:**
