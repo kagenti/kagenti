@@ -1,22 +1,23 @@
 # Link Health Report
 
-> Last scan: 2026-06-22 07:02 ET | Scan ID: 2026-06-22-001
+> Last scan: 2026-06-24 07:02 ET | Scan ID: 2026-06-24-001
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
 | Repos scanned | 17 |
-| Total links checked | 2616 |
+| Total links checked | 2614 |
 | Broken (internal) | 29 |
-| Broken (external) | 18 |
-| New since last scan | +3 |
-| Fixed since last scan | -0 |
+| Broken (external) | 17 |
+| New since last scan | +0 |
+| Fixed since last scan | -1 |
 
 ## Trend (last 10 scans)
 
 | Date | Internal | External | Delta |
 |------|----------|----------|-------|
+| 06-24 | 29 | 17 | -1 |
 | 06-22 | 29 | 18 | +3 |
 | 06-19 | 29 | 15 | 0 |
 | 06-17 | 29 | 15 | -11 |
@@ -26,7 +27,6 @@
 | 06-05 | 29 | 23 | 0 |
 | 06-05 | 29 | 23 | -7 |
 | 06-05 | 36 | 23 | 0 |
-| 06-03 | 37 | 22 | 0 |
 
 ## Broken Links by Repo
 
@@ -34,7 +34,7 @@
 |------|----------|----------|--------|
 | OpenShell | 0 | 5 | |
 | adk | 25 | 4 | |
-| agent-examples | 0 | 2 | |
+| agent-examples | 0 | 1 | |
 | ecosystem-guide | 0 | 2 | |
 | kagenti | 2 | 3 | |
 | kagenti-extensions | 0 | 2 | |
