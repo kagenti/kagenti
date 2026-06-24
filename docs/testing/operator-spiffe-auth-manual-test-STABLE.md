@@ -221,7 +221,7 @@ scripts/kind/setup-kagenti.sh --with-spire
 4. Configure SPIFFE Identity Provider in Keycloak
 5. Install base kagenti chart (which we'll upgrade in Step 8)
 
-**Wait for completion:** The script takes 5-10 minutes. When it completes, verify infrastructure:
+**Wait for infrastructure:** The script takes 5-10 minutes. When it completes, verify core infrastructure is ready:
 
 ```bash
 # Check Keycloak is ready
@@ -229,37 +229,26 @@ kubectl get pods -n keycloak
 
 # Check SPIRE is ready
 kubectl get pods -n zero-trust-workload-identity-manager
-
-# Check SPIFFE IdP setup completed
-kubectl get job -n kagenti-system kagenti-spiffe-idp-setup-job
-# Should show: COMPLETIONS 1/1
 ```
 
-**⚠️ Note:** SPIRE OIDC discovery provider may show ImagePullBackOff on some systems - this is expected and does NOT block the test. The setup script skips waiting for OIDC provider readiness (the IdP setup only needs SPIRE server, not the OIDC provider).
+**⚠️ Note:** SPIRE OIDC discovery provider may show ImagePullBackOff on some systems - this is expected and does NOT block the test.
+
+**Do NOT wait for the IdP job** - proceed immediately to Step 7b to replace it with your local image.
 
 ---
 
-### Step 7b: Fix IdP Setup Job to Use Local Bootstrap Image
+### Step 7b: Replace IdP Setup Job with Local Bootstrap Image
 
-**IMPORTANT:** The setup script creates an IdP setup job using a remote image (`spiffe-idp-setup:v0.6.0-rc.1`) which may have the OIDC wait bug. We need to recreate it with our local bootstrap image.
+**IMPORTANT:** The setup script creates an IdP setup job using a remote image (`spiffe-idp-setup:v0.6.0-rc.1`). We MUST replace it with our local bootstrap image to test the fixes in PR #349.
 
 ```bash
-# First, check if the job completed successfully
-JOB_STATUS=$(kubectl get job -n kagenti-system kagenti-spiffe-idp-setup-job -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null || echo "NotFound")
+# Delete the job created by the setup script (may still be running)
+kubectl delete job -n kagenti-system kagenti-spiffe-idp-setup-job --ignore-not-found=true
 
-if [ "$JOB_STATUS" = "True" ]; then
-  echo "✓ IdP setup job already completed successfully - skipping recreation"
-  kubectl logs -n kagenti-system job/kagenti-spiffe-idp-setup-job --tail=20
-else
-  echo "IdP setup job not complete (status: $JOB_STATUS) - recreating with local image"
-  
-  # Delete the job created by the setup script
-  kubectl delete job -n kagenti-system kagenti-spiffe-idp-setup-job --ignore-not-found=true
-  
-  # Wait for job to fully terminate
-  sleep 2
+# Wait for job to fully terminate
+sleep 3
 
-# Recreate it with our local bootstrap image
+# Create job with our local bootstrap image
 cat > /tmp/idp-job-local.yaml << 'EOF'
 apiVersion: batch/v1
 kind: Job
@@ -304,14 +293,13 @@ spec:
               value: "controller-manager"
 EOF
 
-  kubectl apply -f /tmp/idp-job-local.yaml
+kubectl apply -f /tmp/idp-job-local.yaml
 
-  # Wait for completion (should take ~30 seconds)
-  kubectl wait --for=condition=complete job/kagenti-spiffe-idp-setup-job -n kagenti-system --timeout=180s
+# Wait for completion (should take ~30 seconds)
+kubectl wait --for=condition=complete job/kagenti-spiffe-idp-setup-job -n kagenti-system --timeout=180s
 
-  # Check logs
-  kubectl logs -n kagenti-system job/kagenti-spiffe-idp-setup-job --tail=20
-fi
+# Check logs
+kubectl logs -n kagenti-system job/kagenti-spiffe-idp-setup-job --tail=20
 ```
 
 **Expected output:**
