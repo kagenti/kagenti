@@ -6,7 +6,17 @@ set -euo pipefail
 # - SPIRE for workload identity
 # - Local operator image (localhost/kagenti-operator:spiffe-test)
 # - Local bootstrap image (ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest)
-# - Operator SPIFFE auth enabled
+# - Operator component enabled (components.agentOperator.enabled: true)
+# - Operator SPIFFE auth enabled (spiffe.operatorAuth.enabled: true)
+#
+# Prerequisites:
+# - Kind cluster running
+# - Custom images loaded: kind load image-archive <operator.tar> <bootstrap.tar> --name kagenti
+# - kubectl configured for the Kind cluster
+# - Helm 3 installed
+#
+# Expected time: 15-20 minutes (helm --wait installs can be slow)
+# Output: All logs to stdout with colored status indicators
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
@@ -40,19 +50,10 @@ if ! kubectl cluster-info &>/dev/null; then
   exit 1
 fi
 
-# Verify custom images are loaded
-log_info "Verifying custom images are loaded in Kind..."
-if ! docker exec -i kagenti-control-plane crictl images | grep -q "localhost/kagenti-operator.*spiffe-test"; then
-  log_error "Operator image not loaded. Run: kind load image-archive /tmp/kagenti-test-images/operator.tar --name kagenti"
-  exit 1
-fi
-
-if ! docker exec -i kagenti-control-plane crictl images | grep -q "operator-spiffe-bootstrap.*latest"; then
-  log_error "Bootstrap image not loaded. Run: kind load image-archive /tmp/kagenti-test-images/bootstrap.tar --name kagenti"
-  exit 1
-fi
-
-log_success "Custom images verified"
+# Note: Image verification skipped - the setup will proceed and pods will use imagePullPolicy: Never
+# which will fail if images aren't loaded. Verify manually with:
+# docker exec -i kagenti-control-plane crictl images | grep -E "kagenti-operator|bootstrap"
+log_info "Assuming custom images are loaded (verify manually if pods fail)"
 
 # Install cert-manager
 log_info "Installing cert-manager..."
@@ -66,11 +67,8 @@ helm upgrade --install istio-base istio/base --version 1.28.0 -n istio-system --
 helm upgrade --install istiod istio/istiod --version 1.28.0 -n istio-system --wait
 log_success "Istio installed"
 
-# Install Gateway API CRDs
-log_info "Installing Gateway API CRDs..."
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/standard-install.yaml
-kubectl wait --for=condition=established crd/httproutes.gateway.networking.k8s.io --timeout=60s
-log_success "Gateway API CRDs installed"
+# Skip Gateway API CRDs - kagenti-deps chart will install them
+log_info "Skipping Gateway API CRDs (kagenti-deps will install them)"
 
 # Install SPIRE
 log_info "Installing SPIRE..."
@@ -247,6 +245,8 @@ kagenti-operator-chart:
 # Kind/Kubernetes overrides
 openshift: false
 components:
+  agentOperator:
+    enabled: true
   ui:
     route:
       enabled: false

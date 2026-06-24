@@ -171,13 +171,42 @@ export DOCKER_HOST=unix://$(find /var/folders -name "podman-machine-default-api.
 ```
 
 **The script will:**
-1. Install cert-manager, Gateway API, Istio
-2. Install SPIRE with CSI driver
-3. Install Keycloak with PostgreSQL
-4. Run SPIFFE IdP setup with YOUR local bootstrap image
-5. Install kagenti with YOUR local operator image and SPIFFE auth enabled
+1. Install cert-manager, Istio (without Gateway API CRDs - kagenti-deps installs them)
+2. Install SPIRE 0.27.0 with CSI driver
+3. Install Keycloak with PostgreSQL via kagenti-deps (with Gateway API CRDs)
+4. Create RBAC for IdP setup
+5. Run IdP setup Job with YOUR local bootstrap image (`imagePullPolicy: Never`)
+6. Install kagenti chart with:
+   - YOUR local operator image (`localhost/kagenti-operator:spiffe-test`)
+   - Operator component enabled (`components.agentOperator.enabled: true`)
+   - Operator SPIFFE auth enabled
 
-**Time:** 10-15 minutes. When complete, verify the operator:
+**Time:** 15-20 minutes (Helm installs with `--wait` can be slow). 
+
+**⚠️ Known Issue:** If the script fails with `resource ServiceAccount/kagenti-system/kagenti-agent-oauth-secret-writer still exists`, you have leftover resources from a previous install. Clean up with:
+```bash
+kubectl delete serviceaccount -n kagenti-system kagenti-agent-oauth-secret-writer --ignore-not-found
+helm uninstall kagenti -n kagenti-system
+```
+
+Then enable the operator component and reinstall manually:
+```bash
+# Add operator enable flag to values
+cat >> /tmp/kagenti-spiffe-test-values.yaml << 'EOF'
+components:
+  agentOperator:
+    enabled: true
+EOF
+
+# Install kagenti chart
+helm dependency update charts/kagenti
+helm upgrade --install kagenti charts/kagenti/ -n kagenti-system \
+  --values deployments/envs/dev_values.yaml \
+  --values /tmp/kagenti-spiffe-test-values.yaml \
+  --timeout 15m --wait
+```
+
+**When complete, verify the operator:**
 
 ```bash
 # Check operator has 2/2 containers (manager + spiffe-helper)
@@ -187,9 +216,15 @@ kubectl get pod -n kagenti-system -l control-plane=controller-manager
 kubectl logs -n kagenti-system -l control-plane=controller-manager -c manager | grep -i "SPIFFE ID authentication enabled"
 ```
 
-**Expected:** Operator pod shows `2/2 Running` and logs show SPIFFE auth enabled.
+**Expected output:**
+```
+NAME                                          READY   STATUS    RESTARTS   AGE
+kagenti-controller-manager-5f886f5f79-xxxxx   2/2     Running   0          2m
 
-**⚠️ Note:** If the script fails, check the error message and verify your custom images are loaded in Kind (Step 5).
+{"level":"info","msg":"SPIFFE ID authentication enabled: using JWT-SVID for client registration","spireSocket":"unix:///run/spire/sockets/spire-agent.sock","operatorSPIFFEID":"spiffe://localtest.me/ns/kagenti-system/sa/controller-manager"}
+```
+
+**⚠️ Note:** The script creates a custom IdP setup Job (not using the chart's default) that explicitly uses `imagePullPolicy: Never` to force use of your locally-loaded bootstrap image.
 
 ---
 
@@ -367,7 +402,7 @@ kubectl logs -n team1 $AGENT_POD -c authbridge-proxy --tail=50 | grep -i "auth\|
 | 8. Operator attempts SPIFFE registration | ✅ | Operator calls Keycloak with SPIFFE client ID |
 | 9. Operator gets JWT-SVID from SPIRE | ✅ | No socket errors in logs |
 | 10. Agent registered in Keycloak | ✅ | Operator logs show "Successfully registered client" |
-| 11. Agent can authenticate to services | ⚠️ | **Depends on CLIENT_AUTH_TYPE configuration** (see Step 12) |
+| 11. Agent can authenticate to services | ✅ | AuthBridge uses fetched credentials to authenticate |
 
 ---
 
@@ -436,9 +471,9 @@ if resp.StatusCode == http.StatusConflict {
 
 ---
 
-### ⚠️ Issue #8: Missing Client Secret Fetch for `client-secret` Auth Type (Pre-existing Bug, Not Fixed)
+### ✅ Issue #8: Client Secret Fetching for `client-secret` Auth Type (Fixed in PR #349)
 
-**Problem:** `RegisterClientWithJWTSVID` never fetches the actual client secret after registration
+**Problem:** `RegisterClientWithJWTSVID` originally returned empty secret after registration
 
 **Understanding the Two Authentication Flows:**
 
@@ -453,45 +488,69 @@ There are **two separate authentication flows** in this system:
    - Options: `client-secret` (default) OR `federated-jwt` (SPIFFE ID)
    - This is a **deployment-time configuration choice**, independent of operator auth method
 
-**The Bug:**
+**The Fix (commit 962a313):**
 
-When `CLIENT_AUTH_TYPE: client-secret` is configured (the default), agents need actual client secrets to authenticate. However, `RegisterClientWithJWTSVID` always returns empty secret:
+When `CLIENT_AUTH_TYPE: client-secret` is configured (the default), agents need actual client secrets to authenticate. The operator now:
 
-```go
-// spiffe_auth.go:234
-// For now, return empty secret - the controller will handle fetching it if needed
-return "", "", nil
-```
+1. Registers the client in Keycloak (POST to `/admin/realms/{realm}/clients`)
+2. Parses `Location` header to get client's internal UUID
+3. Calls GET `/admin/realms/{realm}/clients/{uuid}/client-secret` with the access token
+4. Returns the actual secret value
+5. Stores both client ID and secret in Kubernetes
 
-The comment says "controller will handle fetching" but this is **NOT implemented**.
-
-**Current Behavior in This Test:**
+**Current Behavior:**
 - authbridge-config has `CLIENT_AUTH_TYPE: client-secret` (default)
 - Operator registers clients in Keycloak (✅ succeeds)
-- Secret created with `client-id.txt` populated but `client-secret.txt` empty
-- Agents **cannot authenticate** to Keycloak (no credentials)
+- Secret created with both `client-id.txt` AND `client-secret.txt` populated
+- Agents **can authenticate** to Keycloak with fetched credentials
+- Agent-to-service communication works through AuthBridge proxy
 
 **Impact:**
-- ✅ No errors (409 handled as success)
-- ❌ Still 4-5 Keycloak API calls per deployment (early-exit can't detect valid credentials)
-- ❌ Agents cannot authenticate to Keycloak for token exchange
-- ❌ Agent-to-agent communication likely non-functional
+- ✅ No errors (409 handled as success by Issue #7 fix)
+- ✅ Agents authenticate successfully with client-secret mode
+- ✅ Agent-to-service communication functional
+- ✅ Both client-secret and federated-jwt modes supported
 
-**Workaround:**
-Set `CLIENT_AUTH_TYPE: federated-jwt` in authbridge-config. With federated-jwt, agents use their own SPIFFE IDs to authenticate (no client-secret needed). Empty secret is correct for this mode.
-
-**To Fully Fix for `client-secret` Mode:**
-1. After successful registration (201), parse `Location` header to get client's internal UUID
-2. Call GET `/admin/realms/{realm}/clients/{uuid}/client-secret` with the access token
-3. Return the actual secret value
-4. Store non-empty secret in Kubernetes
-5. Early-exit optimization can then detect valid credentials
-
-**Status:** This is a **pre-existing bug** that affects both admin-credentials and SPIFFE ID auth paths. Should be tracked as a follow-up issue for the operator repository. Current workaround is to use `federated-jwt` auth type.
+**Status:** This issue is **FIXED** in PR #349 (commit 962a313). Both authentication modes work correctly.
 
 ---
 
 ## Troubleshooting
+
+### Operator Pod Not Created
+
+**Symptom:** After Step 6, `kubectl get pod -n kagenti-system -l control-plane=controller-manager` returns no resources
+
+**Root Cause:** The operator subchart has a condition `components.agentOperator.enabled` that defaults to false
+
+**Fix:**
+```bash
+# Check if operator is enabled in helm values
+helm get values kagenti -n kagenti-system | grep -A 3 "agentOperator"
+
+# If not enabled, upgrade with the flag
+helm upgrade kagenti charts/kagenti/ -n kagenti-system \
+  --values deployments/envs/dev_values.yaml \
+  --values /tmp/kagenti-spiffe-test-values.yaml \
+  --set components.agentOperator.enabled=true \
+  --timeout 15m --wait
+```
+
+### Helm Install Fails: "resource still exists"
+
+**Symptom:** 
+```
+Error: failed pre-install: resource ServiceAccount/kagenti-system/kagenti-agent-oauth-secret-writer still exists
+```
+
+**Root Cause:** Leftover resources from previous test run
+
+**Fix:**
+```bash
+kubectl delete serviceaccount -n kagenti-system kagenti-agent-oauth-secret-writer --ignore-not-found
+helm uninstall kagenti -n kagenti-system
+# Then rerun the install from Step 6
+```
 
 ### Bootstrap Job Fails
 
@@ -499,12 +558,12 @@ Set `CLIENT_AUTH_TYPE: federated-jwt` in authbridge-config. With federated-jwt, 
 
 **Check:**
 ```bash
-kubectl logs -n keycloak job/kagenti-operator-client-bootstrap --tail=50
+kubectl logs -n kagenti-system job/kagenti-spiffe-idp-setup-job --tail=50
 ```
 
 **Common causes:**
-- Keycloak not ready yet (wait longer)
-- SPIRE OIDC provider not responding (check if it's in ImagePullBackOff - this is OK)
+- Keycloak not ready yet (wait longer with `kubectl wait --for=condition=ready pod -l app=keycloak -n keycloak --timeout=300s`)
+- Wrong bootstrap image used (check with `kubectl get job -n kagenti-system kagenti-spiffe-idp-setup-job -o jsonpath='{.spec.template.spec.containers[0].image}'` - should be `ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest` with `imagePullPolicy: Never`)
 
 ### Agent Registration Fails
 
@@ -516,9 +575,10 @@ kubectl logs -n kagenti-system -l control-plane=controller-manager -c manager --
 ```
 
 **Verify:**
-1. Bootstrap job completed successfully
+1. Bootstrap job completed successfully (`kubectl get job -n kagenti-system`)
 2. Operator has 2/2 containers (spiffe-helper running)
-3. JWT-SVID is being fetched (check spiffe-helper logs)
+3. JWT-SVID is being fetched (check spiffe-helper logs: `kubectl logs -n kagenti-system -l control-plane=controller-manager -c spiffe-helper`)
+4. SPIFFE auth is enabled in operator logs (`grep "SPIFFE ID authentication enabled"`)
 
 ---
 
@@ -580,27 +640,25 @@ This test procedure has been updated to reflect all fixes and issues discovered:
 - ✅ scripts/kind/setup-kagenti.sh has reliable timeout
 
 **Code Fixes (PR #349):**
-- ✅ Token exchange implementation complete
+- ✅ Token exchange implementation complete (commit e33f4c1)
 - ✅ JWT-SVID to OAuth token exchange working
-- ✅ **NEW:** 409 idempotency fix (handle "client already exists" as success)
+- ✅ 409 idempotency fix - handle "client already exists" as success (commit 22fb1fa)
+- ✅ Client secret fetching after registration (commit 962a313)
+- ✅ ConfigMap namespace fix - read authbridge-config from operator namespace (commit c8c6216)
 
 **Documentation Fixes:**
 - ✅ Corrected deployment script reference (use `scripts/kind/setup-kagenti.sh --with-spire`)
 - ✅ Clarified upgrade workflow for custom operator images
-- ✅ All 10 success criteria verified to pass
-- ✅ Documented Issue #7 (409 errors - fixed) and Issue #8 (empty client secret - pre-existing bug)
+- ✅ All 11 success criteria verified to pass
+- ✅ Documented Issue #7 (409 errors) and Issue #8 (client secret fetching) - both fixed
 
-**Issues Discovered:**
-- ✅ **Issue #7:** 409 reconciliation errors - **FIXED** in PR #349 (needs to be added)
-- ⚠️ **Issue #8:** Empty client secret returned from registration - **NOT FIXED** (pre-existing bug, needs follow-up issue in kagenti-operator repo)
+**Issues Discovered and Fixed:**
+- ✅ **Issue #7:** 409 reconciliation errors - **FIXED** in commit 22fb1fa
+- ✅ **Issue #8:** Client secret fetching - **FIXED** in commit 962a313
+- ✅ **ConfigMap namespace bug** - **FIXED** in commit c8c6216
 
 **Status:** 
-- PR #1837 ready for merge as-is
-- PR #349 has the 409 fix committed (commit 22fb1fa)
-- Issue #8 should be tracked separately as a follow-up for the operator
-
-**Known Limitation:**
-- With default `CLIENT_AUTH_TYPE: client-secret`, agents cannot authenticate (empty credentials)
-- **Workaround:** Configure Kagenti with `CLIENT_AUTH_TYPE: federated-jwt` in authbridge-config
-- With federated-jwt, agents use their SPIFFE IDs directly (no client-secret needed)
-- The test validates operator SPIFFE authentication, not end-to-end agent authentication
+- PR #1837 ready for merge
+- PR #349 ready for merge (all fixes committed)
+- Full E2E test validates complete operator SPIFFE authentication flow
+- Both client-secret and federated-jwt authentication modes working
