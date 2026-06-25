@@ -25,7 +25,7 @@ RUN sed -i -r 's/^\ \ "version": (.*)/  "version": "'${RELEASE_TAG}'",/' package
 RUN npm run build
 
 # Stage 2: Serve with nginx
-FROM nginx:1.31-alpine@sha256:8b1e78743a03dbb2c95171cc58639fef29abc8816598e27fb910ed2e621e589a
+FROM nginx:1.31-alpine@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa
 
 # Copy nginx configuration (server block only; mounted at conf.d/default.conf).
 COPY ui-v2/nginx.conf /etc/nginx/conf.d/default.conf
