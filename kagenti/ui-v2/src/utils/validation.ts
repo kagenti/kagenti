@@ -80,3 +80,18 @@ export const getSkillberryUiUrl = (registryUrl: string, skillName: string): stri
     return '';
   }
 };
+
+/**
+ * Derive the skillberry-store root UI URL from the API URL.
+ * Substitutes port 8002 (UI) for the stored API port.
+ * Returns '#' if registryUrl is not a valid URL.
+ */
+export const getSkillberryStoreUrl = (registryUrl: string): string => {
+  try {
+    const url = new URL(registryUrl);
+    url.port = '8002';
+    return url.origin + '/';
+  } catch {
+    return '#';
+  }
+};
