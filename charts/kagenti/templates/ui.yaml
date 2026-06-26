@@ -8,7 +8,8 @@ metadata:
   name: {{ .Values.ui.configmap }}
   namespace: "{{ .Values.ui.namespace }}"
   labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
+    app.kubernetes.io/name: kagenti-ui
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 data:
   DOMAIN_NAME: "{{ .Values.ui.domainName }}"
   API_URL: "http://{{ .Values.ui.api.hostname }}:8080"
@@ -36,7 +37,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-backend
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 ---
 # Backend Deployment
 apiVersion: apps/v1
@@ -48,7 +49,7 @@ metadata:
     app.kubernetes.io/name: kagenti-backend
     app.kubernetes.io/component: backend
     app.kubernetes.io/part-of: kagenti-ui
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
@@ -56,6 +57,12 @@ spec:
       app.kubernetes.io/name: kagenti-backend
   template:
     metadata:
+      annotations:
+        # Force pod restart whenever the in-chart ConfigMap or OAuth-secret inputs change.
+        # See https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments
+        checksum/config: {{ printf "%s|%s|%s|%s|%s|%t|%t" .Values.ui.domainName .Values.ui.api.hostname .Values.ui.namespace .Values.ui.configmap .Values.keycloak.realm .Values.components.phoenix.enabled .Values.components.mlflow.enabled | sha256sum }}
+        checksum/oauth-config: {{ printf "%s|%s|%s|%s" .Values.keycloak.url .Values.keycloak.publicUrl .Values.keycloak.realm .Values.ui.namespace | sha256sum }}
+        checksum/authbridge-runtime-config: {{ include "kagenti.authbridge-runtime-config-yaml" . | sha256sum }}
       labels:
         app.kubernetes.io/name: kagenti-backend
         app.kubernetes.io/component: backend
@@ -127,6 +134,10 @@ spec:
             - name: SHIPWRIGHT_DEFAULT_STRATEGY
               value: {{ .Values.ui.backend.shipwrightDefaultStrategy | quote }}
             {{- end }}
+            {{- if .Values.ui.backend.skillRegistryAllowedHosts }}
+            - name: SKILL_REGISTRY_ALLOWED_HOSTS
+              value: {{ .Values.ui.backend.skillRegistryAllowedHosts | quote }}
+            {{- end }}
             # Feature flags
             - name: KAGENTI_FEATURE_FLAG_SANDBOX
               value: "{{ .Values.featureFlags.sandbox }}"
@@ -138,6 +149,8 @@ spec:
               value: "{{ .Values.featureFlags.agentSandbox }}"
             - name: KAGENTI_FEATURE_FLAG_SKILLS
               value: "{{ .Values.featureFlags.skills }}"
+            - name: KAGENTI_FEATURE_FLAG_EXTERNAL_SKILLS
+              value: "{{ .Values.featureFlags.externalSkills }}"
             - name: KAGENTI_FEATURE_FLAG_AUTHBRIDGE_API
               value: "{{ .Values.featureFlags.authbridgeAPI }}"
             - name: KAGENTI_FEATURE_FLAG_ADMIN
@@ -252,6 +265,9 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: authbridge-runtime-config
+              mountPath: /etc/kagenti/authbridge
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
@@ -261,6 +277,9 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: authbridge-runtime-config
+          configMap:
+            name: authbridge-runtime-config
 ---
 # Backend Service
 apiVersion: v1
@@ -270,7 +289,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-backend
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   type: ClusterIP
   ports:
@@ -292,7 +311,7 @@ metadata:
     app.kubernetes.io/name: kagenti-ui
     app.kubernetes.io/component: frontend
     app.kubernetes.io/part-of: kagenti-ui
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
@@ -300,6 +319,11 @@ spec:
       app.kubernetes.io/name: kagenti-ui
   template:
     metadata:
+      annotations:
+        # Force pod restart whenever the in-chart ConfigMap or OAuth-secret inputs change.
+        # See https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments
+        checksum/config: {{ printf "%s|%s|%s|%s|%s|%t|%t" .Values.ui.domainName .Values.ui.api.hostname .Values.ui.namespace .Values.ui.configmap .Values.keycloak.realm .Values.components.phoenix.enabled .Values.components.mlflow.enabled | sha256sum }}
+        checksum/oauth-config: {{ printf "%s|%s|%s|%s" .Values.keycloak.url .Values.keycloak.publicUrl .Values.keycloak.realm .Values.ui.namespace | sha256sum }}
       labels:
         app.kubernetes.io/name: kagenti-ui
         app.kubernetes.io/component: frontend
@@ -351,7 +375,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-ui
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   type: ClusterIP
   ports:
@@ -370,7 +394,7 @@ metadata:
   name: kagenti-backend
   labels:
     app.kubernetes.io/name: kagenti-backend
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: ["namespaces"]
@@ -393,10 +417,16 @@ rules:
     resources: ["pods"]
     verbs: ["get", "list"]
   # ConfigMaps: list/get for reads; create/update/patch for AuthBridge finalize
-  # (authbridge-config, envoy-config, spiffe-helper-config, authproxy-routes merge)
+  # (authbridge-config, envoy-config, spiffe-helper-config, authproxy-routes merge).
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list", "create", "update", "patch"]
+  {{- if .Values.featureFlags.skills }}
+  # Skills-specific: delete required for skill deletion via the Skills API.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["delete"]
+  {{- end }}
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list"]
@@ -470,7 +500,7 @@ metadata:
   name: kagenti-backend
   labels:
     app.kubernetes.io/name: kagenti-backend
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -489,7 +519,8 @@ metadata:
   name: kagenti-ui
   namespace: "{{ .Values.ui.namespace }}"
   labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
+    app.kubernetes.io/name: kagenti-ui
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
   annotations:
     openshift.io/host.generated: "true"
 spec:
@@ -512,7 +543,8 @@ metadata:
   name: kagenti-api
   namespace: "{{ .Values.ui.namespace }}"
   labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
+    app.kubernetes.io/name: kagenti-api
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
   annotations:
     openshift.io/host.generated: "true"
 spec:
@@ -536,7 +568,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-ui
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   parentRefs:
     - name: http
@@ -570,7 +602,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-api
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   parentRefs:
     - name: http

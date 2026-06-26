@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-demo-config
+  namespace: kagenti-system
+  labels:
+    app: app-demo
+data:
+  KAGENTI_API_URL: "http://kagenti-backend.kagenti-system.svc.cluster.local:8000"
+  KEYCLOAK_URL: "http://keycloak-service.keycloak.svc.cluster.local:8080"
+  KEYCLOAK_PUBLIC_URL: "http://keycloak.localtest.me:8080"
+  KEYCLOAK_REALM: "kagenti"
+  CLIENT_ID: "app-demo"
+  ENABLE_AUTH: "true"
+  DOMAIN_NAME: "localtest.me"
+  TOKEN_BROKER_URL: "http://token-broker.kagenti-demo.svc.cluster.local:8190"

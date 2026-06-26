@@ -17,6 +17,6 @@ permissions:
 
 jobs:
   self-assign:
-    uses: kagenti/.github/.github/workflows/self-assign-reusable.yml@main
+    uses: kagenti/.github/.github/workflows/self-assign-reusable.yml@99700ebe858a1bc566492b1de9aea6e764ee226f # 2026-05-05
     secrets:
       ISSUE_ASSIGN_TOKEN: ${{ secrets.ISSUE_ASSIGN_TOKEN }}

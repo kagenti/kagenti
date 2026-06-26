@@ -1,0 +1,146 @@
+{{- if .Values.components.skillberryStore.enabled }}
+# In-cluster skillberry-store skill registry.
+# Single container exposing the REST API (apiPort) and web UI (uiPort).
+# Storage is filesystem-based under SBS_BASE_DIR, backed by a PVC.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skillberry-store
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: skillberry-store
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: skillberry-store
+  template:
+    metadata:
+      labels:
+        app: skillberry-store
+    spec:
+      {{- with .Values.skillberryStore.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: skillberry-store
+        image: "{{ .Values.skillberryStore.image.repository }}:{{ .Values.skillberryStore.image.tag }}"
+        imagePullPolicy: {{ .Values.skillberryStore.image.pullPolicy }}
+        env:
+        - name: SBS_BASE_DIR
+          value: "{{ .Values.skillberryStore.baseDir }}"
+        - name: SBS_HOST
+          value: "0.0.0.0"
+        - name: SBS_PORT
+          value: "{{ .Values.skillberryStore.apiPort }}"
+        - name: SBS_UI_PORT
+          value: "{{ .Values.skillberryStore.uiPort }}"
+        - name: ENABLE_UI
+          value: "true"
+        # Allow the gateway hostname through the store's Vite dev server host
+        # check. Defaults to the HTTPRoute host derived from .Values.domain.
+        - name: VITE_ALLOWED_HOSTS
+          value: {{ .Values.skillberryStore.allowedHosts | default (printf "skillberry-store.%s" (.Values.domain | default "localtest.me")) | quote }}
+        {{- with .Values.skillberryStore.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        ports:
+        - name: api
+          containerPort: {{ .Values.skillberryStore.apiPort }}
+          protocol: TCP
+        - name: ui
+          containerPort: {{ .Values.skillberryStore.uiPort }}
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.skillberryStore.apiPort }}
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: {{ .Values.skillberryStore.apiPort }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.skillberryStore.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: {{ .Values.skillberryStore.baseDir }}
+      volumes:
+      - name: data
+        {{- if .Values.skillberryStore.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: skillberry-store
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: skillberry-store
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: skillberry-store
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: skillberry-store
+  ports:
+  - name: api
+    port: {{ .Values.skillberryStore.apiPort }}
+    targetPort: {{ .Values.skillberryStore.apiPort }}
+    protocol: TCP
+  - name: ui
+    port: {{ .Values.skillberryStore.uiPort }}
+    targetPort: {{ .Values.skillberryStore.uiPort }}
+    protocol: TCP
+{{- if .Values.skillberryStore.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: skillberry-store
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: skillberry-store
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
+spec:
+  accessModes:
+  - {{ .Values.skillberryStore.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.skillberryStore.persistence.size }}
+  {{- with .Values.skillberryStore.persistence.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+{{- end }}
+---
+# Expose the store UI following the phoenix/ui HTTPRoute pattern,
+# browsable at http://skillberry-store.<domain>:8080
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: skillberry-store
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: skillberry-store
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: http
+      namespace: {{ .Release.Namespace }}
+  hostnames:
+    - skillberry-store.{{ .Values.domain | default "localtest.me" }}
+  rules:
+    - backendRefs:
+        - name: skillberry-store
+          port: {{ .Values.skillberryStore.uiPort }}
+{{- end }}

@@ -40,10 +40,18 @@ updates:
         update-types: [major]
     ignore:
       # cryptography 47+ crashes with SIGILL on ARM64 Kind clusters.
-      # Pin is intentional — block all bumps above the current upper bound.
-      # Effect: only patch bumps allowed until the SIGILL is resolved upstream.
+      # Pin is intentional — the pyproject cap is cryptography<47.
+      # `versions: [">=47"]` blocks BOTH semver-major version bumps AND
+      # requirement-range-widening PRs (e.g. "Update cryptography requirement
+      # from <47 to <50"), which `update-types` alone does not catch.
+      # Effect: only minor+patch bumps below 47 allowed while the crash reproduces.
+      # Root cause (pyca/cryptography#14764, closed): not a library bug but stale
+      # ARM64 emulation in old Docker Desktop (<=4.38). The pin guards CI/dev runners
+      # still on those versions.
+      # TODO: drop this ignore (and the pyproject <47 cap) once all runners are on a
+      # Docker that no longer SIGILLs — verify by importing cryptography 47+ on ARM64 Kind.
       - dependency-name: "cryptography"
-        update-types: [version-update:semver-major, version-update:semver-minor]
+        versions: [">=47"]
 
   # npm (UI) — React frontend dependencies
   - package-ecosystem: npm

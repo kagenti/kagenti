@@ -138,7 +138,7 @@ export const AgentCatalogPage: React.FC = () => {
   };
 
   const renderLabels = (agent: Agent) => {
-    const labels = [];
+    const labels: React.ReactNode[] = [];
     if (agent.labels.protocol) {
       agent.labels.protocol.forEach((p) => {
         labels.push(
@@ -147,13 +147,6 @@ export const AgentCatalogPage: React.FC = () => {
           </Label>
         );
       });
-    }
-    if (agent.labels.framework) {
-      labels.push(
-        <Label key="framework" color="purple" isCompact>
-          {agent.labels.framework}
-        </Label>
-      );
     }
     return <LabelGroup>{labels}</LabelGroup>;
   };

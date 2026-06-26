@@ -166,8 +166,27 @@ SKILL_ORIGIN_ANNOTATION = "kagenti.io/origin"
 SKILL_USAGE_ANNOTATION = "kagenti.io/usage-count"
 SKILL_FILE_PATHS_ANNOTATION = "kagenti.io/file-paths"
 SKILL_STATUS_READY = "Ready"
+SKILL_DISPLAY_NAME_ANNOTATION = "kagenti.io/display-name"
+AGENT_SKILLS_ANNOTATION = "kagenti.io/skills"
+AGENT_SKILLS_MOUNT_ROOT = "/app/skills"
 # Environment variable name for the agent endpoint (the agent card URL for the agent)
 AGENT_ENDPOINT = "AGENT_ENDPOINT"
+
+# External skill registry constants
+SKILL_SOURCE_LABEL = "kagenti.io/source"
+SKILL_SOURCE_EXTERNAL = "external"
+SKILL_REGISTRY_TYPE_LABEL = "kagenti.io/registry-type"
+SKILL_REGISTRY_URL_ANNOTATION = "kagenti.io/registry-url"
+SKILL_REGISTRY_SKILL_NAME_ANNOTATION = "kagenti.io/registry-skill-name"
+SKILL_REGISTRY_SKILL_VERSION_ANNOTATION = "kagenti.io/registry-skill-version"
+SKILL_FETCHER_SCRIPTS_CM = "kagenti-skill-fetcher-scripts"
+SKILL_FETCHER_IMAGE = "alpine:3.21.3"
+
+# Skill auto-sync constants
+SKILL_AUTOSYNC_CONFIG_CM = "kagenti-skill-autosync-config"
+SKILL_AUTOSYNC_LABEL = "kagenti.io/auto-sync"
+SKILL_NS_TAG_PREFIX = "namespace:"
+SKILL_NS_DEFAULT_TAG = "namespace:default"
 
 # Default Keycloak in-cluster URL (used by AuthBridge ConfigMaps)
 DEFAULT_KEYCLOAK_INTERNAL_URL = "http://keycloak-service.keycloak.svc:8080"
@@ -247,6 +266,7 @@ static_resources:
                 envoy_grpc:
                   cluster_name: ext_proc_cluster
                 timeout: 300s
+              message_timeout: 310s
               processing_mode:
                 request_header_mode: SEND
                 response_header_mode: SKIP
@@ -308,6 +328,7 @@ static_resources:
                 envoy_grpc:
                   cluster_name: ext_proc_cluster
                 timeout: 300s
+              message_timeout: 310s
               processing_mode:
                 request_header_mode: SEND
                 response_header_mode: SKIP

@@ -35,13 +35,15 @@ import {
   Checkbox,
 } from '@patternfly/react-core';
 import { TrashIcon, PlusCircleIcon, UploadIcon } from '@patternfly/react-icons';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { agentService, ShipwrightBuildConfig } from '@/services/api';
+import { agentService, ShipwrightBuildConfig, skillService } from '@/services/api';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
 import { EnvImportModal } from '@/components/EnvImportModal';
 import { BuildStrategySelector } from '@/components/BuildStrategySelector';
 import { useFeatureFlags } from '@/hooks/useFeatureFlags';
+import type { Skill } from '@/types';
 
 // Example agent subfolders from the original UI
 const AGENT_EXAMPLES = [
@@ -62,12 +64,6 @@ const AGENT_EXAMPLES = [
   { value: 'a2a/weather_service', label: 'Weather Service Agent' },
 ];
 
-const FRAMEWORKS = [
-  { value: 'LangGraph', label: 'LangGraph' },
-  { value: 'CrewAI', label: 'CrewAI' },
-  { value: 'AG2', label: 'AG2' },
-  { value: 'Python', label: 'Python (Custom)' },
-];
 
 const REGISTRY_OPTIONS = [
   { value: 'local', label: 'Local Registry (In-Cluster)', url: 'registry.cr-system.svc.cluster.local:5000' },
@@ -120,7 +116,6 @@ export const ImportAgentPage: React.FC = () => {
   const [namespace, setNamespace] = useState('team1');
   const [name, setName] = useState('');
   const [protocol, setProtocol] = useState('a2a');
-  const [framework, setFramework] = useState('LangGraph');
 
   // Build from source state
   const [gitUrl, setGitUrl] = useState(DEFAULT_REPO_URL);
@@ -136,11 +131,12 @@ export const ImportAgentPage: React.FC = () => {
   const [registrySecret, setRegistrySecret] = useState('');
 
   // Update registry secret default when registry type changes
+  // OpenShift internal registry doesn't require credentials (uses service account)
   React.useEffect(() => {
-    if (registryType !== 'local') {
-      setRegistrySecret(`${registryType}-registry-secret`);
-    } else {
+    if (registryType === 'local' || registryType === 'openshift') {
       setRegistrySecret('');
+    } else {
+      setRegistrySecret(`${registryType}-registry-secret`);
     }
   }, [registryType]);
 
@@ -166,6 +162,7 @@ export const ImportAgentPage: React.FC = () => {
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
   const [showEnvVars, setShowEnvVars] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
 
   // Workload type
   const [workloadType, setWorkloadType] = useState<'deployment' | 'statefulset' | 'job' | 'sandbox'>(
@@ -194,19 +191,40 @@ export const ImportAgentPage: React.FC = () => {
   // Use envoy-sidecar mode (false = proxy-sidecar, the default)
   const [useEnvoyMode, setUseEnvoyMode] = useState(false);
 
-  // Outbound routing rules
-  const [outboundRoutes, setOutboundRoutes] = useState<Array<{ id: string; host: string; target_audience: string; token_scopes: string }>>([]);
-  const addRoute = () =>
-    setOutboundRoutes((prev) => [
-      ...prev,
-      { id: newRouteRowId(), host: '', target_audience: '', token_scopes: 'openid' },
-    ]);
-  const removeRoute = (i: number) => setOutboundRoutes(outboundRoutes.filter((_, idx) => idx !== i));
-  const updateRoute = (i: number, field: string, value: string) => {
-    const updated = [...outboundRoutes];
-    updated[i] = { ...updated[i], [field]: value };
-    setOutboundRoutes(updated);
-  };
+  // Outbound routing rules. The table always renders a trailing empty row
+  // (host='', target_audience='', token_scopes='openid'). Editing any field
+  // commits that row to state and a fresh empty row appears below it.
+  type RouteRow = { id: string; host: string; target_audience: string; token_scopes: string };
+  const makeEmptyRoute = (): RouteRow => ({
+    id: newRouteRowId(),
+    host: '',
+    target_audience: '',
+    token_scopes: 'openid',
+  });
+  const [outboundRoutes, setOutboundRoutes] = useState<RouteRow[]>([makeEmptyRoute()]);
+  const isCommittedRoute = (r: RouteRow) => !!r.host && !!r.target_audience;
+  const serializeRoute = ({ id, token_scopes, ...r }: RouteRow) => ({
+    ...r,
+    token_scopes: token_scopes || 'openid',
+  });
+  const removeRoute = (i: number) => setOutboundRoutes((prev) => prev.filter((_, idx) => idx !== i));
+  const updateRoute = (i: number, field: 'host' | 'target_audience' | 'token_scopes', value: string) =>
+    setOutboundRoutes((prev) => {
+      const updated = [...prev];
+      updated[i] = { ...updated[i], [field]: value };
+      // Once the trailing row has both Host Pattern and Target OIDC Audience
+      // filled in, promote it by appending a fresh empty row below.
+      // (Promotion runs on every per-field onChange; both fields are read fresh
+      // inside the setter so order doesn't matter.)
+      if (
+        i === prev.length - 1 &&
+        updated[i].host &&
+        updated[i].target_audience
+      ) {
+        updated.push(makeEmptyRoute());
+      }
+      return updated;
+    });
 
   // Port exclusion annotations
   const [outboundPortsExclude, setOutboundPortsExclude] = useState('');
@@ -214,17 +232,30 @@ export const ImportAgentPage: React.FC = () => {
   // AuthBridge config overrides
   const [defaultOutboundPolicy, setDefaultOutboundPolicy] = useState('passthrough');
   // mTLS posture between AuthBridge sidecars. Always sends an explicit
-  // value (default 'disabled'). Force-reset to 'disabled' when either:
-  //   - useEnvoyMode is on (operator/backend reject envoy-sidecar + non-disabled)
-  //   - spireEnabled is off (mtls requires SPIRE-issued X.509 SVIDs)
+  // value (default 'disabled'). Force-reset to 'disabled' when SPIRE
+  // is off — mTLS requires SPIRE-issued X.509 SVIDs in either deployment
+  // mode. envoy-sidecar + non-disabled used to be rejected here; that
+  // gate has been lifted (kagenti-operator#381 + kagenti-extensions#441
+  // wire the combination end-to-end).
   const [mtlsMode, setMtlsMode] = useState<'disabled' | 'permissive' | 'strict'>('disabled');
   useEffect(() => {
-    if (useEnvoyMode || !spireEnabled) setMtlsMode('disabled');
-  }, [useEnvoyMode, spireEnabled]);
+    if (!spireEnabled) setMtlsMode('disabled');
+  }, [spireEnabled]);
+  // TLS bridge: decrypt the agent's outbound HTTPS so AuthBridge can inspect it.
+  // Default off. Only valid in proxy-sidecar mode, so force off in Envoy mode.
+  const [tlsBridgeEnabled, setTlsBridgeEnabled] = useState(false);
+  useEffect(() => {
+    if (useEnvoyMode) setTlsBridgeEnabled(false);
+  }, [useEnvoyMode]);
   const [showOutboundRouting, setShowOutboundRouting] = useState(false);
 
   // Validation state
   const [validated, setValidated] = useState<Record<string, 'success' | 'error' | 'default'>>({});
+
+  const { data: availableSkills = [] } = useQuery<Skill[]>({
+    queryKey: ['skills', namespace],
+    queryFn: () => skillService.list(namespace),
+  });
 
   const createMutation = useMutation({
     mutationFn: (data: Parameters<typeof agentService.create>[0]) =>
@@ -387,6 +418,12 @@ export const ImportAgentPage: React.FC = () => {
     setServicePorts(updated);
   };
 
+  const handleSelectedSkillsChange = (value: string) => {
+    setSelectedSkills((prev) =>
+      prev.includes(value) ? prev.filter((skill) => skill !== value) : [...prev, value]
+    );
+  };
+
   // Build argument handlers
   const addBuildArg = () => {
     setBuildArgs([...buildArgs, '']);
@@ -497,8 +534,9 @@ export const ImportAgentPage: React.FC = () => {
         gitBranch,
         imageTag: 'v0.0.1',
         protocol,
-        framework,
+        framework: 'LangGraph',
         envVars: envVars.filter((ev) => ev.name && (ev.value || ev.valueFrom)),
+        skills: selectedSkills.length > 0 ? selectedSkills : undefined,
         // Workload type
         workloadType,
         // Additional fields for build from source
@@ -511,10 +549,15 @@ export const ImportAgentPage: React.FC = () => {
         authBridgeEnabled,
         spireEnabled,
         authBridgeMode: authBridgeEnabled && useEnvoyMode ? 'envoy-sidecar' : undefined,
-        // mTLS posture — only meaningful when AuthBridge is on AND we're
-        // not in envoy-sidecar mode (backend rejects that combo).
-        mtlsMode: authBridgeEnabled && !useEnvoyMode ? mtlsMode : undefined,
-        outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
+        // mTLS posture — sent whenever AuthBridge is on. Both proxy-sidecar
+        // and envoy-sidecar support the full disabled/permissive/strict
+        // matrix end-to-end (kagenti-operator#381 + extensions#441).
+        mtlsMode: authBridgeEnabled ? mtlsMode : undefined,
+        // Only when AuthBridge is on and not in Envoy mode (proxy-sidecar only).
+        tlsBridgeEnabled: authBridgeEnabled && !useEnvoyMode && tlsBridgeEnabled,
+        outboundRoutes: authBridgeEnabled && outboundRoutes.some(isCommittedRoute)
+          ? outboundRoutes.filter(isCommittedRoute).map(serializeRoute)
+          : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
         defaultOutboundPolicy: authBridgeEnabled && defaultOutboundPolicy ? defaultOutboundPolicy : undefined,
@@ -536,8 +579,9 @@ export const ImportAgentPage: React.FC = () => {
         gitBranch: '',
         imageTag,
         protocol,
-        framework,
+        framework: 'LangGraph',
         envVars: envVars.filter((ev) => ev.name && (ev.value || ev.valueFrom)),
+        skills: selectedSkills.length > 0 ? selectedSkills : undefined,
         // Workload type
         workloadType,
         // Additional fields for image deployment
@@ -549,10 +593,15 @@ export const ImportAgentPage: React.FC = () => {
         authBridgeEnabled,
         spireEnabled,
         authBridgeMode: authBridgeEnabled && useEnvoyMode ? 'envoy-sidecar' : undefined,
-        // mTLS posture — only meaningful when AuthBridge is on AND we're
-        // not in envoy-sidecar mode (backend rejects that combo).
-        mtlsMode: authBridgeEnabled && !useEnvoyMode ? mtlsMode : undefined,
-        outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
+        // mTLS posture — sent whenever AuthBridge is on. Both proxy-sidecar
+        // and envoy-sidecar support the full disabled/permissive/strict
+        // matrix end-to-end (kagenti-operator#381 + extensions#441).
+        mtlsMode: authBridgeEnabled ? mtlsMode : undefined,
+        // Only when AuthBridge is on and not in Envoy mode (proxy-sidecar only).
+        tlsBridgeEnabled: authBridgeEnabled && !useEnvoyMode && tlsBridgeEnabled,
+        outboundRoutes: authBridgeEnabled && outboundRoutes.some(isCommittedRoute)
+          ? outboundRoutes.filter(isCommittedRoute).map(serializeRoute)
+          : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
         defaultOutboundPolicy: authBridgeEnabled && defaultOutboundPolicy ? defaultOutboundPolicy : undefined,
@@ -747,28 +796,30 @@ export const ImportAgentPage: React.FC = () => {
                   </FormGroup>
 
                   {registryType !== 'local' && (
-                    <>
-                      <FormGroup
-                        label="Registry Namespace/Organization"
-                        isRequired
-                        fieldId="registryNamespace"
-                      >
-                        <TextInput
-                          id="registryNamespace"
-                          value={registryNamespace}
-                          onChange={(_e, value) => setRegistryNamespace(value)}
-                          placeholder="your-org-name"
-                          validated={validated.registryNamespace}
-                        />
-                        <FormHelperText>
-                          <HelperText>
-                            <HelperTextItem>
-                              Your organization or namespace in the registry
-                            </HelperTextItem>
-                          </HelperText>
-                        </FormHelperText>
-                      </FormGroup>
+                    <FormGroup
+                      label="Registry Namespace/Organization"
+                      isRequired
+                      fieldId="registryNamespace"
+                    >
+                      <TextInput
+                        id="registryNamespace"
+                        value={registryNamespace}
+                        onChange={(_e, value) => setRegistryNamespace(value)}
+                        placeholder="your-org-name"
+                        validated={validated.registryNamespace}
+                      />
+                      <FormHelperText>
+                        <HelperText>
+                          <HelperTextItem>
+                            Your organization or namespace in the registry
+                          </HelperTextItem>
+                        </HelperText>
+                      </FormHelperText>
+                    </FormGroup>
+                  )}
 
+                  {registryType !== 'local' && registryType !== 'openshift' && (
+                    <>
                       <FormGroup label="Registry Secret Name" fieldId="registrySecret">
                         <TextInput
                           id="registrySecret"
@@ -1006,17 +1057,31 @@ export const ImportAgentPage: React.FC = () => {
                 </FormHelperText>
               </FormGroup>
 
-              {/* Framework Selection */}
-              <FormGroup label="Framework" fieldId="framework">
-                <FormSelect
-                  id="framework"
-                  value={framework}
-                  onChange={(_e, value) => setFramework(value)}
-                >
-                  {FRAMEWORKS.map((fw) => (
-                    <FormSelectOption key={fw.value} value={fw.value} label={fw.label} />
-                  ))}
-                </FormSelect>
+
+              <FormGroup label="Linked Skills" fieldId="linkedSkills">
+                {availableSkills.length === 0 ? (
+                  <Text component="small">No imported skills found in this namespace.</Text>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {availableSkills.map((skill) => (
+                      <Checkbox
+                        key={skill.resourceName}
+                        id={`skill-${skill.resourceName}`}
+                        label={skill.name}
+                        description={skill.description || skill.resourceName}
+                        isChecked={selectedSkills.includes(skill.name)}
+                        onChange={() => handleSelectedSkillsChange(skill.name)}
+                      />
+                    ))}
+                  </div>
+                )}
+                <FormHelperText>
+                  <HelperText>
+                    <HelperTextItem>
+                      Select skills already imported into this namespace. The linked skills are stored with the agent and shown on the agent card.
+                    </HelperTextItem>
+                  </HelperText>
+                </FormHelperText>
               </FormGroup>
 
               {/* Workload Type Selection */}
@@ -1096,7 +1161,7 @@ export const ImportAgentPage: React.FC = () => {
               <FormGroup fieldId="authBridgeEnabled">
                 <Checkbox
                   id="authBridgeEnabled"
-                  label="Enable AuthBridge sidecar injection"
+                  label="Secure with AuthBridge"
                   isChecked={authBridgeEnabled}
                   onChange={(_e, checked) => {
                     setAuthBridgeEnabled(checked);
@@ -1104,21 +1169,9 @@ export const ImportAgentPage: React.FC = () => {
                       setUseEnvoyMode(false);
                     }
                   }}
-                  description="When enabled, the operator injects a combined AuthBridge sidecar for inbound JWT validation and outbound token exchange. Defaults to proxy-sidecar mode (HTTP_PROXY)."
+                  description="When enabled, the agent will reject inbound messages without valid JWT and can perform outbound token exchange."
               />
               </FormGroup>
-
-              {authBridgeEnabled && (
-                <FormGroup fieldId="useEnvoyMode" style={{ marginLeft: '24px' }}>
-                  <Checkbox
-                    id="useEnvoyMode"
-                    label="Use envoy-sidecar mode"
-                    isChecked={useEnvoyMode}
-                    onChange={(_e, checked) => setUseEnvoyMode(checked)}
-                    description="Switch from proxy-sidecar (default) to envoy-sidecar mode (Envoy + ext_proc + iptables interception)."
-                  />
-                </FormGroup>
-              )}
 
               {/* SPIRE Identity */}
               <FormGroup fieldId="spireEnabled">
@@ -1133,49 +1186,66 @@ export const ImportAgentPage: React.FC = () => {
 
               {authBridgeEnabled && (
               <ExpandableSection
-                toggleText={`Outbound Routing Rules (${outboundRoutes.length} route${outboundRoutes.length !== 1 ? 's' : ''})`}
+                toggleText={(() => {
+                  const n = outboundRoutes.filter(isCommittedRoute).length;
+                  return `Outbound OIDC token exchange rules (${n} route${n !== 1 ? 's' : ''})`;
+                })()}
                 isExpanded={showOutboundRouting}
                 onToggle={(_event, expanded) => setShowOutboundRouting(expanded)}
               >
                 <Text component="p" style={{ marginBottom: '8px' }}>
-                  Configure token exchange rules for outbound HTTP requests. Each route matches a service host and specifies the target audience and OAuth scopes for the exchanged token.
+                  RFC 8693 / OAuth 2.0 Token Exchange — Restrict outbound to certain hosts, OIDC audiences, and scopes.
                 </Text>
-                {outboundRoutes.map((route, index) => (
-                  <Grid hasGutter key={route.id} style={{ marginBottom: '8px' }}>
-                    <GridItem span={3}>
-                      <TextInput
-                        aria-label="Host pattern"
-                        value={route.host}
-                        onChange={(_e, v) => updateRoute(index, 'host', v)}
-                        placeholder="e.g. github-tool-mcp"
-                      />
-                    </GridItem>
-                    <GridItem span={3}>
-                      <TextInput
-                        aria-label="Target audience"
-                        value={route.target_audience}
-                        onChange={(_e, v) => updateRoute(index, 'target_audience', v)}
-                        placeholder="e.g. github-tool"
-                      />
-                    </GridItem>
-                    <GridItem span={4}>
-                      <TextInput
-                        aria-label="Token scopes"
-                        value={route.token_scopes}
-                        onChange={(_e, v) => updateRoute(index, 'token_scopes', v)}
-                        placeholder="openid scope1 scope2"
-                      />
-                    </GridItem>
-                    <GridItem span={2}>
-                      <Button variant="plain" onClick={() => removeRoute(index)}>
-                        Remove
-                      </Button>
-                    </GridItem>
-                  </Grid>
-                ))}
-                <Button variant="link" onClick={addRoute}>
-                  Add Route
-                </Button>
+                <Table aria-label="Outbound routes" variant="compact">
+                  <Thead>
+                    <Tr>
+                      <Th width={25}>Host Pattern</Th>
+                      <Th width={25}>Target OIDC Audience</Th>
+                      <Th width={30}>OIDC Token Scopes</Th>
+                      <Th width={20} screenReaderText="Actions" />
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {outboundRoutes.map((route, index) => {
+                      const showRemove = index < outboundRoutes.length - 1;
+                      return (
+                        <Tr key={route.id}>
+                          <Td>
+                            <TextInput
+                              aria-label="Host pattern"
+                              value={route.host}
+                              onChange={(_e, v) => updateRoute(index, 'host', v)}
+                              placeholder="e.g. github-tool-mcp"
+                            />
+                          </Td>
+                          <Td>
+                            <TextInput
+                              aria-label="Target audience"
+                              value={route.target_audience}
+                              onChange={(_e, v) => updateRoute(index, 'target_audience', v)}
+                              placeholder="e.g. github-tool"
+                            />
+                          </Td>
+                          <Td>
+                            <TextInput
+                              aria-label="Token scopes"
+                              value={route.token_scopes}
+                              onChange={(_e, v) => updateRoute(index, 'token_scopes', v)}
+                              placeholder="openid scope1 scope2"
+                            />
+                          </Td>
+                          <Td>
+                            {showRemove && (
+                              <Button variant="link" onClick={() => removeRoute(index)}>
+                                Remove
+                              </Button>
+                            )}
+                          </Td>
+                        </Tr>
+                      );
+                    })}
+                  </Tbody>
+                </Table>
               </ExpandableSection>
               )}
 
@@ -1184,7 +1254,7 @@ export const ImportAgentPage: React.FC = () => {
               <ExpandableSection
                 toggleText="AuthBridge Advanced Configuration"
               >
-                <FormGroup label="Outbound Ports to Exclude" fieldId="outboundPortsExclude">
+                <FormGroup label="Bypass AuthBridge on these outbound ports" fieldId="outboundPortsExclude">
                   <TextInput
                     id="outboundPortsExclude"
                     value={outboundPortsExclude}
@@ -1193,11 +1263,11 @@ export const ImportAgentPage: React.FC = () => {
                   />
                   <FormHelperText>
                     <HelperText>
-                      <HelperTextItem>Comma-separated ports to bypass outbound proxy interception.</HelperTextItem>
+                      <HelperTextItem>Comma-separated TCP ports.</HelperTextItem>
                     </HelperText>
                   </FormHelperText>
                 </FormGroup>
-                <FormGroup label="Inbound Ports to Exclude" fieldId="inboundPortsExclude">
+                <FormGroup label="Bypass AuthBridge on these inbound ports" fieldId="inboundPortsExclude">
                   <TextInput
                     id="inboundPortsExclude"
                     value={inboundPortsExclude}
@@ -1206,7 +1276,7 @@ export const ImportAgentPage: React.FC = () => {
                   />
                   <FormHelperText>
                     <HelperText>
-                      <HelperTextItem>Comma-separated ports to bypass inbound proxy interception.</HelperTextItem>
+                      <HelperTextItem>Comma-separated TCP ports.</HelperTextItem>
                     </HelperText>
                   </FormHelperText>
                 </FormGroup>
@@ -1218,28 +1288,49 @@ export const ImportAgentPage: React.FC = () => {
                     aria-label="Default outbound policy"
                   >
                     <FormSelectOption key="passthrough" value="passthrough" label="passthrough — pass traffic through unchanged (default)" />
-                    <FormSelectOption key="exchange" value="exchange" label="exchange — require token exchange for all outbound traffic" />
+                    <FormSelectOption key="exchange" value="exchange" label="exchange — require RFC 8693 / OAuth 2.0 Token Exchange for all outbound traffic" />
                   </FormSelect>
                 </FormGroup>
-                <FormGroup label="mTLS" fieldId="mtlsMode">
+                <FormGroup fieldId="useEnvoyMode">
+                  <Checkbox
+                    id="useEnvoyMode"
+                    label="Use Envoy sidecar interception"
+                    isChecked={useEnvoyMode}
+                    onChange={(_e, checked) => setUseEnvoyMode(checked)}
+                    description="Run the Envoy data plane (ext_proc) instead of the default Go forward/reverse proxy sidecar"
+                  />
+                </FormGroup>
+                <FormGroup fieldId="tlsBridgeEnabled">
+                  <Checkbox
+                    id="tlsBridgeEnabled"
+                    label="Decrypt outbound TLS for inspection (TLS bridge)"
+                    isChecked={tlsBridgeEnabled && !useEnvoyMode}
+                    isDisabled={useEnvoyMode}
+                    onChange={(_e, checked) => setTlsBridgeEnabled(checked)}
+                    description={
+                      useEnvoyMode
+                        ? 'Requires proxy-sidecar mode (uncheck Envoy interception to enable)'
+                        : 'Terminate the agent’s outbound HTTPS at the sidecar so the AuthBridge pipeline can see request payloads. Requires cert-manager.'
+                    }
+                  />
+                </FormGroup>
+                <FormGroup label="Mutual TLS (mTLS)" fieldId="mtlsMode">
                   <FormSelect
                     id="mtlsMode"
                     value={mtlsMode}
                     onChange={(_e, v) => setMtlsMode(v as 'disabled' | 'permissive' | 'strict')}
                     aria-label="mTLS mode"
-                    isDisabled={useEnvoyMode || !spireEnabled}
+                    isDisabled={!spireEnabled}
                   >
                     <FormSelectOption key="disabled" value="disabled" label="disabled — no mTLS between sidecars (default)" />
-                    <FormSelectOption key="permissive" value="permissive" label="permissive — try mTLS, fall back to plaintext on failure" />
-                    <FormSelectOption key="strict" value="strict" label="strict — require mTLS, fail closed" />
+                    <FormSelectOption key="permissive" value="permissive" label="permissive — use, but allow non-mTLS peers (rollout-friendly)" />
+                    <FormSelectOption key="strict" value="strict" label="strict — require mTLS, fail without" />
                   </FormSelect>
-                  {(useEnvoyMode || !spireEnabled) && (
+                  {!spireEnabled && (
                     <FormHelperText>
                       <HelperText>
                         <HelperTextItem variant="warning">
-                          {useEnvoyMode
-                            ? 'Not supported with envoy mode.'
-                            : 'Requires SPIRE — enable SPIRE to use mTLS.'}
+                          Requires SPIRE — enable SPIRE to use mTLS.
                         </HelperTextItem>
                       </HelperText>
                     </FormHelperText>

@@ -46,6 +46,8 @@ spec:
       app: otel-collector
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include "kagenti.otel.collectorConfig" . | sha256sum }}
       labels:
         app: otel-collector
     spec:
@@ -155,6 +157,9 @@ spec:
       port: 8335
       targetPort: 8335
   type: ClusterIP
+{{- /* ConfigMap is operator-managed when otelBootstrap.operatorManaged=true;
+       Service and Deployment above remain Helm-managed in all modes. */}}
+{{- if not .Values.otelBootstrap.operatorManaged }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -166,6 +171,7 @@ metadata:
 data:
   base.yaml: |
     {{- include "kagenti.otel.collectorConfig" . | nindent 4 }}
+{{- end }}
 {{- end }}
 {{- if and .Values.components.otel.enabled (.Capabilities.APIVersions.Has "security.istio.io/v1") }}
 ---

@@ -14,6 +14,11 @@ please report it responsibly.
 4. **Include**: A clear description of the vulnerability, steps to reproduce,
    affected versions, and potential impact
 
+### Security Contacts
+
+- **kagenti-maintainers@googlegroups.com**
+- **security@kagenti.io**
+
 ### What to Expect
 
 - **Acknowledgement**: within 48 hours of receipt

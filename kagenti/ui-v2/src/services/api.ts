@@ -26,6 +26,9 @@ import type {
   SkillFile,
   CreateSkillRequest,
   CreateSkillResponse,
+  CreateExternalSkillRequest,
+  SkillAutoSyncConfig,
+  SkillAutoSyncStatus,
   AuthBridgeConfig,
   AuthBridgeStats,
 } from '@/types';
@@ -67,6 +70,13 @@ export class ApiError extends Error {
     this.name = 'ApiError';
     this.status = status;
   }
+}
+
+function extractErrorMessage(errorData: Record<string, unknown>, fallback: string): string {
+  const detail = errorData.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) return detail.map((e: { msg?: string }) => e.msg).join(', ');
+  return fallback;
 }
 
 /**
@@ -119,7 +129,7 @@ async function apiFetch<T>(
         if (!retryResponse.ok) {
           const errorData = await retryResponse.json().catch(() => ({}));
           throw new Error(
-            errorData.detail || `API error: ${retryResponse.status} ${retryResponse.statusText}`
+            extractErrorMessage(errorData, `API error: ${retryResponse.status} ${retryResponse.statusText}`)
           );
         }
         return retryResponse.json();
@@ -136,11 +146,14 @@ async function apiFetch<T>(
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new ApiError(
-      errorData.detail || `API error: ${response.status} ${response.statusText}`,
+      extractErrorMessage(errorData, `API error: ${response.status} ${response.statusText}`),
       response.status
     );
   }
 
+  if (response.status === 204 || response.headers.get('content-length') === '0') {
+    return undefined as T;
+  }
   return response.json();
 }
 
@@ -207,6 +220,7 @@ export const agentService = {
         configMapKeyRef?: { name: string; key: string };
       };
     }>;
+    skills?: string[];
     // Workload type
     workloadType?: 'deployment' | 'statefulset' | 'job' | 'sandbox';
     // New fields for deployment method
@@ -236,6 +250,9 @@ export const agentService = {
     // Per-workload mTLS posture (maps to AgentRuntime.Spec.MTLSMode).
     // Backend rejects mtlsMode != 'disabled' when authBridgeMode === 'envoy-sidecar'.
     mtlsMode?: 'disabled' | 'permissive' | 'strict';
+    // Per-workload TLS bridge (maps to AgentRuntime.Spec.TLSBridgeMode=enabled).
+    // Requires proxy-sidecar/lite; backend rejects it with envoy-sidecar.
+    tlsBridgeEnabled?: boolean;
     outboundRoutes?: Array<{ host: string; target_audience: string; token_scopes: string }>;
     outboundPortsExclude?: string;
     inboundPortsExclude?: string;
@@ -332,6 +349,7 @@ export interface AgentConfigFromBuild {
       configMapKeyRef?: { name: string; key: string };
     };
   }>;
+  skills?: string[];
   servicePorts?: Array<{
     name: string;
     port: number;
@@ -438,6 +456,7 @@ export const shipwrightService = {
           configMapKeyRef?: { name: string; key: string };
         };
       }>;
+      skills?: string[];
       servicePorts?: Array<{
         name: string;
         port: number;
@@ -448,6 +467,7 @@ export const shipwrightService = {
       authBridgeEnabled?: boolean;
       authBridgeMode?: 'proxy-sidecar' | 'envoy-sidecar' | 'lite' | 'waypoint';
       mtlsMode?: 'disabled' | 'permissive' | 'strict';
+      tlsBridgeEnabled?: boolean;
       outboundRoutes?: Array<{ host: string; target_audience: string; token_scopes: string }>;
       outboundPortsExclude?: string;
       inboundPortsExclude?: string;
@@ -699,8 +719,8 @@ export interface DashboardConfig {
   traces: string;
   network: string;
   mlflow: string;
-  mcpInspector: string;
-  mcpProxy: string;
+  mcpInspector: string | null;
+  mcpProxy: string | null;
   keycloakConsole: string;
   domainName: string;
 }
@@ -727,6 +747,10 @@ export interface PlatformStatusResponse {
 /**
  * Config service
  */
+export interface MCPGatewayStatusResponse {
+  status: 'Ready' | 'Degraded' | 'Missing';
+}
+
 export const configService = {
   async getDashboards(): Promise<DashboardConfig> {
     return apiFetch('/config/dashboards');
@@ -734,6 +758,10 @@ export const configService = {
 
   async getPlatformStatus(): Promise<PlatformStatusResponse> {
     return apiFetch('/config/platform-status');
+  },
+
+  async getMCPGatewayStatus(): Promise<MCPGatewayStatusResponse> {
+    return apiFetch('/config/mcp-gateway-status');
   },
 };
 
@@ -1523,6 +1551,28 @@ export const skillService = {
         method: 'DELETE',
       }
     );
+  },
+
+  async createExternal(data: CreateExternalSkillRequest): Promise<CreateSkillResponse> {
+    return apiFetch('/skills/external', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getAutoSync(): Promise<SkillAutoSyncStatus> {
+    return apiFetch('/skills/autosync');
+  },
+
+  async enableAutoSync(cfg: SkillAutoSyncConfig): Promise<SkillAutoSyncStatus> {
+    return apiFetch('/skills/autosync', {
+      method: 'POST',
+      body: JSON.stringify(cfg),
+    });
+  },
+
+  async disableAutoSync(): Promise<void> {
+    await apiFetch('/skills/autosync', { method: 'DELETE' });
   },
 };
 

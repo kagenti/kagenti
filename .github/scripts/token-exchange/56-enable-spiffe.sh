@@ -65,7 +65,7 @@ kubectl patch configmap authbridge-runtime-config -n "$TX_NAMESPACE" --type=merg
 
 # --- Fix JWT audience to match Keycloak issuer ---
 log_info "Checking Keycloak issuer for JWT audience"
-KC_ISSUER=$(curl -sk "https://${KC_HOST}/realms/${TX_REALM}/.well-known/openid-configuration" 2>/dev/null | jq -r '.issuer // empty')
+KC_ISSUER=$(curl -sk "${KC_URL}/realms/${TX_REALM}/.well-known/openid-configuration" 2>/dev/null | jq -r '.issuer // empty')
 if [[ -n "$KC_ISSUER" ]]; then
   CURRENT_AUD=$(kubectl get configmap spiffe-helper-config -n "$TX_NAMESPACE" -o jsonpath='{.data.helper\.conf}' 2>/dev/null | grep -o 'jwt_audience="[^"]*"' | sed 's/jwt_audience="//' | sed 's/"//')
   if [[ -n "$CURRENT_AUD" && "$KC_ISSUER" != "$CURRENT_AUD" ]]; then

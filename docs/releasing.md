@@ -1,14 +1,10 @@
 # Releasing Kagenti
 
-This guide describes how maintainers create tags, pre-releases, and stable (GA)
-releases across the Kagenti organization.
+Practical guide for release managers. Covers the full lifecycle from alpha
+through GA, including the stabilization loop between RCs.
 
-> **Policy:** For branching strategy, support windows, and governance decisions,
-> see [docs/release-sop.md](release-sop.md).
->
-> **AI-assisted releases:** Use the `/release` skill to walk through the release
-> process interactively. See [Using the Release Skill](#using-the-release-skill)
-> at the end of this guide for examples.
+> **AI-assisted:** Use `/release` in Claude Code for interactive guidance
+> through any step below. See [Using the Release Skill](#using-the-release-skill).
 
 ## Versioning Scheme
 
@@ -68,7 +64,7 @@ artifacts when a tag is pushed:
 | Repository | Artifacts on tag push | CI workflow(s) |
 |------------|----------------------|----------------|
 | [kagenti/kagenti](https://github.com/kagenti/kagenti) | Container images (ui-v2, backend, oauth-secrets), Helm charts (kagenti, kagenti-deps) | `build.yaml` |
-| [kagenti/kagenti-extensions](https://github.com/kagenti/kagenti-extensions) | Container images (authbridge, authbridge-envoy, authbridge-lite, proxy-init) | `build.yaml` |
+| [kagenti/kagenti-extensions](https://github.com/kagenti/kagenti-extensions) | Container images (envoy-with-processor, proxy-init, client-registration), webhook binary + ko image, Helm chart (kagenti-webhook-chart) | `build.yaml`, `goreleaser.yml` |
 | [kagenti/kagenti-operator](https://github.com/kagenti/kagenti-operator) | Operator image, Helm chart (kagenti-operator-chart) | repo-specific |
 | [kagenti/agent-examples](https://github.com/kagenti/agent-examples) | Sample agent/tool images | repo-specific |
 
@@ -122,6 +118,9 @@ versions in `charts/kagenti/Chart.yaml`:
 
 ```yaml
 dependencies:
+- name: kagenti-webhook-chart
+  version: X.Y.0-alpha.N    # <-- new version
+  repository: oci://ghcr.io/kagenti/kagenti-extensions
 - name: kagenti-operator-chart
   version: X.Y.0-alpha.N    # <-- new version
   repository: oci://ghcr.io/kagenti/kagenti-operator
@@ -177,79 +176,6 @@ get different image versions, making it impossible to reproduce issues or
 guarantee a tested set of components. Every image referenced in `values.yaml`
 should resolve to a specific, immutable tag for any RC or GA release.
 
-## Release Pin Validation
-
-Two automated tools enforce image tag pinning and provide E2E validation against
-specific release tags.
-
-### Pin-validation script
-
-`scripts/check-release-pins.sh` checks that all image tags and chart
-dependencies are pinned. It exits non-zero if any release-blocking issue is
-found.
-
-**Run locally:**
-
-```bash
-bash scripts/check-release-pins.sh
-```
-
-**Flags:**
-
-| Flag | Description |
-|------|-------------|
-| `--json` | Output structured JSON (used by CI for `$GITHUB_STEP_SUMMARY`) |
-| `--verify-images` | Also check that pinned GHCR images exist via `docker manifest inspect` |
-
-**What it checks:**
-
-- No `tag: latest` in `charts/kagenti/values.yaml` (hard fail)
-- No `:latest` in `charts/kagenti/templates/` (hard fail)
-- All dependency versions in `Chart.yaml` are pinned (hard fail)
-- `Chart.lock` is present (warning)
-
-**CI behavior:** The `ci-release-pins.yaml` workflow runs this script on any
-PR that touches `charts/` and posts a summary to the Actions tab for
-visibility. It only *fails* the check when the PR targets a `release/*`
-branch — on `main` it's informational, because `tag: latest` is intentional
-during normal development (tags get pinned during release prep).
-
-Maintainers can also trigger the workflow manually via the Actions tab
-(`workflow_dispatch`) to run the full check on any branch, useful before a
-`release/*` branch exists.
-
-### E2E release validation workflow
-
-`e2e-release-validation.yaml` is a `workflow_dispatch`-only workflow that runs
-the full E2E suite against a specific release tag.
-
-**Trigger from the CLI:**
-
-```bash
-gh workflow run e2e-release-validation.yaml \
-  -f version=v0.6.0-alpha.5 \
-  --repo kagenti/kagenti
-```
-
-**With HyperShift E2E:**
-
-```bash
-gh workflow run e2e-release-validation.yaml \
-  -f version=v0.6.0-alpha.5 \
-  -f run_hypershift=true \
-  --repo kagenti/kagenti
-```
-
-**What it does:**
-
-1. Checks out the specified tag
-2. Runs `scripts/check-release-pins.sh` (fails fast before spinning up clusters)
-3. Runs the Kind E2E suite against the tag
-4. Optionally runs the HyperShift E2E suite
-
-The workflow posts a summary to the GitHub Actions tab. Link the workflow run URL
-in release notes as evidence of validation.
-
 ## Cutting a Release Candidate
 
 Release candidates signal feature-complete code ready for broader testing.
@@ -297,11 +223,17 @@ Release candidates signal feature-complete code ready for broader testing.
    - [ ] GitHub Release created as **Pre-release**
    - [ ] No `tag: latest` remains in `charts/kagenti/values.yaml`
 
-7. **Test the RC:**
-   - [ ] Clean Kind cluster install using the RC tag succeeds
-   - [ ] OpenShift install (if applicable) succeeds
-   - [ ] E2E tests pass
-   - [ ] Upgrade from previous GA version works
+7. **Run RC validation CI** (see
+   [Validating an RC with CI](#validating-an-rc-with-ci) below):
+
+   ```bash
+   gh workflow run release-validation.yaml -f ref=vX.Y.0-rc.N
+   ```
+
+   This runs Kind and HyperShift E2E tests in parallel. Both must pass.
+
+   - [ ] RC Validation workflow passes (Kind + HyperShift)
+   - [ ] Upgrade from previous GA version works (manual)
    - [ ] Documentation reviewed and updated for new features
 
 8. **If bugs are found:** Fix on the release branch (or `main`), cherry-pick as
@@ -387,6 +319,72 @@ Patch releases deliver critical fixes against an existing GA version.
 3. Follow the same verification steps as a GA release.
 4. For non-trivial fixes, consider cutting a patch RC (`vX.Y.Z-rc.1`) first.
 
+## Validating an RC with CI
+
+The `release-validation.yaml` workflow runs the full E2E test suite on both Kind
+and HyperShift clusters in parallel. Use it to validate an RC before promoting
+to GA.
+
+### Running the validation
+
+```bash
+# Validate an RC tag (most common usage)
+gh workflow run release-validation.yaml -f ref=v0.6.0-rc.9
+
+# Validate with a specific extensions dependency
+gh workflow run release-validation.yaml -f ref=v0.6.0-rc.9 \
+  -f dep_builds='[{"repo":"kagenti/kagenti-extensions","ref":"v0.6.0-rc.1"}]'
+
+# Quick iteration: HyperShift only, keep cluster alive for debugging
+gh workflow run release-validation.yaml -f ref=v0.6.0-rc.9 \
+  -f skip_kind=true -f skip_destroy=true
+
+# Kind only (faster feedback, no AWS resources consumed)
+gh workflow run release-validation.yaml -f ref=v0.6.0-rc.9 \
+  -f skip_hypershift=true
+```
+
+### Inputs
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `ref` | Yes | — | Git ref to validate (tag, branch, or SHA) |
+| `ocp_version` | No | `4.20.21` | OpenShift version for HyperShift cluster |
+| `skip_kind` | No | `false` | Skip Kind E2E tests |
+| `skip_hypershift` | No | `false` | Skip HyperShift E2E tests |
+| `skip_destroy` | No | `false` | Keep HyperShift cluster alive after tests |
+| `dep_builds` | No | `[]` | JSON array of dependency builds to test with |
+
+### What it runs
+
+| Platform | Tests included | Duration |
+|----------|---------------|----------|
+| Kind (K8s 1.35.0) | Backend E2E, token exchange, UI E2E | ~90 min |
+| HyperShift (OCP) | Backend E2E, token exchange (community + RHBK), UI E2E, Trivy scan | ~120 min |
+
+Both platforms run in parallel. The workflow reports a combined pass/fail — both
+must succeed for the RC to be considered validated.
+
+### Checking results
+
+```bash
+# Watch the run
+gh run watch
+
+# Check the summary after completion
+gh run view <run-id>
+```
+
+The workflow produces a step summary with a clear go/no-go verdict. Test
+artifacts (Playwright reports, E2E results) are uploaded and retained for 30
+days.
+
+### When to run
+
+- After tagging every RC (mandatory for GA promotion)
+- After cherry-picking a fix to the release branch
+- Before signing off on a GA release
+
 ## Troubleshooting
 
 ### Stale `Chart.lock`
@@ -418,14 +416,14 @@ prefix). The `appVersion` field may differ if it tracks a different cadence.
 
 If a GA release ships with `tag: latest` in `values.yaml`, users installing at
 different times will get different image versions, making issues unreproducible.
-Run the pin-validation script to find all issues:
+Search for remaining `latest` references:
 
 ```bash
-bash scripts/check-release-pins.sh
+grep -n 'tag: latest' charts/kagenti/values.yaml
+grep -rn ':latest' charts/kagenti/templates/
 ```
 
-Fix any failures before tagging. See
-[Release Pin Validation](#release-pin-validation) for details.
+Fix any found before tagging.
 
 ## Using the Release Skill
 
@@ -495,16 +493,386 @@ the same verification and release notes flow.
 
 ---
 
-## Future Work
+## Overview
 
-The following items are recommended for CNCF project maturity but are not yet
-implemented. Track these as separate issues:
+```
+vX.Y.0-alpha.N   →   vX.Y.0-rc.1   →   rc.2 → ... → rc.N   →   vX.Y.0   →   vX.Y.Z
+     (main)            (release-X.Y created)                       (GA)        (patch)
+```
 
-- **Artifact signing and provenance** — Sign container images with
-  Sigstore/cosign and generate SLSA provenance attestations
-- **SBOM generation** — Produce SPDX or CycloneDX SBOMs for every release
-  artifact
-- **Support window / EOL policy** — Define how many minor releases are
-  supported concurrently (e.g., N and N-1) and for how long
-- **Security release process** — Document how CVEs and embargoed fixes are
-  handled (private fork, coordinated disclosure, patch timeline)
+| Stage | Branch | Image tags pinned? | GitHub Release |
+|-------|--------|-------------------|----------------|
+| Alpha | `main` | Yes | Pre-release |
+| RC | `release-X.Y` | Yes | Pre-release |
+| GA | `release-X.Y` | Yes | Latest |
+| Patch | `release-X.Y` | Yes | Latest |
+
+### Repos and dependency order
+
+Tag repos in this order. Wait for CI between each:
+
+```
+1. kagenti/kagenti-operator     →  tag, wait for CI + images
+2. kagenti/kagenti-extensions   →  tag, wait for CI + images
+3. kagenti/agent-examples       →  tag (if applicable)
+4. kagenti/kagenti              →  update Chart.yaml + values.yaml, tag
+```
+
+### Governance
+
+- Any maintainer can cut alpha/RC releases
+- GA requires sign-off from at least one other maintainer
+- Mailing list: `kagenti-maintainers@googlegroups.com`
+
+---
+
+## Rules
+
+1. **`main` is always releasable.** Broken builds are P0.
+2. **Release branches are created at RC1 time**, not before.
+3. **No direct commits to release branches.** Fixes land on `main` first,
+   then cherry-pick with `-x`.
+4. **Pin all image tags** before any release — no `tag: latest` ever.
+5. **One release branch per minor** — `release-0.6` covers rc.1 through all
+   v0.6.Z patches.
+
+---
+
+## The Release Lifecycle
+
+### 1. Alpha (from `main`)
+
+```bash
+# 1. Verify CI passes on main for each repo
+gh run list --branch main --limit 3 --repo kagenti/<repo>
+
+# 2. Pin images
+bash scripts/pin-release-tags.sh v0.7.0-alpha.1
+bash scripts/check-release-pins.sh
+
+# 3. Tag dependency repos in order (operator → extensions → examples)
+git tag -s v0.3.0-alpha.1 -m "v0.3.0-alpha.1"
+git push origin v0.3.0-alpha.1
+
+# 4. Update Chart.yaml + helm dependency update, commit, tag kagenti/kagenti
+git tag -s v0.7.0-alpha.1 -m "v0.7.0-alpha.1"
+git push origin v0.7.0-alpha.1
+```
+
+### 2. First RC (creates release branches)
+
+Prerequisites:
+- All planned features merged to `main`
+- No open P0/P1 bugs
+- Feature freeze declared
+
+```bash
+# 1. Create release branches in ALL repos (dependency order)
+# For each repo:
+git checkout -b release-X.Y main
+git push origin release-X.Y
+git tag -s vA.B.0-rc.1 -m "vA.B.0-rc.1"
+git push origin vA.B.0-rc.1
+
+# 2. In kagenti/kagenti: update Chart.yaml with RC sub-chart versions
+# 3. Pin image tags
+bash scripts/pin-release-tags.sh v0.6.0-rc.1
+bash scripts/check-release-pins.sh
+
+# 4. Create release branch and tag
+git checkout -b release-0.6 main
+git push upstream release-0.6
+git tag -s v0.6.0-rc.1 -m "v0.6.0-rc.1"
+git push upstream v0.6.0-rc.1
+```
+
+### 3. Stabilization Loop (between RCs)
+
+This is where most release work happens. Repeat until stable:
+
+```
+Test RC → find bugs → fix on main (PRs) → cherry-pick to release branch → tag next RC
+```
+
+#### 3a. Find candidate fixes
+
+```bash
+# PRs merged to main since last RC
+LAST_RC_DATE=$(gh release view v0.6.0-rc.6 --repo kagenti/kagenti --json publishedAt --jq '.publishedAt')
+
+gh pr list --repo kagenti/kagenti --state merged --base main \
+  --search "merged:>$LAST_RC_DATE" --json number,title,mergeCommit \
+  --jq '.[] | "#\(.number) \(.title) [\(.mergeCommit.oid[:12])]"'
+
+# Check dependency repos too
+gh pr list --repo kagenti/kagenti-extensions --state merged --base main \
+  --search "merged:>$LAST_RC_DATE" --json number,title,mergeCommit \
+  --jq '.[] | "#\(.number) \(.title) [\(.mergeCommit.oid[:12])]"'
+```
+
+#### 3b. Cherry-pick to release branch
+
+```bash
+# Sync local release branch
+git fetch upstream release-0.6
+git checkout release-0.6 2>/dev/null || git checkout -b release-0.6 upstream/release-0.6
+git reset --hard upstream/release-0.6
+
+# Cherry-pick with -x (MANDATORY for traceability)
+git cherry-pick -x <sha1>
+git cherry-pick -x <sha2>
+
+# Push to upstream
+git push upstream release-0.6
+```
+
+If dependency repos have fixes, cherry-pick and tag those first (dependency
+order), then update `Chart.yaml` in the kagenti release branch.
+
+#### 3c. Tag next RC
+
+```bash
+# Pin images for the new RC
+bash scripts/pin-release-tags.sh v0.6.0-rc.7
+bash scripts/check-release-pins.sh
+git add charts/
+git commit -s -m "chore(release): pin image tags for v0.6.0-rc.7"
+git push upstream release-0.6
+
+# Tag
+git tag -s v0.6.0-rc.7 -m "v0.6.0-rc.7"
+git push upstream v0.6.0-rc.7
+```
+
+→ Verify artifacts, then repeat from 3a if more issues are found.
+
+### 4. GA Release
+
+Prerequisites:
+- At least 1 RC validated with no blocking issues
+- Minimum 1-week soak since last RC (recommended)
+- Maintainer sign-off from someone other than the tagger
+
+```bash
+# 1. Tag dependency repos with GA (in order)
+git tag -s vA.B.0 -m "vA.B.0"
+git push origin vA.B.0
+
+# 2. Update Chart.yaml with GA sub-chart versions
+# 3. Pin images to GA tag
+bash scripts/pin-release-tags.sh v0.6.0
+bash scripts/check-release-pins.sh
+git commit -s -m "chore(release): pin image tags for v0.6.0"
+git push upstream release-0.6
+
+# 4. Tag
+git tag -s v0.6.0 -m "v0.6.0"
+git push upstream v0.6.0
+
+# 5. Mark as latest
+gh release edit v0.6.0 --repo kagenti/kagenti --latest
+```
+
+### 5. Patch Release
+
+Same as the stabilization loop, but against an existing GA:
+
+```bash
+# Fix lands on main first, then:
+git checkout release-0.6
+git cherry-pick -x <sha>
+git push upstream release-0.6
+
+# Pin and tag
+bash scripts/pin-release-tags.sh v0.6.1
+git tag -s v0.6.1 -m "v0.6.1"
+git push upstream v0.6.1
+```
+
+For non-trivial patches, consider a patch RC (`v0.6.1-rc.1`) first.
+
+---
+
+## Release Branch Git Workflow
+
+### Approach A: Direct push (maintainers with write access)
+
+```bash
+git fetch upstream release-X.Y
+git checkout release-X.Y 2>/dev/null || git checkout -b release-X.Y upstream/release-X.Y
+git reset --hard upstream/release-X.Y
+git cherry-pick -x <sha>
+git push upstream release-X.Y
+```
+
+### Approach B: PR to release branch
+
+```bash
+git fetch upstream release-X.Y
+git checkout -b cherry-pick-<desc> upstream/release-X.Y
+git cherry-pick -x <sha>
+git push origin cherry-pick-<desc>
+gh pr create --base release-X.Y --repo kagenti/kagenti \
+  --title "fix: cherry-pick <description> for rc.N"
+```
+
+### When to use which
+
+| Scenario | Use |
+|----------|-----|
+| Clean cherry-picks, you have push access | A (direct) |
+| Conflicts needing review | B (PR) |
+| No upstream write access | B (PR) |
+| Large/risky backport | B (PR) |
+
+---
+
+## Image Tag Pinning
+
+Both charts (`charts/kagenti/` and `charts/kagenti-deps/`) must have all
+image tags pinned before any release.
+
+```bash
+# Pin all images to target version
+bash scripts/pin-release-tags.sh <version>
+
+# Preview without modifying
+bash scripts/pin-release-tags.sh <version> --dry-run
+
+# Verify images exist in ghcr.io
+bash scripts/pin-release-tags.sh <version> --verify-images
+
+# Validate (must pass before tagging)
+bash scripts/check-release-pins.sh
+```
+
+Images pinned by the script:
+
+| Chart | Image | Key |
+|-------|-------|-----|
+| kagenti | ui-v2 | `ui.frontend.tag` |
+| kagenti | backend | `ui.backend.tag` |
+| kagenti | ui-oauth-secret | `uiOAuthSecret.tag` |
+| kagenti | agent-oauth-secret | `agentOAuthSecret.tag` |
+| kagenti | api-oauth-secret | `apiOAuthSecret.tag` |
+| kagenti | mlflow-oauth-secret | `mlflowOAuthSecret.tag` |
+| kagenti-deps | spiffe-idp-setup | `spiffeIdp.image.tag` |
+
+---
+
+## Verification
+
+After every tag, verify:
+
+```bash
+# GitHub Releases
+gh release view <version> --repo kagenti/kagenti
+
+# Container images
+for img in ui-v2 backend ui-oauth-secret agent-oauth-secret api-oauth-secret; do
+  docker manifest inspect ghcr.io/kagenti/kagenti/$img:<version> >/dev/null 2>&1 \
+    && echo "$img OK" || echo "$img MISSING"
+done
+
+# Helm charts
+helm show chart oci://ghcr.io/kagenti/kagenti-extensions/kagenti-webhook-chart --version <version>
+helm show chart oci://ghcr.io/kagenti/kagenti-operator/kagenti-operator-chart --version <version>
+
+# Pre-release flag (should be true for alpha/RC, false for GA)
+gh release view <version> --repo kagenti/kagenti --json isPrerelease --jq '.isPrerelease'
+```
+
+E2E validation (mandatory for GA, recommended for RCs):
+
+```bash
+gh workflow run e2e-release-validation.yaml -f version=<version> --repo kagenti/kagenti
+```
+
+---
+
+## Release Notes
+
+### Alpha
+Auto-generated changelog is sufficient.
+
+### RC
+```markdown
+Release candidate for vX.Y.0.
+
+## Testing needed
+- [ ] Clean Kind install
+- [ ] OpenShift install
+- [ ] Upgrade from previous GA
+- [ ] E2E tests
+
+## Changes since rc.N-1
+- PR #NNN - description
+- PR #NNN - description
+```
+
+### GA
+```markdown
+## Highlights
+- Feature 1
+- Feature 2
+
+## Breaking Changes
+- (list or "None")
+
+## Component Versions
+| Component | Version |
+|-----------|---------|
+| kagenti (platform) | vX.Y.0 |
+| kagenti-extensions | vA.B.0 |
+| kagenti-operator | vC.D.0 |
+
+## Upgrade Notes
+- (steps from previous GA)
+```
+
+### Announce (GA only)
+- Slack: https://ibm.biz/kagenti-slack
+- Mailing list: kagenti-maintainers@googlegroups.com
+
+---
+
+## Support Window
+
+| Policy | Scope |
+|--------|-------|
+| Active support (N) | Bug fixes + security patches |
+| Security-only (N-1) | Security patches only |
+| End of life (N-2+) | No further releases |
+
+---
+
+## Security Patches
+
+| Aspect | Security | Regular bug fix |
+|--------|----------|-----------------|
+| Timeline | 24-72h | Next patch window |
+| Disclosure | Private fix, coordinated | Public PR |
+| RC required? | No | Recommended |
+| Backport scope | All supported branches | Latest only |
+
+Process: private fix → apply to all supported release branches → tag all →
+publish GitHub Security Advisory with CVE.
+
+---
+
+## Automation
+
+These happen automatically on tag push (via `build.yaml`):
+
+- Container images built and pushed to `ghcr.io/kagenti/`
+- Helm charts packaged and pushed to OCI registry
+- GitHub Release created (pre-release flag auto-detected from tag)
+
+### Interactive guidance
+
+The skill asks questions at every decision point:
+- Which PRs to include in the next RC
+- Whether dependency repos need release branches
+- How to handle cherry-pick conflicts
+- Whether the RC is ready to tag
+- GA readiness criteria

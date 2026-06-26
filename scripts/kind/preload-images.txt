@@ -1,21 +1,10 @@
-# Docker Hub images pre-pulled on the host and loaded into Kind to avoid
-# rate-limiting during pod startup. Only docker.io images belong here —
-# ghcr.io and quay.io images are not rate-limited and pull fine on demand.
-#
-# Keep versions in sync with:
-#   - scripts/kind/setup-kagenti.sh  (ISTIO_VERSION)
-#   - charts/kagenti-deps/templates/ (phoenix, otel-collector)
-arizephoenix/phoenix:version-8.32.1
 docker.io/istio/install-cni:1.28.0-distroless
 docker.io/istio/pilot:1.28.0-distroless
 docker.io/istio/proxyv2:1.28.0-distroless
 docker.io/istio/ztunnel:1.28.0
-docker.io/nginx/nginx-prometheus-exporter:1.5.1
-docker.io/nginxinc/nginx-unprivileged:1.29.5-alpine
+docker.io/kindest/kindnetd:v20251212-v0.29.0-alpha-105-g20ccfc88
+docker.io/kindest/local-path-provisioner:v20251212-v0.29.0-alpha-105-g20ccfc88
+docker.io/nginx/nginx-prometheus-exporter:1.4.2
+docker.io/nginxinc/nginx-unprivileged:1.29.1-alpine
 docker.io/prom/prometheus:v3.5.0
 otel/opentelemetry-collector-contrib:0.122.1
-ghcr.io/berriai/litellm:main-v1.83.10-stable
-ghcr.io/kagenti/openshell/gateway:mvp-a9aa694
-ghcr.io/kagenti/openshell-driver-openshift/compute-driver:mvp-a5f33f4
-ghcr.io/kagenti/openshell-credentials-keycloak/credentials-driver:main-d7d8306
-ghcr.io/nvidia/openshell-community/sandboxes/base:latest

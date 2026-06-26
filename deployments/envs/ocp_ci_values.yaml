@@ -33,6 +33,7 @@ charts:
           enabled: false
         mlflow:
           enabled: true
+          routeNamespace: "redhat-ods-applications"
         spire:
           enabled: true
         tekton:
@@ -72,6 +73,10 @@ charts:
           enabled: false
         phoenix:
           enabled: false
+      # Enable tool workload sidecar injection for token-exchange E2E tests
+      kagenti-operator-chart:
+        featureGates:
+          injectTools: true
       mlflow:
         auth:
           enabled: false

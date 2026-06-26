@@ -29,6 +29,7 @@ import {
   ModalVariant,
   TextInput,
   FormGroup,
+  Tooltip,
 } from '@patternfly/react-core';
 import {
   ExclamationTriangleIcon,
@@ -115,13 +116,19 @@ export const SkillDetailPage: React.FC = () => {
             <Title headingLevel="h1">{skill.name}</Title>
           </SplitItem>
           <SplitItem>
-            <Button
-              variant="danger"
-              icon={<TrashIcon />}
-              onClick={() => setDeleteModalOpen(true)}
+            <Tooltip
+              content="Managed by auto-sync — disable auto-sync to delete this skill"
+              trigger={skill.labels?.autoSync === 'true' ? 'mouseenter focus' : ''}
             >
-              Delete
-            </Button>
+              <Button
+                variant={skill.labels?.autoSync === 'true' ? 'secondary' : 'danger'}
+                icon={<TrashIcon />}
+                onClick={() => setDeleteModalOpen(true)}
+                isDisabled={skill.labels?.autoSync === 'true'}
+              >
+                Delete
+              </Button>
+            </Tooltip>
           </SplitItem>
         </Split>
       </PageSection>
@@ -188,11 +195,57 @@ export const SkillDetailPage: React.FC = () => {
           </CardBody>
         </Card>
 
-        {/* File tree and preview split view */}
-        {skill.files && skill.files.length > 0 && (
-          <div style={{ marginTop: '1rem' }}>
-            <SkillFileTree files={skill.files} showPreview={true} />
-          </div>
+        {/* File tree or registry info */}
+        {skill.source === 'external' && skill.externalInfo ? (
+          <Card style={{ marginTop: '1rem' }}>
+            <CardTitle>Registry Information</CardTitle>
+            <CardBody>
+              <DescriptionList>
+                <DescriptionListGroup>
+                  <DescriptionListTerm>Registry Type</DescriptionListTerm>
+                  <DescriptionListDescription>
+                    {skill.externalInfo.registryType}
+                  </DescriptionListDescription>
+                </DescriptionListGroup>
+                <DescriptionListGroup>
+                  <DescriptionListTerm>Registry URL</DescriptionListTerm>
+                  <DescriptionListDescription>
+                    <a href={skill.externalInfo.registryUrl} target="_blank" rel="noreferrer">
+                      {skill.externalInfo.registryUrl}
+                    </a>
+                  </DescriptionListDescription>
+                </DescriptionListGroup>
+                <DescriptionListGroup>
+                  <DescriptionListTerm>Skill Name in Registry</DescriptionListTerm>
+                  <DescriptionListDescription>
+                    {skill.externalInfo.registrySkillName}
+                  </DescriptionListDescription>
+                </DescriptionListGroup>
+                <DescriptionListGroup>
+                  <DescriptionListTerm>Version</DescriptionListTerm>
+                  <DescriptionListDescription>
+                    {skill.externalInfo.registrySkillVersion}
+                  </DescriptionListDescription>
+                </DescriptionListGroup>
+                {skill.origin && (
+                  <DescriptionListGroup>
+                    <DescriptionListTerm>Registry Link</DescriptionListTerm>
+                    <DescriptionListDescription>
+                      <a href={skill.origin} target="_blank" rel="noreferrer">
+                        View in Registry
+                      </a>
+                    </DescriptionListDescription>
+                  </DescriptionListGroup>
+                )}
+              </DescriptionList>
+            </CardBody>
+          </Card>
+        ) : (
+          skill.files && skill.files.length > 0 && (
+            <div style={{ marginTop: '1rem' }}>
+              <SkillFileTree files={skill.files} showPreview={true} />
+            </div>
+          )
         )}
       </PageSection>
 

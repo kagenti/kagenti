@@ -14,13 +14,13 @@ import httpx
 import pytest
 
 from kagenti.tests.e2e.openshell.conftest import (
-    a2a_send,
+    BACKEND_AGENTS,
+    BACKEND_AVAILABLE,
+    backend_send,
     A2A_AGENT_NAMES,
     EXEC_AGENT_NAMES,
-    FIXTURE_MAP,
-    LLM_AVAILABLE,
-    LLM_CAPABLE_AGENTS,
     NEMOCLAW_AGENT_CONFIG,
+    skip_no_backend,
     skip_no_llm,
     kubectl_run,
     nemoclaw_enabled,
@@ -32,13 +32,7 @@ from kagenti.tests.e2e.openshell.conftest import (
 pytestmark = pytest.mark.openshell
 AGENT_NS = os.getenv("OPENSHELL_AGENT_NAMESPACE", "team1")
 
-A2A_AGENTS = A2A_AGENT_NAMES
 EXEC_AGENTS = EXEC_AGENT_NAMES
-
-
-def _url(agent: str, request):
-    name = FIXTURE_MAP.get(agent)
-    return request.getfixturevalue(name) if name else None
 
 
 def _deploy_ready(name: str, namespace: str) -> bool:
@@ -48,35 +42,36 @@ def _deploy_ready(name: str, namespace: str) -> bool:
     return r.returncode == 0 and r.stdout.strip() == "1"
 
 
-# ── A2A agent connectivity ──
+# ── A2A agent connectivity (via kagenti-backend proxy) ──
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("agent", A2A_AGENTS)
+@pytest.mark.parametrize("agent", BACKEND_AGENTS)
 class TestA2AConnectivity:
-    """A2A agents respond to JSON-RPC message/send."""
+    """A2A agents respond via kagenti-backend A2A proxy."""
 
-    async def test_connectivity__responds(self, agent, request):
-        """Agent responds to basic A2A request."""
-        url = _url(agent, request)
-        if url is None:
-            pytest.skip(f"{agent}: no URL fixture")
+    @skip_no_backend
+    async def test_connectivity__responds(self, agent, backend_url):
+        """Agent responds to A2A request through backend proxy."""
         async with httpx.AsyncClient() as client:
-            resp = await a2a_send(client, url, "Hello, who are you?")
-        assert "result" in resp, f"A2A response missing 'result': {resp}"
+            result = await backend_send(
+                client, backend_url, AGENT_NS, agent, "Hello, who are you?"
+            )
+        assert "content" in result, f"Backend response missing 'content': {result}"
 
-    async def test_connectivity__agent_card(self, agent, request):
-        """Agent exposes .well-known/agent-card.json."""
-        url = _url(agent, request)
-        if url is None:
-            pytest.skip(f"{agent}: no URL fixture")
+    @skip_no_backend
+    async def test_connectivity__agent_card(self, agent, backend_url):
+        """Agent card accessible through backend proxy."""
         async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{url}/.well-known/agent-card.json", timeout=30.0)
-            if resp.status_code == 404:
-                resp = await client.get(f"{url}/.well-known/agent.json", timeout=30.0)
-        assert resp.status_code == 200
+            resp = await client.get(
+                f"{backend_url}/api/v1/chat/{AGENT_NS}/{agent}/agent-card",
+                timeout=30.0,
+            )
+        if resp.status_code == 503:
+            pytest.skip(f"{agent}: backend cannot reach agent (503, supervised netns)")
+        assert resp.status_code == 200, f"Agent card failed: {resp.text}"
         card = resp.json()
-        assert "name" in card or "agent" in card
+        assert "name" in card, f"Agent card missing 'name': {card}"
 
 
 # ── kubectl exec connectivity ──
@@ -209,28 +204,56 @@ class TestNemoClawConnectivity:
 
     @skip_no_nemoclaw
     @skip_no_llm
-    async def test_connectivity__nemoclaw_hermes__chat_completion(
-        self, nemoclaw_hermes_url
-    ):
-        """Hermes responds to OpenAI-compatible chat completion."""
-        async with httpx.AsyncClient() as client:
-            try:
-                resp = await client.post(
-                    f"{nemoclaw_hermes_url}/v1/chat/completions",
-                    json={
-                        "model": "gpt-4o-mini",
-                        "messages": [{"role": "user", "content": "Say hi"}],
-                        "max_tokens": 10,
-                    },
-                    timeout=30.0,
-                )
-                assert resp.status_code == 200
-                data = resp.json()
-                assert "choices" in data
-            except (httpx.RemoteProtocolError, httpx.ReadError):
-                pytest.skip(
-                    "Hermes uses internal protocol — HTTP API requires NemoClaw plugin"
-                )
+    async def test_connectivity__nemoclaw_hermes__deployment_ready(self):
+        """Hermes deployment has available replicas and ACP support."""
+        ns = os.getenv("OPENSHELL_AGENT_NAMESPACE", "team1")
+        result = kubectl_run(
+            "get",
+            "deploy",
+            "nemoclaw-hermes",
+            "-n",
+            ns,
+            "-o",
+            "jsonpath={.status.availableReplicas}",
+        )
+        replicas = result.stdout.strip()
+        assert replicas and int(replicas) > 0, (
+            f"nemoclaw-hermes has {replicas or 0} available replicas"
+        )
+
+    @skip_no_nemoclaw
+    @skip_no_llm
+    async def test_connectivity__nemoclaw_hermes__acp_responds(self):
+        """Hermes responds to a prompt via the ACP bridge (ExecSandbox path)."""
+        ns = os.getenv("OPENSHELL_AGENT_NAMESPACE", "team1")
+        pods = kubectl_run("get", "pods", "-n", ns, "--no-headers")
+        hermes_pod = ""
+        for line in pods.stdout.strip().split("\n"):
+            if "nemoclaw-hermes" in line and "Running" in line:
+                hermes_pod = line.split()[0]
+                break
+        assert hermes_pod, f"No running nemoclaw-hermes pod in {ns}"
+
+        result = kubectl_run(
+            "exec",
+            hermes_pod,
+            "-n",
+            ns,
+            "--",
+            "timeout",
+            "30",
+            "hermes",
+            "chat",
+            "-q",
+            "What is 2+2? Reply with just the number.",
+            timeout=45,
+        )
+        assert result.returncode == 0, (
+            f"hermes chat failed (exit {result.returncode}): {result.stderr[-300:]}"
+        )
+        output = result.stdout.strip()
+        assert len(output) > 0, "Empty response from hermes"
+        assert "4" in output, f"Hermes didn't answer correctly: {output[-200:]}"
 
     @skip_no_nemoclaw
     async def test_connectivity__nemoclaw_openclaw__deployment_ready(self):

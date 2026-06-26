@@ -114,11 +114,12 @@ export const ImportToolPage: React.FC = () => {
   const [imageTag, setImageTag] = useState('v0.0.1');
 
   // Update registry secret default when registry type changes
+  // OpenShift internal registry doesn't require credentials (uses service account)
   React.useEffect(() => {
-    if (registryType !== 'local') {
-      setRegistrySecret(`${registryType}-registry-secret`);
-    } else {
+    if (registryType === 'local' || registryType === 'openshift') {
       setRegistrySecret('');
+    } else {
+      setRegistrySecret(`${registryType}-registry-secret`);
     }
   }, [registryType]);
 
@@ -722,21 +723,23 @@ export const ImportToolPage: React.FC = () => {
                     </FormGroup>
                   )}
 
-                  <FormGroup label="Registry Secret" fieldId="registrySecret">
-                    <TextInput
-                      id="registrySecret"
-                      value={registrySecret}
-                      onChange={(_e, value) => setRegistrySecret(value)}
-                      placeholder="Leave empty for public registries"
-                    />
-                    <FormHelperText>
-                      <HelperText>
-                        <HelperTextItem>
-                          Kubernetes secret containing registry credentials
-                        </HelperTextItem>
-                      </HelperText>
-                    </FormHelperText>
-                  </FormGroup>
+                  {registryType !== 'local' && registryType !== 'openshift' && (
+                    <FormGroup label="Registry Secret" fieldId="registrySecret">
+                      <TextInput
+                        id="registrySecret"
+                        value={registrySecret}
+                        onChange={(_e, value) => setRegistrySecret(value)}
+                        placeholder="Leave empty for public registries"
+                      />
+                      <FormHelperText>
+                        <HelperText>
+                          <HelperTextItem>
+                            Kubernetes secret containing registry credentials
+                          </HelperTextItem>
+                        </HelperText>
+                      </FormHelperText>
+                    </FormGroup>
+                  )}
 
                   <FormGroup label="Image Tag" fieldId="imageTag">
                     <TextInput
