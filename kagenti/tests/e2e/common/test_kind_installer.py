@@ -66,6 +66,7 @@ DEPLOYMENT_TO_FLAG = {
     ("kagenti-backend", "kagenti-system"): "backend",
     ("kagenti-ui", "kagenti-system"): "ui",
     ("mlflow", "kagenti-system"): "mlflow",
+    ("skillberry-store", "kagenti-system"): "skills",
     ("kiali", "istio-system"): "kiali",
     ("otel-collector", "kagenti-system"): "otel",
     ("tekton-pipelines-controller", "tekton-pipelines"): "builds",
@@ -113,6 +114,9 @@ FLAG_DEPLOYMENTS = {
     ],
     "mlflow": [
         ("mlflow", "kagenti-system"),
+    ],
+    "skills": [
+        ("skillberry-store", "kagenti-system"),
     ],
     "kiali": [
         ("kiali", "istio-system"),

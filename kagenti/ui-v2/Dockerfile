@@ -2,7 +2,7 @@
 # Licensed under the Apache License, Version 2.0
 
 # Stage 1: Build the React application
-FROM node:26-slim@sha256:424cafd2a035ed2b2d74acc3142b68b426fb62a47742c80a75e7117db02d6b30 AS builder
+FROM node:26-slim@sha256:aa27a5fbf5acb298116a38133794f080406c6f8dfe52e2e2836bb55dc7cae8f0 AS builder
 
 WORKDIR /app
 
@@ -27,8 +27,20 @@ RUN npm run build
 # Stage 2: Serve with nginx
 FROM nginx:1.31-alpine@sha256:8b1e78743a03dbb2c95171cc58639fef29abc8816598e27fb910ed2e621e589a
 
-# Copy nginx configuration
+# Copy nginx configuration (server block only; mounted at conf.d/default.conf).
 COPY ui-v2/nginx.conf /etc/nginx/conf.d/default.conf
+
+# Pin worker_processes to a fixed count in the *main* nginx.conf.
+# The stock image ships `worker_processes auto;`, which spawns one worker per
+# *host* CPU and ignores the container's cgroup CPU limit. On large nodes (e.g.
+# OpenShift) that forked ~one worker per core and OOMKilled the pod (kagenti#1991).
+# Done here at build time (as root) rather than via `nginx -g`: passing
+# worker_processes through -g collides with the directive already in the main
+# conf ("[emerg] worker_processes directive is duplicate"), and the runtime
+# NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE cannot rewrite the root-owned main
+# conf under the non-root USER below. A fixed count keeps the memory footprint
+# independent of node size; the container is capped at a fraction of a CPU.
+RUN sed -i 's/^worker_processes.*/worker_processes 1;/' /etc/nginx/nginx.conf
 
 # Copy built assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
@@ -51,5 +63,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1
 
-# Run nginx
+# Run nginx (worker_processes is pinned in the main conf above, not via -g).
 CMD ["nginx", "-g", "daemon off;"]

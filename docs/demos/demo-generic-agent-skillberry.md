@@ -9,6 +9,31 @@ This guide explains how to use Kagenti's external skill registry support to:
 
 This flow differs from the [local skill demo](./demo-generic-agent-skill.md): the skill files are never uploaded into Kagenti. Instead, Kagenti stores only a pointer (URL + metadata) to the skillberry-store instance. When the agent pod starts, an init container fetches the skill archive from the registry and mounts it at the same path that a local skill would occupy. The agent runtime is unaware of the difference.
 
+## Two ways to provide the registry
+
+You can point Kagenti at the skillberry-store in one of two ways:
+
+1. **In-cluster store (simplest).** `--with-skills` deploys a skillberry-store
+   pod inside the cluster and **auto-enables autosync against it** — no external
+   instance and **no `--skill-registry-allowed-hosts` needed** (the in-cluster
+   `*.svc` URL is trusted by the autosync loop). The store UI is browsable at
+   `http://skillberry-store.<domain>:8080`. Override the image with the
+   `SKILLBERRY_STORE_IMAGE` / `SKILLBERRY_STORE_TAG` env vars (default tag `0.2.0`).
+   With this path, skip the external-instance prerequisites below and publish your
+   skill to the in-cluster store (its API is reachable in-cluster at
+   `http://skillberry-store.kagenti-system.svc.cluster.local:8000`).
+   skillberry-store's plugins — which **manage** the skills in the store
+   (creating, evaluating, optimizing, deduplicating, and security-scanning them)
+   — call an LLM and read their configuration from environment variables on the
+   store pod. To enable those plugins, inject the LLM provider/model and API keys
+   via `skillberryStore.extraEnv` — see
+   [Configuring skillberry-store Environment Variables](../skills.md#configuring-skillberry-store-environment-variables).
+
+2. **External instance (this guide's main flow).** Run skillberry-store yourself
+   somewhere reachable, register it as an external skill reference, and (for
+   private/LAN addresses) allow-list it via `--skill-registry-allowed-hosts`. The
+   rest of this guide walks through this path.
+
 ## What this demo shows
 
 - The skill content lives in an external skillberry-store registry, not in a Kagenti ConfigMap.
@@ -67,6 +92,10 @@ This flow differs from the [local skill demo](./demo-generic-agent-skill.md): th
   - **FastAPI / REST API**: `http://localhost:8000/`
 - You have credentials or access to publish a skill to that instance (follow skillberry-store's own [onboarding documentation](https://github.com/skillberry-ai/skillberry-store/blob/main/README.md) and [CLI guide](https://github.com/skillberry-ai/skillberry-store/blob/main/docs/cli.md)).
 - **Kind cluster note**: the `sbs` CLI and `curl` commands in this guide run from your workstation and use `http://localhost:8000`. However, the registry URL you register in Kagenti (Step 2) is fetched by an init container running **inside** the Kind cluster — it cannot reach `localhost` on the host. Use `http://host.docker.internal:8000` (Docker Desktop / WSL2) or your host's LAN IP (e.g. `http://192.168.1.10:8000`) for that field.
+- **Private/LAN registry note (SSRF allow-list)**: the backend validates registry URLs and rejects ones that resolve to private/internal addresses (RFC-1918, loopback, link-local) to prevent SSRF. A LAN IP like `192.168.1.10` or an in-cluster `*.svc` name is private, so you must explicitly allow it via the `SKILL_REGISTRY_ALLOWED_HOSTS` setting (comma-separated hostnames, IPs, or CIDRs). Empty by default — public registries need no configuration. Set it one of these ways:
+  - **Kind installer**: pass `--skill-registry-allowed-hosts "192.168.1.10"` (accepts a comma-separated list / CIDRs) to `scripts/kind/setup-kagenti.sh`.
+  - **Helm**: set `ui.backend.skillRegistryAllowedHosts` (e.g. `"192.168.1.10"` or `"192.168.0.0/16"`).
+  - **Existing deployment**: set the `SKILL_REGISTRY_ALLOWED_HOSTS` env var on the backend and restart, e.g. `kubectl set env deploy/kagenti-backend -n kagenti-system SKILL_REGISTRY_ALLOWED_HOSTS=192.168.1.10`.
 
 ## Repositories and paths used in this demo
 

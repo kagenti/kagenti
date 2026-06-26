@@ -202,6 +202,22 @@ if ! command -v helm &>/dev/null; then
   log_error "helm not found in PATH. Install helm >= 3.18.0"
   exit 1
 fi
+# Enforce the supported helm range: >= 3.18.0 and < 4. Helm 4 changed CRD
+# handling (server-side-applies pre-existing CRDs and alters crds/ install
+# semantics), which breaks the install: the kagenti-deps Gateway API CRDs
+# conflict with cluster-managed Gateway API on OCP 4.20+, and the Kuadrant
+# operator CRDs are not installed. See issue #2072.
+_helm_ver="$(helm version --short 2>/dev/null | sed -E 's/^v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+_helm_major="${_helm_ver%%.*}"
+_helm_minor="$(printf '%s' "$_helm_ver" | cut -d. -f2)"
+if ! printf '%s' "$_helm_major" | grep -qE '^[0-9]+$'; then
+  log_warn "Could not parse helm version ('$_helm_ver'); this installer requires helm >= 3.18.0 < 4"
+elif [ "$_helm_major" -ge 4 ] || { [ "$_helm_major" -eq 3 ] && [ "${_helm_minor:-0}" -lt 18 ]; }; then
+  log_error "Unsupported helm ${_helm_ver}: this installer requires helm >= 3.18.0 and < 4."
+  log_error "Helm 4 breaks CRD installation (Gateway API conflict, missing Kuadrant CRDs); see issue #2072."
+  log_error "Install a supported version, e.g.: brew install helm@3"
+  exit 1
+fi
 log_success "helm found: $(helm version --short)"
 
 # Check python3
@@ -412,7 +428,25 @@ _ensure_user_workload_monitoring() {
   existing=$($KUBECTL get configmap cluster-monitoring-config -n openshift-monitoring \
     -o jsonpath='{.data.config\.yaml}' 2>/dev/null || echo "")
   if [ -z "$existing" ]; then
-    # ConfigMap doesn't exist or is empty — the hook can create it from scratch
+    # ConfigMap is absent (or has no config.yaml). We must NOT rely on the
+    # kiali-operand chart hook to create it: that hook is skipped on upgrades
+    # (--no-hooks) and on the fresh-install failure-recovery path (which also
+    # explicitly skips this ConfigMap as the conflict source). Relying on it
+    # silently leaves UWM disabled, so Kiali shows no mesh traffic. Create it
+    # here so the pre-flight is authoritative.
+    $KUBECTL apply -f - >/dev/null <<'EOF'
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    enableUserWorkload: true
+    prometheusK8s:
+      retentionSize: 10GB
+EOF
+    log_success "Created cluster-monitoring-config with enableUserWorkload: true"
     return
   fi
   if echo "$existing" | grep -q "enableUserWorkload: true"; then
@@ -562,12 +596,41 @@ for doc in docs:
 " | $KUBECTL apply -f - || true
 }
 
+# Remove orphaned Istio validation webhooks left behind by a previous teardown.
+# Deleting the istio-system namespace does NOT remove the cluster-scoped
+# ValidatingWebhookConfigurations that back "validation.istio.io". With
+# failurePolicy=Fail and no istiod Service to call, they reject every Istio
+# config resource (e.g. the otel-collector AuthorizationPolicy) the kagenti-deps
+# chart creates during `helm install`, aborting the release with:
+#   failed calling webhook "validation.istio.io": service "istiod" not found
+# These webhooks are recreated (with the correct caBundle) once the Sail operand
+# CRs in Step 3 bring istiod back up, so it is safe to drop the stale ones here.
+# Only touch the kagenti-managed webhooks — never the OpenShift ingress gateway's
+# (istio-validator-openshift-gateway-openshift-ingress).
+_clean_stale_istio_webhooks() {
+  if $DRY_RUN; then return; fi
+  # If istiod is present, the webhooks have a live backend — leave them alone.
+  if $KUBECTL get svc istiod -n istio-system &>/dev/null; then
+    return
+  fi
+  for _whc in istiod-default-validator istio-validator-istio-system; do
+    if $KUBECTL get validatingwebhookconfiguration "$_whc" &>/dev/null; then
+      log_warn "Removing stale Istio webhook $_whc (no istiod Service to back it)"
+      $KUBECTL delete validatingwebhookconfiguration "$_whc" --ignore-not-found || true
+    fi
+  done
+}
+
 _helm_kagenti_deps() {
   # Pre-flight: ensure namespaces managed by this chart are not stuck terminating
   # from a previous failed install/uninstall cycle
   for _ns in keycloak istio-cni istio-system istio-ztunnel; do
     _wait_ns_gone "$_ns"
   done
+
+  # Pre-flight: drop orphaned Istio validation webhooks that would otherwise
+  # block the chart's Istio config resources before istiod is provisioned.
+  _clean_stale_istio_webhooks
 
   # Build MLflow OTEL flags: enable the pipeline and point it at the DSC-managed endpoint.
   # When --otel-operator-managed is set, the operator handles ConfigMap assembly
@@ -657,10 +720,12 @@ _adopt_for_helm() {
   local kind="$1" name="$2" ns="${3:-}"
   local ns_flag=()
   if [ -n "$ns" ]; then ns_flag=(-n "$ns"); fi
-  if $KUBECTL get "$kind" "$name" "${ns_flag[@]}" &>/dev/null; then
-    $KUBECTL label "$kind" "$name" "${ns_flag[@]}" \
+  # Use the ${arr[@]+...} guard so expanding an empty array does not trip
+  # `set -u` on Bash < 4.4 (e.g. macOS system Bash 3.2). See issue #1822.
+  if $KUBECTL get "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" &>/dev/null; then
+    $KUBECTL label "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" \
       app.kubernetes.io/managed-by=Helm --overwrite || true
-    $KUBECTL annotate "$kind" "$name" "${ns_flag[@]}" \
+    $KUBECTL annotate "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" \
       meta.helm.sh/release-name=kagenti-deps \
       meta.helm.sh/release-namespace=kagenti-system --overwrite || true
   fi
@@ -1018,7 +1083,11 @@ EOF
   log_info "Ensuring MLflow OAuth proxy exists for browser access..."
   if ! $KUBECTL get deployment mlflow-oauth-proxy -n "$MLFLOW_NAMESPACE" &>/dev/null; then
     local oauth_proxy_image
-    oauth_proxy_image=$(oc adm release info --image-for=oauth-proxy 2>/dev/null)
+    # NOTE: keep `|| true` — under `set -euo pipefail` a bare assignment takes
+    # the command substitution's exit status, so a failing `oc adm release info`
+    # (disconnected cluster, missing pull secret, etc.) would abort the whole
+    # install before the empty-check fallback below can skip the proxy.
+    oauth_proxy_image=$(oc adm release info --image-for=oauth-proxy 2>/dev/null) || true
     if [ -z "$oauth_proxy_image" ]; then
       log_warn "Could not resolve oauth-proxy image — skipping MLflow OAuth proxy"
       return 0
@@ -1213,6 +1282,24 @@ fi
 
 log_info "Keycloak: realm=$KC_REALM namespace=$KC_NAMESPACE"
 
+# Read the actual Keycloak admin credentials from the operator-managed secret.
+# The RHBK operator creates keycloak-initial-admin with a random password.
+# The kagenti chart creates keycloak-admin-secret in agent namespaces for the
+# client-registration sidecar — these must match, otherwise client-registration
+# can't authenticate to the master realm to register per-agent OAuth clients.
+KC_ADMIN_FLAGS=()
+_kc_admin_user=$($KUBECTL get secret keycloak-initial-admin -n "$KC_NAMESPACE" \
+  -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+_kc_admin_pass=$($KUBECTL get secret keycloak-initial-admin -n "$KC_NAMESPACE" \
+  -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+if [ -n "$_kc_admin_user" ] && [ -n "$_kc_admin_pass" ]; then
+  KC_ADMIN_FLAGS+=(--set "keycloak.adminUsername=${_kc_admin_user}")
+  KC_ADMIN_FLAGS+=(--set "keycloak.adminPassword=${_kc_admin_pass}")
+  log_success "Keycloak admin credentials read from keycloak-initial-admin"
+else
+  log_warn "Could not read keycloak-initial-admin — agent client-registration may fail"
+fi
+
 # Build operator image override flags
 OPERATOR_IMAGE_FLAGS=()
 if [ -n "$OPERATOR_IMAGE" ]; then
@@ -1240,6 +1327,7 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   -f "$SECRETS_FILE" \
   ${KAGENTI_UI_FLAGS[@]+"${KAGENTI_UI_FLAGS[@]}"} \
   ${OPERATOR_IMAGE_FLAGS[@]+"${OPERATOR_IMAGE_FLAGS[@]}"} \
+  ${KC_ADMIN_FLAGS[@]+"${KC_ADMIN_FLAGS[@]}"} \
   ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} \
   --set "agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa" \
   --set uiOAuthSecret.useServiceAccountCA=false \
@@ -1248,10 +1336,12 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set mlflow.auth.enabled=false \
   --set "keycloak.publicUrl=${KEYCLOAK_PUBLIC_URL}" \
   --set "keycloak.realm=${KC_REALM}" \
-  --set "mcpGateway.openshiftDomain=${DOMAIN}" \
   --set "components.mlflow.enabled=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
   --set "components.mlflow.routeNamespace=${MLFLOW_NAMESPACE}" \
   --set "kagenti-operator-chart.mlflow.enable=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
+  --set "kagenti-operator-chart.featureGates.injectTools=true" \
+  --set "kagenti-operator-chart.kuadrant.enable=${WITH_KUADRANT}" \
+  --set "mcpGateway.openshiftDomain=${DOMAIN}" \
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
 
 log_success "Kagenti installed"
@@ -1461,20 +1551,13 @@ if $WITH_KUADRANT; then
 
   if ! $DRY_RUN; then
     _wait_deployment_ready kuadrant-operator-controller-manager "$KUADRANT_NS" "Kuadrant operator"
-
-    if $KUBECTL get crd kuadrants.kuadrant.io &>/dev/null; then
-      log_info "Creating Kuadrant CR..."
-      _kuadrant_api=$($KUBECTL get crd kuadrants.kuadrant.io -o jsonpath='{.spec.versions[?(@.served==true)].name}' | awk '{print $NF}')
-      $KUBECTL apply -f - <<EOF
-apiVersion: kuadrant.io/${_kuadrant_api}
-kind: Kuadrant
-metadata:
-  name: kuadrant
-  namespace: ${KUADRANT_NS}
-EOF
-    else
-      log_info "Kuadrant CRD not present (v1.4+) — skipping CR creation"
-    fi
+    # Kuadrant CR is created by the kagenti-operator's Kuadrant operand controller
+    # when --enable-kuadrant is set (see kagenti-operator chart values).
+    # The operator was installed before the Kuadrant CRD existed, so restart it
+    # to trigger KuadrantCRDExists() re-evaluation and controller registration.
+    log_info "Restarting kagenti-operator to pick up Kuadrant CRD..."
+    $KUBECTL rollout restart deployment/kagenti-controller-manager -n kagenti-system
+    _wait_deployment_ready kagenti-controller-manager kagenti-system "kagenti-operator"
   fi
 
   log_success "Kuadrant installed"
@@ -1490,11 +1573,13 @@ log_info "Step 5b: Install MCP Gateway"
 
 if $SKIP_MCP_GATEWAY; then
   log_info "Skipped (--skip-mcp-gateway)"
+elif helm status mcp-gateway -n mcp-system &>/dev/null; then
+  log_info "MCP Gateway already installed — skipping"
 else
-  # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior
-  # version that used a different API group). A stuck finalizer prevents the controller
-  # from creating the broker-router deployment on reinstall.
   if ! $DRY_RUN; then
+    # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior
+    # version that used a different API group). A stuck finalizer prevents the controller
+    # from creating the broker-router deployment on reinstall.
     for _crd_group in mcp.kuadrant.io mcp.kagenti.com; do
       _stuck=$($KUBECTL get mcpgatewayextensions.${_crd_group} -n mcp-system -o json 2>/dev/null \
         | python3 -c "
@@ -1513,6 +1598,41 @@ for item in data.get('items', []):
         sleep 2
       fi
     done
+
+    # Helm does not update CRDs on upgrade — pre-apply them from the chart
+    _mcp_gw_tmp=$(mktemp -d)
+    if helm pull oci://ghcr.io/kuadrant/charts/mcp-gateway \
+         --version "$MCP_GATEWAY_VERSION" --untar -d "$_mcp_gw_tmp" 2>/dev/null; then
+      if [ -d "$_mcp_gw_tmp/mcp-gateway/crds" ]; then
+        log_info "Applying MCP Gateway CRDs..."
+        $KUBECTL apply -f "$_mcp_gw_tmp/mcp-gateway/crds/" 2>/dev/null || true
+      fi
+
+      # Kubernetes does not allow changing spec.selector on existing Deployments.
+      # If the chart changed selectors between versions, delete affected Deployments
+      # so Helm can recreate them.
+      _chart_yaml=$(helm template mcp-gateway "$_mcp_gw_tmp/mcp-gateway" 2>/dev/null || true)
+      for _deploy in mcp-gateway-controller mcp-gateway-broker-router; do
+        if $KUBECTL get deployment "$_deploy" -n mcp-system &>/dev/null; then
+          _current_selector=$($KUBECTL get deployment "$_deploy" -n mcp-system \
+            -o jsonpath='{.spec.selector.matchLabels}' 2>/dev/null || echo "")
+          _chart_selector=$(echo "$_chart_yaml" | python3 -c "
+import sys, yaml, json
+for doc in yaml.safe_load_all(sys.stdin):
+    if doc and doc.get('kind') == 'Deployment' and doc.get('metadata',{}).get('name') == '$_deploy':
+        print(json.dumps(doc['spec']['selector']['matchLabels'], sort_keys=True, separators=(',',':')))
+        break
+" 2>/dev/null || echo "")
+          if [ -n "$_chart_selector" ] && [ -n "$_current_selector" ] && [ "$_current_selector" != "$_chart_selector" ]; then
+            log_warn "Selector changed for $_deploy — deleting to allow upgrade"
+            $KUBECTL delete deployment "$_deploy" -n mcp-system --ignore-not-found
+          fi
+        fi
+      done
+    else
+      log_warn "Failed to pull MCP Gateway chart v${MCP_GATEWAY_VERSION} — skipping CRD pre-apply and selector check"
+    fi
+    rm -rf "$_mcp_gw_tmp"
   fi
 
   MCP_GW_PUBLIC_HOST="mcp-gateway-gateway-system.${DOMAIN}"

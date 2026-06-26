@@ -11,7 +11,7 @@
 
 ## 1. Overview
 
-OpenClaw is the default agent from the [OpenClaw](https://openclaw.ai) platform,
+OpenClaw is the default agent from the [OpenClaw](https://github.com/openclaw/openclaw) platform,
 integrated via [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw). It provides
 a gateway-based AI assistant with a plugin ecosystem, workspace management, and
 extension support.
