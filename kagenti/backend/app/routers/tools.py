@@ -1033,7 +1033,7 @@ def _ensure_tool_agentruntime(
         if e.status == 409:
             logger.info("AgentRuntime '%s' already exists in namespace '%s'", name, namespace)
         else:
-            logger.warning("Failed to create AgentRuntime '%s': %s", name, e.reason)
+            raise
 
 
 def _build_tool_deployment_manifest(

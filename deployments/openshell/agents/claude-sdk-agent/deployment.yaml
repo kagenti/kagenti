@@ -30,6 +30,8 @@ spec:
   replicas: 1
   selector:
     matchLabels:
+      # kagenti.io/type label was removed due to VAP introduction.
+      # Existing deployments must be deleted and re-applied.
       app.kubernetes.io/name: claude-sdk-agent
   template:
     metadata:
