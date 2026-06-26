@@ -682,7 +682,7 @@ EOF
     # cluster-monitoring-config is managed by another operator)
     log_info "kagenti-deps already installed — upgrading (hooks skipped)"
     run_cmd helm upgrade kagenti-deps "$KAGENTI_REPO/charts/kagenti-deps/" \
-      --reset-values \
+      --reset-values --skip-crds \
       "${KAGENTI_DEPS_HELM_ARGS[@]}"
     # Apply operand CRs on upgrade too — catches CRs missed by a previous
     # failed install (e.g. Keycloak CRD wasn't ready yet on first run)
@@ -695,8 +695,10 @@ EOF
   # operators like cluster-monitoring-config). Operand CRs are applied manually after.
   log_info "Installing kagenti-deps..."
   run_cmd helm dependency update "$KAGENTI_REPO/charts/kagenti-deps/"
+  # --skip-crds: on OCP 4.20+, Gateway API CRDs are managed by the Ingress
+  # Operator and blocked by ValidatingAdmissionPolicy. They already exist.
   run_cmd helm install kagenti-deps "$KAGENTI_REPO/charts/kagenti-deps/" \
-    --create-namespace "${KAGENTI_DEPS_HELM_ARGS[@]}"
+    --create-namespace --skip-crds "${KAGENTI_DEPS_HELM_ARGS[@]}"
 
   _apply_operand_crs
   _wait_kagenti_deps_ready
