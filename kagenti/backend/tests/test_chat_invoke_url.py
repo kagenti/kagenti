@@ -172,8 +172,8 @@ class TestResolveInvokeUrl:
         mock_get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_rejects_path_with_query_string(self, mock_kube, mock_resolve_base):
-        """Card URL paths containing query-string characters are rejected."""
+    async def test_drops_unsafe_query_string(self, mock_kube, mock_resolve_base):
+        """Unsafe query chars (e.g. URL injection via '://') are stripped; path is kept."""
         card = {
             "name": "test-agent",
             "url": "http://myagent.ns.svc.cluster.local:8443/a2a?redirect=http://evil.com",
@@ -183,7 +183,21 @@ class TestResolveInvokeUrl:
         with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
             url = await _resolve_invoke_url("myagent", "ns", mock_kube)
 
-        assert url == "http://myagent.ns.svc.cluster.local:8443"
+        assert url == "http://myagent.ns.svc.cluster.local:8443/a2a"
+
+    @pytest.mark.asyncio
+    async def test_preserves_safe_query_string(self, mock_kube, mock_resolve_base):
+        """Per A2A spec §4.4.6, safe query params are part of the endpoint URL."""
+        card = {
+            "name": "langchain-agent",
+            "url": "http://myagent.ns.svc.cluster.local:8443/a2a?assistant_id=123",
+        }
+        mock_resp = httpx.Response(200, json=card, request=httpx.Request("GET", "http://x"))
+
+        with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
+            url = await _resolve_invoke_url("myagent", "ns", mock_kube)
+
+        assert url == "http://myagent.ns.svc.cluster.local:8443/a2a?assistant_id=123"
 
     @pytest.mark.asyncio
     async def test_ignores_card_url_host(self, mock_kube, mock_resolve_base):

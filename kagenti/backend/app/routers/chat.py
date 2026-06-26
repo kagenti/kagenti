@@ -35,19 +35,39 @@ _K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 # Characters permitted in an agent card path (positive allowlist).
 _SAFE_PATH_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/-_.")
 
+# Characters permitted in an agent card query string (positive allowlist).
+# Excludes ':', '/', '#', and '%' to block URL injection and encoding attacks.
+_SAFE_QUERY_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.=&+"
+)
+
 
 async def _resolve_invoke_url(name: str, namespace: str, kube: KubernetesService) -> str:
     """Resolve the A2A JSON-RPC invoke URL for an agent.
 
-    Per the A2A spec the agent card ``url`` field is the endpoint that accepts
-    JSON-RPC requests.  Some agents mount this handler at a sub-path (e.g.
-    ``/a2a/invoke``) rather than at the service root.  This helper fetches the
-    agent card and returns the advertised ``url`` so that callers POST to the
-    correct path.  Falls back to the bare service URL on any failure.
+    Per the A2A spec (§4.4.6) the ``AgentInterface.url`` field is a valid
+    absolute URL identifying the endpoint that accepts JSON-RPC requests.
+    Some agents mount this handler at a sub-path (e.g. ``/a2a/invoke``) or
+    include query parameters for routing (e.g. ``?assistant_id=123``).
+
+    This helper fetches the agent card and appends the advertised path (and
+    query, when safe) to the internal service URL.  The host from the card
+    URL is always ignored — only the path and query are extracted — so an
+    agent card advertising an external hostname cannot redirect traffic.
+
+    Falls back to the bare service URL when the card is unavailable, has no
+    path, or fails validation.
     """
-    base_url = resolve_agent_url(name, namespace, kube)
-    if not _K8S_NAME_RE.fullmatch(name) or not _K8S_NAME_RE.fullmatch(namespace):
-        return base_url
+    name_match = _K8S_NAME_RE.fullmatch(name)
+    ns_match = _K8S_NAME_RE.fullmatch(namespace)
+    if not name_match or not ns_match:
+        return resolve_agent_url(name, namespace, kube)
+
+    # .group(0) produces a value constrained by the RFC 1123 regex,
+    # breaking the CodeQL SSRF taint chain from the FastAPI path params.
+    safe_name = name_match.group(0)
+    safe_ns = ns_match.group(0)
+    base_url = resolve_agent_url(safe_name, safe_ns, kube)
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(f"{base_url}{A2A_AGENT_CARD_PATH}")
@@ -62,7 +82,10 @@ async def _resolve_invoke_url(name: str, namespace: str, kube: KubernetesService
                     and ".." not in path.split("/")
                     and all(c in _SAFE_PATH_CHARS for c in path)
                 ):
-                    return f"{base_url}{path}"
+                    suffix = path
+                    if parsed.query and all(c in _SAFE_QUERY_CHARS for c in parsed.query):
+                        suffix = f"{path}?{parsed.query}"
+                    return f"{base_url}{suffix}"
     except Exception:
         logger.debug(
             "Could not fetch agent card for %s/%s, using base URL",
