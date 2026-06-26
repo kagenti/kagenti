@@ -164,8 +164,9 @@ done
 # CI fallback: use OPENAI_API_KEY when .env.maas is not available
 if [ "$MAAS_SOURCED" = "false" ] && [ -n "${OPENAI_API_KEY:-}" ]; then
     export MAAS_LLAMA4_API_KEY="$OPENAI_API_KEY"
-    export MAAS_LLAMA4_API_BASE="${MAAS_LLAMA4_API_BASE:-https://litellm-prod.apps.maas.redhatworkshops.io/v1}"
-    export MAAS_LLAMA4_MODEL="${MAAS_LLAMA4_MODEL:-llama-scout-17b}"
+    export MAAS_LLAMA4_API_BASE="${MAAS_LLAMA4_API_BASE:-https://litellm-litemaas.apps.prod.rhoai.rh-aiservices-bu.com/v1}"
+    export MAAS_LLAMA4_MODEL="${MAAS_LLAMA4_MODEL:-Qwen3.6-35B-A3B}"
+    export MAAS_DEEPSEEK_MODEL="${MAAS_DEEPSEEK_MODEL:-Qwen3.6-35B-A3B}"
     MAAS_SOURCED=true
     log_step "Using OPENAI_API_KEY as LiteMaaS credentials (CI mode)"
 fi
@@ -371,7 +372,7 @@ if [ "$SKIP_TEST" = "false" ]; then
 
     if [ "$MAAS_SOURCED" = "true" ]; then
         export OPENSHELL_LLM_AVAILABLE=true
-        export OPENSHELL_LLM_MODELS="${OPENSHELL_LLM_MODELS:-llama-scout-17b,deepseek-r1}"
+        export OPENSHELL_LLM_MODELS="${OPENSHELL_LLM_MODELS:-Qwen3.6-35B-A3B}"
         log_step "LLM tests enabled (models: $OPENSHELL_LLM_MODELS)"
     fi
 

@@ -110,7 +110,7 @@ else
     if [ "$IS_OPENSHIFT" = "true" ]; then
         log_info "Patching LLM config for OpenShift (MaaS LiteLLM)..."
 
-        LLM_HOST="litellm-prod.apps.maas.redhatworkshops.io"
+        LLM_HOST="litellm-litemaas.apps.prod.rhoai.rh-aiservices-bu.com"
 
         # The authbridge webhook injects HTTP(S)_PROXY=http://127.0.0.1:8081
         # at pod admission.  We cannot prevent injection, but we can ensure
@@ -125,7 +125,7 @@ else
         # bypasses NO_PROXY handling entirely.  Empty string = no proxy.
         kubectl set env deployment/weather-service -n team1 \
             LLM_API_BASE="https://${LLM_HOST}/v1" \
-            LLM_MODEL="llama-scout-17b" \
+            LLM_MODEL="Qwen3.6-35B-A3B" \
             HTTP_PROXY="" \
             http_proxy="" \
             NO_PROXY="$NO_PROXY_VAL" \
@@ -155,13 +155,9 @@ else
             log_warn "openai-secret not found in team1 — LLM calls will fail without API key"
         fi
 
-        # Note: proxy-init is only injected in envoy-sidecar mode. The default
+        # Note: proxy-init is only injected in envoy-proxy mode. The default
         # authbridge proxy-sidecar mode uses HTTPS_PROXY env vars instead.
         # See NO_PROXY override above for external LLM endpoints.
-        # When proxy-init IS active, iptables intercepts ALL outbound TCP —
-        # env vars are bypassed at L4. The pod template annotation
-        # kagenti.io/outbound-ports-exclude: "8000" excludes the MCP tool
-        # port from iptables rules so streaming connections work directly.
     fi
 fi
 
@@ -176,22 +172,15 @@ log_success "Weather-service deployed via Deployment + Service (operator-indepen
 # into the pod at admission time.  The pod stays in ContainerCreating until
 # the operator's ClientRegistrationReconciler registers the workload in
 # Keycloak and creates the Secret.  Wait here to avoid a flaky timeout later.
-# When kagenti.io/inject=disabled, the webhook skips injection entirely so
-# no credentials secret is needed.
 # ============================================================================
-INJECT_LABEL=$(kubectl get deployment weather-service -n team1 -o jsonpath='{.spec.template.metadata.labels.kagenti\.io/inject}' 2>/dev/null || echo "")
-if [ "$INJECT_LABEL" = "disabled" ]; then
-    log_info "Injection disabled (kagenti.io/inject=disabled) — skipping credentials secret wait"
+log_info "Waiting for operator to create client credentials secret..."
+if ! kubectl -n team1 wait --for=create secret/kagenti-keycloak-client-credentials --timeout=120s 2>/dev/null; then
+    log_warn "Credentials secret not found after 120s — pod may be stuck in ContainerCreating"
+    kubectl get pods -n kagenti-system 2>&1 || true
+    kubectl get secrets -n team1 2>&1 || true
+    kubectl logs -n kagenti-system -l app.kubernetes.io/instance=kagenti --tail=20 2>&1 || true
 else
-    log_info "Waiting for operator to create client credentials secret..."
-    if ! kubectl -n team1 wait --for=create secret/kagenti-keycloak-client-credentials --timeout=120s 2>/dev/null; then
-        log_warn "Credentials secret not found after 120s — pod may be stuck in ContainerCreating"
-        kubectl get pods -n kagenti-system 2>&1 || true
-        kubectl get secrets -n team1 2>&1 || true
-        kubectl logs -n kagenti-system -l app.kubernetes.io/instance=kagenti --tail=20 2>&1 || true
-    else
-        log_success "Client credentials secret created by operator"
-    fi
+    log_success "Client credentials secret created by operator"
 fi
 
 # WORKAROUND: Fix Service targetPort mismatch
@@ -220,17 +209,6 @@ wait_for_deployment "weather-service" "team1" 180 || {
     exit 1
 }
 log_success "weather-service pod is ready"
-
-# Diagnostic: log injected containers to verify authbridge mode
-WEATHER_POD=$(kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-if [ -n "$WEATHER_POD" ]; then
-    INIT_CONTAINERS=$(kubectl get pod "$WEATHER_POD" -n team1 -o jsonpath='{.spec.initContainers[*].name}' 2>/dev/null || echo "(none)")
-    CONTAINERS=$(kubectl get pod "$WEATHER_POD" -n team1 -o jsonpath='{.spec.containers[*].name}' 2>/dev/null || echo "(none)")
-    log_info "Pod $WEATHER_POD — init: [$INIT_CONTAINERS] containers: [$CONTAINERS]"
-    if echo "$INIT_CONTAINERS" | grep -q proxy-init; then
-        log_warn "proxy-init detected despite proxy-sidecar mode annotation — iptables interception may break MCP streaming"
-    fi
-fi
 
 # Create OpenShift Route for the agent (on OpenShift only)
 # The kagenti-operator doesn't create routes automatically - they're created by the UI backend
