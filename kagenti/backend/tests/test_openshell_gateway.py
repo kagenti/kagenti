@@ -107,6 +107,7 @@ class TestExecSandbox:
 
         with (
             patch.object(gateway, "_get_channel"),
+            patch.object(gateway, "_get_oidc_token", return_value="mock-token"),
             patch("app.services.openshell.v1.exec_pb2_grpc.OpenShellStub") as mock_stub_cls,
         ):
             mock_stub = MagicMock()
@@ -143,6 +144,7 @@ class TestExecSandbox:
 
         with (
             patch.object(gateway, "_get_channel"),
+            patch.object(gateway, "_get_oidc_token", return_value="mock-token"),
             patch("app.services.openshell.v1.exec_pb2_grpc.OpenShellStub") as mock_stub_cls,
         ):
             mock_stub = MagicMock()

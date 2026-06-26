@@ -96,9 +96,7 @@ To verify SPIRE is properly configured:
 #### 1. OIDC Discovery Endpoint
 
 ```bash
-# Check SPIRE OIDC service
-curl http://spire-oidc.localtest.me:8080/.well-known/openid-configuration
-
+# Check SPIRE OIDC service and
 # Verify JWT signing keys
 curl http://spire-oidc.localtest.me:8080/keys
 ```
@@ -916,9 +914,6 @@ data:
 ```bash
 # Keycloak Admin Console
 http://keycloak.localtest.me:8080/admin/master/console/
-
-# SPIRE OIDC Discovery
-http://spire-oidc.localtest.me:8080/.well-known/openid-configuration
 
 # Tornjak UI
 http://spire-tornjak-ui.localtest.me:8080/

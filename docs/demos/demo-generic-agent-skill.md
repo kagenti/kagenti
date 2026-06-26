@@ -28,6 +28,20 @@ Before starting, make sure:
 - you have access to a Kagenti-enabled namespace, for example `team1`
 - the cluster can build example agents from GitHub
 - you have LLM credentials ready for the generic agent
+- `featureFlags.skills` is enabled — use `--with-skills` with the Kind setup script:
+
+  ```bash
+  scripts/kind/setup-kagenti.sh --with-skills --with-builds
+  ```
+
+  Or enable on a running cluster:
+
+  ```bash
+  helm upgrade kagenti ./charts/kagenti/ \
+    --reuse-values \
+    --set featureFlags.skills=true \
+    -n kagenti-system
+  ```
 
 For the example generic agent, configure the LLM environment variables with values appropriate for your setup. At minimum, the generic agent needs:
 

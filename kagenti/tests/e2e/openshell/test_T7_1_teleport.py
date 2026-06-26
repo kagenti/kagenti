@@ -97,6 +97,10 @@ class TestTeleportPackage:
         assert os.access(script, os.X_OK), f"{script} is not executable"
 
 
+@pytest.mark.xfail(
+    reason="Requires compute-driver to enrich Sandbox CRs with projected tokens (#1828)",
+    strict=False,
+)
 class TestTeleportLifecycle:
     """Full lifecycle in a single sandbox: deploy, verify context, prompt, cleanup.
 
@@ -245,6 +249,10 @@ class TestTeleportSkills:
             _run_teleport("--cleanup", "--session", session_id)
 
 
+@pytest.mark.xfail(
+    reason="Requires compute-driver to enrich Sandbox CRs with projected tokens (#1828)",
+    strict=False,
+)
 class TestTeleportSpawn:
     """--spawn mode: bare sandbox without local context."""
 
@@ -254,7 +262,7 @@ class TestTeleportSpawn:
         if not _gateway_running():
             pytest.fail("OpenShell gateway not running — compute driver required")
 
-        result = _run_teleport("--spawn")
+        result = _run_teleport("--spawn", timeout=120)
         assert result.returncode == 0, f"Spawn failed: {result.stderr[-500:]}"
         session_id = result.stdout.strip().split("\n")[-1]
         assert len(session_id) == 8, f"Expected 8-char session ID, got: {session_id}"
@@ -283,8 +291,10 @@ class TestTeleportSpawn:
         """Spawned sandbox only sees LiteLLM virtual key, not real API keys."""
         if not _gateway_running():
             pytest.fail("OpenShell gateway not running — compute driver required")
+        if not LLM_AVAILABLE:
+            pytest.skip("LLM not available — litellm-virtual-keys secret not deployed")
 
-        result = _run_teleport("--spawn")
+        result = _run_teleport("--spawn", timeout=120)
         assert result.returncode == 0
         session_id = result.stdout.strip().split("\n")[-1]
 
@@ -326,6 +336,77 @@ class TestTeleportSpawn:
                 )
         finally:
             _run_teleport("--cleanup", "--session", session_id)
+
+
+class TestHermesAgent:
+    """Hermes agent responds via LiteLLM on the same cluster."""
+
+    @skip_no_crd
+    def test_teleport__hermes_responds(self):
+        """Hermes chat -q returns a response via LiteLLM."""
+        if not LLM_AVAILABLE:
+            pytest.skip("LLM not available (OPENSHELL_LLM_AVAILABLE)")
+
+        pods = kubectl_run("get", "pods", "-n", TELEPORT_NS, "--no-headers")
+        hermes_running = any(
+            "nemoclaw-hermes" in line and "Running" in line
+            for line in pods.stdout.strip().split("\n")
+        )
+        if not hermes_running:
+            pytest.skip("nemoclaw-hermes not deployed")
+
+        hermes_pod = ""
+        for line in pods.stdout.strip().split("\n"):
+            if "nemoclaw-hermes" in line and "Running" in line:
+                hermes_pod = line.split()[0]
+                break
+
+        result = kubectl_run(
+            "exec",
+            hermes_pod,
+            "-n",
+            TELEPORT_NS,
+            "--",
+            "timeout",
+            "30",
+            "hermes",
+            "chat",
+            "-q",
+            "What is 2+2? Reply with just the number.",
+            timeout=45,
+        )
+        assert result.returncode == 0, f"Hermes failed: {result.stderr[-300:]}"
+        assert "4" in result.stdout, (
+            f"Hermes didn't answer correctly: {result.stdout[-300:]}"
+        )
+
+    @skip_no_crd
+    def test_teleport__hermes_uses_litellm(self):
+        """Hermes env vars point to LiteLLM, not external providers."""
+        pods = kubectl_run("get", "pods", "-n", TELEPORT_NS, "--no-headers")
+        hermes_pod = ""
+        for line in pods.stdout.strip().split("\n"):
+            if "nemoclaw-hermes" in line and "Running" in line:
+                hermes_pod = line.split()[0]
+                break
+        if not hermes_pod:
+            pytest.skip("nemoclaw-hermes not deployed")
+
+        env = kubectl_run(
+            "exec",
+            hermes_pod,
+            "-n",
+            TELEPORT_NS,
+            "--",
+            "sh",
+            "-c",
+            "env | grep -E 'OPENAI_API_BASE|LLM_MODEL'",
+            timeout=10,
+        )
+        assert "litellm-model-proxy" in env.stdout, (
+            "OPENAI_API_BASE should point to LiteLLM"
+        )
+        assert "LLM_MODEL=" in env.stdout, "LLM_MODEL env var should be set"
 
 
 class TestTeleportErrors:

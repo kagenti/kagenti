@@ -8,28 +8,49 @@ Skills are a key component of the Kagenti workload runtime, working alongside Ag
 
 ## Enabling Skills
 
-Skills are currently a feature flag in Kagenti and must be explicitly enabled before use. The method for enabling skills depends on your deployment approach:
+Skills are a feature-flagged capability in Kagenti and must be explicitly enabled before use. Two flags control the feature:
 
-### Using Kind and OpenShift Setup Script
+| Flag | Controls |
+|------|----------|
+| `featureFlags.skills` | Core skills management: import, list, delete skills; link skills to agents |
+| `featureFlags.externalSkills` | External skill registry references (e.g. skillberry-store). Requires `skills` to also be true. |
 
-When using the `scripts/kind/setup-kagenti.sh` script, skills can be enabled by setting the environment variable before running the script:
+The easiest way to enable both is the `--with-skills` flag described below.
+
+### Using the Kind Setup Script
+
+Pass `--with-skills` to enable both flags at once. It automatically enables `--with-backend` and `--with-ui`:
 
 ```bash
-# Enable skills with the setup script
-export KAGENTI_FEATURE_FLAG_SKILLS=true
-./scripts/kind/setup-kagenti.sh --with-backend --with-ui
+scripts/kind/setup-kagenti.sh --with-skills
 ```
 
-**Note**: The `--with-backend` and `--with-ui` flags are required to deploy the Kagenti backend and UI components where the skills feature is used.
+`--with-skills` also deploys an **in-cluster skillberry-store** pod and
+**auto-enables autosync** against it (via the `kagenti-skill-autosync-config`
+ConfigMap), so skills sync with no external registry and no
+`--skill-registry-allowed-hosts`. The store UI is browsable at
+`http://skillberry-store.<domain>:8080`. Override the store image with the
+`SKILLBERRY_STORE_IMAGE` / `SKILLBERRY_STORE_TAG` env vars (default tag `0.2.0`):
+
+```bash
+SKILLBERRY_STORE_TAG=0.2.1 scripts/kind/setup-kagenti.sh --with-skills
+```
+
+To combine with other options, for example builds and locally-built images:
+
+```bash
+scripts/kind/setup-kagenti.sh --with-skills --with-builds --build-images --skip-cluster
+```
 
 ### Using the Kagenti Installer
 
-When using the installer, enable skills by modifying your values file (e.g., `deployments/envs/.secret_values.yaml` or a custom values file):
+When using the installer, enable skills by modifying your values file (e.g., `charts/kagenti/.secrets.yaml` or a custom values file):
 
 ```bash
 cat <<EOF > /tmp/enable-flag-skills.yaml
 featureFlags:
   skills: true
+  externalSkills: true
 EOF
 ```
 
@@ -41,13 +62,129 @@ Then run the installer:
 
 ### Using Helm
 
-When installing or upgrading Kagenti with Helm, enable skills by setting the feature flag in your values:
+When installing or upgrading Kagenti with Helm directly:
 
 ```bash
-# Using --set flag
 helm upgrade --install kagenti ./charts/kagenti/ \
   -n kagenti-system --create-namespace \
-  --set featureFlags.skills=true
+  --set featureFlags.skills=true \
+  --set featureFlags.externalSkills=true \
+  --set components.skillberryStore.enabled=true
+```
+
+`components.skillberryStore.enabled=true` deploys the in-cluster store and seeds
+the autosync ConfigMap pointing at it (both default off). Override the image with
+`--set skillberryStore.image.tag=0.2.1`. Omit it to use only an external registry.
+
+To enable on an already-running cluster without full redeploy:
+
+```bash
+helm upgrade kagenti ./charts/kagenti/ \
+  --reuse-values \
+  --set featureFlags.skills=true \
+  --set featureFlags.externalSkills=true \
+  -n kagenti-system
+```
+
+### Configuring skillberry-store Environment Variables
+
+skillberry-store ships with a set of **plugins that manage the skills in the
+store** — they create, evaluate, optimize, deduplicate, security-scan, and
+generate documentation for skills, running inside the store process and
+triggering automatically on skill lifecycle events (e.g. when a skill is added or
+updated). They are *not* something agents or individual skills consume at
+runtime; they are the store's own capabilities for curating its skill repository.
+
+Most of these plugins call an LLM, so they read LLM configuration (provider,
+model, API base URLs, and API keys) from environment variables on the **store
+process at startup**. The in-cluster store starts with only the chart-managed
+`SBS_*` / `ENABLE_UI` variables, so to enable the LLM-backed plugins you must
+inject their configuration via `skillberryStore.extraEnv` — a list of standard
+Kubernetes `core/v1` `EnvVar` entries, supporting both literal `value` and
+`valueFrom` (`secretKeyRef` / `configMapKeyRef`). The exact variable names depend
+on the LLM provider you select via `LLM_PROVIDER` (see the
+[skillberry-store plugin docs](https://github.com/skillberry-ai/skillberry-store/blob/main/docs/plugins-installation.md)).
+
+> **Keep secrets out of values files and Git.** Put non-sensitive configuration
+> (provider name, model, endpoint URLs) as literal `value`s, but reference API
+> keys and tokens from a Kubernetes Secret via `valueFrom.secretKeyRef`.
+
+First create a Secret holding the sensitive values (do this out-of-band, not in a
+checked-in file):
+
+```bash
+kubectl create secret generic skillberry-store-secrets -n kagenti-system \
+  --from-literal=rits-api-key="<your-key>" \
+  --from-literal=third-party-api-key="<your-key>" \
+  --from-literal=openai-api-key="<your-key>" \
+  --from-literal=anthropic-auth-token="<your-token>"
+```
+
+Then write a values overlay referencing it. The variable **names** below are
+illustrative of what a litellm/RITS-backed plugin typically expects — adjust to
+match your plugin; do not commit real keys or endpoints:
+
+```yaml
+# /tmp/skillberry-env.yaml
+skillberryStore:
+  extraEnv:
+    # --- non-sensitive config: literal values are fine ---
+    - name: LLM_PROVIDER
+      value: "litellm.ibm"
+    - name: LLM_MODEL
+      value: "rits/openai/gpt-oss-120b"
+    - name: IBM_LITELLM_API_BASE
+      value: "http://<your-litellm-host>:4000/"
+    - name: ANTHROPIC_BASE_URL
+      value: "https://<your-anthropic-gateway>"
+    # --- secrets: pull from the Secret created above ---
+    - name: RITS_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: skillberry-store-secrets
+          key: rits-api-key
+    - name: IBM_THIRD_PARTY_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: skillberry-store-secrets
+          key: third-party-api-key
+    - name: OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: skillberry-store-secrets
+          key: openai-api-key
+    - name: ANTHROPIC_AUTH_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: skillberry-store-secrets
+          key: anthropic-auth-token
+```
+
+Apply it with the Kind setup script via `--kagenti-values` (it is passed straight
+through to Helm as `--values`):
+
+```bash
+scripts/kind/setup-kagenti.sh --with-backend --with-ui --with-skills --with-builds \
+  --build-images --skill-registry-allowed-hosts "<your-allowed-host>" \
+  --kagenti-values /tmp/skillberry-env.yaml
+```
+
+…or directly with Helm:
+
+```bash
+helm upgrade --install kagenti ./charts/kagenti/ \
+  -n kagenti-system --create-namespace \
+  --set featureFlags.skills=true \
+  --set featureFlags.externalSkills=true \
+  --set components.skillberryStore.enabled=true \
+  -f /tmp/skillberry-env.yaml
+```
+
+The entries are appended to the store container after the chart-managed
+variables. Verify they landed:
+
+```bash
+kubectl set env deploy/skillberry-store -n kagenti-system --list
 ```
 
 ### Verifying Skills Are Enabled

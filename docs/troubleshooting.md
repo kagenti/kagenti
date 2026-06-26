@@ -95,7 +95,7 @@ kubectl rollout restart -n kagenti-system deployment http-istio
 
 ### Need to edit ENV values
 
-If you need to update the values in `deployments/envs/.secret_values.yaml` file, e.g., `githubToken`,
+If you need to update the values in `charts/kagenti/.secrets.yaml` file, e.g., `githubToken`,
 delete the secret in all your auto-created namespaces, then re-run the installer:
 
 ```shell

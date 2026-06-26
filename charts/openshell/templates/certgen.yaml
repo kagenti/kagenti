@@ -1,0 +1,108 @@
+{{- if .Values.gatewayJwt.enabled }}
+{{- $hookName := "openshell-certgen" }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $hookName }}
+  namespace: {{ .Values.tenant }}
+  labels:
+    {{- include "openshell.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $hookName }}
+  namespace: {{ .Values.tenant }}
+  labels:
+    {{- include "openshell.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $hookName }}
+  namespace: {{ .Values.tenant }}
+  labels:
+    {{- include "openshell.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $hookName }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $hookName }}
+    namespace: {{ .Values.tenant }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $hookName }}
+  namespace: {{ .Values.tenant }}
+  labels:
+    {{- include "openshell.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-20"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 120
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "openshell.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ $hookName }}
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+      {{- if not .Values.openshift.enabled }}
+        {{- with .Values.podSecurityContext }}
+        {{- toYaml (omit . "runAsNonRoot") | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: certgen
+          image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}"
+          imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command: ["/usr/local/bin/openshell-gateway"]
+          args:
+            - generate-certs
+            - --server-secret-name=openshell-server-tls
+            - --client-secret-name=openshell-client-tls
+            - --jwt-secret-name={{ .Values.gatewayJwt.signingSecretName | default "openshell-gateway-jwt-keys" }}
+            - --server-san=openshell-server
+            - --server-san=openshell-server.{{ .Values.tenant }}
+            - --server-san=openshell-server.{{ .Values.tenant }}.svc
+            - --server-san=openshell-server.{{ .Values.tenant }}.svc.cluster.local
+            - --server-san=localhost
+            {{- if .Values.ingress.host }}
+            - --server-san={{ .Values.ingress.host }}
+            {{- end }}
+{{- end }}

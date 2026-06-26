@@ -111,7 +111,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --kagenti-repo PATH|URL   Local path or GitHub URL to kagenti repo (default: clone main to ~/.cache/kagenti)"
       echo "  --realm REALM             Keycloak realm (default: kagenti, or \$KEYCLOAK_REALM)"
       echo "  --keycloak-namespace NS   Keycloak namespace (default: keycloak, or \$KEYCLOAK_NAMESPACE)"
-      echo "  --skip-ovn-patch          Skip OVN gateway routing patch"
+      echo "  --skip-ovn-patch          Skip OVN gateway routing patch (operator logs warning at startup)"
       echo "  --skip-mcp-gateway        Skip MCP Gateway (ignored when --with-kuadrant is set)"
       echo "  --skip-ui                 Skip Kagenti UI and backend installation"
       echo "  --skip-mlflow             Skip MLflow integration (OTel traces + operator auto-config)"
@@ -202,6 +202,22 @@ if ! command -v helm &>/dev/null; then
   log_error "helm not found in PATH. Install helm >= 3.18.0"
   exit 1
 fi
+# Enforce the supported helm range: >= 3.18.0 and < 4. Helm 4 changed CRD
+# handling (server-side-applies pre-existing CRDs and alters crds/ install
+# semantics), which breaks the install: the kagenti-deps Gateway API CRDs
+# conflict with cluster-managed Gateway API on OCP 4.20+, and the Kuadrant
+# operator CRDs are not installed. See issue #2072.
+_helm_ver="$(helm version --short 2>/dev/null | sed -E 's/^v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+_helm_major="${_helm_ver%%.*}"
+_helm_minor="$(printf '%s' "$_helm_ver" | cut -d. -f2)"
+if ! printf '%s' "$_helm_major" | grep -qE '^[0-9]+$'; then
+  log_warn "Could not parse helm version ('$_helm_ver'); this installer requires helm >= 3.18.0 < 4"
+elif [ "$_helm_major" -ge 4 ] || { [ "$_helm_major" -eq 3 ] && [ "${_helm_minor:-0}" -lt 18 ]; }; then
+  log_error "Unsupported helm ${_helm_ver}: this installer requires helm >= 3.18.0 and < 4."
+  log_error "Helm 4 breaks CRD installation (Gateway API conflict, missing Kuadrant CRDs); see issue #2072."
+  log_error "Install a supported version, e.g.: brew install helm@3"
+  exit 1
+fi
 log_success "helm found: $(helm version --short)"
 
 # Check python3
@@ -260,6 +276,7 @@ log_info "Step 1: OVN Gateway Patch"
 
 if $SKIP_OVN_PATCH; then
   log_info "Skipped (--skip-ovn-patch)"
+  log_warn "The kagenti-operator will log a warning at startup if routingViaHost is not enabled"
 else
   # Check if this is an OVNKubernetes cluster
   NETWORK_TYPE=$($KUBECTL get network.operator.openshift.io cluster -o jsonpath='{.spec.defaultNetwork.type}' 2>/dev/null || echo "unknown")
@@ -296,51 +313,6 @@ echo ""
 # creates an MLflow CR if one does not already exist, then waits for the
 # Service and pod to be ready. Sets MLFLOW_TRACES_ENDPOINT for use by the
 # kagenti-deps Helm install that follows.
-
-_mlflow_check_dsc() {
-  log_info "Checking RHOAI DSC mlflowoperator..."
-  local state
-  state=$($KUBECTL get datasciencecluster default-dsc \
-    -o jsonpath='{.spec.components.mlflowoperator.managementState}' 2>/dev/null || echo "")
-  if [ "$state" != "Managed" ]; then
-    log_error "RHOAI DSC mlflowoperator is not Managed (got: '${state:-<not set>}')"
-    log_error "Patch your DataScienceCluster:"
-    log_error "  kubectl patch datasciencecluster default-dsc --type=merge \\"
-    log_error "    -p '{\"spec\":{\"components\":{\"mlflowoperator\":{\"managementState\":\"Managed\"}}}}'"
-    exit 1
-  fi
-  log_success "RHOAI DSC mlflowoperator is Managed"
-}
-
-_mlflow_create_cr() {
-  if $KUBECTL get mlflow "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" &>/dev/null; then
-    log_info "MLflow CR '$MLFLOW_INSTANCE_NAME' already exists in $MLFLOW_NAMESPACE — skipping creation"
-    return 0
-  fi
-  log_info "Creating MLflow CR '$MLFLOW_INSTANCE_NAME' in $MLFLOW_NAMESPACE..."
-  if $DRY_RUN; then
-    echo "  [dry-run] kubectl apply MLflow CR $MLFLOW_INSTANCE_NAME -n $MLFLOW_NAMESPACE"
-    return 0
-  fi
-  $KUBECTL apply -f - <<EOF
-apiVersion: mlflow.opendatahub.io/v1
-kind: MLflow
-metadata:
-  name: ${MLFLOW_INSTANCE_NAME}
-  namespace: ${MLFLOW_NAMESPACE}
-spec:
-  storage:
-    accessModes:
-      - ReadWriteOnce
-    resources:
-      requests:
-        storage: 10Gi
-  backendStoreUri: "sqlite:////mlflow/mlflow.db"
-  artifactsDestination: "file:///mlflow/artifacts"
-  serveArtifacts: true
-EOF
-  log_success "MLflow CR created"
-}
 
 _mlflow_wait_ready() {
   if $DRY_RUN; then
@@ -435,68 +407,6 @@ _mlflow_wait_ready() {
   log_success "MLflow traces endpoint (gateway): $MLFLOW_TRACES_ENDPOINT"
 }
 
-_mlflow_grant_otel_rbac() {
-  # The RHOAI MLflow operator creates ClusterRoles for MLflow access control.
-  # The otel-collector SA needs a RoleBinding in each agent namespace (workspace)
-  # so the collector can send traces with the correct workspace context.
-  # Prefer mlflow-operator-mlflow-integration (has get/list/create/update on
-  # experiments — required by the /v1/traces OTLP endpoint), fall back to edit.
-  local cr_name=""
-  local candidates=("mlflow-operator-mlflow-integration" "mlflow-operator-mlflow-edit")
-  local tries=0
-  while [ -z "$cr_name" ]; do
-    for candidate in "${candidates[@]}"; do
-      if $KUBECTL get clusterrole "$candidate" &>/dev/null; then
-        cr_name="$candidate"
-        break
-      fi
-    done
-    tries=$((tries + 1))
-    if [ $tries -ge 24 ]; then
-      log_warn "No MLflow ClusterRole found (tried: ${candidates[*]}) after 2m — MLflow OTEL RBAC skipped"
-      return 0
-    fi
-    sleep 5
-  done
-  log_success "ClusterRole $cr_name exists"
-
-  local agent_ns
-  agent_ns=$(python3 -c "
-import yaml, sys
-with open('$KAGENTI_REPO/charts/kagenti/values.yaml') as f:
-    v = yaml.safe_load(f)
-for ns in v.get('agentNamespaces', ['team1', 'team2']):
-    print(ns)
-" 2>/dev/null || echo -e "team1\nteam2")
-
-  # Grant in MLflow namespace (authentication: SA must be permitted to access MLflow)
-  log_info "Creating MLflow RBAC for otel-collector in $MLFLOW_NAMESPACE..."
-  if ! $DRY_RUN; then
-    $KUBECTL create rolebinding otel-collector-mlflow \
-      --clusterrole="$cr_name" \
-      --serviceaccount=kagenti-system:otel-collector \
-      -n "$MLFLOW_NAMESPACE" \
-      --dry-run=client -o yaml | $KUBECTL apply -f -
-  fi
-  log_success "RoleBinding otel-collector-mlflow created in $MLFLOW_NAMESPACE"
-
-  # Grant in each agent namespace (workspace authorization)
-  while IFS= read -r ns; do
-    [ -z "$ns" ] && continue
-    log_info "Creating MLflow RBAC for otel-collector in $ns..."
-    if $DRY_RUN; then
-      echo "  [dry-run] kubectl create rolebinding otel-collector-mlflow --clusterrole=$cr_name --serviceaccount=kagenti-system:otel-collector -n $ns"
-    else
-      $KUBECTL create rolebinding otel-collector-mlflow \
-        --clusterrole="$cr_name" \
-        --serviceaccount=kagenti-system:otel-collector \
-        -n "$ns" \
-        --dry-run=client -o yaml | $KUBECTL apply -f -
-    fi
-    log_success "RoleBinding otel-collector-mlflow created in $ns"
-  done <<< "$agent_ns"
-}
-
 # MLflow provisioning is deferred to Step 3d (after kagenti-deps installs the
 # RHOAI operator via OLM Subscription and the DataScienceCluster CRD becomes
 # available). See _deferred_mlflow() below.
@@ -518,7 +428,25 @@ _ensure_user_workload_monitoring() {
   existing=$($KUBECTL get configmap cluster-monitoring-config -n openshift-monitoring \
     -o jsonpath='{.data.config\.yaml}' 2>/dev/null || echo "")
   if [ -z "$existing" ]; then
-    # ConfigMap doesn't exist or is empty — the hook can create it from scratch
+    # ConfigMap is absent (or has no config.yaml). We must NOT rely on the
+    # kiali-operand chart hook to create it: that hook is skipped on upgrades
+    # (--no-hooks) and on the fresh-install failure-recovery path (which also
+    # explicitly skips this ConfigMap as the conflict source). Relying on it
+    # silently leaves UWM disabled, so Kiali shows no mesh traffic. Create it
+    # here so the pre-flight is authoritative.
+    $KUBECTL apply -f - >/dev/null <<'EOF'
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    enableUserWorkload: true
+    prometheusK8s:
+      retentionSize: 10GB
+EOF
+    log_success "Created cluster-monitoring-config with enableUserWorkload: true"
     return
   fi
   if echo "$existing" | grep -q "enableUserWorkload: true"; then
@@ -668,12 +596,41 @@ for doc in docs:
 " | $KUBECTL apply -f - || true
 }
 
+# Remove orphaned Istio validation webhooks left behind by a previous teardown.
+# Deleting the istio-system namespace does NOT remove the cluster-scoped
+# ValidatingWebhookConfigurations that back "validation.istio.io". With
+# failurePolicy=Fail and no istiod Service to call, they reject every Istio
+# config resource (e.g. the otel-collector AuthorizationPolicy) the kagenti-deps
+# chart creates during `helm install`, aborting the release with:
+#   failed calling webhook "validation.istio.io": service "istiod" not found
+# These webhooks are recreated (with the correct caBundle) once the Sail operand
+# CRs in Step 3 bring istiod back up, so it is safe to drop the stale ones here.
+# Only touch the kagenti-managed webhooks — never the OpenShift ingress gateway's
+# (istio-validator-openshift-gateway-openshift-ingress).
+_clean_stale_istio_webhooks() {
+  if $DRY_RUN; then return; fi
+  # If istiod is present, the webhooks have a live backend — leave them alone.
+  if $KUBECTL get svc istiod -n istio-system &>/dev/null; then
+    return
+  fi
+  for _whc in istiod-default-validator istio-validator-istio-system; do
+    if $KUBECTL get validatingwebhookconfiguration "$_whc" &>/dev/null; then
+      log_warn "Removing stale Istio webhook $_whc (no istiod Service to back it)"
+      $KUBECTL delete validatingwebhookconfiguration "$_whc" --ignore-not-found || true
+    fi
+  done
+}
+
 _helm_kagenti_deps() {
   # Pre-flight: ensure namespaces managed by this chart are not stuck terminating
   # from a previous failed install/uninstall cycle
   for _ns in keycloak istio-cni istio-system istio-ztunnel; do
     _wait_ns_gone "$_ns"
   done
+
+  # Pre-flight: drop orphaned Istio validation webhooks that would otherwise
+  # block the chart's Istio config resources before istiod is provisioned.
+  _clean_stale_istio_webhooks
 
   # Build MLflow OTEL flags: enable the pipeline and point it at the DSC-managed endpoint.
   # When --otel-operator-managed is set, the operator handles ConfigMap assembly
@@ -763,10 +720,12 @@ _adopt_for_helm() {
   local kind="$1" name="$2" ns="${3:-}"
   local ns_flag=()
   if [ -n "$ns" ]; then ns_flag=(-n "$ns"); fi
-  if $KUBECTL get "$kind" "$name" "${ns_flag[@]}" &>/dev/null; then
-    $KUBECTL label "$kind" "$name" "${ns_flag[@]}" \
+  # Use the ${arr[@]+...} guard so expanding an empty array does not trip
+  # `set -u` on Bash < 4.4 (e.g. macOS system Bash 3.2). See issue #1822.
+  if $KUBECTL get "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" &>/dev/null; then
+    $KUBECTL label "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" \
       app.kubernetes.io/managed-by=Helm --overwrite || true
-    $KUBECTL annotate "$kind" "$name" "${ns_flag[@]}" \
+    $KUBECTL annotate "$kind" "$name" "${ns_flag[@]+"${ns_flag[@]}"}" \
       meta.helm.sh/release-name=kagenti-deps \
       meta.helm.sh/release-namespace=kagenti-system --overwrite || true
   fi
@@ -782,7 +741,7 @@ _wait_secret_ready() {
   return 0
 }
 
-_ensure_rhoai_shared_trust() {
+_ensure_rhoai_shared_trust_prerequisites() {
   if $DRY_RUN; then return; fi
 
   # --- Wait for cert-manager ---
@@ -917,76 +876,9 @@ EOF
   _wait_secret_ready istio-cacerts-og-cert openshift-ingress
   log_success "Intermediate CA secrets ready"
 
-  # --- Detect stale intermediate CAs (root CA regenerated but intermediates not re-signed) ---
-  log_info "Checking intermediate CA consistency..."
-  local ROOT_FP CHANGED=false
-  ROOT_FP=$($KUBECTL get secret istio-mesh-root-ca-secret -n cert-manager \
-    -o jsonpath='{.data.tls\.crt}' | base64 -d | \
-    openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
-
-  for item in "istio-cacerts-default-cert:istio-system" "istio-cacerts-og-cert:openshift-ingress"; do
-    local secret="${item%%:*}" ns="${item##*:}"
-    local INTER_FP
-    INTER_FP=$($KUBECTL get secret "$secret" -n "$ns" \
-      -o jsonpath='{.data.ca\.crt}' | base64 -d | \
-      openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
-    if [ "$ROOT_FP" != "$INTER_FP" ]; then
-      log_warn "Root CA mismatch in $ns/$secret — forcing re-issuance"
-      $KUBECTL delete secret "$secret" -n "$ns"
-      CHANGED=true
-    fi
-  done
-
-  if $CHANGED; then
-    log_info "Waiting for re-issued intermediate CAs..."
-    _wait_secret_ready istio-cacerts-default-cert istio-system
-    _wait_secret_ready istio-cacerts-og-cert openshift-ingress
-    log_success "Intermediate CAs re-issued"
-  else
-    log_success "Intermediate CAs consistent with root"
-  fi
-
-  # --- Transform cert-manager secrets into Istio cacerts format ---
-  log_info "Creating Istio cacerts secrets..."
-  for item in "istio-cacerts-default-cert:istio-system" "istio-cacerts-og-cert:openshift-ingress"; do
-    local secret="${item%%:*}" ns="${item##*:}"
-    local CA_CERT CA_KEY ROOT_CERT CERT_CHAIN
-    CA_CERT=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.tls\.crt}' | base64 -d)
-    CA_KEY=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.tls\.key}' | base64 -d)
-    ROOT_CERT=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.ca\.crt}' | base64 -d)
-    CERT_CHAIN="${CA_CERT}
-${ROOT_CERT}"
-    $KUBECTL create secret generic cacerts -n "$ns" \
-      --from-literal=ca-cert.pem="${CA_CERT}" \
-      --from-literal=ca-key.pem="${CA_KEY}" \
-      --from-literal=root-cert.pem="${ROOT_CERT}" \
-      --from-literal=cert-chain.pem="${CERT_CHAIN}" \
-      --dry-run=client -o yaml | $KUBECTL apply -f -
-  done
-  log_success "Istio cacerts secrets created"
-
-  # --- Restart istiods to pick up shared CA ---
-  log_info "Restarting istiods..."
-  if $KUBECTL get deployment/istiod -n istio-system &>/dev/null; then
-    $KUBECTL rollout restart deployment/istiod -n istio-system
-    $KUBECTL rollout status deployment/istiod -n istio-system --timeout=300s || true
-  else
-    log_warn "deployment/istiod not found in istio-system — check kagenti-deps hooks"
-  fi
-  $KUBECTL rollout restart deployment/istiod-openshift-gateway -n openshift-ingress 2>/dev/null || true
-  $KUBECTL rollout status deployment/istiod-openshift-gateway -n openshift-ingress --timeout=300s || true
-
-  # --- Delete stale istio-ca-root-cert ConfigMaps and restart ztunnel ---
-  log_info "Cleaning up stale CA ConfigMaps and restarting ztunnel..."
-  for ns in kagenti-system gateway-system keycloak mcp-system istio-system istio-ztunnel; do
-    $KUBECTL delete configmap istio-ca-root-cert -n "$ns" --ignore-not-found || true
-  done
-
-  $KUBECTL rollout restart daemonset/ztunnel -n istio-ztunnel 2>/dev/null || true
-  $KUBECTL rollout status daemonset/ztunnel -n istio-ztunnel --timeout=300s || true
-  log_success "Shared trust reconciliation complete"
+  log_success "Shared trust prerequisites ready (operator handles cacerts + restarts)"
 }
-_ensure_rhoai_shared_trust
+_ensure_rhoai_shared_trust_prerequisites
 
 # Reconcile: now that all CRDs are present (Istio, cert-manager) and Step 3b
 # resources are adopted for Helm, upgrade to render resources gated by
@@ -1119,8 +1011,29 @@ DSCEOF
     return 0
   fi
 
-  # Create MLflow CR and wait for it to be ready
-  _mlflow_create_cr
+  # MLflow CR creation is handled by kagenti-operator's MLflowOperandReconciler
+  # (deployed in Step 4). The operator watches the DataScienceCluster and creates
+  # the MLflow CR when mlflowoperator=Managed.
+  # OTEL collector wiring and OAuth proxy setup run after Step 4 via
+  # _deferred_mlflow_otel_wiring().
+  log_success "MLflow prerequisites ready — CR will be created by kagenti-operator"
+}
+
+# ============================================================================
+# _deferred_mlflow_otel_wiring — runs AFTER Step 4 (kagenti-operator deployed)
+# ============================================================================
+# Waits for the MLflow CR (created by the operator) to become ready, then
+# upgrades kagenti-deps to wire the OTEL collector and sets up the OAuth proxy.
+_deferred_mlflow_otel_wiring() {
+  if [ "$SKIP_MLFLOW" = true ]; then
+    return 0
+  fi
+  if $DRY_RUN; then
+    log_info "[dry-run] Would wire OTEL collector to MLflow endpoint"
+    return 0
+  fi
+
+  # Wait for the operator to create the MLflow CR and for it to be ready.
   if ! _mlflow_wait_ready; then
     log_warn "MLflow not ready — OTEL trace export will be skipped"
     SKIP_MLFLOW=true
@@ -1135,7 +1048,7 @@ DSCEOF
   elif [ -n "$MLFLOW_TRACES_ENDPOINT" ]; then
     log_info "Upgrading kagenti-deps with MLflow OTEL endpoint..."
 
-    # Adopt cert-manager resources created by _ensure_rhoai_shared_trust (Step 3b)
+    # Adopt cert-manager resources created by _ensure_rhoai_shared_trust_prerequisites (Step 3b)
     # so Helm can import them during the upgrade without ownership conflicts.
     _adopt_for_helm ClusterIssuer istio-mesh-root-selfsigned
     _adopt_for_helm ClusterIssuer istio-mesh-ca
@@ -1170,7 +1083,11 @@ EOF
   log_info "Ensuring MLflow OAuth proxy exists for browser access..."
   if ! $KUBECTL get deployment mlflow-oauth-proxy -n "$MLFLOW_NAMESPACE" &>/dev/null; then
     local oauth_proxy_image
-    oauth_proxy_image=$(oc adm release info --image-for=oauth-proxy 2>/dev/null)
+    # NOTE: keep `|| true` — under `set -euo pipefail` a bare assignment takes
+    # the command substitution's exit status, so a failing `oc adm release info`
+    # (disconnected cluster, missing pull secret, etc.) would abort the whole
+    # install before the empty-check fallback below can skip the proxy.
+    oauth_proxy_image=$(oc adm release info --image-for=oauth-proxy 2>/dev/null) || true
     if [ -z "$oauth_proxy_image" ]; then
       log_warn "Could not resolve oauth-proxy image — skipping MLflow OAuth proxy"
       return 0
@@ -1276,30 +1193,6 @@ spec:
   tls:
     termination: reencrypt
 OAUTH_EOF
-  fi
-
-  # Wait for the oauth-proxy to become ready
-  local tries=0
-  while ! $KUBECTL get pods -n "$MLFLOW_NAMESPACE" \
-    -l app=mlflow-oauth-proxy -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q Running; do
-    tries=$((tries + 1))
-    if [ $tries -ge 24 ]; then
-      log_warn "MLflow OAuth proxy not ready after 2m — dashboard link may not work"
-      break
-    fi
-    sleep 5
-  done
-
-  local mlflow_host=""
-  mlflow_host=$($KUBECTL get route mlflow -n "$MLFLOW_NAMESPACE" \
-    -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-  if [ -n "$mlflow_host" ]; then
-    local mlflow_url="https://${mlflow_host}/mlflow/"
-    $KUBECTL patch configmap kagenti-ui-config -n kagenti-system \
-      --type merge -p "{\"data\":{\"MLFLOW_DASHBOARD_URL\":\"${mlflow_url}\"}}" 2>/dev/null || true
-    log_success "MLflow dashboard URL: $mlflow_url"
-  else
-    log_warn "Could not resolve MLflow Route host — UI link will be empty"
   fi
 }
 log_info "Step 3d: MLflow provisioning (deferred)"
@@ -1443,49 +1336,199 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set mlflow.auth.enabled=false \
   --set "keycloak.publicUrl=${KEYCLOAK_PUBLIC_URL}" \
   --set "keycloak.realm=${KC_REALM}" \
-  --set "mcpGateway.openshiftDomain=${DOMAIN}" \
   --set "components.mlflow.enabled=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
   --set "components.mlflow.routeNamespace=${MLFLOW_NAMESPACE}" \
   --set "kagenti-operator-chart.mlflow.enable=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
+  --set "kagenti-operator-chart.featureGates.injectTools=true" \
+  --set "kagenti-operator-chart.kuadrant.enable=${WITH_KUADRANT}" \
+  --set "mcpGateway.openshiftDomain=${DOMAIN}" \
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
 
 log_success "Kagenti installed"
 
-# Grant otel-collector SA MLflow RBAC in agent namespaces (created by kagenti chart above)
-if [ "$SKIP_MLFLOW" = true ]; then
-  log_success "Skipping MLflow RBAC grant (--skip-mlflow)"
-else
-  _mlflow_grant_otel_rbac
+# OTEL RoleBindings and MLflow experiment creation are now managed by
+# kagenti-operator's controllers. Wire the OTEL collector endpoint and
+# set up the MLflow OAuth proxy + dashboard URL now that the operator is running.
+log_info "Step 4b: MLflow OTEL wiring (post-operator)"
+_deferred_mlflow_otel_wiring
 
-  # Create default MLflow experiment in the workspace namespace.
-  # The otel-collector sends traces with x-mlflow-experiment-id header; the experiment
-  # must exist or MLflow will reject the traces.
-  # Uses kubectl run with a curl pod since the installer runs outside the cluster.
-  if ! $DRY_RUN; then
-    _EXP_WS="${MLFLOW_WORKSPACE:-team1}"
-    _EXP_NAME="kagenti-traces"
-    _EXP_TOKEN=$($KUBECTL create token otel-collector -n kagenti-system --duration=600s 2>/dev/null || true)
-    if [ -n "$_EXP_TOKEN" ]; then
-      _EXP_RESP=$($KUBECTL run mlflow-exp-create --rm -i --restart=Never \
-        --image=curlimages/curl -n kagenti-system \
-        --env="TOK=$_EXP_TOKEN" \
-        -- sh -c 'curl -sk -X POST \
-        -H "Authorization: Bearer $TOK" \
-        -H "x-mlflow-workspace: '"$_EXP_WS"'" \
-        -H "Content-Type: application/json" \
-        -d "{\"name\":\"'"$_EXP_NAME"'\"}" \
-        "https://mlflow.'"${MLFLOW_NAMESPACE}"'.svc.cluster.local:8443/api/2.0/mlflow/experiments/create"' 2>/dev/null || true)
-      if echo "$_EXP_RESP" | grep -q "experiment_id"; then
-        _EXP_ID=$(echo "$_EXP_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['experiment_id'])" 2>/dev/null || true)
-        log_success "Created MLflow experiment '$_EXP_NAME' (id=$_EXP_ID) in workspace $_EXP_WS"
-      elif echo "$_EXP_RESP" | grep -q "RESOURCE_ALREADY_EXISTS"; then
-        log_success "MLflow experiment '$_EXP_NAME' already exists in workspace $_EXP_WS"
-      else
-        log_warn "Failed to create MLflow experiment: $_EXP_RESP"
-      fi
-    fi
+# Mount OpenShift trusted CA bundle into the operator so it can verify the
+# MLflow gateway's TLS certificate (signed by the cluster ingress CA).
+# Requires kagenti-operator >=0.3.0 with --mlflow-ca-file support.
+if [ "$SKIP_MLFLOW" != true ] && ! $DRY_RUN; then
+  _CA_CM="kagenti-operator-trusted-ca"
+  _CA_MOUNT="/etc/pki/ca-trust/extracted/pem"
+  _CA_PATH="${_CA_MOUNT}/tls-ca-bundle.pem"
+
+  # Create ConfigMap with injection label (OpenShift populates it with system CAs)
+  cat <<CACM | $KUBECTL apply -f - 2>/dev/null || true
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${_CA_CM}
+  namespace: kagenti-system
+  labels:
+    config.openshift.io/inject-trusted-cabundle: "true"
+data: {}
+CACM
+
+  # Patch operator deployment: add volume, volumeMount, and --mlflow-ca-file arg
+  # Guard: skip if already patched (idempotent on re-runs)
+  if $KUBECTL get deployment kagenti-controller-manager -n kagenti-system -o jsonpath='{.spec.template.spec.volumes[*].name}' 2>/dev/null | grep -q "trusted-ca"; then
+    log_success "Operator already has trusted-ca volume — skipping patch"
+  else
+    $KUBECTL patch deployment kagenti-controller-manager -n kagenti-system --type=json -p "[
+      {\"op\":\"add\",\"path\":\"/spec/template/spec/volumes/-\",\"value\":{\"name\":\"trusted-ca\",\"configMap\":{\"name\":\"${_CA_CM}\",\"optional\":true,\"items\":[{\"key\":\"ca-bundle.crt\",\"path\":\"tls-ca-bundle.pem\"}]}}},
+      {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/volumeMounts/-\",\"value\":{\"name\":\"trusted-ca\",\"mountPath\":\"${_CA_MOUNT}\",\"readOnly\":true}},
+      {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/args/-\",\"value\":\"--mlflow-ca-file=${_CA_PATH}\"}
+    ]" 2>/dev/null && log_success "Operator patched with trusted CA bundle for MLflow TLS" \
+      || log_warn "Could not patch operator with CA bundle (--mlflow-ca-file may not be supported yet)"
   fi
 fi
+echo ""
+
+# ============================================================================
+# Step 4b: Wait for operator SharedTrustReconciler (with fallback)
+# ============================================================================
+# The kagenti-operator's SharedTrustReconciler is responsible for:
+#   1. Creating cacerts secrets in istio-system and openshift-ingress
+#   2. Restarting istiod to pick up the shared CA
+#   3. Restarting ztunnel
+# We give the operator a window to complete. If it doesn't, we fall back to
+# performing the steps directly (same as the pre-PR#1800 behavior).
+_wait_shared_trust_reconciliation() {
+  if $DRY_RUN; then return; fi
+
+  # Wait for cacerts to exist (operator creates it, or fallback will)
+  if $KUBECTL get secret cacerts -n istio-system -o jsonpath='{.data.ca-cert\.pem}' 2>/dev/null | grep -q .; then
+    log_success "cacerts already exists in istio-system"
+  else
+    local WAIT_TIMEOUT=180  # 3 minutes for the operator to create cacerts
+    local tries=0
+    local max_tries=$(( WAIT_TIMEOUT / 10 ))
+    log_info "Waiting up to ${WAIT_TIMEOUT}s for operator SharedTrustReconciler to create cacerts..."
+
+    while ! $KUBECTL get secret cacerts -n istio-system -o jsonpath='{.data.ca-cert\.pem}' 2>/dev/null | grep -q .; do
+      tries=$((tries + 1))
+      if [ $tries -ge $max_tries ]; then
+        log_warn "Operator did not create cacerts within ${WAIT_TIMEOUT}s — falling back to direct creation"
+        _shared_trust_fallback
+        return $?
+      fi
+      sleep 10
+    done
+    log_success "Operator created cacerts in istio-system"
+  fi
+
+  # Verify istiod is serving the shared CA (not its original self-signed one).
+  # Compare the CA cert istiod is using with what's in the cacerts secret.
+  # If they differ, the operator created cacerts but didn't restart istiod.
+  log_info "Verifying istiod is serving the shared CA..."
+  local cacerts_fp istiod_ca_fp
+  cacerts_fp=$($KUBECTL get secret cacerts -n istio-system \
+    -o jsonpath='{.data.ca-cert\.pem}' | base64 -d | \
+    openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
+
+  # istiod exposes its CA via the istio-ca-root-cert ConfigMap it generates
+  istiod_ca_fp=$($KUBECTL get configmap istio-ca-root-cert -n istio-system \
+    -o jsonpath='{.data.root-cert\.pem}' 2>/dev/null | \
+    openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
+
+  if [ -n "$cacerts_fp" ] && [ -n "$istiod_ca_fp" ] && [ "$cacerts_fp" != "$istiod_ca_fp" ]; then
+    log_warn "istiod is still using its self-signed CA — forcing restart"
+    $KUBECTL rollout restart deployment/istiod -n istio-system
+    $KUBECTL rollout status deployment/istiod -n istio-system --timeout=300s || true
+
+    # Restart istiod for openshift-gateway mesh too if present
+    $KUBECTL rollout restart deployment/istiod-openshift-gateway -n openshift-ingress 2>/dev/null || true
+    $KUBECTL rollout status deployment/istiod-openshift-gateway -n openshift-ingress --timeout=300s 2>/dev/null || true
+
+    # Clear stale CA ConfigMaps and restart ztunnel to pick up new CA
+    log_info "Restarting ztunnel to pick up new CA..."
+    for ns in kagenti-system gateway-system keycloak mcp-system istio-system istio-ztunnel; do
+      $KUBECTL delete configmap istio-ca-root-cert -n "$ns" --ignore-not-found || true
+    done
+    $KUBECTL rollout restart daemonset/ztunnel -n istio-ztunnel 2>/dev/null || true
+    $KUBECTL rollout status daemonset/ztunnel -n istio-ztunnel --timeout=300s || true
+    log_success "Shared trust reconciliation complete (forced istiod + ztunnel restart)"
+  else
+    log_success "istiod is serving the shared CA — shared trust reconciliation complete"
+  fi
+}
+
+_shared_trust_fallback() {
+  # Detect stale intermediate CAs (root CA regenerated but intermediates not re-signed)
+  log_info "Checking intermediate CA consistency..."
+  local ROOT_FP CHANGED=false
+  ROOT_FP=$($KUBECTL get secret istio-mesh-root-ca-secret -n cert-manager \
+    -o jsonpath='{.data.tls\.crt}' | base64 -d | \
+    openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
+
+  for item in "istio-cacerts-default-cert:istio-system" "istio-cacerts-og-cert:openshift-ingress"; do
+    local secret="${item%%:*}" ns="${item##*:}"
+    local INTER_FP
+    INTER_FP=$($KUBECTL get secret "$secret" -n "$ns" \
+      -o jsonpath='{.data.ca\.crt}' | base64 -d | \
+      openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
+    if [ "$ROOT_FP" != "$INTER_FP" ]; then
+      log_warn "Root CA mismatch in $ns/$secret — forcing re-issuance"
+      $KUBECTL delete secret "$secret" -n "$ns"
+      CHANGED=true
+    fi
+  done
+
+  if $CHANGED; then
+    log_info "Waiting for re-issued intermediate CAs..."
+    _wait_secret_ready istio-cacerts-default-cert istio-system
+    _wait_secret_ready istio-cacerts-og-cert openshift-ingress
+    log_success "Intermediate CAs re-issued"
+  else
+    log_success "Intermediate CAs consistent with root"
+  fi
+
+  # Transform cert-manager secrets into Istio cacerts format
+  log_info "Creating Istio cacerts secrets (fallback)..."
+  for item in "istio-cacerts-default-cert:istio-system" "istio-cacerts-og-cert:openshift-ingress"; do
+    local secret="${item%%:*}" ns="${item##*:}"
+    local CA_CERT CA_KEY ROOT_CERT CERT_CHAIN
+    CA_CERT=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.tls\.crt}' | base64 -d)
+    CA_KEY=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.tls\.key}' | base64 -d)
+    ROOT_CERT=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.ca\.crt}' | base64 -d)
+    CERT_CHAIN="${CA_CERT}
+${ROOT_CERT}"
+    $KUBECTL create secret generic cacerts -n "$ns" \
+      --from-literal=ca-cert.pem="${CA_CERT}" \
+      --from-literal=ca-key.pem="${CA_KEY}" \
+      --from-literal=root-cert.pem="${ROOT_CERT}" \
+      --from-literal=cert-chain.pem="${CERT_CHAIN}" \
+      --dry-run=client -o yaml | $KUBECTL apply -f -
+  done
+  log_success "Istio cacerts secrets created (fallback)"
+
+  # Restart istiods to pick up shared CA
+  log_info "Restarting istiods..."
+  if $KUBECTL get deployment/istiod -n istio-system &>/dev/null; then
+    $KUBECTL rollout restart deployment/istiod -n istio-system
+    $KUBECTL rollout status deployment/istiod -n istio-system --timeout=300s || true
+  else
+    log_warn "deployment/istiod not found in istio-system — check kagenti-deps hooks"
+  fi
+  $KUBECTL rollout restart deployment/istiod-openshift-gateway -n openshift-ingress 2>/dev/null || true
+  $KUBECTL rollout status deployment/istiod-openshift-gateway -n openshift-ingress --timeout=300s || true
+
+  # Delete stale istio-ca-root-cert ConfigMaps and restart ztunnel
+  log_info "Cleaning up stale CA ConfigMaps and restarting ztunnel..."
+  for ns in kagenti-system gateway-system keycloak mcp-system istio-system istio-ztunnel; do
+    $KUBECTL delete configmap istio-ca-root-cert -n "$ns" --ignore-not-found || true
+  done
+
+  $KUBECTL rollout restart daemonset/ztunnel -n istio-ztunnel 2>/dev/null || true
+  $KUBECTL rollout status daemonset/ztunnel -n istio-ztunnel --timeout=300s || true
+  log_success "Shared trust reconciliation complete (fallback)"
+}
+
+log_info "Step 4b: Wait for shared trust reconciliation"
+_wait_shared_trust_reconciliation
 echo ""
 
 # ============================================================================
@@ -1508,15 +1551,13 @@ if $WITH_KUADRANT; then
 
   if ! $DRY_RUN; then
     _wait_deployment_ready kuadrant-operator-controller-manager "$KUADRANT_NS" "Kuadrant operator"
-
-    log_info "Creating Kuadrant CR..."
-    $KUBECTL apply -f - <<EOF
-apiVersion: kuadrant.io/v1beta1
-kind: Kuadrant
-metadata:
-  name: kuadrant
-  namespace: ${KUADRANT_NS}
-EOF
+    # Kuadrant CR is created by the kagenti-operator's Kuadrant operand controller
+    # when --enable-kuadrant is set (see kagenti-operator chart values).
+    # The operator was installed before the Kuadrant CRD existed, so restart it
+    # to trigger KuadrantCRDExists() re-evaluation and controller registration.
+    log_info "Restarting kagenti-operator to pick up Kuadrant CRD..."
+    $KUBECTL rollout restart deployment/kagenti-controller-manager -n kagenti-system
+    _wait_deployment_ready kagenti-controller-manager kagenti-system "kagenti-operator"
   fi
 
   log_success "Kuadrant installed"
@@ -1535,12 +1576,71 @@ if $SKIP_MCP_GATEWAY; then
 elif helm status mcp-gateway -n mcp-system &>/dev/null; then
   log_info "MCP Gateway already installed — skipping"
 else
+  if ! $DRY_RUN; then
+    # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior
+    # version that used a different API group). A stuck finalizer prevents the controller
+    # from creating the broker-router deployment on reinstall.
+    for _crd_group in mcp.kuadrant.io mcp.kagenti.com; do
+      _stuck=$($KUBECTL get mcpgatewayextensions.${_crd_group} -n mcp-system -o json 2>/dev/null \
+        | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for item in data.get('items', []):
+    if item.get('metadata', {}).get('deletionTimestamp'):
+        print(item['metadata']['name'])
+" 2>/dev/null || echo "")
+      if [ -n "$_stuck" ]; then
+        echo "$_stuck" | while read -r _name; do
+          log_warn "Removing stuck finalizer from MCPGatewayExtension/${_name} (${_crd_group})"
+          $KUBECTL patch "mcpgatewayextensions.${_crd_group}/${_name}" -n mcp-system \
+            --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]' 2>/dev/null || true
+        done
+        sleep 2
+      fi
+    done
+
+    # Helm does not update CRDs on upgrade — pre-apply them from the chart
+    _mcp_gw_tmp=$(mktemp -d)
+    if helm pull oci://ghcr.io/kuadrant/charts/mcp-gateway \
+         --version "$MCP_GATEWAY_VERSION" --untar -d "$_mcp_gw_tmp" 2>/dev/null; then
+      if [ -d "$_mcp_gw_tmp/mcp-gateway/crds" ]; then
+        log_info "Applying MCP Gateway CRDs..."
+        $KUBECTL apply -f "$_mcp_gw_tmp/mcp-gateway/crds/" 2>/dev/null || true
+      fi
+
+      # Kubernetes does not allow changing spec.selector on existing Deployments.
+      # If the chart changed selectors between versions, delete affected Deployments
+      # so Helm can recreate them.
+      _chart_yaml=$(helm template mcp-gateway "$_mcp_gw_tmp/mcp-gateway" 2>/dev/null || true)
+      for _deploy in mcp-gateway-controller mcp-gateway-broker-router; do
+        if $KUBECTL get deployment "$_deploy" -n mcp-system &>/dev/null; then
+          _current_selector=$($KUBECTL get deployment "$_deploy" -n mcp-system \
+            -o jsonpath='{.spec.selector.matchLabels}' 2>/dev/null || echo "")
+          _chart_selector=$(echo "$_chart_yaml" | python3 -c "
+import sys, yaml, json
+for doc in yaml.safe_load_all(sys.stdin):
+    if doc and doc.get('kind') == 'Deployment' and doc.get('metadata',{}).get('name') == '$_deploy':
+        print(json.dumps(doc['spec']['selector']['matchLabels'], sort_keys=True, separators=(',',':')))
+        break
+" 2>/dev/null || echo "")
+          if [ -n "$_chart_selector" ] && [ -n "$_current_selector" ] && [ "$_current_selector" != "$_chart_selector" ]; then
+            log_warn "Selector changed for $_deploy — deleting to allow upgrade"
+            $KUBECTL delete deployment "$_deploy" -n mcp-system --ignore-not-found
+          fi
+        fi
+      done
+    else
+      log_warn "Failed to pull MCP Gateway chart v${MCP_GATEWAY_VERSION} — skipping CRD pre-apply and selector check"
+    fi
+    rm -rf "$_mcp_gw_tmp"
+  fi
+
   MCP_GW_PUBLIC_HOST="mcp-gateway-gateway-system.${DOMAIN}"
-  log_info "Installing MCP Gateway v${MCP_GATEWAY_VERSION} (publicHost=${MCP_GW_PUBLIC_HOST})..."
-  run_cmd helm install mcp-gateway oci://ghcr.io/kuadrant/charts/mcp-gateway \
+  log_info "Installing/upgrading MCP Gateway v${MCP_GATEWAY_VERSION} (publicHost=${MCP_GW_PUBLIC_HOST})..."
+  run_cmd helm upgrade --install mcp-gateway oci://ghcr.io/kuadrant/charts/mcp-gateway \
     --create-namespace --namespace mcp-system --version "$MCP_GATEWAY_VERSION" \
     --set "gateway.publicHost=${MCP_GW_PUBLIC_HOST}"
-  log_success "MCP Gateway installed"
+  log_success "MCP Gateway installed/upgraded"
 
   log_info "Waiting for MCP Gateway broker-router deployment..."
   _wait_deployment_ready mcp-gateway mcp-system "MCP Gateway broker-router"

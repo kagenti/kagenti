@@ -84,6 +84,15 @@ from app.core.constants import (
     DEFAULT_KEYCLOAK_REALM,
     DEFAULT_SPIFFE_HELPER_CONF,
     DEFAULT_ENVOY_YAML,
+    # External skill registry constants
+    SKILL_SOURCE_LABEL,
+    SKILL_SOURCE_EXTERNAL,
+    SKILL_REGISTRY_TYPE_LABEL,
+    SKILL_REGISTRY_URL_ANNOTATION,
+    SKILL_REGISTRY_SKILL_NAME_ANNOTATION,
+    SKILL_REGISTRY_SKILL_VERSION_ANNOTATION,
+    SKILL_FETCHER_SCRIPTS_CM,
+    SKILL_FETCHER_IMAGE,
 )
 from app.core.config import settings
 from app.models.responses import (
@@ -280,6 +289,16 @@ class CreateAgentRequest(BaseModel):
     # webhook denial after the manifest is built.
     mtlsMode: Optional[Literal["disabled", "permissive", "strict"]] = None
 
+    # Per-workload TLS bridge: decrypt the agent's outbound HTTPS so AuthBridge's
+    # pipeline can inspect it. Maps to AgentRuntime.Spec.TLSBridgeMode (enabled
+    # when True; left unset → operator default "disabled"). Like mtlsMode, it's a
+    # plain per-agent field — no operator feature gate and no UI feature flag; the
+    # import-form checkbox shows whenever AuthBridge is enabled. The bridge lives
+    # in the Go forward proxy, so it requires proxy-sidecar/lite mode — the
+    # validator below mirrors the operator webhook's reject of envoy-sidecar. It
+    # also needs cert-manager and an operator build that supports the bridge.
+    tlsBridgeEnabled: bool = False
+
     # Port exclusion annotations
     outboundPortsExclude: Optional[str] = None
     inboundPortsExclude: Optional[str] = None
@@ -338,6 +357,24 @@ class CreateAgentRequest(BaseModel):
         API call) submitting that combination is valid and the
         operator turns SPIRE on for them.
         """
+        return self
+
+    @model_validator(mode="after")
+    def _check_tlsbridge_compatible_with_mode(self) -> "CreateAgentRequest":
+        """Reject tlsBridgeEnabled with an authBridgeMode that can't host the
+        bridge, mirroring the operator's checkTLSBridgeCompatibleWithMode
+        (agentruntime_webhook.go). The TLS bridge lives in the Go forward proxy,
+        which only exists in proxy-sidecar / lite. Uses the same ALLOWLIST as the
+        operator (empty → defaults to proxy-sidecar) rather than a denylist, so a
+        future authBridgeMode can't slip past this fast-422 and only get rejected
+        at the webhook.
+        """
+        allowed = (None, "", "proxy-sidecar", "lite")
+        if self.tlsBridgeEnabled and self.authBridgeMode not in allowed:
+            raise ValueError(
+                "tlsBridgeEnabled requires authBridgeMode proxy-sidecar or lite "
+                f"(the TLS bridge lives in the Go forward proxy); got {self.authBridgeMode!r}"
+            )
         return self
 
 
@@ -2072,54 +2109,118 @@ async def get_shipwright_build_info(
         raise HTTPException(status_code=e.status, detail=str(e.reason))
 
 
+def _get_authbridge_runtime_yaml() -> str:
+    """Read the authbridge runtime config from the Helm-managed ConfigMap.
+
+    The pipeline configuration is defined in values.yaml (authBridge.pipeline),
+    rendered by the Helm chart into the authbridge-runtime-config ConfigMap,
+    and mounted into the backend pod. This is the single source of truth.
+
+    Falls back to legacy in-memory construction when the file does not
+    exist (e.g. local development outside the cluster).
+    """
+    config_path = settings.authbridge_runtime_config_path
+    try:
+        with open(config_path, "r") as f:
+            content = f.read()
+        if content.strip():
+            return content
+    except FileNotFoundError:
+        logger.warning(
+            "AuthBridge runtime config not found at %s; "
+            "falling back to legacy in-memory construction",
+            config_path,
+        )
+    except OSError as e:
+        logger.warning(
+            "Failed to read AuthBridge runtime config from %s: %s; "
+            "falling back to legacy construction",
+            config_path,
+            e,
+        )
+
+    return _build_authbridge_runtime_yaml_fallback()
+
+
 def _build_authbridge_runtime_yaml(
     keycloak_url: str,
     realm: str,
     issuer: str,
-    spire_enabled: bool,
+    spire_enabled: bool = False,
 ) -> str:
-    """Build the YAML config for the unified authbridge binary.
+    """Build authbridge runtime config YAML with explicit parameters.
 
-    The operator reads this as the base for per-agent ConfigMap generation,
-    merging in mode and listener addresses at injection time. The Helm chart
-    creates an equivalent ConfigMap for pre-declared namespaces
-    (see charts/kagenti/templates/agent-namespaces.yaml).
+    This function is used by tests to generate authbridge configuration
+    with specific parameters, independent of the settings object.
 
-    Emits the per-plugin schema: every plugin-specific setting lives under
-    its own `config:` block inside pipeline.inbound.plugins[] or
-    pipeline.outbound.plugins[]. Plugin-level defaults (audience_file,
-    bypass_paths, identity file paths) are intentionally omitted — the
-    authbridge binary applies them from its own convention layer
-    (see authbridge/authlib/plugins/CONVENTIONS.md). Leaving them out
-    here keeps the backend-generated ConfigMap minimal and the schema
-    source-of-truth in one place.
+    Args:
+        keycloak_url: Internal Keycloak URL for JWKS and token exchange
+        realm: Keycloak realm name
+        issuer: Public issuer URL (must match JWT "iss" claim)
+        spire_enabled: Whether to enable SPIFFE/SPIRE identity
+
+    Returns:
+        YAML string containing the authbridge runtime configuration
     """
     identity_type = "spiffe" if spire_enabled else "client-secret"
-    # jwt-validation receives keycloak_url + keycloak_realm so it can
-    # derive jwks_url from the INTERNAL keycloak URL rather than the
-    # public `issuer`. Required for split-horizon deployments where
-    # `issuer` isn't reachable from inside the pod. See
-    # kagenti-extensions#383.
-    # Note: Remember to keep AuthBridgeConfig in kagenti/ui-v2/src/types/index.ts
-    # in sync with this YAML runtime configuration.
-    # No top-level `mode:` — the operator resolves it per workload from
-    # AgentRuntime.Spec.AuthBridgeMode → namespace ConfigMap →
-    # cluster default (proxy-sidecar). Hardcoding it here would pin
-    # every backend-rendered ConfigMap to one shape regardless of CR.
     identity: dict[str, str] = {"type": identity_type}
     if identity_type == "spiffe":
-        # JWT-SVID client-assertion audience — must match what Keycloak's
-        # SPIFFE IdP expects (the realm issuer URL). Required by
-        # authbridge's token-exchange plugin in the spiffe identity path.
-        # See kagenti-extensions#332.
+        identity["jwt_audience"] = issuer
+
+    config: dict[str, object] = {}
+    if spire_enabled:
+        config["spiffe"] = {}
+
+    config["pipeline"] = {
+        "inbound": {
+            "plugins": [
+                {
+                    "name": "jwt-validation",
+                    "config": {
+                        "issuer": issuer,
+                        "keycloak_url": keycloak_url,
+                        "keycloak_realm": realm,
+                    },
+                }
+            ]
+        },
+        "outbound": {
+            "plugins": [
+                {
+                    "name": "token-exchange",
+                    "config": {
+                        "keycloak_url": keycloak_url,
+                        "keycloak_realm": realm,
+                        "default_policy": "passthrough",
+                        "identity": identity,
+                    },
+                }
+            ]
+        },
+    }
+
+    return yaml.dump(config, default_flow_style=False)
+
+
+def _build_authbridge_runtime_yaml_fallback() -> str:
+    """Legacy fallback: construct authbridge runtime config in-memory.
+
+    Used when the mounted ConfigMap is unavailable (local dev, tests).
+    The canonical source of truth is values.yaml authBridge.pipeline,
+    rendered by the Helm chart and mounted at the path specified by
+    settings.authbridge_runtime_config_path.
+    """
+    keycloak_url = settings.keycloak_url or DEFAULT_KEYCLOAK_INTERNAL_URL
+    realm = settings.effective_keycloak_realm or DEFAULT_KEYCLOAK_REALM
+    issuer = f"{settings.effective_keycloak_url}/realms/{realm}"
+    spire_enabled = False
+
+    identity_type = "spiffe" if spire_enabled else "client-secret"
+    identity: dict[str, str] = {"type": identity_type}
+    if identity_type == "spiffe":
         identity["jwt_audience"] = issuer
     config: dict[str, object] = {}
     if spire_enabled:
-        # Empty spiffe block signals authbridge to construct the in-process
-        # SPIFFE provider (X.509 source for mTLS + lazy JWT source for
-        # tokenexchange). All fields default: socket points at the standard
-        # SPIRE agent socket, mirror writes /opt/svid*.pem on rotation.
-        # The JWT audience lives per-tokenexchange (under identity above).
         config["spiffe"] = {}
     config["pipeline"] = {
         "inbound": {
@@ -2193,17 +2294,12 @@ def _ensure_authbridge_configmaps(
     # 2. authbridge-runtime-config (YAML config for the unified authbridge binary)
     # The operator reads this at admission time and creates a per-agent ConfigMap
     # with mode and listener addresses merged in.
+    # Source of truth: values.yaml authBridge.pipeline → Helm renders ConfigMap →
+    # mounted into this pod → _get_authbridge_runtime_yaml() reads it.
     kube.ensure_configmap(
         namespace=namespace,
         name="authbridge-runtime-config",
-        data={
-            "config.yaml": _build_authbridge_runtime_yaml(
-                keycloak_url=keycloak_url,
-                realm=realm,
-                issuer=issuer,
-                spire_enabled=spire_enabled,
-            )
-        },
+        data={"config.yaml": _get_authbridge_runtime_yaml()},
     )
 
     # 3. envoy-config
@@ -2437,6 +2533,8 @@ def _build_agent_shipwright_build_manifest(
         resource_config["defaultOutboundPolicy"] = request.defaultOutboundPolicy
     if request.mtlsMode:
         resource_config["mtlsMode"] = request.mtlsMode
+    if request.tlsBridgeEnabled:
+        resource_config["tlsBridgeEnabled"] = True
     if request.persistentStorage:
         resource_config["persistentStorage"] = request.persistentStorage.model_dump()
     # Add env vars if present
@@ -2484,16 +2582,18 @@ def _build_agent_shipwright_buildrun_manifest(
 
 def _get_linked_skill_mounts(
     request: "CreateAgentRequest",
+    skills_override: Optional[List[str]] = None,
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], Optional[str]]:
-    """Build volume and mount definitions for linked skill ConfigMaps."""
-    if not request.skills:
+    """Build volume and mount definitions for linked skill ConfigMaps (local only)."""
+    skills = skills_override if skills_override is not None else (request.skills or [])
+    if not skills:
         return [], [], None
 
     volumes: List[Dict[str, Any]] = []
     volume_mounts: List[Dict[str, Any]] = []
     skill_paths: List[str] = []
 
-    for index, skill_name in enumerate(request.skills):
+    for index, skill_name in enumerate(skills):
         if not skill_name:
             continue
         cm_name = _sanitize_k8s_name(skill_name)
@@ -2522,12 +2622,217 @@ def _get_linked_skill_mounts(
     return volumes, volume_mounts, ",".join(skill_paths)
 
 
-def _build_env_vars(request: "CreateAgentRequest") -> List[dict]:
+def _is_skill_external(kube: "KubernetesService", namespace: str, skill_name: str) -> bool:
+    """Return True if the named skill ConfigMap is an external registry reference."""
+    try:
+        cm = kube.core_api.read_namespaced_config_map(
+            name=_sanitize_k8s_name(skill_name), namespace=namespace
+        )
+        labels = cm.metadata.labels or {}
+        return labels.get(SKILL_SOURCE_LABEL) == SKILL_SOURCE_EXTERNAL
+    except ApiException:
+        return False
+
+
+_SKILLBERRY_SH = """\
+#!/bin/sh
+set -e
+
+apk add -q --no-cache curl unzip 2>/dev/null || true
+
+URL="${REGISTRY_URL}/skills/${SKILL_NAME}/export-anthropic"
+
+echo "Fetching ${SKILL_NAME} from ${URL}"
+
+RETRIES=3
+DELAY=2
+for i in $(seq 1 $RETRIES); do
+    if curl -fsSL --max-filesize 52428800 -o /tmp/skill.zip "${URL}"; then
+        break
+    fi
+    if [ "$i" -eq "$RETRIES" ]; then
+        echo "FATAL: fetch failed after ${RETRIES} attempts"
+        exit 1
+    fi
+    echo "Attempt ${i} failed; retrying in ${DELAY}s..."
+    sleep $DELAY
+done
+
+mkdir -p "${TARGET_DIR}" /tmp/skill-extract
+unzip -q /tmp/skill.zip -d /tmp/skill-extract/
+SKILL_DIR=$(ls /tmp/skill-extract/ | head -1)
+cp -r "/tmp/skill-extract/${SKILL_DIR}/." "${TARGET_DIR}/"
+echo "OK: ${SKILL_NAME} -> ${TARGET_DIR}"
+"""
+
+_GENERIC_SH = """\
+#!/bin/sh
+set -e
+
+apk add -q --no-cache curl 2>/dev/null || true
+echo "Fetching skill from ${REGISTRY_URL}"
+
+RETRIES=3
+DELAY=2
+for i in $(seq 1 $RETRIES); do
+    if curl -fsSL --max-filesize 52428800 -o /tmp/skill.tar.gz "${REGISTRY_URL}"; then
+        break
+    fi
+    if [ "$i" -eq "$RETRIES" ]; then
+        echo "FATAL: fetch failed after ${RETRIES} attempts"
+        exit 1
+    fi
+    echo "Attempt ${i} failed; retrying in ${DELAY}s..."
+    sleep $DELAY
+done
+
+mkdir -p "${TARGET_DIR}"
+tar -xzf /tmp/skill.tar.gz -C "${TARGET_DIR}"
+echo "OK: ${REGISTRY_URL} -> ${TARGET_DIR}"
+"""
+
+
+def _build_fetcher_scripts_data() -> Dict[str, str]:
+    """Return ConfigMap data dict containing per-registry-type fetch scripts."""
+    return {"skillberry.sh": _SKILLBERRY_SH, "generic.sh": _GENERIC_SH}
+
+
+def _ensure_fetcher_scripts_cm(kube: "KubernetesService", namespace: str) -> None:
+    """Create or replace the kagenti-skill-fetcher-scripts ConfigMap in namespace."""
+    import kubernetes.client as k8s_client
+
+    body = k8s_client.V1ConfigMap(
+        metadata=k8s_client.V1ObjectMeta(
+            name=SKILL_FETCHER_SCRIPTS_CM,
+            namespace=namespace,
+            labels={"app.kubernetes.io/managed-by": "kagenti"},
+        ),
+        data=_build_fetcher_scripts_data(),
+    )
+    try:
+        kube.core_api.read_namespaced_config_map(name=SKILL_FETCHER_SCRIPTS_CM, namespace=namespace)
+        kube.core_api.replace_namespaced_config_map(
+            name=SKILL_FETCHER_SCRIPTS_CM, namespace=namespace, body=body
+        )
+    except ApiException as e:
+        if e.status == 404:
+            kube.core_api.create_namespaced_config_map(namespace=namespace, body=body)
+        else:
+            raise
+
+
+def _get_external_skill_data(
+    kube: "KubernetesService",
+    namespace: str,
+    all_skills: List[str],
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
+    """Build init containers, volumes, and mounts for external-registry skills.
+
+    Returns (init_containers, volumes, main_volume_mounts, skill_paths).
+    One fetcher-scripts-vol is shared across all init containers in the pod.
+    """
+    init_containers: List[Dict[str, Any]] = []
+    volumes: List[Dict[str, Any]] = []
+    main_mounts: List[Dict[str, Any]] = []
+    skill_paths: List[str] = []
+    fetcher_vol_added = False
+
+    for index, skill_name in enumerate(all_skills):
+        if not skill_name:
+            continue
+        if not _is_skill_external(kube, namespace, skill_name):
+            continue
+
+        try:
+            cm = kube.core_api.read_namespaced_config_map(
+                name=_sanitize_k8s_name(skill_name), namespace=namespace
+            )
+        except ApiException:
+            continue
+
+        cm_labels = cm.metadata.labels or {}
+        cm_annotations = cm.metadata.annotations or {}
+        registry_type = cm_labels.get(SKILL_REGISTRY_TYPE_LABEL, "generic")
+        registry_url = cm_annotations.get(SKILL_REGISTRY_URL_ANNOTATION, "")
+        registry_skill_name = cm_annotations.get(SKILL_REGISTRY_SKILL_NAME_ANNOTATION, skill_name)
+        registry_skill_version = cm_annotations.get(
+            SKILL_REGISTRY_SKILL_VERSION_ANNOTATION, "latest"
+        )
+
+        cm_name = _sanitize_k8s_name(skill_name)
+        emptydir_vol_name = f"skill-ext-{index}"
+        mount_path = f"{AGENT_SKILLS_MOUNT_ROOT}/{cm_name}"
+
+        if not fetcher_vol_added:
+            volumes.append(
+                {
+                    "name": "fetcher-scripts-vol",
+                    "configMap": {"name": SKILL_FETCHER_SCRIPTS_CM},
+                }
+            )
+            fetcher_vol_added = True
+
+        volumes.append({"name": emptydir_vol_name, "emptyDir": {}})
+
+        init_containers.append(
+            {
+                "name": f"fetch-skill-{index}",
+                "image": SKILL_FETCHER_IMAGE,
+                "command": [
+                    "/bin/sh",
+                    "-c",
+                    (
+                        "SCRIPT=/fetcher-scripts/${REGISTRY_TYPE}.sh; "
+                        '[ -f "$SCRIPT" ] || SCRIPT=/fetcher-scripts/generic.sh; '
+                        '/bin/sh "$SCRIPT"'
+                    ),
+                ],
+                "env": [
+                    {"name": "REGISTRY_TYPE", "value": registry_type},
+                    {"name": "REGISTRY_URL", "value": registry_url},
+                    {"name": "SKILL_NAME", "value": registry_skill_name},
+                    {"name": "SKILL_VERSION", "value": registry_skill_version},
+                    {"name": "TARGET_DIR", "value": mount_path},
+                ],
+                "resources": {
+                    "requests": {"memory": "32Mi", "cpu": "50m"},
+                    "limits": {"memory": "128Mi", "cpu": "200m"},
+                },
+                "volumeMounts": [
+                    {"name": emptydir_vol_name, "mountPath": mount_path},
+                    {
+                        "name": "fetcher-scripts-vol",
+                        "mountPath": "/fetcher-scripts",
+                        "readOnly": True,
+                    },
+                ],
+            }
+        )
+
+        main_mounts.append(
+            {
+                "name": emptydir_vol_name,
+                "mountPath": mount_path,
+                "readOnly": True,
+            }
+        )
+        skill_paths.append(mount_path)
+
+    return init_containers, volumes, main_mounts, skill_paths
+
+
+def _build_env_vars(
+    request: "CreateAgentRequest",
+    local_skills: Optional[List[str]] = None,
+    ext_skill_paths: Optional[List[str]] = None,
+) -> List[dict]:
     """
     Build environment variables list with support for valueFrom references.
 
     Args:
         request: The agent creation request containing envVars.
+        local_skills: Optional override list of local skill names.
+        ext_skill_paths: Optional list of external skill mount paths.
 
     Returns:
         List of environment variable dictionaries.
@@ -2543,9 +2848,10 @@ def _build_env_vars(request: "CreateAgentRequest") -> List[dict]:
         }
     )
 
-    _, _, skill_folders = _get_linked_skill_mounts(request)
-    if skill_folders:
-        env_vars.append({"name": "SKILL_FOLDERS", "value": skill_folders})
+    _, _, local_folders = _get_linked_skill_mounts(request, skills_override=local_skills)
+    all_paths = ([local_folders] if local_folders else []) + (ext_skill_paths or [])
+    if all_paths:
+        env_vars.append({"name": "SKILL_FOLDERS", "value": ",".join(all_paths)})
 
     if request.envVars:
         for ev in request.envVars:
@@ -2645,6 +2951,15 @@ def _build_selector_labels(request: "CreateAgentRequest") -> Dict[str, str]:
     }
 
 
+def _agentruntime_supported_workload(workload_type: str) -> bool:
+    """Whether a workload type gets an AgentRuntime CR (per-agent AuthBridge
+    config). Sandbox, deployment, and statefulset are supported; Job is not —
+    a run-to-completion Job doesn't fit the attach / config-rollout model.
+    Single source of truth for the two _ensure_agentruntime call sites
+    (create_agent and finalize_shipwright_build)."""
+    return workload_type not in (WORKLOAD_TYPE_JOB,)
+
+
 def _build_agentruntime_manifest(
     name: str,
     namespace: str,
@@ -2652,16 +2967,24 @@ def _build_agentruntime_manifest(
     agent_type: str = RESOURCE_TYPE_AGENT,
     auth_bridge_mode: Optional[str] = None,
     mtls_mode: Optional[str] = None,
+    tls_bridge_enabled: bool = False,
 ) -> dict:
     """Build an AgentRuntime CR manifest for the given workload."""
     kind_map = {
         WORKLOAD_TYPE_DEPLOYMENT: "Deployment",
         WORKLOAD_TYPE_STATEFULSET: "StatefulSet",
+        WORKLOAD_TYPE_SANDBOX: "Sandbox",
+    }
+    # Sandbox is an agents.x-k8s.io CR, not apps/v1 — emit the right targetRef
+    # apiVersion per kind so the operator's resolveTargetRef finds the workload
+    # (a wrong apps/v1 ref for a Sandbox would dangle and never reconcile).
+    apiversion_map = {
+        WORKLOAD_TYPE_SANDBOX: f"{AGENT_SANDBOX_CRD_GROUP}/{AGENT_SANDBOX_CRD_VERSION}",
     }
     spec: dict = {
         "type": agent_type,
         "targetRef": {
-            "apiVersion": "apps/v1",
+            "apiVersion": apiversion_map.get(workload_type, "apps/v1"),
             "kind": kind_map.get(workload_type, "Deployment"),
             "name": name,
         },
@@ -2670,6 +2993,10 @@ def _build_agentruntime_manifest(
         spec["authBridgeMode"] = auth_bridge_mode
     if mtls_mode:
         spec["mtlsMode"] = mtls_mode
+    # Only set when enabled; unset → operator default "disabled" (also keeps the
+    # CRD field off envoy-sidecar agents so the validating webhook doesn't reject).
+    if tls_bridge_enabled:
+        spec["tlsBridgeMode"] = "enabled"
     return {
         "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
         "kind": "AgentRuntime",
@@ -2693,10 +3020,17 @@ def _ensure_agentruntime(
     agent_type: str = RESOURCE_TYPE_AGENT,
     auth_bridge_mode: Optional[str] = None,
     mtls_mode: Optional[str] = None,
+    tls_bridge_enabled: bool = False,
 ) -> None:
     """Create an AgentRuntime CR for the workload. Skip if it already exists."""
     manifest = _build_agentruntime_manifest(
-        name, namespace, workload_type, agent_type, auth_bridge_mode, mtls_mode
+        name,
+        namespace,
+        workload_type,
+        agent_type,
+        auth_bridge_mode,
+        mtls_mode,
+        tls_bridge_enabled,
     )
     try:
         kube.create_custom_resource(
@@ -2718,6 +3052,11 @@ def _build_deployment_manifest(
     request: "CreateAgentRequest",
     image: str,
     shipwright_build_name: Optional[str] = None,
+    local_skills: Optional[List[str]] = None,
+    ext_init_containers: Optional[List[Dict[str, Any]]] = None,
+    ext_volumes: Optional[List[Dict[str, Any]]] = None,
+    ext_volume_mounts: Optional[List[Dict[str, Any]]] = None,
+    ext_skill_paths: Optional[List[str]] = None,
 ) -> dict:
     """
     Build a Kubernetes Deployment manifest for an agent.
@@ -2731,8 +3070,14 @@ def _build_deployment_manifest(
     Returns:
         Deployment manifest dictionary.
     """
-    env_vars = _build_env_vars(request)
-    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(request)
+    ext_init_containers = ext_init_containers or []
+    ext_volumes = ext_volumes or []
+    ext_volume_mounts = ext_volume_mounts or []
+    ext_skill_paths = ext_skill_paths or []
+    env_vars = _build_env_vars(request, local_skills=local_skills, ext_skill_paths=ext_skill_paths)
+    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(
+        request, skills_override=local_skills
+    )
     labels = _build_common_labels(request, WORKLOAD_TYPE_DEPLOYMENT)
     selector_labels = _build_selector_labels(request)
 
@@ -2795,6 +3140,7 @@ def _build_deployment_manifest(
                                 {"name": "marvin", "mountPath": "/.marvin"},
                                 {"name": "shared-data", "mountPath": "/shared"},
                                 *skill_volume_mounts,
+                                *ext_volume_mounts,
                             ],
                         }
                     ],
@@ -2803,11 +3149,16 @@ def _build_deployment_manifest(
                         {"name": "marvin", "emptyDir": {}},
                         {"name": "shared-data", "emptyDir": {}},
                         *skill_volumes,
+                        *ext_volumes,
                     ],
                 },
             },
         },
     }
+
+    # Add init containers for external skills
+    if ext_init_containers:
+        manifest["spec"]["template"]["spec"]["initContainers"] = ext_init_containers
 
     # Add image pull secrets if specified
     if request.imagePullSecret:
@@ -2898,6 +3249,11 @@ def _build_statefulset_manifest(
     request: "CreateAgentRequest",
     image: str,
     shipwright_build_name: Optional[str] = None,
+    local_skills: Optional[List[str]] = None,
+    ext_init_containers: Optional[List[Dict[str, Any]]] = None,
+    ext_volumes: Optional[List[Dict[str, Any]]] = None,
+    ext_volume_mounts: Optional[List[Dict[str, Any]]] = None,
+    ext_skill_paths: Optional[List[str]] = None,
 ) -> dict:
     """
     Build a Kubernetes StatefulSet manifest for an agent.
@@ -2916,8 +3272,14 @@ def _build_statefulset_manifest(
     Returns:
         StatefulSet manifest dictionary.
     """
-    env_vars = _build_env_vars(request)
-    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(request)
+    ext_init_containers = ext_init_containers or []
+    ext_volumes = ext_volumes or []
+    ext_volume_mounts = ext_volume_mounts or []
+    ext_skill_paths = ext_skill_paths or []
+    env_vars = _build_env_vars(request, local_skills=local_skills, ext_skill_paths=ext_skill_paths)
+    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(
+        request, skills_override=local_skills
+    )
     labels = _build_common_labels(request, WORKLOAD_TYPE_STATEFULSET)
     selector_labels = _build_selector_labels(request)
 
@@ -2981,6 +3343,7 @@ def _build_statefulset_manifest(
                                 {"name": "marvin", "mountPath": "/.marvin"},
                                 {"name": "shared-data", "mountPath": "/shared"},
                                 *skill_volume_mounts,
+                                *ext_volume_mounts,
                             ],
                         }
                     ],
@@ -2989,11 +3352,16 @@ def _build_statefulset_manifest(
                         {"name": "marvin", "emptyDir": {}},
                         {"name": "shared-data", "emptyDir": {}},
                         *skill_volumes,
+                        *ext_volumes,
                     ],
                 },
             },
         },
     }
+
+    # Add init containers for external skills
+    if ext_init_containers:
+        manifest["spec"]["template"]["spec"]["initContainers"] = ext_init_containers
 
     # Add image pull secrets if specified
     if request.imagePullSecret:
@@ -3008,6 +3376,11 @@ def _build_job_manifest(
     request: "CreateAgentRequest",
     image: str,
     shipwright_build_name: Optional[str] = None,
+    local_skills: Optional[List[str]] = None,
+    ext_init_containers: Optional[List[Dict[str, Any]]] = None,
+    ext_volumes: Optional[List[Dict[str, Any]]] = None,
+    ext_volume_mounts: Optional[List[Dict[str, Any]]] = None,
+    ext_skill_paths: Optional[List[str]] = None,
 ) -> dict:
     """
     Build a Kubernetes Job manifest for an agent.
@@ -3025,8 +3398,14 @@ def _build_job_manifest(
     Returns:
         Job manifest dictionary.
     """
-    env_vars = _build_env_vars(request)
-    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(request)
+    ext_init_containers = ext_init_containers or []
+    ext_volumes = ext_volumes or []
+    ext_volume_mounts = ext_volume_mounts or []
+    ext_skill_paths = ext_skill_paths or []
+    env_vars = _build_env_vars(request, local_skills=local_skills, ext_skill_paths=ext_skill_paths)
+    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(
+        request, skills_override=local_skills
+    )
     labels = _build_common_labels(request, WORKLOAD_TYPE_JOB)
 
     # Build annotations
@@ -3086,6 +3465,7 @@ def _build_job_manifest(
                                 {"name": "marvin", "mountPath": "/.marvin"},
                                 {"name": "shared-data", "mountPath": "/shared"},
                                 *skill_volume_mounts,
+                                *ext_volume_mounts,
                             ],
                         }
                     ],
@@ -3094,11 +3474,16 @@ def _build_job_manifest(
                         {"name": "marvin", "emptyDir": {}},
                         {"name": "shared-data", "emptyDir": {}},
                         *skill_volumes,
+                        *ext_volumes,
                     ],
                 },
             },
         },
     }
+
+    # Add init containers for external skills
+    if ext_init_containers:
+        manifest["spec"]["template"]["spec"]["initContainers"] = ext_init_containers
 
     # Add image pull secrets if specified
     if request.imagePullSecret:
@@ -3113,13 +3498,24 @@ def _build_sandbox_manifest(
     request: "CreateAgentRequest",
     image: str,
     shipwright_build_name: Optional[str] = None,
+    local_skills: Optional[List[str]] = None,
+    ext_init_containers: Optional[List[Dict[str, Any]]] = None,
+    ext_volumes: Optional[List[Dict[str, Any]]] = None,
+    ext_volume_mounts: Optional[List[Dict[str, Any]]] = None,
+    ext_skill_paths: Optional[List[str]] = None,
 ) -> dict:
     """Build a Sandbox manifest (agents.x-k8s.io/v1alpha1) for direct creation.
 
     Includes skill volume mounts and persistent storage support.
     """
-    env_vars = _build_env_vars(request)
-    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(request)
+    ext_init_containers = ext_init_containers or []
+    ext_volumes = ext_volumes or []
+    ext_volume_mounts = ext_volume_mounts or []
+    ext_skill_paths = ext_skill_paths or []
+    env_vars = _build_env_vars(request, local_skills=local_skills, ext_skill_paths=ext_skill_paths)
+    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(
+        request, skills_override=local_skills
+    )
     labels = _build_common_labels(request, WORKLOAD_TYPE_SANDBOX)
 
     annotations: Dict[str, str] = {
@@ -3178,6 +3574,7 @@ def _build_sandbox_manifest(
                                 {"name": "marvin", "mountPath": "/.marvin"},
                                 {"name": "shared-data", "mountPath": "/shared"},
                                 *skill_volume_mounts,
+                                *ext_volume_mounts,
                             ],
                         }
                     ],
@@ -3185,6 +3582,7 @@ def _build_sandbox_manifest(
                         {"name": "cache", "emptyDir": {}},
                         {"name": "marvin", "emptyDir": {}},
                         *skill_volumes,
+                        *ext_volumes,
                     ]
                     + (
                         []
@@ -3195,6 +3593,10 @@ def _build_sandbox_manifest(
             },
         },
     }
+
+    # Add init containers for external skills
+    if ext_init_containers:
+        manifest["spec"]["podTemplate"]["spec"]["initContainers"] = ext_init_containers
 
     if request.persistentStorage and request.persistentStorage.enabled:
         manifest["spec"]["volumeClaimTemplates"] = [
@@ -3250,6 +3652,22 @@ async def create_agent(
             status_code=400,
             detail="Skill linking is disabled. Enable KAGENTI_FEATURE_FLAG_SKILLS to use this feature.",
         )
+
+    # Compute external skill data when feature is enabled
+    local_skills: Optional[List[str]] = None
+    ext_init_containers: List[Dict[str, Any]] = []
+    ext_volumes: List[Dict[str, Any]] = []
+    ext_volume_mounts: List[Dict[str, Any]] = []
+    ext_skill_paths: List[str] = []
+
+    if request.skills and settings.kagenti_feature_flag_external_skills:
+        _ensure_fetcher_scripts_cm(kube, request.namespace)
+        ext_init_containers, ext_volumes, ext_volume_mounts, ext_skill_paths = (
+            _get_external_skill_data(kube, request.namespace, request.skills)
+        )
+        local_skills = [
+            s for s in request.skills if s and not _is_skill_external(kube, request.namespace, s)
+        ]
 
     try:
         if request.deploymentMethod == "image":
@@ -3313,6 +3731,11 @@ async def create_agent(
                 workload_manifest = _build_deployment_manifest(
                     request=request,
                     image=request.containerImage,
+                    local_skills=local_skills,
+                    ext_init_containers=ext_init_containers,
+                    ext_volumes=ext_volumes,
+                    ext_volume_mounts=ext_volume_mounts,
+                    ext_skill_paths=ext_skill_paths,
                 )
                 kube.create_deployment(
                     namespace=request.namespace,
@@ -3325,6 +3748,11 @@ async def create_agent(
                 workload_manifest = _build_statefulset_manifest(
                     request=request,
                     image=request.containerImage,
+                    local_skills=local_skills,
+                    ext_init_containers=ext_init_containers,
+                    ext_volumes=ext_volumes,
+                    ext_volume_mounts=ext_volume_mounts,
+                    ext_skill_paths=ext_skill_paths,
                 )
                 kube.create_statefulset(
                     namespace=request.namespace,
@@ -3337,6 +3765,11 @@ async def create_agent(
                 workload_manifest = _build_job_manifest(
                     request=request,
                     image=request.containerImage,
+                    local_skills=local_skills,
+                    ext_init_containers=ext_init_containers,
+                    ext_volumes=ext_volumes,
+                    ext_volume_mounts=ext_volume_mounts,
+                    ext_skill_paths=ext_skill_paths,
                 )
                 kube.create_job(
                     namespace=request.namespace,
@@ -3347,6 +3780,11 @@ async def create_agent(
                 sandbox_manifest = _build_sandbox_manifest(
                     request=request,
                     image=request.containerImage,
+                    local_skills=local_skills,
+                    ext_init_containers=ext_init_containers,
+                    ext_volumes=ext_volumes,
+                    ext_volume_mounts=ext_volume_mounts,
+                    ext_skill_paths=ext_skill_paths,
                 )
                 kube.create_sandbox(
                     namespace=request.namespace,
@@ -3365,8 +3803,11 @@ async def create_agent(
                     request.workloadType,
                 )
 
-            # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
-            if request.workloadType not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX):
+            # Create AgentRuntime CR so the per-agent AuthBridge config (mtls /
+            # authBridgeMode / tlsBridgeMode) is applied. Sandbox is included
+            # (targetRef -> agents.x-k8s.io Sandbox); only Job is excluded —
+            # a run-to-completion Job doesn't fit the attach/restart model.
+            if _agentruntime_supported_workload(request.workloadType):
                 _ensure_agentruntime(
                     kube=kube,
                     name=request.name,
@@ -3374,6 +3815,7 @@ async def create_agent(
                     workload_type=request.workloadType,
                     auth_bridge_mode=request.authBridgeMode,
                     mtls_mode=request.mtlsMode,
+                    tls_bridge_enabled=request.tlsBridgeEnabled,
                 )
 
             message = f"Agent '{request.name}' deployed as {request.workloadType} successfully."
@@ -3504,6 +3946,9 @@ class FinalizeShipwrightBuildRequest(BaseModel):
     # the user picked at form-submit time (stashed on the BuildRun via
     # kagenti.io/agent-config annotation).
     mtlsMode: Optional[Literal["disabled", "permissive", "strict"]] = None
+    # Mirrors CreateAgentRequest.tlsBridgeEnabled. None → inherit the value
+    # stashed on the BuildRun annotation at form-submit time.
+    tlsBridgeEnabled: Optional[bool] = None
     outboundRoutes: Optional[List[OutboundRoute]] = None
     outboundPortsExclude: Optional[str] = None
     inboundPortsExclude: Optional[str] = None
@@ -3522,6 +3967,22 @@ class FinalizeShipwrightBuildRequest(BaseModel):
         for the full rationale (including why SPIRE-vs-mTLS coupling
         is handled at the operator data-plane layer rather than here).
         """
+        return self
+
+    @model_validator(mode="after")
+    def _check_tlsbridge_compatible_with_mode(self) -> "FinalizeShipwrightBuildRequest":
+        """Mirror of CreateAgentRequest._check_tlsbridge_compatible_with_mode at
+        the Shipwright finalize boundary, so a direct finalize caller (or a combo
+        inherited from the BuildRun's stored config) with tlsBridgeEnabled +
+        envoy-sidecar/waypoint gets the same fast 422 instead of a later webhook
+        denial. Same allowlist as the operator (empty → defaults to proxy-sidecar).
+        """
+        allowed = (None, "", "proxy-sidecar", "lite")
+        if self.tlsBridgeEnabled and self.authBridgeMode not in allowed:
+            raise ValueError(
+                "tlsBridgeEnabled requires authBridgeMode proxy-sidecar or lite "
+                f"(the TLS bridge lives in the Go forward proxy); got {self.authBridgeMode!r}"
+            )
         return self
 
 
@@ -3744,6 +4205,25 @@ async def finalize_shipwright_build(
                 detail="Skill linking is disabled. Enable KAGENTI_FEATURE_FLAG_SKILLS to use this feature.",
             )
 
+        # Compute external skill data when feature is enabled (build path)
+        build_local_skills: Optional[List[str]] = None
+        build_ext_init_containers: List[Dict[str, Any]] = []
+        build_ext_volumes: List[Dict[str, Any]] = []
+        build_ext_volume_mounts: List[Dict[str, Any]] = []
+        build_ext_skill_paths: List[str] = []
+
+        if final_skills and settings.kagenti_feature_flag_external_skills:
+            _ensure_fetcher_scripts_cm(kube, namespace)
+            (
+                build_ext_init_containers,
+                build_ext_volumes,
+                build_ext_volume_mounts,
+                build_ext_skill_paths,
+            ) = _get_external_skill_data(kube, namespace, final_skills)
+            build_local_skills = [
+                s for s in final_skills if s and not _is_skill_external(kube, namespace, s)
+            ]
+
         final_service_ports = request.servicePorts
         if final_service_ports is None and "servicePorts" in stored_config:
             # Convert stored dict format back to ServicePort objects
@@ -3791,6 +4271,14 @@ async def finalize_shipwright_build(
             request.mtlsMode if request.mtlsMode is not None else stored_config.get("mtlsMode")
         )
 
+        # Per-workload TLS bridge (bool; None on the finalize request → inherit
+        # the stored value). Same store-then-read-back flow as mtlsMode.
+        final_tls_bridge_enabled = (
+            request.tlsBridgeEnabled
+            if request.tlsBridgeEnabled is not None
+            else bool(stored_config.get("tlsBridgeEnabled"))
+        )
+
         # Persistent storage
         final_persistent_storage = request.persistentStorage
         if final_persistent_storage is None and stored_config.get("persistentStorage"):
@@ -3815,6 +4303,7 @@ async def finalize_shipwright_build(
             spireEnabled=final_spire_enabled,
             authBridgeMode=final_auth_bridge_mode,
             mtlsMode=final_mtls_mode,
+            tlsBridgeEnabled=final_tls_bridge_enabled,
             outboundRoutes=final_outbound_routes,
             outboundPortsExclude=final_outbound_ports_exclude,
             inboundPortsExclude=final_inbound_ports_exclude,
@@ -3865,6 +4354,11 @@ async def finalize_shipwright_build(
                 request=agent_request,
                 image=container_image,
                 shipwright_build_name=name,
+                local_skills=build_local_skills,
+                ext_init_containers=build_ext_init_containers,
+                ext_volumes=build_ext_volumes,
+                ext_volume_mounts=build_ext_volume_mounts,
+                ext_skill_paths=build_ext_skill_paths,
             )
             # Add additional labels from Build
             workload_manifest["metadata"]["labels"].update(
@@ -3883,6 +4377,11 @@ async def finalize_shipwright_build(
                 request=agent_request,
                 image=container_image,
                 shipwright_build_name=name,
+                local_skills=build_local_skills,
+                ext_init_containers=build_ext_init_containers,
+                ext_volumes=build_ext_volumes,
+                ext_volume_mounts=build_ext_volume_mounts,
+                ext_skill_paths=build_ext_skill_paths,
             )
             # Add additional labels from Build
             workload_manifest["metadata"]["labels"].update(
@@ -3901,6 +4400,11 @@ async def finalize_shipwright_build(
                 request=agent_request,
                 image=container_image,
                 shipwright_build_name=name,
+                local_skills=build_local_skills,
+                ext_init_containers=build_ext_init_containers,
+                ext_volumes=build_ext_volumes,
+                ext_volume_mounts=build_ext_volume_mounts,
+                ext_skill_paths=build_ext_skill_paths,
             )
             # Add additional labels from Build
             workload_manifest["metadata"]["labels"].update(
@@ -3919,6 +4423,11 @@ async def finalize_shipwright_build(
                 request=agent_request,
                 image=container_image,
                 shipwright_build_name=name,
+                local_skills=build_local_skills,
+                ext_init_containers=build_ext_init_containers,
+                ext_volumes=build_ext_volumes,
+                ext_volume_mounts=build_ext_volume_mounts,
+                ext_skill_paths=build_ext_skill_paths,
             )
             kagenti_build_labels = {
                 k: v for k, v in build_labels.items() if k.startswith(settings.kagenti_label_prefix)
@@ -3944,11 +4453,12 @@ async def finalize_shipwright_build(
         )
         _create_or_replace_service(kube, namespace, name, service_manifest, final_workload_type)
 
-        # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
-        # Only for agents — tools don't need sidecar injection
+        # Create AgentRuntime CR so the per-agent AuthBridge config is applied.
+        # Sandbox is included (targetRef -> agents.x-k8s.io Sandbox); only Job is
+        # excluded. Agents only — tools don't need sidecar injection.
         resource_type = build_labels.get(KAGENTI_TYPE_LABEL, RESOURCE_TYPE_AGENT)
         if (
-            final_workload_type not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX)
+            _agentruntime_supported_workload(final_workload_type)
             and resource_type == RESOURCE_TYPE_AGENT
         ):
             _ensure_agentruntime(
@@ -3958,6 +4468,7 @@ async def finalize_shipwright_build(
                 workload_type=final_workload_type,
                 auth_bridge_mode=final_auth_bridge_mode,
                 mtls_mode=final_mtls_mode,
+                tls_bridge_enabled=final_tls_bridge_enabled,
             )
 
         message = f"Agent '{name}' deployed as {final_workload_type} with image '{output_image}'."

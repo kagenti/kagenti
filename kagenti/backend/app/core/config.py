@@ -81,6 +81,19 @@ class Settings(BaseSettings):
         False  # sidecar agents (looper, hallucination, context guardian)
     )
     kagenti_feature_flag_acp: bool = False  # ACP WebSocket protocol gateway
+    kagenti_feature_flag_external_skills: bool = False  # External skill registry references
+    skill_autosync_interval: int = (
+        30  # seconds between registry sync checks (env: SKILL_AUTOSYNC_INTERVAL)
+    )
+    # Hosts/IPs/CIDRs allowed to bypass the registry-URL private-address SSRF block
+    # (env: SKILL_REGISTRY_ALLOWED_HOSTS, comma-separated). Empty by default — all
+    # private/internal addresses stay blocked. Entries match the URL hostname
+    # (case-insensitive) or the resolved IP (single IP or CIDR). Use for self-hosted
+    # or in-cluster skill registries (e.g. "192.168.50.16,10.0.0.0/8").
+    skill_registry_allowed_hosts: str = ""
+
+    # AuthBridge runtime config (mounted from Helm-managed ConfigMap)
+    authbridge_runtime_config_path: str = "/etc/kagenti/authbridge/config.yaml"
 
     # Label settings
     kagenti_label_prefix: str = "kagenti.io/"
