@@ -52,7 +52,14 @@ export const MCPGatewayPage: React.FC = () => {
   // Build MCP Inspector URL using config from backend
   const getMcpInspectorUrl = () => {
     if (!dashboardConfig?.mcpInspector) return null;
-    return `${dashboardConfig.mcpInspector}?serverUrl=${encodedServerUrl}&transport=streamable-http`;
+    let url = `${dashboardConfig.mcpInspector}?serverUrl=${encodedServerUrl}&transport=streamable-http`;
+    // Pass the external proxy address so the Inspector's "Proxy Address" field is
+    // pre-populated. Required on OpenShift, where the proxy is behind a Route and
+    // the Inspector's localhost default is unreachable from the browser (#2085).
+    if (dashboardConfig.mcpProxy) {
+      url += `&MCP_PROXY_FULL_ADDRESS=${encodeURIComponent(dashboardConfig.mcpProxy)}`;
+    }
+    return url;
   };
   const mcpInspectorUrl = getMcpInspectorUrl();
 
