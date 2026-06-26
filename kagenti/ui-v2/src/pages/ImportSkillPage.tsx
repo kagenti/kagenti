@@ -570,7 +570,7 @@ export const ImportSkillPage: React.FC = () => {
                             <Button
                               variant="link"
                               component="a"
-                              href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '')}
+                              href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '', autoSyncStatus?.storeUiUrl)}
                               target="_blank"
                               rel="noreferrer"
                             >

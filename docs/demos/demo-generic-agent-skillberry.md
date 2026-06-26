@@ -9,6 +9,31 @@ This guide explains how to use Kagenti's external skill registry support to:
 
 This flow differs from the [local skill demo](./demo-generic-agent-skill.md): the skill files are never uploaded into Kagenti. Instead, Kagenti stores only a pointer (URL + metadata) to the skillberry-store instance. When the agent pod starts, an init container fetches the skill archive from the registry and mounts it at the same path that a local skill would occupy. The agent runtime is unaware of the difference.
 
+## Two ways to provide the registry
+
+You can point Kagenti at the skillberry-store in one of two ways:
+
+1. **In-cluster store (simplest).** `--with-skills` deploys a skillberry-store
+   pod inside the cluster and **auto-enables autosync against it** — no external
+   instance and **no `--skill-registry-allowed-hosts` needed** (the in-cluster
+   `*.svc` URL is trusted by the autosync loop). The store UI is browsable at
+   `http://skillberry-store.<domain>:8080`. Override the image with the
+   `SKILLBERRY_STORE_IMAGE` / `SKILLBERRY_STORE_TAG` env vars (default tag `0.2.0`).
+   With this path, skip the external-instance prerequisites below and publish your
+   skill to the in-cluster store (its API is reachable in-cluster at
+   `http://skillberry-store.kagenti-system.svc.cluster.local:8000`).
+   skillberry-store's plugins — which **manage** the skills in the store
+   (creating, evaluating, optimizing, deduplicating, and security-scanning them)
+   — call an LLM and read their configuration from environment variables on the
+   store pod. To enable those plugins, inject the LLM provider/model and API keys
+   via `skillberryStore.extraEnv` — see
+   [Configuring skillberry-store Environment Variables](../skills.md#configuring-skillberry-store-environment-variables).
+
+2. **External instance (this guide's main flow).** Run skillberry-store yourself
+   somewhere reachable, register it as an external skill reference, and (for
+   private/LAN addresses) allow-list it via `--skill-registry-allowed-hosts`. The
+   rest of this guide walks through this path.
+
 ## What this demo shows
 
 - The skill content lives in an external skillberry-store registry, not in a Kagenti ConfigMap.
