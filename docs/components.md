@@ -594,6 +594,14 @@ The Ingress Gateway routes external HTTP requests to internal services using the
 
 LLM observability and tracing for agent interactions. Phoenix is **disabled by default** and can be enabled via `components.phoenix.enabled: true` in both the `kagenti-deps` and `kagenti` charts. Requires `components.otel.enabled: true`.
 
+### Skillberry Store (Skill Registry) -- Optional
+
+In-cluster [skillberry-store](https://github.com/skillberry-ai/skillberry-store) skill registry. **Disabled by default**; enabled via `components.skillberryStore.enabled: true` in the `kagenti` chart (the Kind setup script's `--with-skills` flag sets it automatically). When enabled, the store runs as a single-replica Deployment (REST API on `8000`, web UI on `8002`, filesystem storage on a PVC at `/data`) and the chart seeds the `kagenti-skill-autosync-config` ConfigMap so the backend autosync loop polls it — no external registry or `--skill-registry-allowed-hosts` allow-listing required. Behavior is additionally gated by `featureFlags.externalSkills`. The store UI is exposed via an HTTPRoute at `http://skillberry-store.<domain>:8080`, and the Kagenti UI's "Manage in Skillberry Store" links point there (the ConfigMap also carries a `store-ui-url` the backend surfaces, since the in-cluster `registry-url` is server-side only and not browser-reachable).
+
+Because the store serves its UI with the Vite dev server (which rejects unknown `Host` headers), the chart sets `VITE_ALLOWED_HOSTS` on the store pod to the gateway host (derived from `skillberryStore.allowedHosts`, defaulting to `skillberry-store.<domain>`) so the gateway URL works. This requires a store image with `VITE_ALLOWED_HOSTS` support (≥ 0.2.0).
+
+The image defaults to `ghcr.io/skillberry-ai/skillberry-store:0.2.0` and is overridable via `skillberryStore.image.tag` / `skillberryStore.image.repository` (Helm) or the `SKILLBERRY_STORE_TAG` / `SKILLBERRY_STORE_IMAGE` env vars (Kind setup script). Additional store environment variables can be injected via `skillberryStore.extraEnv` (a list of standard `core/v1` `EnvVar` entries, so both literal `value` and `valueFrom` secret/configMap references are supported); these are appended after the chart-managed `SBS_*` / `ENABLE_UI` variables. See [docs/skills.md](skills.md) for usage.
+
 ---
 
 ## Supported Agent Frameworks

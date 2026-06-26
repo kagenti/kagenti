@@ -110,7 +110,7 @@ else
     if [ "$IS_OPENSHIFT" = "true" ]; then
         log_info "Patching LLM config for OpenShift (MaaS LiteLLM)..."
 
-        LLM_HOST="litellm-prod.apps.maas.redhatworkshops.io"
+        LLM_HOST="litellm-litemaas.apps.prod.rhoai.rh-aiservices-bu.com"
 
         # The authbridge webhook injects HTTP(S)_PROXY=http://127.0.0.1:8081
         # at pod admission.  We cannot prevent injection, but we can ensure
@@ -125,7 +125,7 @@ else
         # bypasses NO_PROXY handling entirely.  Empty string = no proxy.
         kubectl set env deployment/weather-service -n team1 \
             LLM_API_BASE="https://${LLM_HOST}/v1" \
-            LLM_MODEL="llama-scout-17b" \
+            LLM_MODEL="Qwen3.6-35B-A3B" \
             HTTP_PROXY="" \
             http_proxy="" \
             NO_PROXY="$NO_PROXY_VAL" \

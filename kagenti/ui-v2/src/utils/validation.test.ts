@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 
 import { describe, it, expect } from 'vitest';
-import { isValidEnvVarName, isValidContainerImage, isValidImageTag, isValidUrl, getSkillberryUiUrl } from './validation';
+import { isValidEnvVarName, isValidContainerImage, isValidImageTag, isValidUrl, getSkillberryUiUrl, getSkillberryStoreUrl } from './validation';
 
 describe('isValidEnvVarName', () => {
   it('accepts names starting with a letter', () => {
@@ -208,5 +208,48 @@ describe('getSkillberryUiUrl', () => {
   it('returns empty string for invalid URL', () => {
     expect(getSkillberryUiUrl('notaurl', 'summarizer')).toBe('');
     expect(getSkillberryUiUrl('', 'summarizer')).toBe('');
+  });
+
+  it('prefers an explicit storeUiUrl over deriving from the registry URL', () => {
+    // In-cluster registryUrl is not browser-reachable; the gateway URL wins.
+    expect(
+      getSkillberryUiUrl(
+        'http://skillberry-store.kagenti-system.svc.cluster.local:8000',
+        'summarizer',
+        'http://skillberry-store.localtest.me:8080',
+      ),
+    ).toBe('http://skillberry-store.localtest.me:8080/skills/summarizer');
+  });
+
+  it('strips a trailing slash from storeUiUrl before appending the skill path', () => {
+    expect(
+      getSkillberryUiUrl('http://unused:8000', 'my-skill', 'http://store.example.com:8080/'),
+    ).toBe('http://store.example.com:8080/skills/my-skill');
+  });
+
+  it('falls back to port-swap when storeUiUrl is invalid', () => {
+    expect(getSkillberryUiUrl('http://192.0.2.1:8000', 'summarizer', 'notaurl')).toBe(
+      'http://192.0.2.1:8002/skills/summarizer',
+    );
+  });
+});
+
+describe('getSkillberryStoreUrl', () => {
+  it('derives the root UI URL via port-swap when no storeUiUrl is given', () => {
+    expect(getSkillberryStoreUrl('http://192.0.2.1:8000')).toBe('http://192.0.2.1:8002/');
+  });
+
+  it('prefers an explicit storeUiUrl (normalized to a single trailing slash)', () => {
+    expect(
+      getSkillberryStoreUrl(
+        'http://skillberry-store.kagenti-system.svc.cluster.local:8000',
+        'http://skillberry-store.localtest.me:8080',
+      ),
+    ).toBe('http://skillberry-store.localtest.me:8080/');
+  });
+
+  it('returns # when neither a valid storeUiUrl nor registryUrl is available', () => {
+    expect(getSkillberryStoreUrl('notaurl')).toBe('#');
+    expect(getSkillberryStoreUrl('', 'alsonotaurl')).toBe('#');
   });
 });
