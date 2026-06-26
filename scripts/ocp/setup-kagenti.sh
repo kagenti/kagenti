@@ -202,6 +202,22 @@ if ! command -v helm &>/dev/null; then
   log_error "helm not found in PATH. Install helm >= 3.18.0"
   exit 1
 fi
+# Enforce the supported helm range: >= 3.18.0 and < 4. Helm 4 changed CRD
+# handling (server-side-applies pre-existing CRDs and alters crds/ install
+# semantics), which breaks the install: the kagenti-deps Gateway API CRDs
+# conflict with cluster-managed Gateway API on OCP 4.20+, and the Kuadrant
+# operator CRDs are not installed. See issue #2072.
+_helm_ver="$(helm version --short 2>/dev/null | sed -E 's/^v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+_helm_major="${_helm_ver%%.*}"
+_helm_minor="$(printf '%s' "$_helm_ver" | cut -d. -f2)"
+if ! printf '%s' "$_helm_major" | grep -qE '^[0-9]+$'; then
+  log_warn "Could not parse helm version ('$_helm_ver'); this installer requires helm >= 3.18.0 < 4"
+elif [ "$_helm_major" -ge 4 ] || { [ "$_helm_major" -eq 3 ] && [ "${_helm_minor:-0}" -lt 18 ]; }; then
+  log_error "Unsupported helm ${_helm_ver}: this installer requires helm >= 3.18.0 and < 4."
+  log_error "Helm 4 breaks CRD installation (Gateway API conflict, missing Kuadrant CRDs); see issue #2072."
+  log_error "Install a supported version, e.g.: brew install helm@3"
+  exit 1
+fi
 log_success "helm found: $(helm version --short)"
 
 # Check python3
@@ -298,51 +314,6 @@ echo ""
 # Service and pod to be ready. Sets MLFLOW_TRACES_ENDPOINT for use by the
 # kagenti-deps Helm install that follows.
 
-_mlflow_check_dsc() {
-  log_info "Checking RHOAI DSC mlflowoperator..."
-  local state
-  state=$($KUBECTL get datasciencecluster default-dsc \
-    -o jsonpath='{.spec.components.mlflowoperator.managementState}' 2>/dev/null || echo "")
-  if [ "$state" != "Managed" ]; then
-    log_error "RHOAI DSC mlflowoperator is not Managed (got: '${state:-<not set>}')"
-    log_error "Patch your DataScienceCluster:"
-    log_error "  kubectl patch datasciencecluster default-dsc --type=merge \\"
-    log_error "    -p '{\"spec\":{\"components\":{\"mlflowoperator\":{\"managementState\":\"Managed\"}}}}'"
-    exit 1
-  fi
-  log_success "RHOAI DSC mlflowoperator is Managed"
-}
-
-_mlflow_create_cr() {
-  if $KUBECTL get mlflow "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" &>/dev/null; then
-    log_info "MLflow CR '$MLFLOW_INSTANCE_NAME' already exists in $MLFLOW_NAMESPACE — skipping creation"
-    return 0
-  fi
-  log_info "Creating MLflow CR '$MLFLOW_INSTANCE_NAME' in $MLFLOW_NAMESPACE..."
-  if $DRY_RUN; then
-    echo "  [dry-run] kubectl apply MLflow CR $MLFLOW_INSTANCE_NAME -n $MLFLOW_NAMESPACE"
-    return 0
-  fi
-  $KUBECTL apply -f - <<EOF
-apiVersion: mlflow.opendatahub.io/v1
-kind: MLflow
-metadata:
-  name: ${MLFLOW_INSTANCE_NAME}
-  namespace: ${MLFLOW_NAMESPACE}
-spec:
-  storage:
-    accessModes:
-      - ReadWriteOnce
-    resources:
-      requests:
-        storage: 10Gi
-  backendStoreUri: "sqlite:////mlflow/mlflow.db"
-  artifactsDestination: "file:///mlflow/artifacts"
-  serveArtifacts: true
-EOF
-  log_success "MLflow CR created"
-}
-
 _mlflow_wait_ready() {
   if $DRY_RUN; then
     MLFLOW_TRACES_ENDPOINT="https://mlflow-gateway.${DOMAIN}/v1/traces"
@@ -436,68 +407,6 @@ _mlflow_wait_ready() {
   log_success "MLflow traces endpoint (gateway): $MLFLOW_TRACES_ENDPOINT"
 }
 
-_mlflow_grant_otel_rbac() {
-  # The RHOAI MLflow operator creates ClusterRoles for MLflow access control.
-  # The otel-collector SA needs a RoleBinding in each agent namespace (workspace)
-  # so the collector can send traces with the correct workspace context.
-  # Prefer mlflow-operator-mlflow-integration (has get/list/create/update on
-  # experiments — required by the /v1/traces OTLP endpoint), fall back to edit.
-  local cr_name=""
-  local candidates=("mlflow-operator-mlflow-integration" "mlflow-operator-mlflow-edit")
-  local tries=0
-  while [ -z "$cr_name" ]; do
-    for candidate in "${candidates[@]}"; do
-      if $KUBECTL get clusterrole "$candidate" &>/dev/null; then
-        cr_name="$candidate"
-        break
-      fi
-    done
-    tries=$((tries + 1))
-    if [ $tries -ge 24 ]; then
-      log_warn "No MLflow ClusterRole found (tried: ${candidates[*]}) after 2m — MLflow OTEL RBAC skipped"
-      return 0
-    fi
-    sleep 5
-  done
-  log_success "ClusterRole $cr_name exists"
-
-  local agent_ns
-  agent_ns=$(python3 -c "
-import yaml, sys
-with open('$KAGENTI_REPO/charts/kagenti/values.yaml') as f:
-    v = yaml.safe_load(f)
-for ns in v.get('agentNamespaces', ['team1', 'team2']):
-    print(ns)
-" 2>/dev/null || echo -e "team1\nteam2")
-
-  # Grant in MLflow namespace (authentication: SA must be permitted to access MLflow)
-  log_info "Creating MLflow RBAC for otel-collector in $MLFLOW_NAMESPACE..."
-  if ! $DRY_RUN; then
-    $KUBECTL create rolebinding otel-collector-mlflow \
-      --clusterrole="$cr_name" \
-      --serviceaccount=kagenti-system:otel-collector \
-      -n "$MLFLOW_NAMESPACE" \
-      --dry-run=client -o yaml | $KUBECTL apply -f -
-  fi
-  log_success "RoleBinding otel-collector-mlflow created in $MLFLOW_NAMESPACE"
-
-  # Grant in each agent namespace (workspace authorization)
-  while IFS= read -r ns; do
-    [ -z "$ns" ] && continue
-    log_info "Creating MLflow RBAC for otel-collector in $ns..."
-    if $DRY_RUN; then
-      echo "  [dry-run] kubectl create rolebinding otel-collector-mlflow --clusterrole=$cr_name --serviceaccount=kagenti-system:otel-collector -n $ns"
-    else
-      $KUBECTL create rolebinding otel-collector-mlflow \
-        --clusterrole="$cr_name" \
-        --serviceaccount=kagenti-system:otel-collector \
-        -n "$ns" \
-        --dry-run=client -o yaml | $KUBECTL apply -f -
-    fi
-    log_success "RoleBinding otel-collector-mlflow created in $ns"
-  done <<< "$agent_ns"
-}
-
 # MLflow provisioning is deferred to Step 3d (after kagenti-deps installs the
 # RHOAI operator via OLM Subscription and the DataScienceCluster CRD becomes
 # available). See _deferred_mlflow() below.
@@ -519,7 +428,25 @@ _ensure_user_workload_monitoring() {
   existing=$($KUBECTL get configmap cluster-monitoring-config -n openshift-monitoring \
     -o jsonpath='{.data.config\.yaml}' 2>/dev/null || echo "")
   if [ -z "$existing" ]; then
-    # ConfigMap doesn't exist or is empty — the hook can create it from scratch
+    # ConfigMap is absent (or has no config.yaml). We must NOT rely on the
+    # kiali-operand chart hook to create it: that hook is skipped on upgrades
+    # (--no-hooks) and on the fresh-install failure-recovery path (which also
+    # explicitly skips this ConfigMap as the conflict source). Relying on it
+    # silently leaves UWM disabled, so Kiali shows no mesh traffic. Create it
+    # here so the pre-flight is authoritative.
+    $KUBECTL apply -f - >/dev/null <<'EOF'
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    enableUserWorkload: true
+    prometheusK8s:
+      retentionSize: 10GB
+EOF
+    log_success "Created cluster-monitoring-config with enableUserWorkload: true"
     return
   fi
   if echo "$existing" | grep -q "enableUserWorkload: true"; then
@@ -669,12 +596,41 @@ for doc in docs:
 " | $KUBECTL apply -f - || true
 }
 
+# Remove orphaned Istio validation webhooks left behind by a previous teardown.
+# Deleting the istio-system namespace does NOT remove the cluster-scoped
+# ValidatingWebhookConfigurations that back "validation.istio.io". With
+# failurePolicy=Fail and no istiod Service to call, they reject every Istio
+# config resource (e.g. the otel-collector AuthorizationPolicy) the kagenti-deps
+# chart creates during `helm install`, aborting the release with:
+#   failed calling webhook "validation.istio.io": service "istiod" not found
+# These webhooks are recreated (with the correct caBundle) once the Sail operand
+# CRs in Step 3 bring istiod back up, so it is safe to drop the stale ones here.
+# Only touch the kagenti-managed webhooks — never the OpenShift ingress gateway's
+# (istio-validator-openshift-gateway-openshift-ingress).
+_clean_stale_istio_webhooks() {
+  if $DRY_RUN; then return; fi
+  # If istiod is present, the webhooks have a live backend — leave them alone.
+  if $KUBECTL get svc istiod -n istio-system &>/dev/null; then
+    return
+  fi
+  for _whc in istiod-default-validator istio-validator-istio-system; do
+    if $KUBECTL get validatingwebhookconfiguration "$_whc" &>/dev/null; then
+      log_warn "Removing stale Istio webhook $_whc (no istiod Service to back it)"
+      $KUBECTL delete validatingwebhookconfiguration "$_whc" --ignore-not-found || true
+    fi
+  done
+}
+
 _helm_kagenti_deps() {
   # Pre-flight: ensure namespaces managed by this chart are not stuck terminating
   # from a previous failed install/uninstall cycle
   for _ns in keycloak istio-cni istio-system istio-ztunnel; do
     _wait_ns_gone "$_ns"
   done
+
+  # Pre-flight: drop orphaned Istio validation webhooks that would otherwise
+  # block the chart's Istio config resources before istiod is provisioned.
+  _clean_stale_istio_webhooks
 
   # Build MLflow OTEL flags: enable the pipeline and point it at the DSC-managed endpoint.
   # When --otel-operator-managed is set, the operator handles ConfigMap assembly
@@ -1055,8 +1011,29 @@ DSCEOF
     return 0
   fi
 
-  # Create MLflow CR and wait for it to be ready
-  _mlflow_create_cr
+  # MLflow CR creation is handled by kagenti-operator's MLflowOperandReconciler
+  # (deployed in Step 4). The operator watches the DataScienceCluster and creates
+  # the MLflow CR when mlflowoperator=Managed.
+  # OTEL collector wiring and OAuth proxy setup run after Step 4 via
+  # _deferred_mlflow_otel_wiring().
+  log_success "MLflow prerequisites ready — CR will be created by kagenti-operator"
+}
+
+# ============================================================================
+# _deferred_mlflow_otel_wiring — runs AFTER Step 4 (kagenti-operator deployed)
+# ============================================================================
+# Waits for the MLflow CR (created by the operator) to become ready, then
+# upgrades kagenti-deps to wire the OTEL collector and sets up the OAuth proxy.
+_deferred_mlflow_otel_wiring() {
+  if [ "$SKIP_MLFLOW" = true ]; then
+    return 0
+  fi
+  if $DRY_RUN; then
+    log_info "[dry-run] Would wire OTEL collector to MLflow endpoint"
+    return 0
+  fi
+
+  # Wait for the operator to create the MLflow CR and for it to be ready.
   if ! _mlflow_wait_ready; then
     log_warn "MLflow not ready — OTEL trace export will be skipped"
     SKIP_MLFLOW=true
@@ -1305,6 +1282,24 @@ fi
 
 log_info "Keycloak: realm=$KC_REALM namespace=$KC_NAMESPACE"
 
+# Read the actual Keycloak admin credentials from the operator-managed secret.
+# The RHBK operator creates keycloak-initial-admin with a random password.
+# The kagenti chart creates keycloak-admin-secret in agent namespaces for the
+# client-registration sidecar — these must match, otherwise client-registration
+# can't authenticate to the master realm to register per-agent OAuth clients.
+KC_ADMIN_FLAGS=()
+_kc_admin_user=$($KUBECTL get secret keycloak-initial-admin -n "$KC_NAMESPACE" \
+  -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+_kc_admin_pass=$($KUBECTL get secret keycloak-initial-admin -n "$KC_NAMESPACE" \
+  -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+if [ -n "$_kc_admin_user" ] && [ -n "$_kc_admin_pass" ]; then
+  KC_ADMIN_FLAGS+=(--set "keycloak.adminUsername=${_kc_admin_user}")
+  KC_ADMIN_FLAGS+=(--set "keycloak.adminPassword=${_kc_admin_pass}")
+  log_success "Keycloak admin credentials read from keycloak-initial-admin"
+else
+  log_warn "Could not read keycloak-initial-admin — agent client-registration may fail"
+fi
+
 # Build operator image override flags
 OPERATOR_IMAGE_FLAGS=()
 if [ -n "$OPERATOR_IMAGE" ]; then
@@ -1332,6 +1327,7 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   -f "$SECRETS_FILE" \
   ${KAGENTI_UI_FLAGS[@]+"${KAGENTI_UI_FLAGS[@]}"} \
   ${OPERATOR_IMAGE_FLAGS[@]+"${OPERATOR_IMAGE_FLAGS[@]}"} \
+  ${KC_ADMIN_FLAGS[@]+"${KC_ADMIN_FLAGS[@]}"} \
   ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} \
   --set "agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa" \
   --set uiOAuthSecret.useServiceAccountCA=false \
@@ -1340,59 +1336,32 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set mlflow.auth.enabled=false \
   --set "keycloak.publicUrl=${KEYCLOAK_PUBLIC_URL}" \
   --set "keycloak.realm=${KC_REALM}" \
-  --set "mcpGateway.openshiftDomain=${DOMAIN}" \
   --set "components.mlflow.enabled=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
   --set "components.mlflow.routeNamespace=${MLFLOW_NAMESPACE}" \
   --set "kagenti-operator-chart.mlflow.enable=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
   --set "kagenti-operator-chart.featureGates.injectTools=true" \
+  --set "kagenti-operator-chart.kuadrant.enable=${WITH_KUADRANT}" \
+  --set "mcpGateway.openshiftDomain=${DOMAIN}" \
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
 
 log_success "Kagenti installed"
 
-# Grant otel-collector SA MLflow RBAC in agent namespaces (created by kagenti chart above)
-if [ "$SKIP_MLFLOW" = true ]; then
-  log_success "Skipping MLflow RBAC grant (--skip-mlflow)"
-else
-  _mlflow_grant_otel_rbac
+# OTEL RoleBindings and MLflow experiment creation are now managed by
+# kagenti-operator's controllers. Wire the OTEL collector endpoint and
+# set up the MLflow OAuth proxy + dashboard URL now that the operator is running.
+log_info "Step 4b: MLflow OTEL wiring (post-operator)"
+_deferred_mlflow_otel_wiring
 
-  # Create default MLflow experiment in the workspace namespace.
-  # The otel-collector sends traces with x-mlflow-experiment-id header; the experiment
-  # must exist or MLflow will reject the traces.
-  # Uses kubectl run with a curl pod since the installer runs outside the cluster.
-  if ! $DRY_RUN; then
-    _EXP_WS="${MLFLOW_WORKSPACE:-team1}"
-    _EXP_NAME="kagenti-traces"
-    _EXP_TOKEN=$($KUBECTL create token otel-collector -n kagenti-system --duration=600s 2>/dev/null || true)
-    if [ -n "$_EXP_TOKEN" ]; then
-      _EXP_RESP=$($KUBECTL run mlflow-exp-create --rm -i --restart=Never \
-        --image=curlimages/curl -n kagenti-system \
-        --env="TOK=$_EXP_TOKEN" \
-        -- sh -c 'curl -sk -X POST \
-        -H "Authorization: Bearer $TOK" \
-        -H "x-mlflow-workspace: '"$_EXP_WS"'" \
-        -H "Content-Type: application/json" \
-        -d "{\"name\":\"'"$_EXP_NAME"'\"}" \
-        "https://mlflow.'"${MLFLOW_NAMESPACE}"'.svc.cluster.local:8443/api/2.0/mlflow/experiments/create"' 2>/dev/null || true)
-      if echo "$_EXP_RESP" | grep -q "experiment_id"; then
-        _EXP_ID=$(echo "$_EXP_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['experiment_id'])" 2>/dev/null || true)
-        log_success "Created MLflow experiment '$_EXP_NAME' (id=$_EXP_ID) in workspace $_EXP_WS"
-      elif echo "$_EXP_RESP" | grep -q "RESOURCE_ALREADY_EXISTS"; then
-        log_success "MLflow experiment '$_EXP_NAME' already exists in workspace $_EXP_WS"
-      else
-        log_warn "Failed to create MLflow experiment: $_EXP_RESP"
-      fi
-    fi
-  fi
-  # Mount OpenShift trusted CA bundle into the operator so it can verify the
-  # MLflow gateway's TLS certificate (signed by the cluster ingress CA).
-  # Requires kagenti-operator >=0.3.0 with --mlflow-ca-file support.
-  if ! $DRY_RUN; then
-    _CA_CM="kagenti-operator-trusted-ca"
-    _CA_MOUNT="/etc/pki/ca-trust/extracted/pem"
-    _CA_PATH="${_CA_MOUNT}/tls-ca-bundle.pem"
+# Mount OpenShift trusted CA bundle into the operator so it can verify the
+# MLflow gateway's TLS certificate (signed by the cluster ingress CA).
+# Requires kagenti-operator >=0.3.0 with --mlflow-ca-file support.
+if [ "$SKIP_MLFLOW" != true ] && ! $DRY_RUN; then
+  _CA_CM="kagenti-operator-trusted-ca"
+  _CA_MOUNT="/etc/pki/ca-trust/extracted/pem"
+  _CA_PATH="${_CA_MOUNT}/tls-ca-bundle.pem"
 
-    # Create ConfigMap with injection label (OpenShift populates it with system CAs)
-    cat <<CACM | $KUBECTL apply -f - 2>/dev/null || true
+  # Create ConfigMap with injection label (OpenShift populates it with system CAs)
+  cat <<CACM | $KUBECTL apply -f - 2>/dev/null || true
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -1403,18 +1372,17 @@ metadata:
 data: {}
 CACM
 
-    # Patch operator deployment: add volume, volumeMount, and --mlflow-ca-file arg
-    # Guard: skip if already patched (idempotent on re-runs)
-    if $KUBECTL get deployment kagenti-controller-manager -n kagenti-system -o jsonpath='{.spec.template.spec.volumes[*].name}' 2>/dev/null | grep -q "trusted-ca"; then
-      log_success "Operator already has trusted-ca volume — skipping patch"
-    else
-      $KUBECTL patch deployment kagenti-controller-manager -n kagenti-system --type=json -p "[
-        {\"op\":\"add\",\"path\":\"/spec/template/spec/volumes/-\",\"value\":{\"name\":\"trusted-ca\",\"configMap\":{\"name\":\"${_CA_CM}\",\"optional\":true,\"items\":[{\"key\":\"ca-bundle.crt\",\"path\":\"tls-ca-bundle.pem\"}]}}},
-        {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/volumeMounts/-\",\"value\":{\"name\":\"trusted-ca\",\"mountPath\":\"${_CA_MOUNT}\",\"readOnly\":true}},
-        {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/args/-\",\"value\":\"--mlflow-ca-file=${_CA_PATH}\"}
-      ]" 2>/dev/null && log_success "Operator patched with trusted CA bundle for MLflow TLS" \
-        || log_warn "Could not patch operator with CA bundle (--mlflow-ca-file may not be supported yet)"
-    fi
+  # Patch operator deployment: add volume, volumeMount, and --mlflow-ca-file arg
+  # Guard: skip if already patched (idempotent on re-runs)
+  if $KUBECTL get deployment kagenti-controller-manager -n kagenti-system -o jsonpath='{.spec.template.spec.volumes[*].name}' 2>/dev/null | grep -q "trusted-ca"; then
+    log_success "Operator already has trusted-ca volume — skipping patch"
+  else
+    $KUBECTL patch deployment kagenti-controller-manager -n kagenti-system --type=json -p "[
+      {\"op\":\"add\",\"path\":\"/spec/template/spec/volumes/-\",\"value\":{\"name\":\"trusted-ca\",\"configMap\":{\"name\":\"${_CA_CM}\",\"optional\":true,\"items\":[{\"key\":\"ca-bundle.crt\",\"path\":\"tls-ca-bundle.pem\"}]}}},
+      {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/volumeMounts/-\",\"value\":{\"name\":\"trusted-ca\",\"mountPath\":\"${_CA_MOUNT}\",\"readOnly\":true}},
+      {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/args/-\",\"value\":\"--mlflow-ca-file=${_CA_PATH}\"}
+    ]" 2>/dev/null && log_success "Operator patched with trusted CA bundle for MLflow TLS" \
+      || log_warn "Could not patch operator with CA bundle (--mlflow-ca-file may not be supported yet)"
   fi
 fi
 echo ""
@@ -1583,20 +1551,13 @@ if $WITH_KUADRANT; then
 
   if ! $DRY_RUN; then
     _wait_deployment_ready kuadrant-operator-controller-manager "$KUADRANT_NS" "Kuadrant operator"
-
-    if $KUBECTL get crd kuadrants.kuadrant.io &>/dev/null; then
-      log_info "Creating Kuadrant CR..."
-      _kuadrant_api=$($KUBECTL get crd kuadrants.kuadrant.io -o jsonpath='{.spec.versions[?(@.served==true)].name}' | awk '{print $NF}')
-      $KUBECTL apply -f - <<EOF
-apiVersion: kuadrant.io/${_kuadrant_api}
-kind: Kuadrant
-metadata:
-  name: kuadrant
-  namespace: ${KUADRANT_NS}
-EOF
-    else
-      log_info "Kuadrant CRD not present (v1.4+) — skipping CR creation"
-    fi
+    # Kuadrant CR is created by the kagenti-operator's Kuadrant operand controller
+    # when --enable-kuadrant is set (see kagenti-operator chart values).
+    # The operator was installed before the Kuadrant CRD existed, so restart it
+    # to trigger KuadrantCRDExists() re-evaluation and controller registration.
+    log_info "Restarting kagenti-operator to pick up Kuadrant CRD..."
+    $KUBECTL rollout restart deployment/kagenti-controller-manager -n kagenti-system
+    _wait_deployment_ready kagenti-controller-manager kagenti-system "kagenti-operator"
   fi
 
   log_success "Kuadrant installed"
@@ -1612,6 +1573,8 @@ log_info "Step 5b: Install MCP Gateway"
 
 if $SKIP_MCP_GATEWAY; then
   log_info "Skipped (--skip-mcp-gateway)"
+elif helm status mcp-gateway -n mcp-system &>/dev/null; then
+  log_info "MCP Gateway already installed — skipping"
 else
   if ! $DRY_RUN; then
     # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior

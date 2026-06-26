@@ -182,6 +182,12 @@ SKILL_REGISTRY_SKILL_VERSION_ANNOTATION = "kagenti.io/registry-skill-version"
 SKILL_FETCHER_SCRIPTS_CM = "kagenti-skill-fetcher-scripts"
 SKILL_FETCHER_IMAGE = "alpine:3.21.3"
 
+# Skill auto-sync constants
+SKILL_AUTOSYNC_CONFIG_CM = "kagenti-skill-autosync-config"
+SKILL_AUTOSYNC_LABEL = "kagenti.io/auto-sync"
+SKILL_NS_TAG_PREFIX = "namespace:"
+SKILL_NS_DEFAULT_TAG = "namespace:default"
+
 # Default Keycloak in-cluster URL (used by AuthBridge ConfigMaps)
 DEFAULT_KEYCLOAK_INTERNAL_URL = "http://keycloak-service.keycloak.svc:8080"
 DEFAULT_KEYCLOAK_REALM = "kagenti"
