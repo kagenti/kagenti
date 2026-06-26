@@ -105,7 +105,7 @@ EOF
   kubectl rollout status statefulset/postgres-kc -n "$KC_NAMESPACE" --timeout=2m 2>/dev/null || true
 
   # Determine hostname
-  KC_HOST="${KEYCLOAK_HOST:-keycloak-keycloak.$(oc get ingresses.config/cluster -o jsonpath='{.spec.domain}' 2>/dev/null)}"
+  KC_HOST="$(resolve_kc_host)"
 
   # Deploy Keycloak CR
   log_info "Deploying Keycloak CR (community)"
@@ -168,7 +168,7 @@ EOF
     sleep 10
   done
 
-  KC_HOST="${KEYCLOAK_HOST:-keycloak-keycloak.$(oc get ingresses.config/cluster -o jsonpath='{.spec.domain}' 2>/dev/null)}"
+  KC_HOST="$(resolve_kc_host)"
 
   log_info "Deploying Keycloak CR (RHBK)"
   cat <<EOF | kubectl apply -n "$KC_NAMESPACE" -f -
