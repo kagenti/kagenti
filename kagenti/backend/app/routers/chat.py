@@ -9,6 +9,7 @@ Provides endpoints for chatting with A2A agents using the Agent-to-Agent protoco
 
 import logging
 import re
+import time
 from typing import Optional, List
 from urllib.parse import unquote, urlparse
 from uuid import uuid4
@@ -42,6 +43,12 @@ _SAFE_QUERY_CHARS = frozenset(
 )
 
 
+# TTL cache for resolved invoke URLs: {(name, namespace): (url, timestamp)}.
+# Eliminates redundant agent-card HTTP fetches during a conversation (SC-5).
+_invoke_url_cache: dict[tuple[str, str], tuple[str, float]] = {}
+_CACHE_TTL_SECONDS = 30.0
+
+
 async def _resolve_invoke_url(name: str, namespace: str, kube: KubernetesService) -> str:
     """Resolve the A2A JSON-RPC invoke URL for an agent.
 
@@ -55,6 +62,10 @@ async def _resolve_invoke_url(name: str, namespace: str, kube: KubernetesService
     URL is always ignored — only the path and query are extracted — so an
     agent card advertising an external hostname cannot redirect traffic.
 
+    Results are cached for ``_CACHE_TTL_SECONDS`` to avoid per-message
+    HTTP overhead.  Transient failures are not cached so the next call
+    retries the agent card fetch.
+
     Falls back to the bare service URL when the card is unavailable, has no
     path, or fails validation.
     """
@@ -62,6 +73,12 @@ async def _resolve_invoke_url(name: str, namespace: str, kube: KubernetesService
     ns_match = _K8S_NAME_RE.fullmatch(namespace)
     if not name_match or not ns_match:
         return resolve_agent_url(name, namespace, kube)
+
+    cache_key = (name, namespace)
+    now = time.monotonic()
+    cached = _invoke_url_cache.get(cache_key)
+    if cached and (now - cached[1]) < _CACHE_TTL_SECONDS:
+        return cached[0]
 
     # .group(0) produces a value constrained by the RFC 1123 regex,
     # breaking the CodeQL SSRF taint chain from the FastAPI path params.
@@ -85,7 +102,9 @@ async def _resolve_invoke_url(name: str, namespace: str, kube: KubernetesService
                     suffix = path
                     if parsed.query and all(c in _SAFE_QUERY_CHARS for c in parsed.query):
                         suffix = f"{path}?{parsed.query}"
-                    return f"{base_url}{suffix}"
+                    result = f"{base_url}{suffix}"
+                    _invoke_url_cache[cache_key] = (result, now)
+                    return result
     except Exception:
         logger.debug(
             "Could not fetch agent card for %s/%s, using base URL",
