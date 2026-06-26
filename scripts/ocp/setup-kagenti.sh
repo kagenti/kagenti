@@ -202,6 +202,22 @@ if ! command -v helm &>/dev/null; then
   log_error "helm not found in PATH. Install helm >= 3.18.0"
   exit 1
 fi
+# Enforce the supported helm range: >= 3.18.0 and < 4. Helm 4 changed CRD
+# handling (server-side-applies pre-existing CRDs and alters crds/ install
+# semantics), which breaks the install: the kagenti-deps Gateway API CRDs
+# conflict with cluster-managed Gateway API on OCP 4.20+, and the Kuadrant
+# operator CRDs are not installed. See issue #2072.
+_helm_ver="$(helm version --short 2>/dev/null | sed -E 's/^v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+_helm_major="${_helm_ver%%.*}"
+_helm_minor="$(printf '%s' "$_helm_ver" | cut -d. -f2)"
+if ! printf '%s' "$_helm_major" | grep -qE '^[0-9]+$'; then
+  log_warn "Could not parse helm version ('$_helm_ver'); this installer requires helm >= 3.18.0 < 4"
+elif [ "$_helm_major" -ge 4 ] || { [ "$_helm_major" -eq 3 ] && [ "${_helm_minor:-0}" -lt 18 ]; }; then
+  log_error "Unsupported helm ${_helm_ver}: this installer requires helm >= 3.18.0 and < 4."
+  log_error "Helm 4 breaks CRD installation (Gateway API conflict, missing Kuadrant CRDs); see issue #2072."
+  log_error "Install a supported version, e.g.: brew install helm@3"
+  exit 1
+fi
 log_success "helm found: $(helm version --short)"
 
 # Check python3
@@ -519,7 +535,25 @@ _ensure_user_workload_monitoring() {
   existing=$($KUBECTL get configmap cluster-monitoring-config -n openshift-monitoring \
     -o jsonpath='{.data.config\.yaml}' 2>/dev/null || echo "")
   if [ -z "$existing" ]; then
-    # ConfigMap doesn't exist or is empty — the hook can create it from scratch
+    # ConfigMap is absent (or has no config.yaml). We must NOT rely on the
+    # kiali-operand chart hook to create it: that hook is skipped on upgrades
+    # (--no-hooks) and on the fresh-install failure-recovery path (which also
+    # explicitly skips this ConfigMap as the conflict source). Relying on it
+    # silently leaves UWM disabled, so Kiali shows no mesh traffic. Create it
+    # here so the pre-flight is authoritative.
+    $KUBECTL apply -f - >/dev/null <<'EOF'
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    enableUserWorkload: true
+    prometheusK8s:
+      retentionSize: 10GB
+EOF
+    log_success "Created cluster-monitoring-config with enableUserWorkload: true"
     return
   fi
   if echo "$existing" | grep -q "enableUserWorkload: true"; then
