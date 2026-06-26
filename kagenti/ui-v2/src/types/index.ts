@@ -407,6 +407,7 @@ export interface PodStorageStats {
 export interface SkillLabels {
   category?: string;
   type?: string;
+  autoSync?: string;
 }
 
 export interface ExternalSkillInfo {
@@ -471,6 +472,25 @@ export interface CreateExternalSkillRequest {
   origin?: string;
 }
 
+export interface SkillAutoSyncConfig {
+  registryType: string;
+  registryUrl: string;
+  syncInterval: number;
+  allowedTags: string[];
+}
+
+export interface SkillAutoSyncStatus {
+  enabled: boolean;
+  registryType?: string;
+  registryUrl?: string;
+  /** Browser-facing store UI URL (via gateway); registryUrl is server-side only. */
+  storeUiUrl?: string;
+  syncInterval?: number;
+  lastSyncedAt?: string;
+  skillCount?: number;
+  allowedTags?: string[];
+}
+
 // AuthBridge types
 export type AuthBridgeMode = 'proxy-sidecar' | 'envoy-sidecar' | 'lite' | 'waypoint';
 
@@ -483,6 +503,8 @@ export interface AuthBridgeConfig {
   AuthBridge: boolean | null;
   mode: AuthBridgeMode | null;
   pipeline: PipelineConfig | null;
+  /** Outbound TLS bridge config from the sidecar; present + mode "enabled" when active. */
+  tls_bridge?: { mode?: string } | null;
 }
 
 export interface PipelineConfig {
