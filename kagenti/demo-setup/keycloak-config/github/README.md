@@ -56,13 +56,10 @@ The script assumes the existence of:
 
 ## Instructions
 
-Run the Ansible-based installer:
+Run the installer:
 
 ```sh
-cp deployments/envs/secret_values.yaml.example \
-  deployments/envs/.secret_values.yaml
-# Edit deployments/envs/.secret_values.yaml with your values
-deployments/ansible/run-install.sh --env dev
+scripts/kind/setup-kagenti.sh
 ```
 
 Then set the Keycloak admin username:

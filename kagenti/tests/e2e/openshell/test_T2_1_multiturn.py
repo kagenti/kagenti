@@ -13,14 +13,13 @@ import httpx
 import pytest
 
 from kagenti.tests.e2e.openshell.conftest import (
-    a2a_send,
-    extract_a2a_text,
-    extract_context_id,
+    backend_send,
     nemoclaw_enabled,
     sandbox_crd_installed,
+    skip_no_backend,
     AGENT_PROMPTS,
-    ALL_A2A_AGENTS,
-    FIXTURE_MAP,
+    BACKEND_AGENTS,
+    BACKEND_AVAILABLE,
     LLM_AVAILABLE,
     LLM_CAPABLE_AGENTS,
     kubectl_run,
@@ -28,12 +27,6 @@ from kagenti.tests.e2e.openshell.conftest import (
 
 pytestmark = pytest.mark.openshell
 AGENT_NS = os.getenv("OPENSHELL_AGENT_NAMESPACE", "team1")
-
-
-def _url(agent: str, request):
-    """Get agent URL from fixture map."""
-    name = FIXTURE_MAP.get(agent)
-    return request.getfixturevalue(name) if name else None
 
 
 def _deploy_ready(name: str, ns: str = AGENT_NS) -> bool:
@@ -44,9 +37,6 @@ def _deploy_ready(name: str, ns: str = AGENT_NS) -> bool:
     return r.returncode == 0 and r.stdout.strip() == "1"
 
 
-ALL_A2A_AGENTS_PORTFORWARD = ALL_A2A_AGENTS
-
-
 # ═══════════════════════════════════════════════════════════════════════════
 # Multi-Turn Sequential Messages (ALL agents)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -54,26 +44,23 @@ ALL_A2A_AGENTS_PORTFORWARD = ALL_A2A_AGENTS
 
 @pytest.mark.asyncio
 class TestMultiturn:
-    """Agent responds to 3 sequential messages with type-appropriate prompts."""
+    """Agent responds to 3 sequential messages via backend proxy."""
 
-    @pytest.mark.parametrize("agent", ALL_A2A_AGENTS_PORTFORWARD)
-    async def test_multiturn__three_turns(self, agent, request):
-        """Send 3 sequential messages and verify responses."""
+    @skip_no_backend
+    @pytest.mark.parametrize("agent", BACKEND_AGENTS)
+    async def test_multiturn__three_turns(self, agent, backend_url):
+        """Send 3 sequential messages through backend and verify responses."""
         if agent in LLM_CAPABLE_AGENTS and not LLM_AVAILABLE:
             pytest.skip(f"{agent}: requires LLM (set OPENSHELL_LLM_AVAILABLE=true)")
-        url = _url(agent, request)
-        if not url:
-            pytest.skip(f"{agent}: cannot reach (netns blocks port-forward)")
 
-        ctx = None
+        session_id = None
         for i, prompt in enumerate(AGENT_PROMPTS.get(agent, ["Hello"] * 3)):
             async with httpx.AsyncClient() as c:
-                resp = await a2a_send(
-                    c, url, prompt, request_id=f"{agent}-t{i}", context_id=ctx
+                result = await backend_send(
+                    c, backend_url, AGENT_NS, agent, prompt, session_id=session_id
                 )
-            assert "result" in resp, f"{agent} turn {i}: no result"
-            assert extract_a2a_text(resp), f"{agent} turn {i}: empty"
-            ctx = extract_context_id(resp) or ctx
+            assert "content" in result, f"{agent} turn {i}: no content"
+            session_id = result.get("session_id") or session_id
 
     async def test_multiturn__kubectl_exec(self, agent_namespace):
         """Supervised agent: test via kubectl exec (netns blocks port-forward)."""
@@ -96,24 +83,22 @@ class TestMultiturn:
 class TestContextIsolation:
     """Two independent conversations should not share state."""
 
-    @pytest.mark.parametrize("agent", ALL_A2A_AGENTS_PORTFORWARD)
-    async def test_context_isolation__independent_requests(self, agent, request):
-        """Two independent requests should have different contextIds."""
+    @skip_no_backend
+    @pytest.mark.parametrize("agent", BACKEND_AGENTS)
+    async def test_context_isolation__independent_requests(self, agent, backend_url):
+        """Two independent requests should have different session_ids."""
         if agent in LLM_CAPABLE_AGENTS and not LLM_AVAILABLE:
             pytest.skip(f"{agent}: requires LLM")
-        url = _url(agent, request)
-        if not url:
-            pytest.skip(f"{agent}: cannot reach")
 
         prompts = AGENT_PROMPTS.get(agent, ["Hello"] * 3)
         async with httpx.AsyncClient() as c:
-            ra = await a2a_send(c, url, prompts[0], request_id=f"{agent}-a")
+            ra = await backend_send(c, backend_url, AGENT_NS, agent, prompts[0])
         async with httpx.AsyncClient() as c:
-            rb = await a2a_send(c, url, prompts[1], request_id=f"{agent}-b")
-        assert extract_a2a_text(ra) and extract_a2a_text(rb)
-        ca, cb = extract_context_id(ra), extract_context_id(rb)
-        if ca and cb:
-            assert ca != cb, f"{agent}: independent requests share contextId"
+            rb = await backend_send(c, backend_url, AGENT_NS, agent, prompts[1])
+        assert ra.get("content") and rb.get("content")
+        sa, sb = ra.get("session_id", ""), rb.get("session_id", "")
+        if sa and sb:
+            assert sa != sb, f"{agent}: independent requests share session_id"
 
     async def test_context_isolation__netns_blocks(self, agent_namespace):
         """Supervised agent: context isolation test requires A2A."""
@@ -141,36 +126,25 @@ class TestContextContinuity:
     store is implemented (via Kagenti backend), these will pass.
     """
 
-    @pytest.mark.parametrize("agent", ALL_A2A_AGENTS_PORTFORWARD)
-    async def test_context_isolation__continuity(self, agent, request):
-        """If agent returns contextId, it should persist across turns."""
+    @skip_no_backend
+    @pytest.mark.parametrize("agent", BACKEND_AGENTS)
+    async def test_context_isolation__continuity(self, agent, backend_url):
+        """Session_id persists across turns when sent back to backend."""
         if agent in LLM_CAPABLE_AGENTS and not LLM_AVAILABLE:
             pytest.skip(f"{agent}: requires LLM")
-        url = _url(agent, request)
-        if not url:
-            pytest.skip(f"{agent}: cannot reach")
 
         prompts = AGENT_PROMPTS.get(agent, ["Hello"] * 3)
         async with httpx.AsyncClient() as c:
-            r1 = await a2a_send(c, url, prompts[0], request_id=f"{agent}-c1")
-        c1 = extract_context_id(r1)
-        if not c1:
-            pytest.skip(
-                f"{agent}: stateless (no contextId). "
-                f"TODO: Kagenti backend will manage context externally via session store."
-            )
+            r1 = await backend_send(c, backend_url, AGENT_NS, agent, prompts[0])
+        s1 = r1.get("session_id", "")
+        if not s1:
+            pytest.skip(f"{agent}: backend returned no session_id")
 
         async with httpx.AsyncClient() as c:
-            r2 = await a2a_send(
-                c, url, prompts[1], request_id=f"{agent}-c2", context_id=c1
+            r2 = await backend_send(
+                c, backend_url, AGENT_NS, agent, prompts[1], session_id=s1
             )
-        c2 = extract_context_id(r2)
-        if c2 != c1:
-            pytest.skip(
-                f"{agent}: contextId changed ({c1[:12]}... -> {c2[:12]}...). "
-                f"Upstream ADK to_a2a() does not support client-sent contextId. "
-                f"TODO: upstream PR or Kagenti backend session store."
-            )
+        assert "content" in r2, f"{agent}: second turn failed: {r2}"
 
     async def test_context_isolation__requires_grpc(self, agent_namespace):
         """Supervised agent: context continuity requires ExecSandbox gRPC."""
@@ -197,29 +171,25 @@ class TestSessionResume:
     agents should be long-running services, not ephemeral pods.
     """
 
-    @pytest.mark.parametrize("agent", ALL_A2A_AGENTS_PORTFORWARD)
-    async def test_session_resume__responds_after_delay(
-        self, agent, request, agent_namespace
-    ):
+    @skip_no_backend
+    @pytest.mark.parametrize("agent", BACKEND_AGENTS)
+    async def test_session_resume__responds_after_delay(self, agent, backend_url):
         """Send message, wait, send again — agent should still respond."""
         if agent in LLM_CAPABLE_AGENTS and not LLM_AVAILABLE:
             pytest.skip(f"{agent}: requires LLM")
-        url = _url(agent, request)
-        if not url:
-            pytest.skip(f"{agent}: cannot reach")
 
         import time
 
         prompts = AGENT_PROMPTS.get(agent, ["Hello", "Goodbye"])
         async with httpx.AsyncClient() as c:
-            r1 = await a2a_send(c, url, prompts[0], request_id=f"{agent}-persist-1")
-        assert extract_a2a_text(r1), f"{agent}: first request failed"
+            r1 = await backend_send(c, backend_url, AGENT_NS, agent, prompts[0])
+        assert r1.get("content"), f"{agent}: first request failed"
 
         time.sleep(10)
 
         async with httpx.AsyncClient() as c:
-            r2 = await a2a_send(c, url, prompts[1], request_id=f"{agent}-persist-2")
-        assert extract_a2a_text(r2), (
+            r2 = await backend_send(c, backend_url, AGENT_NS, agent, prompts[1])
+        assert r2.get("content"), (
             f"{agent}: second request failed — agent not persistent"
         )
 

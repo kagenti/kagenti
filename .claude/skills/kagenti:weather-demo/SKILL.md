@@ -17,7 +17,7 @@ Optimized for speed: pre-built images from ghcr.io, all commands in parallel, no
 
 ## Prerequisites
 
-- Kagenti platform deployed (via `deployments/ansible/run-install.sh --env dev` or equivalent)
+- Kagenti platform deployed (via `scripts/kind/setup-kagenti.sh` or equivalent)
 - `kubectl` configured and pointing at the target cluster
 - Ollama running locally with `llama3.2:3b-instruct-fp16` model, OR an OpenAI API key
 

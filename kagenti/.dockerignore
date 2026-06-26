@@ -36,6 +36,9 @@ examples/
 .gitleaks.toml
 .pre-commit-config.yaml
 
+# Node modules (platform-specific binaries)
+**/node_modules/
+
 # Build artifacts
 *.egg-info/
 dist/

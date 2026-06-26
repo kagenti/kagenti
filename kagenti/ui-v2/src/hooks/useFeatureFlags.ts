@@ -4,6 +4,8 @@
 import { useState, useEffect } from 'react';
 
 export interface FeatureFlags {
+  /** Shipwright build-from-source capability available in the cluster. */
+  builds: boolean;
   /** Sandboxed agent runtime UI and APIs (legacy runtime sandbox). */
   sandbox: boolean;
   integrations: boolean;
@@ -13,15 +15,22 @@ export interface FeatureFlags {
   skills: boolean;
   /** AuthBridge statistics */
   authbridgeAPI: boolean;
+  /** Platform Status card and /platform-status endpoint */
+  admin: boolean;
+  /** External skill registry references */
+  externalSkills: boolean;
 }
 
 const DEFAULT_FLAGS: FeatureFlags = {
+  builds: false,
   sandbox: false,
   integrations: false,
   triggers: false,
   agentSandbox: false,
   skills: false,
   authbridgeAPI: false,
+  admin: false,
+  externalSkills: false,
 };
 
 let cachedFlags: FeatureFlags | null = null;
@@ -36,12 +45,15 @@ export function useFeatureFlags(): FeatureFlags {
       .then(res => res.ok ? res.json() : DEFAULT_FLAGS)
       .then((data) => {
         const validated: FeatureFlags = {
+          builds: data.builds === true,
           sandbox: data.sandbox === true,
           integrations: data.integrations === true,
           triggers: data.triggers === true,
           agentSandbox: data.agentSandbox === true,
           skills: data.skills === true,
           authbridgeAPI: data.authbridgeAPI === true,
+          admin: data.admin === true,
+          externalSkills: data.externalSkills === true,
           };
         cachedFlags = validated;
         setFlags(validated);

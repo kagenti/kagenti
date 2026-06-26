@@ -16,7 +16,7 @@ The Kagenti organization consists of the following repositories:
 
 | Repository | Language | Description |
 |------------|----------|-------------|
-| **[kagenti](https://github.com/kagenti/kagenti)** | Python | UI dashboard, Ansible installer, and documentation |
+| **[kagenti](https://github.com/kagenti/kagenti)** | Python | UI dashboard and documentation |
 | **[kagenti-operator](https://github.com/kagenti/kagenti-operator)** | Go | Kubernetes operator for agent/tool lifecycle management |
 | **[mcp-gateway](https://github.com/kagenti/mcp-gateway)** | Go | Envoy-based MCP Gateway for tool federation |
 | **[agent-examples](https://github.com/kagenti/agent-examples)** | Python | Sample agents and tools for the platform |
@@ -31,7 +31,7 @@ The Kagenti organization consists of the following repositories:
 
 ### 1. kagenti (Main Repository)
 
-**Purpose**: Primary entry point containing the web UI, Ansible installer, and documentation.
+**Purpose**: Primary entry point containing the web UI and documentation.
 
 **Key Components**:
 ```
@@ -48,18 +48,17 @@ kagenti/
 │   └── examples/              # Example configurations
 ├── charts/                    # Helm charts (kagenti, kagenti-deps)
 ├── deployments/
-│   ├── ansible/               # Ansible playbooks for installation
 │   └── envs/                  # Environment-specific values
 └── docs/                      # Documentation
 ```
 
 **Commands**:
 ```bash
-# Run the Ansible-based installer
+# Deploy to Kind cluster
 # From repository root
-cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
-# Edit deployments/envs/.secret_values.yaml with your values
-deployments/ansible/run-install.sh --env dev
+cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
+# Edit charts/kagenti/.secrets.yaml with your values
+scripts/kind/setup-kagenti.sh
 
 # Run UI locally
 cd kagenti/backend
@@ -328,11 +327,11 @@ git clone https://github.com/kagenti/kagenti.git
 cd kagenti
 
 # Configure secrets
-cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
-# Edit .secret_values.yaml with your values
+cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
+# Edit .secrets.yaml with your values
 
-# Install platform using Ansible-based installer
-deployments/ansible/run-install.sh --env dev
+# Deploy to Kind cluster
+scripts/kind/setup-kagenti.sh
 ```
 
 ### Access URLs (Kind)

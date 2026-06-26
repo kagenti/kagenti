@@ -1,0 +1,67 @@
+/* Kagenti App Demo — design tokens derived from kagenti/ui-v2 */
+
+:root {
+  --kagenti-primary: #0066cc;
+  --kagenti-primary-dark: #004080;
+  --kagenti-masthead-bg: #151515;
+  --kagenti-sidebar-bg: #212427;
+  --kagenti-status-ready: #3e8635;
+  --kagenti-status-not-ready: #c9190b;
+  --kagenti-status-pending: #f0ab00;
+  --kagenti-text-primary: #151515;
+  --kagenti-text-secondary: #6a6e73;
+  --kagenti-border: #d2d2d2;
+  --kagenti-bg-secondary: #f0f0f0;
+}
+
+/* PatternFly overrides */
+:root {
+  --pf-v5-global--primary-color--100: var(--kagenti-primary);
+  --pf-v5-global--link--Color: var(--kagenti-primary);
+}
+
+/* Masthead styling */
+.pf-v5-c-masthead {
+  --pf-v5-c-masthead--BackgroundColor: var(--kagenti-masthead-bg);
+}
+
+/* Page background */
+.pf-v5-c-page__main-section {
+  padding: 24px;
+}
+
+/* Agent cards hover */
+.pf-v5-c-card.pf-m-clickable:hover {
+  box-shadow: var(--pf-v5-global--BoxShadow--md, 0 4px 8px rgba(0, 0, 0, 0.12));
+  transform: translateY(-1px);
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+/* Chat message bubbles */
+.pf-v5-c-card {
+  border-radius: 8px;
+}
+
+/* Brand text in masthead */
+.pf-v5-c-brand {
+  color: #fff;
+}
+
+/* Smooth transitions */
+* {
+  transition-property: background-color, border-color, color;
+  transition-duration: 0.15s;
+  transition-timing-function: ease;
+}
+
+/* Remove transition from inputs to avoid sluggish typing */
+input,
+textarea,
+select {
+  transition: none;
+}
+
+body {
+  margin: 0;
+  font-family: var(--pf-v5-global--FontFamily--text);
+}

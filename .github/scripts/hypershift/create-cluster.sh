@@ -357,12 +357,14 @@ cd "$HYPERSHIFT_AUTOMATION_DIR"
 # The tag key follows Kubernetes label conventions to avoid conflicts with other tools.
 
 # Build cluster config JSON
+# Note: autoscaling is NOT passed to Ansible — the hypershift-automation playbook's
+# autoscaling task uses a k8s module that doesn't inherit the correct kubeconfig,
+# causing 403 (system:anonymous). Instead, we configure autoscaling ourselves in
+# step 8 below using the management kubeconfig explicitly.
 CLUSTER_CONFIG='"name": "'"$CLUSTER_NAME"'", "region": "'"$AWS_REGION"'", "replicas": '"$REPLICAS"', "instance_type": "'"$INSTANCE_TYPE"'", "image": "'"$OCP_VERSION"'"'
 
-# Add autoscaling config if min and max are set
 if [[ -n "$AUTOSCALE_MIN" ]] && [[ -n "$AUTOSCALE_MAX" ]]; then
-    log_info "Autoscaling enabled: min=$AUTOSCALE_MIN, max=$AUTOSCALE_MAX"
-    CLUSTER_CONFIG="$CLUSTER_CONFIG"', "autoscaling": {"min": '"$AUTOSCALE_MIN"', "max": '"$AUTOSCALE_MAX"'}'
+    log_info "Autoscaling will be configured in step 8 (min=$AUTOSCALE_MIN, max=$AUTOSCALE_MAX)"
 fi
 
 ansible-playbook site.yml \

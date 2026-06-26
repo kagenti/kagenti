@@ -26,10 +26,6 @@ echo "=== Weather Service Envoy-Proxy Logs (last 50 lines) ==="
 kubectl logs -n team1 deployment/weather-service -c envoy-proxy --tail=50 || true
 
 echo ""
-echo "=== Weather Service Client-Registration Logs (last 30 lines) ==="
-kubectl logs -n team1 deployment/weather-service -c kagenti-client-registration --tail=30 || true
-
-echo ""
 echo "=== AuthBridge Unified ConfigMap ==="
 kubectl get configmap authbridge-runtime-config -n team1 -o jsonpath='{.data.config\.yaml}' || true
 

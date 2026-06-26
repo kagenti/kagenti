@@ -19,8 +19,11 @@ import {
   EmptyStateActions,
   SearchInput,
   Label,
+  Alert,
+  Modal,
+  ModalVariant,
 } from '@patternfly/react-core';
-import { PlusCircleIcon, WrenchIcon } from '@patternfly/react-icons';
+import { PlusCircleIcon, WrenchIcon, ExternalLinkAltIcon } from '@patternfly/react-icons';
 import {
   Table,
   Thead,
@@ -29,21 +32,40 @@ import {
   Tbody,
   Td,
 } from '@patternfly/react-table';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-import { Skill } from '@/types';
+import { Skill, SkillAutoSyncStatus } from '@/types';
 import { skillService } from '@/services/api';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
+import { getSkillberryUiUrl, getSkillberryStoreUrl } from '@/utils/validation';
 
 export const SkillCatalogPage: React.FC = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [namespace, setNamespace] = useState<string>('team1');
   const [searchQuery, setSearchQuery] = useState('');
+  const [disableConfirmOpen, setDisableConfirmOpen] = useState(false);
 
   const { data: skills = [], isLoading, error } = useQuery({
     queryKey: ['skills', namespace, searchQuery],
     queryFn: () => skillService.list(namespace, searchQuery || undefined),
   });
+
+  const { data: autoSyncStatus } = useQuery<SkillAutoSyncStatus>({
+    queryKey: ['skillAutoSync'],
+    queryFn: () => skillService.getAutoSync(),
+  });
+
+  const disableAutoSyncMutation = useMutation({
+    mutationFn: () => skillService.disableAutoSync(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['skillAutoSync'] });
+      queryClient.invalidateQueries({ queryKey: ['skills'] });
+      setDisableConfirmOpen(false);
+    },
+  });
+
+  const isAutoSyncActive = autoSyncStatus?.enabled === true;
 
   return (
     <>
@@ -52,6 +74,64 @@ export const SkillCatalogPage: React.FC = () => {
       </PageSection>
 
       <PageSection>
+        {isAutoSyncActive && (
+          <Alert
+            variant="info"
+            isInline
+            title={`Auto-sync active — syncing from ${autoSyncStatus?.registryUrl}`}
+            style={{ marginBottom: '1rem' }}
+            actionLinks={
+              <>
+                <Button
+                  variant="link"
+                  component="a"
+                  href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '', autoSyncStatus?.storeUiUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Manage in Skillberry Store ↗
+                </Button>
+                <Button
+                  variant="link"
+                  isDanger
+                  onClick={() => setDisableConfirmOpen(true)}
+                >
+                  Disable Auto-Sync
+                </Button>
+              </>
+            }
+          />
+        )}
+
+        <Modal
+          variant={ModalVariant.small}
+          title="Disable auto-sync?"
+          isOpen={disableConfirmOpen}
+          onClose={() => setDisableConfirmOpen(false)}
+          actions={[
+            <Button
+              key="confirm"
+              variant="danger"
+              isLoading={disableAutoSyncMutation.isPending}
+              onClick={() => disableAutoSyncMutation.mutate()}
+            >
+              Disable and remove {autoSyncStatus?.skillCount ?? 'all'} synced skills
+            </Button>,
+            <Button key="cancel" variant="link" onClick={() => setDisableConfirmOpen(false)}>
+              Cancel
+            </Button>,
+          ]}
+        >
+          {disableAutoSyncMutation.isError && (
+            <Alert variant="danger" isInline title="Failed to disable auto-sync">
+              {disableAutoSyncMutation.error instanceof Error
+                ? disableAutoSyncMutation.error.message
+                : 'An error occurred'}
+            </Alert>
+          )}
+          This will remove all auto-synced skills from Kagenti. Skills managed in
+          Skillberry Store will not be affected.
+        </Modal>
         <Toolbar>
           <ToolbarContent>
             <ToolbarItem>
@@ -69,13 +149,26 @@ export const SkillCatalogPage: React.FC = () => {
               />
             </ToolbarItem>
             <ToolbarItem>
-              <Button
-                variant="primary"
-                icon={<PlusCircleIcon />}
-                onClick={() => navigate('/skills/import')}
-              >
-                Import Skill
-              </Button>
+              {isAutoSyncActive ? (
+                <Button
+                  variant="secondary"
+                  icon={<ExternalLinkAltIcon />}
+                  component="a"
+                  href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '', autoSyncStatus?.storeUiUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Manage in Skillberry Store ↗
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  icon={<PlusCircleIcon />}
+                  onClick={() => navigate('/skills/import')}
+                >
+                  Import Skill
+                </Button>
+              )}
             </ToolbarItem>
           </ToolbarContent>
         </Toolbar>
@@ -113,13 +206,26 @@ export const SkillCatalogPage: React.FC = () => {
             </EmptyStateBody>
             <EmptyStateFooter>
               <EmptyStateActions>
-                <Button
-                  variant="primary"
-                  icon={<PlusCircleIcon />}
-                  onClick={() => navigate('/skills/import')}
-                >
-                  Import Skill
-                </Button>
+                {isAutoSyncActive ? (
+                  <Button
+                    variant="secondary"
+                    icon={<ExternalLinkAltIcon />}
+                    component="a"
+                    href={getSkillberryStoreUrl(autoSyncStatus?.registryUrl ?? '', autoSyncStatus?.storeUiUrl)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Manage in Skillberry Store ↗
+                  </Button>
+                ) : (
+                  <Button
+                    variant="primary"
+                    icon={<PlusCircleIcon />}
+                    onClick={() => navigate('/skills/import')}
+                  >
+                    Import Skill
+                  </Button>
+                )}
               </EmptyStateActions>
             </EmptyStateFooter>
           </EmptyState>
@@ -134,6 +240,7 @@ export const SkillCatalogPage: React.FC = () => {
                 <Th>Category</Th>
                 <Th>Usage Count</Th>
                 <Th>Created</Th>
+                <Th>Registry</Th>
               </Tr>
             </Thead>
             <Tbody>
@@ -147,6 +254,16 @@ export const SkillCatalogPage: React.FC = () => {
                 >
                   <Td dataLabel="Name">
                     <strong>{skill.name}</strong>
+                    {skill.source === 'external' && (
+                      <Label color="blue" isCompact style={{ marginLeft: '0.5rem' }}>
+                        External
+                      </Label>
+                    )}
+                    {skill.labels?.autoSync === 'true' && (
+                      <Label color="green" isCompact style={{ marginLeft: '0.5rem' }}>
+                        Auto-synced
+                      </Label>
+                    )}
                   </Td>
                   <Td dataLabel="Description">
                     {skill.description || <em>No description</em>}
@@ -163,6 +280,22 @@ export const SkillCatalogPage: React.FC = () => {
                     {skill.createdAt
                       ? new Date(skill.createdAt).toLocaleDateString()
                       : 'N/A'}
+                  </Td>
+                  <Td dataLabel="Registry">
+                    {skill.source === 'external' &&
+                    skill.externalInfo?.registryType === 'skillberry' &&
+                    getSkillberryUiUrl(skill.externalInfo.registryUrl, skill.externalInfo.registrySkillName, autoSyncStatus?.storeUiUrl) ? (
+                      <a
+                        href={getSkillberryUiUrl(skill.externalInfo.registryUrl, skill.externalInfo.registrySkillName, autoSyncStatus?.storeUiUrl)}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        View ↗
+                      </a>
+                    ) : (
+                      <span>—</span>
+                    )}
                   </Td>
                 </Tr>
               ))}

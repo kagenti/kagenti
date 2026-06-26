@@ -273,17 +273,19 @@ export const HomePage: React.FC = () => {
               isLoading={toolsLoading}
             />
           </GridItem>
-          <GridItem md={6} lg={3}>
-            <QuickLinkCard
-              title="Skill Catalog"
-              description="Browse and manage reusable skills for your agents."
-              icon={<CogIcon />}
-              path="/skills"
-              buttonText="View Skills"
-              count={skills.length}
-              isLoading={skillsLoading}
-            />
-          </GridItem>
+          {features.skills && (
+            <GridItem md={6} lg={3}>
+              <QuickLinkCard
+                title="Skill Catalog"
+                description="Browse and manage reusable skills for your agents."
+                icon={<CogIcon />}
+                path="/skills"
+                buttonText="View Skills"
+                count={skills.length}
+                isLoading={skillsLoading}
+              />
+            </GridItem>
+          )}
           <GridItem md={6} lg={3}>
             <QuickLinkCard
               title="Observability"
@@ -324,15 +326,17 @@ export const HomePage: React.FC = () => {
               Import New Tool
             </Button>
           </FlexItem>
-          <FlexItem>
-            <Button
-              variant="primary"
-              icon={<PlusCircleIcon />}
-              onClick={() => navigate('/skills/import')}
-            >
-              Import New Skill
-            </Button>
-          </FlexItem>
+          {features.skills && (
+            <FlexItem>
+              <Button
+                variant="primary"
+                icon={<PlusCircleIcon />}
+                onClick={() => navigate('/skills/import')}
+              >
+                Import New Skill
+              </Button>
+            </FlexItem>
+          )}
         </Flex>
 
         <Alert

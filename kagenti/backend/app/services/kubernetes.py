@@ -177,6 +177,7 @@ class KubernetesService:
         version: str,
         plural: str,
         label_selector: Optional[str] = None,
+        log_api_error: bool = True,
     ) -> dict:
         """List cluster-scoped custom resources (e.g., ClusterBuildStrategies)."""
         try:
@@ -187,7 +188,8 @@ class KubernetesService:
                 label_selector=label_selector,
             )
         except ApiException as e:
-            logger.error(f"Error listing cluster-scoped {plural}: {e}")
+            if log_api_error:
+                logger.error(f"Error listing cluster-scoped {plural}: {e}")
             raise
 
     def get_custom_resource(
@@ -787,6 +789,19 @@ class KubernetesService:
             name,
             body,
         )
+
+    def list_persistent_volume_claims(
+        self, namespace: str, label_selector: Optional[str] = None
+    ) -> List[str]:
+        """List PVC names in a namespace, optionally filtered by label."""
+        result = self.core_api.list_namespaced_persistent_volume_claim(
+            namespace=namespace, label_selector=label_selector or ""
+        )
+        return [pvc.metadata.name for pvc in result.items]
+
+    def delete_persistent_volume_claim(self, namespace: str, name: str) -> None:
+        """Delete a PersistentVolumeClaim by name."""
+        self.core_api.delete_namespaced_persistent_volume_claim(name=name, namespace=namespace)
 
 
 @lru_cache

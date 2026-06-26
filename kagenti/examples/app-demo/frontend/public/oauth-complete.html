@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head><title>OAuth Complete</title></head>
+<body>
+<p>Authorization complete. This window will close.</p>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const status = params.get('oauth_status') || 'unknown';
+  const msg = { type: 'oauth-complete', status: status };
+  if (status === 'error') {
+    msg.error = params.get('error') || '';
+    msg.error_description = params.get('error_description') || '';
+  }
+  if (window.opener) {
+    window.opener.postMessage(msg, '*');
+  }
+  window.close();
+</script>
+</body>
+</html>

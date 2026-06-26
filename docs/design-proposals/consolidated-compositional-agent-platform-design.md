@@ -243,7 +243,6 @@ Webhook Intercepts Pod CREATE (pods carry controller-applied labels)
   • Injects AuthBridge sidecars:
     - proxy-init (init container — network setup)
     - spiffe-helper (identity)
-    - client-registration (IdP integration)
     - envoy-proxy (outbound token exchange)
         ↓
 Agent Pod Running with Secure Identity
@@ -764,10 +763,11 @@ This is the same approach used for Istio sidecar injection labels.
 |-----------|------|---------|
 | `proxy-init` | Init Container | Sets up iptables for traffic interception |
 | `spiffe-helper` | Sidecar | Manages SPIFFE workload identity |
-| `client-registration` | Sidecar | Registers agent with identity provider |
 | `envoy-proxy` | Sidecar | Intercepts outbound traffic, performs token exchange |
 
 > **Note: AuthBridge Sidecar Consolidation** — The current AuthBridge implementation uses multiple sidecars as listed above. The Kagenti team plans to consolidate these into fewer containers in the near term. The current multi-sidecar design reflects the initial implementation where each concern was developed independently. Consolidation will reduce per-pod resource overhead, simplify configuration propagation (fewer processes to update), and reduce pod startup latency. The architecture described in this proposal is designed to work with both the current multi-sidecar layout and the future consolidated form — the webhook injects whatever the current AuthBridge implementation requires, and the number of injected containers is an implementation detail transparent to the developer.
+> 
+> **Note: Operator-Managed Client Registration** — Keycloak client registration is now handled by the kagenti-operator controller, not by an injected sidecar. The operator's ClientRegistrationReconciler watches deployments labeled as agents or tools and automatically registers them with Keycloak using credentials from the operator namespace. This eliminates the need for admin credentials in agent namespaces and provides better security isolation.
 
 ### Controller Architecture
 
@@ -832,7 +832,7 @@ The specific mechanism for this propagation is still under discussion. The candi
 
 **Current assessment**: For the Envoy proxy sidecar (which handles outbound token exchange and traffic interception), **xDS is the leading candidate** — it is Envoy's native configuration interface and provides the low-latency updates required for security-sensitive configuration like token exchange rules and destination policies.
 
-> **Open gap: Non-Envoy sidecar configuration propagation.** The mechanism for propagating configuration to non-Envoy sidecars (spiffe-helper, client-registration) is not yet defined. These sidecars currently read configuration from environment variables and mounted ConfigMaps at startup. Dynamic reconfiguration without pod restart is an unsolved problem for these components. This gap should be tracked explicitly and addressed in a future design iteration.
+> **Open gap: Non-Envoy sidecar configuration propagation.** The mechanism for propagating configuration to non-Envoy sidecars (spiffe-helper) is not yet defined. These sidecars currently read configuration from environment variables and mounted ConfigMaps at startup. Dynamic reconfiguration without pod restart is an unsolved problem for these components. This gap should be tracked explicitly and addressed in a future design iteration.
 
 **Requirements regardless of mechanism**:
 - Configuration changes should reach running sidecars without pod restarts where possible; changes to sidecar images or init containers require a pod restart
@@ -1097,20 +1097,20 @@ Unchanged from original proposal:
 
 ### Sidecar Consolidation Plan
 
-The current AuthBridge implementation injects four containers per pod:
+The current AuthBridge implementation injects three containers per pod:
 
 | Container | Purpose | Runtime |
 |-----------|---------|---------|
 | `proxy-init` | iptables redirect setup | Init container (short-lived) |
 | `envoy-proxy` | Envoy + go-processor ext-proc (outbound token exchange, inbound JWT validation) | Go + Envoy |
 | `spiffe-helper` | SPIFFE JWT-SVID management | Go |
-| `kagenti-client-registration` | Keycloak client registration | Python |
+
+**Keycloak Client Registration** is now handled by the kagenti-operator's ClientRegistrationReconciler controller rather than an injected sidecar. This provides better security isolation by keeping Keycloak admin credentials in the operator namespace.
 
 **Planned consolidation** (tracked as a separate work item):
 
 1. **Merge spiffe-helper into go-processor**: The go-processor already reads JWT-SVIDs; spiffe-helper's role (writing SVIDs to disk) can be absorbed into the go-processor or handled via SPIRE's workload API directly.
-2. **Merge client-registration into go-processor**: Client registration is a one-time operation that writes `client-id.txt` and `client-secret.txt`. This can run as an init phase within the go-processor.
-3. **Target state**: 2 containers — `proxy-init` (init) + `envoy-proxy` (sidecar with consolidated go-processor).
+2. **Target state**: 2 containers — `proxy-init` (init) + `envoy-proxy` (sidecar with consolidated go-processor).
 
 **Benefits**: Reduced per-pod resource overhead, simplified configuration propagation (one process to update), reduced pod startup latency, fewer shared volumes.
 

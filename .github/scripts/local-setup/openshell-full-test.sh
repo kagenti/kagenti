@@ -28,6 +28,8 @@
 #   --skip-images           Skip image builds (Phase 3)
 #   --skip-agents           Skip agent deployment within tenants
 #   --skip-test             Skip E2E test phase
+#   --sequential            Run tests sequentially (default: 4 parallel workers)
+#   --workers N             Number of parallel pytest workers (default: 4, 0=sequential)
 #   --cluster-name NAME     Kind cluster name (default: kagenti)
 #   [positional]            HyperShift cluster suffix (e.g., "ostest")
 #
@@ -58,6 +60,7 @@ SKIP_TEST=false
 SKIP_AGENTS=false
 SKIP_INSTALL=false
 SKIP_IMAGES=false
+PYTEST_WORKERS="${PYTEST_WORKERS:-2}"
 
 # ── Parse arguments ──────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -69,6 +72,8 @@ while [[ $# -gt 0 ]]; do
         --skip-agents)          SKIP_AGENTS=true;  shift ;;
         --skip-install)         SKIP_INSTALL=true; shift ;;
         --skip-images)          SKIP_IMAGES=true;  shift ;;
+        --sequential)           PYTEST_WORKERS=0;  shift ;;
+        --workers)              PYTEST_WORKERS="$2"; shift 2 ;;
         --cluster-name)         CLUSTER_NAME="$2"; shift 2 ;;
         -*)
             echo "Unknown option: $1" >&2
@@ -159,8 +164,9 @@ done
 # CI fallback: use OPENAI_API_KEY when .env.maas is not available
 if [ "$MAAS_SOURCED" = "false" ] && [ -n "${OPENAI_API_KEY:-}" ]; then
     export MAAS_LLAMA4_API_KEY="$OPENAI_API_KEY"
-    export MAAS_LLAMA4_API_BASE="${MAAS_LLAMA4_API_BASE:-https://litellm-prod.apps.maas.redhatworkshops.io/v1}"
-    export MAAS_LLAMA4_MODEL="${MAAS_LLAMA4_MODEL:-llama-scout-17b}"
+    export MAAS_LLAMA4_API_BASE="${MAAS_LLAMA4_API_BASE:-https://litellm-litemaas.apps.prod.rhoai.rh-aiservices-bu.com/v1}"
+    export MAAS_LLAMA4_MODEL="${MAAS_LLAMA4_MODEL:-Qwen3.6-35B-A3B}"
+    export MAAS_DEEPSEEK_MODEL="${MAAS_DEEPSEEK_MODEL:-Qwen3.6-35B-A3B}"
     MAAS_SOURCED=true
     log_step "Using OPENAI_API_KEY as LiteMaaS credentials (CI mode)"
 fi
@@ -188,9 +194,11 @@ echo "    6. test:            $([ "$SKIP_TEST"    = "true" ] && echo SKIP || ech
 echo "    7. cluster-destroy: $([ "$SKIP_DESTROY" = "true" ] && echo SKIP || echo RUN)"
 echo ""
 
-# ── Ensure boto3 for Ansible AWS modules (HyperShift cluster lifecycle) ──
-if [ "$PLATFORM" = "ocp" ]; then
-    pip install boto3 botocore 2>/dev/null || true
+# ── Ensure boto3 for AWS modules (HyperShift cluster lifecycle) ──
+# CI installs these via ci/20-install-tools.sh; local users install via pip.
+if [ "$PLATFORM" = "ocp" ] && ! python3 -c "import boto3" 2>/dev/null; then
+    log_warn "boto3 not installed — HyperShift cluster create/destroy will fail"
+    log_warn "Install with: pip install boto3 botocore"
 fi
 
 # ============================================================================
@@ -232,12 +240,23 @@ else
 fi
 
 # ============================================================================
+# PHASE 1.5: Early Image Pre-Pull (OCP only, non-blocking)
+# ============================================================================
+if [ "$PLATFORM" = "ocp" ] && [ "$SKIP_IMAGES" = "false" ]; then
+    log_phase "PHASE 1.5: Early Image Pre-Pull (background)"
+    scripts/openshell/prepull-images.sh --no-wait || true
+fi
+
+# ============================================================================
 # PHASE 2: Install Kagenti Platform
 # ============================================================================
 if [ "$SKIP_INSTALL" = "false" ]; then
     log_phase "PHASE 2: Install Kagenti Platform (OpenShell profile)"
 
     if [ "$PLATFORM" = "ocp" ]; then
+        # OCP: Use the Helm-based installer (scripts/ocp/setup-kagenti.sh)
+        # This handles cert-manager, Keycloak, SPIRE, Istio, and the operator.
+        # Skip UI/MLflow/MCP Gateway for OpenShell PoC.
         log_step "Running Helm-based OCP installer..."
         "$REPO_ROOT/scripts/ocp/setup-kagenti.sh" \
             --kagenti-repo "$REPO_ROOT" \
@@ -246,7 +265,11 @@ if [ "$SKIP_INSTALL" = "false" ]; then
             --skip-mcp-gateway \
             --skip-ovn-patch
     else
+        # Kind: Use the platform installer with the openshell env profile
+        log_step "Creating secrets..."
         ./.github/scripts/common/20-create-secrets.sh
+
+        log_step "Running platform installer (--env $KAGENTI_ENV)..."
         ./.github/scripts/kagenti-operator/30-run-installer.sh --env "$KAGENTI_ENV"
         ./.github/scripts/common/40-wait-platform-ready.sh
         ./.github/scripts/common/70-configure-dockerhost.sh
@@ -261,8 +284,9 @@ else
 fi
 
 # ============================================================================
-# PHASE 3: Build Images
+# PHASE 3: Build Images (non-fatal — tests skip for missing components)
 # ============================================================================
+set +e
 if [ "$SKIP_IMAGES" = "false" ]; then
     log_phase "PHASE 3: Build Images"
 
@@ -283,6 +307,9 @@ else
     log_phase "PHASE 3: Skipping Image Builds"
 fi
 
+# Re-enable strict mode for deploy phases that must succeed
+set -euo pipefail
+
 # ============================================================================
 # PHASE 4: Deploy Shared Infrastructure
 # ============================================================================
@@ -298,6 +325,7 @@ fi
 
 scripts/openshell/deploy-shared.sh "${SHARED_ARGS[@]}"
 
+
 # ============================================================================
 # PHASE 5: Deploy Tenants
 # ============================================================================
@@ -308,12 +336,22 @@ if [ "$SKIP_AGENTS" = "false" ]; then
     TENANT_ARGS+=(--agents)
 fi
 
-for tenant in team1 team2; do
-    log_step "Deploying tenant: $tenant"
-    scripts/openshell/deploy-tenant.sh "$tenant" "${TENANT_ARGS[@]}"
-done
+# team1: full deployment with agents
+log_step "Deploying tenant: team1"
+scripts/openshell/deploy-tenant.sh "team1" "${TENANT_ARGS[@]}"
+
+# Team2 is only needed for tenant-isolation tests (T4_2). Skip in CI to avoid
+# resource exhaustion on single-node Kind clusters — isolation tests use
+# pytest.mark.skip when the namespace is absent.
+if [ "${OPENSHELL_DEPLOY_TEAM2:-false}" = "true" ]; then
+    log_step "Deploying tenant: team2 (gateway only)"
+    scripts/openshell/deploy-tenant.sh "team2"
+else
+    log_step "Skipping team2 (set OPENSHELL_DEPLOY_TEAM2=true to enable)"
+fi
 
 # ============================================================================
+set -euo pipefail
 # PHASE 6: Run E2E Tests
 # ============================================================================
 if [ "$SKIP_TEST" = "false" ]; then
@@ -322,13 +360,28 @@ if [ "$SKIP_TEST" = "false" ]; then
     ./.github/scripts/common/80-install-test-deps.sh 2>/dev/null || true
     ./.github/scripts/common/87-setup-test-credentials.sh 2>/dev/null || true
 
+    # Export openshell test user passwords from K8s secret (generated by deploy-shared.sh)
+    if kubectl get secret openshell-test-users -n team1 &>/dev/null; then
+        export OPENSHELL_ALICE_PASSWORD=$(kubectl get secret openshell-test-users -n team1 -o jsonpath='{.data.alice-password}' | base64 -d)
+        export OPENSHELL_BOB_PASSWORD=$(kubectl get secret openshell-test-users -n team1 -o jsonpath='{.data.bob-password}' | base64 -d)
+        log_step "Loaded openshell test user credentials from K8s secret"
+    fi
+
     export KAGENTI_CONFIG_FILE="deployments/envs/dev_values_openshell.yaml"
     export OPENSHELL_GATEWAY_NAMESPACE="team1"
 
     if [ "$MAAS_SOURCED" = "true" ]; then
         export OPENSHELL_LLM_AVAILABLE=true
-        export OPENSHELL_LLM_MODELS="${OPENSHELL_LLM_MODELS:-llama-scout-17b,deepseek-r1}"
+        export OPENSHELL_LLM_MODELS="${OPENSHELL_LLM_MODELS:-Qwen3.6-35B-A3B}"
         log_step "LLM tests enabled (models: $OPENSHELL_LLM_MODELS)"
+    fi
+
+    # Enable backend API tests if kagenti-backend is deployed and available
+    if kubectl get deploy kagenti-backend -n team1 &>/dev/null; then
+        if kubectl wait --for=condition=Available deploy/kagenti-backend -n team1 --timeout=60s &>/dev/null; then
+            export OPENSHELL_BACKEND_AVAILABLE=true
+            log_step "Backend API tests enabled (kagenti-backend ready)"
+        fi
     fi
 
     # Enable NemoClaw tests if agents are deployed and healthy
@@ -342,10 +395,21 @@ if [ "$SKIP_TEST" = "false" ]; then
 
     TEST_DIR="kagenti/tests/e2e/openshell"
     if [ -d "$TEST_DIR" ]; then
-        log_step "Running OpenShell E2E tests..."
-        uv run pytest "$TEST_DIR" -v --timeout=300
+        PYTEST_ARGS=(-v --timeout=300)
+        if [ "$PYTEST_WORKERS" -gt 0 ] 2>/dev/null; then
+            PYTEST_ARGS+=(-n "$PYTEST_WORKERS" --dist loadfile)
+            log_step "Running OpenShell E2E tests (${PYTEST_WORKERS} parallel workers)..."
+        else
+            log_step "Running OpenShell E2E tests (sequential)..."
+        fi
+        PYTEST_EXIT=0
+        uv run pytest "$TEST_DIR" "${PYTEST_ARGS[@]}" || PYTEST_EXIT=$?
+        if [ "$PYTEST_EXIT" -ne 0 ]; then
+            log_error "Tests failed (exit code: $PYTEST_EXIT)"
+        fi
     else
         log_warn "No tests at $TEST_DIR — skipping."
+        PYTEST_EXIT=0
     fi
 else
     log_phase "PHASE 6: Skipping E2E Tests"
@@ -380,3 +444,5 @@ echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━
 echo -e "${GREEN}┃${NC} OpenShell full test completed! (platform: $PLATFORM)"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
+
+exit "${PYTEST_EXIT:-0}"

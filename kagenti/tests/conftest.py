@@ -206,18 +206,18 @@ def _keycloak_ssl_verify() -> "bool | str":
     return True
 
 
-@pytest.fixture(scope="session")
-def keycloak_agent_token(k8s_client) -> Optional[str]:
-    """
-    Acquire a Bearer token from the kagenti realm for authenticating
-    to agents via AuthBridge.
+def _acquire_agent_token(k8s_client) -> Optional[str]:
+    """Mint a fresh Bearer token for authenticating to agents via AuthBridge.
 
-    Reads credentials from the ``kagenti-test-user`` secret (created/
-    updated by ``87-setup-test-credentials.sh`` or the agent-oauth-secret
-    Helm Job) and acquires a token via Direct Access Grant.
+    Reads credentials from the ``kagenti-test-user`` secret and performs a
+    Direct Access Grant (or client_credentials when a confidential client is
+    configured). Broken out of the fixture below so tests can re-mint on a
+    transient 401 — e.g. when the audience scope was attached to
+    ``kagenti-e2e-tests`` after the session-scoped fixture had already cached
+    a tokenless-of-aud value.
 
-    Returns:
-        Access token string, or None if the secret is absent.
+    Returns the access token string, or None when credentials are absent or
+    Keycloak rejects the request.
     """
     import time
 
@@ -292,3 +292,23 @@ def keycloak_agent_token(k8s_client) -> Optional[str]:
         print(f"\n[keycloak_agent_token] Token request error: {e}")
 
     return None
+
+
+@pytest.fixture(scope="session")
+def keycloak_agent_token(k8s_client) -> Optional[str]:
+    """Acquire a Bearer token from the kagenti realm for authenticating to
+    agents via AuthBridge. Cached for the session; tests that need a fresh
+    token after a 401 should call ``_acquire_agent_token`` directly (exposed
+    via the ``keycloak_agent_token_refresh`` fixture).
+    """
+    return _acquire_agent_token(k8s_client)
+
+
+@pytest.fixture(scope="session")
+def keycloak_agent_token_refresh(k8s_client):
+    """Returns a zero-arg callable that mints a fresh agent token on each
+    invocation. Tests wrap their A2A call in a retry loop: on a 401 they call
+    this to pick up any audience scopes that landed on ``kagenti-e2e-tests``
+    after the session fixture cached its tokenless-of-aud bootstrap value.
+    """
+    return lambda: _acquire_agent_token(k8s_client)

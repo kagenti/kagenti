@@ -159,17 +159,16 @@ async def send_message(
 
     # Build A2A message payload. When the frontend supplied a session_id
     # (subsequent turns of the same conversation), forward it as
-    # params.contextId so the agent joins the existing A2A task chain
+    # message.contextId so the agent joins the existing A2A task chain
     # instead of spinning up a fresh context per message.
-    params: dict = {
-        "message": {
-            "role": "user",
-            "parts": [{"kind": "text", "text": request.message}],
-            "messageId": uuid4().hex,
-        },
+    message: dict = {
+        "role": "user",
+        "parts": [{"kind": "text", "text": request.message}],
+        "messageId": uuid4().hex,
     }
     if request.session_id:
-        params["contextId"] = request.session_id
+        message["contextId"] = request.session_id
+    params: dict = {"message": message}
 
     message_payload = {
         "jsonrpc": "2.0",
@@ -503,17 +502,16 @@ async def stream_message(
     if authorization:
         headers["Authorization"] = authorization
 
-    # See /send handler: forward the client's session_id as params.contextId
+    # See /send handler: forward the client's session_id as message.contextId
     # so multi-turn conversations stay in one A2A context.
-    stream_params: dict = {
-        "message": {
-            "role": "user",
-            "parts": [{"kind": "text", "text": request.message}],
-            "messageId": uuid4().hex,
-        },
+    stream_message: dict = {
+        "role": "user",
+        "parts": [{"kind": "text", "text": request.message}],
+        "messageId": uuid4().hex,
     }
     if request.session_id:
-        stream_params["contextId"] = request.session_id
+        stream_message["contextId"] = request.session_id
+    stream_params: dict = {"message": stream_message}
 
     message_payload = {
         "jsonrpc": "2.0",

@@ -105,14 +105,46 @@ else
     # Use ghcr.io image (Kind manifest)
     kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment.yaml"
 
-    # On OpenShift without Shipwright, patch LLM config to use external endpoint
+    # On OpenShift without Shipwright, patch LLM config to use MaaS LiteLLM proxy
     # (Kind manifest points to dockerhost:11434 which doesn't exist on OCP)
     if [ "$IS_OPENSHIFT" = "true" ]; then
-        log_info "Patching LLM config for OpenShift (no local Ollama)..."
+        log_info "Patching LLM config for OpenShift (MaaS LiteLLM)..."
+
+        LLM_HOST="litellm-litemaas.apps.prod.rhoai.rh-aiservices-bu.com"
+
+        # The authbridge webhook injects HTTP(S)_PROXY=http://127.0.0.1:8081
+        # at pod admission.  We cannot prevent injection, but we can ensure
+        # NO_PROXY covers all traffic that must bypass the auth sidecar.
+        # Include explicit hostnames for MCP/OTEL endpoints because some httpx
+        # versions don't match leading-dot suffixes (e.g. .svc.cluster.local)
+        # for plain HTTP URLs routed through HTTP_PROXY.
+        NO_PROXY_VAL="127.0.0.1,localhost,${LLM_HOST},.svc,.svc.cluster.local,.local,.cluster.local,weather-tool-mcp.team1.svc.cluster.local,otel-collector.kagenti-system.svc.cluster.local,keycloak.keycloak.svc.cluster.local"
+        # Set HTTP_PROXY="" (not remove it) so the authbridge webhook sees it
+        # already exists and skips injection.  The MCP SDK reads HTTP_PROXY
+        # from env and passes it to httpx as an explicit proxy= arg, which
+        # bypasses NO_PROXY handling entirely.  Empty string = no proxy.
         kubectl set env deployment/weather-service -n team1 \
-            LLM_API_BASE="https://litellm-prod.apps.maas.redhatworkshops.io/v1" \
-            LLM_MODEL="llama-scout-17b" \
+            LLM_API_BASE="https://${LLM_HOST}/v1" \
+            LLM_MODEL="Qwen3.6-35B-A3B" \
+            HTTP_PROXY="" \
+            http_proxy="" \
+            NO_PROXY="$NO_PROXY_VAL" \
+            no_proxy="$NO_PROXY_VAL" \
             LLM_API_KEY- OPENAI_API_KEY- 2>/dev/null || true
+
+        # HyperShift hosted clusters may lack external DNS resolution (CoreDNS
+        # has no upstream forwarder configured). Resolve the LLM host from the
+        # CI runner and inject as a hostAlias so the pod can reach it.
+        LLM_IP=$(getent hosts "$LLM_HOST" 2>/dev/null | awk '{print $1; exit}' || \
+                 python3 -c "import socket; print(socket.getaddrinfo('$LLM_HOST',443)[0][4][0])" 2>/dev/null || echo "")
+        if [ -n "$LLM_IP" ]; then
+            log_info "Adding hostAlias for $LLM_HOST → $LLM_IP (external DNS workaround)"
+            kubectl patch deployment weather-service -n team1 --type=json -p "[
+                {\"op\":\"add\",\"path\":\"/spec/template/spec/hostAliases\",\"value\":[{\"ip\":\"${LLM_IP}\",\"hostnames\":[\"${LLM_HOST}\"]}]}
+            ]" 2>/dev/null || log_warn "Could not add hostAlias (may already exist)"
+        else
+            log_warn "Cannot resolve $LLM_HOST from CI runner — pod DNS may fail"
+        fi
         # Set API keys from secret if it exists
         if kubectl get secret openai-secret -n team1 &>/dev/null; then
             kubectl patch deployment weather-service -n team1 --type=json -p '[
@@ -122,6 +154,10 @@ else
         else
             log_warn "openai-secret not found in team1 — LLM calls will fail without API key"
         fi
+
+        # Note: proxy-init is only injected in envoy-proxy mode. The default
+        # authbridge proxy-sidecar mode uses HTTPS_PROXY env vars instead.
+        # See NO_PROXY override above for external LLM endpoints.
     fi
 fi
 
@@ -129,6 +165,23 @@ fi
 kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_service.yaml"
 
 log_success "Weather-service deployed via Deployment + Service (operator-independent)"
+
+# ============================================================================
+# Step 3: Wait for operator to create the client credentials secret
+# The webhook injects a volume mount for kagenti-keycloak-client-credentials-*
+# into the pod at admission time.  The pod stays in ContainerCreating until
+# the operator's ClientRegistrationReconciler registers the workload in
+# Keycloak and creates the Secret.  Wait here to avoid a flaky timeout later.
+# ============================================================================
+log_info "Waiting for operator to create client credentials secret..."
+if ! kubectl -n team1 wait --for=create secret/kagenti-keycloak-client-credentials --timeout=120s 2>/dev/null; then
+    log_warn "Credentials secret not found after 120s — pod may be stuck in ContainerCreating"
+    kubectl get pods -n kagenti-system 2>&1 || true
+    kubectl get secrets -n team1 2>&1 || true
+    kubectl logs -n kagenti-system -l app.kubernetes.io/instance=kagenti --tail=20 2>&1 || true
+else
+    log_success "Client credentials secret created by operator"
+fi
 
 # WORKAROUND: Fix Service targetPort mismatch
 # The kagenti-operator creates Service with targetPort: 8080, but the agent listens on 8000
@@ -141,6 +194,21 @@ kubectl patch svc weather-service -n team1 --type=json \
     kubectl get svc weather-service -n team1 -o yaml
     exit 1
 }
+
+# ============================================================================
+# Step 4: Wait for pod to be Ready (common for Kind and OpenShift)
+# After the credentials secret exists, the pod transitions from
+# ContainerCreating → Running.  Wait for the deployment rollout to complete
+# so subsequent scripts can rely on the agent being up.
+# ============================================================================
+log_info "Waiting for weather-service pod to be ready..."
+wait_for_deployment "weather-service" "team1" 180 || {
+    log_error "weather-service deployment not ready"
+    kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service 2>&1 || true
+    kubectl describe pods -n team1 -l app.kubernetes.io/name=weather-service 2>&1 | tail -30 || true
+    exit 1
+}
+log_success "weather-service pod is ready"
 
 # Create OpenShift Route for the agent (on OpenShift only)
 # The kagenti-operator doesn't create routes automatically - they're created by the UI backend
@@ -204,6 +272,64 @@ EOF
             kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service 2>&1 || true
             kubectl describe pods -n team1 -l app.kubernetes.io/name=weather-service 2>&1 | tail -30 || true
             exit 1
+        fi
+
+        # Diagnostic: verify LLM endpoint is reachable from inside the pod
+        WEATHER_POD=$(kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        if [ -n "$WEATHER_POD" ]; then
+            log_info "Testing LLM endpoint connectivity from agent pod..."
+            LLM_BASE=$(kubectl get deployment weather-service -n team1 -o jsonpath='{.spec.template.spec.containers[?(@.name=="agent")].env[?(@.name=="LLM_API_BASE")].value}' 2>/dev/null || echo "")
+            if [ -n "$LLM_BASE" ]; then
+                LLM_HOST=$(echo "$LLM_BASE" | sed 's|https\?://||' | cut -d/ -f1)
+                # Test DNS + TLS + HTTP connectivity from inside the agent container
+                kubectl exec -n team1 "$WEATHER_POD" -c agent -- \
+                    python3 -c "
+import socket, ssl, os, sys
+host = '$LLM_HOST'
+port = 443
+url = '$LLM_BASE'
+
+# Check proxy env vars
+for k in ('HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy','NO_PROXY','no_proxy'):
+    v = os.environ.get(k)
+    if v: print(f'PROXY: {k}={v}')
+
+# DNS
+try:
+    ip = socket.getaddrinfo(host, port)[0][4][0]
+    print(f'DNS OK: {host} -> {ip}')
+except Exception as e:
+    print(f'DNS FAIL: {host} -> {e}'); sys.exit(1)
+
+# TLS
+try:
+    ctx = ssl.create_default_context()
+    with socket.create_connection((host, port), timeout=10) as sock:
+        with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+            print(f'TLS OK: {ssock.version()}')
+except Exception as e:
+    print(f'TLS FAIL: {host}:{port} -> {e}'); sys.exit(1)
+
+# HTTP via httpx (same library as OpenAI client)
+try:
+    import httpx
+    r = httpx.get(url + '/models', timeout=15, headers={'Authorization': 'Bearer test'})
+    print(f'HTTPX OK: status={r.status_code}')
+except Exception as e:
+    print(f'HTTPX FAIL: {type(e).__name__}: {e}')
+
+# Check OpenAI client
+try:
+    import openai
+    c = openai.OpenAI(base_url=url, api_key=os.environ.get('OPENAI_API_KEY','test'))
+    c.models.list()
+    print('OPENAI OK')
+except openai.APIConnectionError as e:
+    print(f'OPENAI CONN FAIL: {e.__cause__}')
+except Exception as e:
+    print(f'OPENAI OTHER: {type(e).__name__}: {e}')
+" 2>&1 || log_warn "LLM endpoint not reachable from pod — agent conversation tests will fail"
+            fi
         fi
     fi
 fi

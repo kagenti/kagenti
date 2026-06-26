@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Run Kagenti Ansible Installer
+# Run Kagenti Platform Installer
 #
 # USAGE:
 #   ./.github/scripts/kagenti-operator/30-run-installer.sh [--env <dev|ocp>] [extra-args...]
@@ -19,13 +19,14 @@ source "$SCRIPT_DIR/../lib/logging.sh"
 ENV="dev"
 EXTRA_ARGS=()
 
-# Parse arguments
+# Parse arguments (--env is accepted for backwards compatibility but not forwarded)
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --env)
             shift
             ENV="${1:-dev}"
             shift
+            log_warn "--env is deprecated and ignored; setup-kagenti.sh does not use it"
             ;;
         *)
             EXTRA_ARGS+=("$1")
@@ -34,9 +35,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-log_step "30" "Running Ansible installer (Kagenti Operator) with --env $ENV"
+log_step "30" "Running platform installer (Kagenti Operator)"
 
-cd "$REPO_ROOT/deployments/ansible"
-./run-install.sh --env "$ENV" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
+"$REPO_ROOT/scripts/kind/setup-kagenti.sh" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
 
-log_success "Ansible installer complete"
+log_success "Platform installer complete"

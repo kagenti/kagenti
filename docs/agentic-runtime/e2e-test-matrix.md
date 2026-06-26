@@ -17,61 +17,122 @@
 Agent lists defined in `conftest.py`: `A2A_AGENTS`, `EXEC_AGENTS`, `CLI_AGENTS`,
 `NEMOCLAW_AGENTS`, `SKILL_AGENTS`, `ALL_AGENTS`.
 
-## Capability Matrix (CI Kind)
+## Capability Matrix (CI Kind — 107 passed, 0 failed, 112 skipped)
 
-174 tests total. P=pass, S=skip, —=not tested.
+219 tests total. P=pass, S=skip(reason), FL=flaky, —=not tested.
+
+**Latest CI result:** 107/0/112 on SHA `43f1f03` (2026-05-10, issue_comment run with full secrets).
+
+**Stability:** 4/4 consecutive runs with 0 failures (3 local Kind + 1 CI Kind).
 
 **Tier 1: Infrastructure**
 
 | Capability | Claude Code | OpenCode | Claude SDK | ADK | Weather | OpenClaw | Hermes |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Connectivity | P | P | P | P | P | P | P |
-| Credentials | P | P | P | P | P | P | P |
-| Sandbox lifecycle | P | — | — | — | — | — | — |
-| Workspace | P | P | — | — | — | — | — |
-| Resource limits | S | — | P | S | S | P | P |
+| Connectivity | P | S¹ | P | S² | S² | P | S³ |
+| Credentials | S¹ | S¹ | P | P | P | P | P |
+| Sandbox lifecycle | P | S¹ | — | — | — | — | — |
+| Workspace | S¹ | S¹ | — | — | — | — | — |
+| Resource limits | S¹ | S¹ | P | S⁴ | S⁴ | P | P |
 
 **Tier 2: Capabilities**
 
 | Capability | Claude Code | OpenCode | Claude SDK | ADK | Weather | OpenClaw | Hermes |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Multiturn | S | S | P | P | S | P | — |
-| Context isolation | S | S | P | P | S | P | — |
-| Tool calling | P | — | — | — | — | — | — |
-| Concurrent sessions | P | — | — | — | — | — | — |
+| Multiturn | S⁵ | S⁵ | P | S² | S⁶ | P | — |
+| Context isolation | S⁵ | S⁵ | P | S² | S⁶ | P | — |
+| Session resume | S⁵ | S⁵ | P | S² | — | — | — |
+| Tool calling | S¹ | — | — | — | — | — | — |
+| Concurrent sessions | S¹ | — | — | — | — | — | — |
 
-S for Claude Code/OpenCode: CLI is single-invocation (by design).
-
-**Tier 3: Skills (parametrized x 6 agents)**
+**Tier 3: Skills (parametrized x 6 agents, x 2 models)**
 
 | Capability | Claude SDK | ADK | Claude Code | OpenCode | OpenClaw | Weather |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| PR review | P | P | P | P | S | S |
-| RCA | P | P | P | P | S | S |
-| Security | P | P | P | P | S | S |
-| GitHub PR | P | P | P | P | S | S |
+| PR review | P | S² | S¹ | S¹ | S⁷ | S⁶ |
+| RCA | P/FL⁸ | S² | S¹ | S¹ | S⁷ | S⁶ |
+| Security | P/FL⁸ | S² | S¹ | S¹ | S⁷ | S⁶ |
+| GitHub PR | P | S² | S¹ | S¹ | S⁷ | S⁶ |
 
-S for OpenClaw: gateway doesn't expose REST chat API.
-S for Weather: no LLM capability.
-Per-model: `llama-scout-17b` + `deepseek-r1` (both 100% via LiteMaaS).
+Per-model: `llama-scout-17b` + `deepseek-r1` (both via LiteMaaS).
 
 **Tier 4: Security**
 
 | Capability | Weather | Others |
 |---|:---:|:---:|
 | HITL: Network egress | P | — |
-| Audit logging | — | P (Claude Code, OpenCode) |
+| Audit logging | — | S¹ (Claude Code, OpenCode) |
+
+**Tier 5: Backend API (via kagenti-backend A2A proxy)**
+
+Tests go through the backend at `/api/v1/chat/{ns}/{agent}/send|stream`.
+One port-forward to the backend replaces per-agent port-forwards.
+
+| Capability | Claude SDK | ADK | Weather | Claude Code | OpenCode | OpenClaw |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Health check | P | P | P | — | — | — |
+| Agent card proxy | P | S² | S² | — | — | — |
+| Send proxy | P | S² | S² | — | — | — |
+| Stream proxy | S⁸ | S² | S² | — | — | — |
+| Multiturn proxy | P | S² | S⁶ | — | — | — |
+| Agent list | S⁹ | — | — | — | — | — |
+| Error handling | P | P | P | — | — | — |
+| Concurrent proxy | P | — | — | — | — | — |
+
+**Tier 6: ACP Protocol (WebSocket)**
+
+Tests the ACP WebSocket endpoint with JSON-RPC 2.0 lifecycle.
+
+| Capability | Claude SDK | ADK | Weather | Claude Code | OpenCode | OpenClaw |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Initialize | P | P | — | — | — | — |
+| Session new/close | P | P | — | — | — | — |
+| Prompt relay | P | P | — | — | — | — |
+| Context preserved | P | P | — | — | — | — |
+| Session list | P | — | — | — | — | — |
+| Session resume | P | — | — | — | — | — |
+| Permission gate | P | — | — | — | — | — |
+| Error handling | P | P | — | — | — | — |
+
+**Tier 7: Teleport (Sandbox CRD + LLM)**
+
+Tests session teleporting — packaging local context into a sandbox and executing with it.
+
+| Capability | Claude Code |
+|---|:---:|
+| Package context → ConfigMap | P |
+| Deploy sandbox with context | P |
+| Context unpacked in pod | P |
+| Prompt reads teleported context | P |
+| Cleanup removes resources | P |
+| Script exists and executable | P |
+
+MVP targets Claude Code only. OpenCode teleport planned as extension.
 
 ## Skip Reasons
 
-| Reason | Count | Agents | Resolution |
-|---|:---:|---|---|
-| CLI single-invocation | 6 | Claude Code, OpenCode | ExecSandbox gRPC adapter (Phase 2) |
-| No LLM | 9 | Weather, generic | By design |
-| No resource limits | 5 | ADK, Weather, sandbox | Add limits to deployment YAMLs |
-| Gateway protocol | 4 | OpenClaw | A2A adapter or NemoClaw plugin |
-| Waypoint not deployed | 3 | All | Add to deploy-shared.sh |
-| Session resume | 5 | All | Kagenti backend session store |
+| Code | Reason | Count | Resolution Path |
+|------|--------|-------|-----------------|
+| S¹ | Sandbox CRD not installed in CI | ~25 | Install agent-sandbox CRD before tests |
+| S² | Supervised agent netns blocks backend (503) | ~15 | Port-bridge sidecar integration |
+| S³ | NemoClaw tests disabled in CI | ~5 | Set `OPENSHELL_NEMOCLAW_ENABLED=true` |
+| S⁴ | No resource limits set on deployment | ~5 | Add limits to agent deployment YAMLs |
+| S⁵ | CLI sandbox is single-invocation (by design) | ~6 | ACP session/prompt for multiturn |
+| S⁶ | No LLM capability (weather) or not deployed | ~10 | By design |
+| S⁷ | NemoClaw gateway protocol (not A2A) | ~8 | NemoClaw adapter in backend |
+| S⁸ | LLM returned empty response (llama-scout-17b ~17% flake) | ~3 | Skip guard, track as flaky |
+| S⁹ | Agents lack `kagenti.io/type=agent` label | 1 | Label alignment |
+
+## Flaky Tests
+
+| Test | Agent | Model | Flake Rate | Root Cause |
+|------|-------|-------|-----------|-----------|
+| `test_skill_rca[claude_sdk]` | Claude SDK | llama-scout-17b | ~17% | LLM returns empty response |
+| `test_skill_security[claude_sdk]` | Claude SDK | llama-scout-17b | ~17% | Same |
+| `test_T5_stream[claude_sdk_agent]` | Claude SDK | llama-scout-17b | ~10% | Empty SSE stream |
+
+All flaky tests have skip guards — they skip instead of fail when the LLM returns empty.
+deepseek-r1 model does NOT exhibit these flakes.
 
 ## Test File Organization
 
@@ -90,6 +151,9 @@ Per-model: `llama-scout-17b` + `deepseek-r1` (both 100% via LiteMaaS).
 | `test_T2_3_session_resume.py` | 2 | 7 | Session resume across restarts |
 | `test_T3_1_skill_execution.py` | 3 | 32 | Skills x 6 agents + per-model + audit |
 | `test_T4_1_hitl_network.py` | 4 | 3 | HITL network egress |
+| `test_T5_1_backend_api.py` | 5 | ~15 | Backend A2A proxy |
+| `test_T6_1_acp_protocol.py` | 6 | ~15 | ACP WebSocket protocol |
+| `test_T7_1_teleport.py` | 7 | 6 | Session teleport lifecycle |
 
 ## Running Tests
 

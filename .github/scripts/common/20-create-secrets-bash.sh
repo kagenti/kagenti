@@ -2,8 +2,6 @@
 # Create Secrets for Bash Installer (Wave 20)
 # Writes charts/kagenti/.secrets.yaml in Helm values format.
 # Used by scripts/kind/setup-kagenti.sh (auto-detected via .secrets.yaml).
-#
-# For Ansible-based installs, use 20-create-secrets.sh instead.
 
 set -euo pipefail
 

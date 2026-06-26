@@ -22,6 +22,9 @@ import {
   DescriptionListDescription,
   Label,
   Skeleton,
+  Checkbox,
+  Split,
+  SplitItem,
 } from '@patternfly/react-core';
 import {
   KeyIcon,
@@ -34,6 +37,10 @@ import { useQuery } from '@tanstack/react-query';
 
 import { useAuth } from '@/contexts';
 import { configService } from '@/services/api';
+import type { ComponentStatus } from '@/services/api';
+import { useFeatureFlags, type FeatureFlags } from '@/hooks/useFeatureFlags';
+
+const POLL_INTERVAL_MS = 15_000;
 
 // Auth status API service
 async function getAuthStatus(): Promise<{
@@ -50,8 +57,122 @@ async function getAuthStatus(): Promise<{
   return response.json();
 }
 
+const STATUS_COLOR: Record<ComponentStatus['status'], 'green' | 'gold' | 'grey'> = {
+  Ready: 'green',
+  Degraded: 'gold',
+  Missing: 'grey',
+  Unknown: 'grey',
+};
+
+type DisplayedFlag = Exclude<keyof FeatureFlags, 'admin'>;
+
+const FLAG_LABELS: Record<DisplayedFlag, string> = {
+  builds: 'Builds (Shipwright)',
+  sandbox: 'Sandbox',
+  integrations: 'Integrations',
+  triggers: 'Triggers',
+  agentSandbox: 'Agent Sandbox',
+  skills: 'Skills',
+  authbridgeAPI: 'AuthBridge API',
+  externalSkills: 'External Skills',
+};
+
+const PlatformStatusCard: React.FC = () => {
+  const flags = useFeatureFlags();
+
+  const { data: platformStatus, isLoading } = useQuery({
+    queryKey: ['platform-status'],
+    queryFn: () => configService.getPlatformStatus(),
+    refetchInterval: POLL_INTERVAL_MS,
+  });
+
+  return (
+    <Card isFullHeight>
+      <CardTitle>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <CogIcon />
+          Platform Status
+        </span>
+      </CardTitle>
+      <CardBody>
+        {isLoading ? (
+          <>
+            <Skeleton width="80%" style={{ marginBottom: '8px' }} />
+            <Skeleton width="60%" style={{ marginBottom: '8px' }} />
+            <Skeleton width="70%" />
+          </>
+        ) : (
+          <>
+            <Split hasGutter>
+              <SplitItem isFilled>
+                <Text component="small" style={{ fontWeight: 600, marginBottom: '8px', display: 'block' }}>
+                  Components
+                </Text>
+                <DescriptionList isCompact isHorizontal>
+                  {(platformStatus?.components ?? []).map((c) => (
+                    <DescriptionListGroup key={c.name}>
+                      <DescriptionListTerm>{c.name}</DescriptionListTerm>
+                      <DescriptionListDescription>
+                        <Label color={STATUS_COLOR[c.status]} isCompact>
+                          {c.status}
+                        </Label>
+                      </DescriptionListDescription>
+                    </DescriptionListGroup>
+                  ))}
+                </DescriptionList>
+              </SplitItem>
+
+              <SplitItem isFilled>
+                <Text component="small" style={{ fontWeight: 600, marginBottom: '8px', display: 'block' }}>
+                  Feature Flags
+                </Text>
+                {(Object.keys(FLAG_LABELS) as DisplayedFlag[]).map((key) => (
+                  <Checkbox
+                    key={key}
+                    id={`flag-${key}`}
+                    label={FLAG_LABELS[key]}
+                    isChecked={flags[key]}
+                    isDisabled
+                    style={{ marginBottom: '4px' }}
+                  />
+                ))}
+              </SplitItem>
+            </Split>
+
+            <Divider component="div" style={{ margin: '12px 0' }} />
+
+            <Text component="small" style={{ fontWeight: 600, marginBottom: '8px', display: 'block' }}>
+              Registry &amp; Build
+            </Text>
+            <DescriptionList isCompact isHorizontal style={{ '--pf-v5-c-description-list--m-horizontal__term--width': '11rem' } as React.CSSProperties}>
+              <DescriptionListGroup>
+                <DescriptionListTerm style={{ whiteSpace: 'nowrap' }}>ClusterBuildStrategy</DescriptionListTerm>
+                <DescriptionListDescription>
+                  <Label
+                    color={platformStatus?.registry.clusterBuildStrategyPresent ? 'green' : 'grey'}
+                    isCompact
+                  >
+                    {platformStatus?.registry.clusterBuildStrategyPresent ? 'Present' : 'Missing'}
+                  </Label>
+                </DescriptionListDescription>
+              </DescriptionListGroup>
+              <DescriptionListGroup>
+                <DescriptionListTerm>Registry endpoint</DescriptionListTerm>
+                <DescriptionListDescription>
+                  <code>{platformStatus?.registry.registryEndpoint ?? '—'}</code>
+                </DescriptionListDescription>
+              </DescriptionListGroup>
+            </DescriptionList>
+          </>
+        )}
+      </CardBody>
+    </Card>
+  );
+};
+
 export const AdminPage: React.FC = () => {
   const { user, isAuthenticated, isEnabled } = useAuth();
+  const featureFlags = useFeatureFlags();
 
   const { data: authStatus, isLoading } = useQuery({
     queryKey: ['auth-status'],
@@ -254,24 +375,12 @@ export const AdminPage: React.FC = () => {
             </Card>
           </GridItem>
 
-          {/* Platform Configuration */}
-          <GridItem md={6}>
-            <Card isFullHeight>
-              <CardTitle>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <CogIcon />
-                  Platform Configuration
-                </span>
-              </CardTitle>
-              <CardBody>
-                <Alert variant="info" title="Coming soon" isInline>
-                  Platform configuration settings (global agent settings,
-                  resource quotas, namespace management, etc.) will be available
-                  in a future release.
-                </Alert>
-              </CardBody>
-            </Card>
-          </GridItem>
+          {/* Platform Status */}
+          {featureFlags.admin && (
+            <GridItem md={6}>
+              <PlatformStatusCard />
+            </GridItem>
+          )}
         </Grid>
       </PageSection>
     </>

@@ -23,6 +23,9 @@ from app.routers.agents import (
     _build_agent_shipwright_buildrun_manifest,
     _build_common_labels,
     _build_deployment_manifest,
+    _build_job_manifest,
+    _build_sandbox_manifest,
+    _build_statefulset_manifest,
 )
 from app.routers.tools import (
     CreateToolRequest,
@@ -30,6 +33,7 @@ from app.routers.tools import (
     _build_tool_statefulset_manifest,
 )
 from app.core.constants import (
+    AGENT_SKILLS_MOUNT_ROOT,
     SHIPWRIGHT_CRD_GROUP,
     SHIPWRIGHT_CRD_VERSION,
     SHIPWRIGHT_STRATEGY_INSECURE,
@@ -343,6 +347,26 @@ class TestBuildShipwrightBuildManifest:
         assert len(stored_config["envVars"]) == 2
         assert stored_config["envVars"][0]["name"] == "API_KEY"
         assert stored_config["envVars"][0]["value"] == "secret123"
+
+    def test_build_manifest_stores_skills_in_annotations(self):
+        """Test that linked skills are stored in Build annotations."""
+        request = CreateAgentRequest(
+            name="test-agent",
+            namespace="team1",
+            protocol="a2a",
+            framework="LangGraph",
+            gitUrl="https://github.com/example/repo",
+            gitPath="agents/test",
+            gitBranch="main",
+            imageTag="v0.0.1",
+            deploymentMethod="source",
+            skills=["summarizer", "translator"],
+        )
+
+        manifest = _build_agent_shipwright_build_manifest(request)
+
+        stored_config = json.loads(manifest["metadata"]["annotations"]["kagenti.io/agent-config"])
+        assert stored_config["skills"] == ["summarizer", "translator"]
 
     def test_build_manifest_stores_service_ports_in_annotations(self):
         """Test that service ports are stored in Build annotations."""
@@ -910,6 +934,84 @@ class TestSpireLabel:
         annotations = manifest["metadata"]["annotations"]
         config = json.loads(annotations["kagenti.io/agent-config"])
         assert config["spireEnabled"] is True
+
+    def test_deployment_mounts_skill_configmap_as_volume(self):
+        """Verify a linked skill is exposed to the pod as a ConfigMap-backed volume."""
+        request = CreateAgentRequest(
+            name="test-agent",
+            namespace="team1",
+            protocol="a2a",
+            framework="LangGraph",
+            deploymentMethod="image",
+            containerImage="registry.example.com/test-agent:v1",
+            skills=["summarizer"],
+        )
+
+        manifest = _build_deployment_manifest(request, image="registry.example.com/test-agent:v1")
+        pod_spec = manifest["spec"]["template"]["spec"]
+        container = pod_spec["containers"][0]
+
+        env_by_name = {env["name"]: env["value"] for env in container["env"]}
+        assert env_by_name["SKILL_FOLDERS"] == f"{AGENT_SKILLS_MOUNT_ROOT}/summarizer"
+
+        skill_volume = next(volume for volume in pod_spec["volumes"] if volume["name"] == "skill-0")
+        assert skill_volume["configMap"]["name"] == "summarizer"
+
+        skill_mount = next(
+            mount for mount in container["volumeMounts"] if mount["name"] == "skill-0"
+        )
+        assert skill_mount["mountPath"] == f"{AGENT_SKILLS_MOUNT_ROOT}/summarizer"
+        assert skill_mount["readOnly"] is True
+
+    @pytest.mark.parametrize(
+        ("builder", "pod_spec_getter"),
+        [
+            (
+                _build_deployment_manifest,
+                lambda manifest: manifest["spec"]["template"]["spec"],
+            ),
+            (
+                _build_statefulset_manifest,
+                lambda manifest: manifest["spec"]["template"]["spec"],
+            ),
+            (
+                _build_job_manifest,
+                lambda manifest: manifest["spec"]["template"]["spec"],
+            ),
+            (
+                _build_sandbox_manifest,
+                lambda manifest: manifest["spec"]["podTemplate"]["spec"],
+            ),
+        ],
+    )
+    def test_agent_workloads_mount_linked_skills(self, builder, pod_spec_getter):
+        """Verify linked skills are mounted and exposed via SKILL_FOLDERS in all workload types."""
+        request = CreateAgentRequest(
+            name="test-agent",
+            namespace="team1",
+            protocol="a2a",
+            framework="LangGraph",
+            deploymentMethod="image",
+            containerImage="registry.example.com/test-agent:v1",
+            skills=["summarizer", "My Custom Skill"],
+        )
+
+        manifest = builder(request, image="registry.example.com/test-agent:v1")
+        pod_spec = pod_spec_getter(manifest)
+        container = pod_spec["containers"][0]
+
+        env_by_name = {env["name"]: env["value"] for env in container["env"]}
+        assert env_by_name["SKILL_FOLDERS"] == (
+            f"{AGENT_SKILLS_MOUNT_ROOT}/summarizer,{AGENT_SKILLS_MOUNT_ROOT}/my-custom-skill"
+        )
+
+        mount_paths = {mount["name"]: mount["mountPath"] for mount in container["volumeMounts"]}
+        assert mount_paths["skill-0"] == f"{AGENT_SKILLS_MOUNT_ROOT}/summarizer"
+        assert mount_paths["skill-1"] == f"{AGENT_SKILLS_MOUNT_ROOT}/my-custom-skill"
+
+        volumes_by_name = {volume["name"]: volume for volume in pod_spec["volumes"]}
+        assert volumes_by_name["skill-0"]["configMap"]["name"] == "summarizer"
+        assert volumes_by_name["skill-1"]["configMap"]["name"] == "my-custom-skill"
 
     def test_tool_deployment_has_spire_label_when_enabled(self):
         """Verify tool deployment has kagenti.io/spire=enabled in pod template labels."""

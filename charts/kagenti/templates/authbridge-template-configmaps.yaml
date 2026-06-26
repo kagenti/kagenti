@@ -10,6 +10,7 @@
 
   See: https://github.com/kagenti/kagenti/issues/1336
 */ -}}
+{{- include "kagenti.authBridge.validateSpiffeIdentity" . -}}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -26,7 +27,6 @@ data:
   SPIRE_ENABLED: {{ if .Values.spire.enabled }}"true"{{ else }}"false"{{ end }}
   CLIENT_AUTH_TYPE: "{{ .Values.authBridge.clientAuthType }}"
   SPIFFE_IDP_ALIAS: "{{ .Values.authBridge.spiffeIdpAlias }}"
-  JWT_AUDIENCE: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
   EXPECTED_AUDIENCE: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
   CREDENTIAL_WAIT_TIMEOUT: {{ .Values.authBridge.credentialWaitTimeout | quote }}
 ---
@@ -38,28 +38,21 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
 data:
+  # Per-plugin config. Plugin-level defaults (audience_file,
+  # bypass_paths, identity file paths, etc.) are applied by the
+  # authbridge binary itself — see
+  # authbridge/authlib/plugins/CONVENTIONS.md in kagenti-extensions.
+  #
+  # No top-level `mode:` is set here. After kagenti-operator#361 the
+  # operator resolves mode per workload from
+  #   AgentRuntime.Spec.AuthBridgeMode → namespace ConfigMap (this one,
+  #   if it had a `mode:`) → deprecated annotation → cluster default,
+  # then layers the resolved mode onto each per-agent ConfigMap. Leaving
+  # `mode:` unset here keeps this template mode-agnostic so the cluster
+  # default (proxy-sidecar) wins by default, and a namespace-level
+  # override can still be added later by editing this ConfigMap.
   config.yaml: |
-    mode: envoy-sidecar
-    inbound:
-      issuer: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
-    outbound:
-      keycloak_url: "http://keycloak-service.{{ .Values.keycloak.namespace }}.svc:8080"
-      keycloak_realm: {{ .Values.keycloak.realm | quote }}
-      default_policy: "passthrough"
-    identity:
-      type: {{ eq .Values.authBridge.clientAuthType "federated-jwt" | ternary "spiffe" .Values.authBridge.clientAuthType | quote }}
-      client_id_file: "/shared/client-id.txt"
-      client_secret_file: "/shared/client-secret.txt"
-      credential_wait_timeout: {{ .Values.authBridge.credentialWaitTimeout | quote }}
-{{- if eq .Values.authBridge.clientAuthType "federated-jwt" }}
-      jwt_svid_path: "/opt/jwt_svid.token"
-{{- end }}
-    bypass:
-      inbound_paths:
-        - "/.well-known/*"
-        - "/healthz"
-        - "/readyz"
-        - "/livez"
+    {{- include "kagenti.authbridge-runtime-config-yaml" . | nindent 4 }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -128,10 +121,11 @@ data:
                     envoy_grpc:
                       cluster_name: ext_proc_cluster
                     timeout: 300s
+                  message_timeout: 310s
                   allow_mode_override: true
                   processing_mode:
                     request_header_mode: SEND
-                    response_header_mode: SKIP
+                    response_header_mode: SEND
                     request_body_mode: NONE
                     response_body_mode: NONE
               - name: envoy.filters.http.router
@@ -181,10 +175,11 @@ data:
                     envoy_grpc:
                       cluster_name: ext_proc_cluster
                     timeout: 300s
+                  message_timeout: 310s
                   allow_mode_override: true
                   processing_mode:
                     request_header_mode: SEND
-                    response_header_mode: SKIP
+                    response_header_mode: SEND
                     request_body_mode: NONE
                     response_body_mode: NONE
               - name: envoy.filters.http.router

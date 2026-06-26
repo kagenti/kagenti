@@ -1,9 +1,12 @@
 # Kagenti CI configuration for HyperShift ephemeral clusters
 # Based on ocp_values.yaml but disables components not installed on CI clusters:
-#   - RHOAI (requires separate operator install + entitlement)
-#   - MLflow (depends on RHOAI MLflow operator)
 #   - Shipwright (requires OpenShift Builds operator)
 #   - Kiali (not installed on ephemeral clusters)
+#
+# RHOAI and MLflow are enabled — the RHOAI operator is installed via OLM
+# Subscription (kagenti-deps) and MLflow is provisioned via deferred Step 3c
+# in setup-kagenti.sh. The DSC explicitly disables all other RHOAI components
+# to avoid heavy default installs on CI.
 #
 # This config is used by KAGENTI_CONFIG_FILE in E2E tests to correctly
 # skip tests for features that are not present on the cluster.
@@ -29,7 +32,8 @@ charts:
         phoenix:
           enabled: false
         mlflow:
-          enabled: false
+          enabled: true
+          routeNamespace: "redhat-ods-applications"
         spire:
           enabled: true
         tekton:
@@ -39,7 +43,7 @@ charts:
         certManager:
           enabled: true
         rhoai:
-          enabled: false
+          enabled: true
         gatewayApi:
           enabled: false
       mlflow:
@@ -69,6 +73,10 @@ charts:
           enabled: false
         phoenix:
           enabled: false
+      # Enable tool workload sidecar injection for token-exchange E2E tests
+      kagenti-operator-chart:
+        featureGates:
+          injectTools: true
       mlflow:
         auth:
           enabled: false
@@ -77,6 +85,7 @@ charts:
           enabled: true
         backend:
           defaultRegistryUrl: "image-registry.openshift-image-registry.svc:5000"
+          shipwrightDefaultStrategy: "buildah"
       uiOAuthSecret:
         useServiceAccountCA: true
       keycloak:
@@ -95,4 +104,4 @@ charts:
     enabled: false
 
 rhoai:
-  enabled: false
+  enabled: true

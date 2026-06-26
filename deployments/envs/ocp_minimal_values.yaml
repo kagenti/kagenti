@@ -3,7 +3,7 @@
 # Use this for deployments that integrate with Kagenti without the standalone UI.
 # For full standalone deployment with UI, use ocp_values.yaml instead.
 #
-# Usage: ./deployments/ansible/run-install.sh --env ocp-minimal
+# Usage: scripts/ocp/setup-kagenti.sh
 #
 # Disable Kind cluster creation - we're deploying to an existing OpenShift cluster
 create_kind_cluster: false
@@ -14,7 +14,7 @@ create_kind_cluster: false
 #
 # If your cluster is running OCP < 4.19:
 #   - Set components.spire.enabled to 'false' in kagenti-deps section (line 36)
-#   - The Ansible installer will auto-detect and disable SPIRE on older versions
+#   - The installer will auto-detect and disable SPIRE on older versions
 #   - See docs/ocp/openshift-install.md for upgrade instructions
 #
 # To check your OpenShift version:
@@ -44,16 +44,17 @@ charts:
           enabled: false
         mlflow:
           enabled: true
+          routeNamespace: "redhat-ods-applications"
         spire:
           # ⚠️  REQUIRES OpenShift 4.19 or higher
           # The ZTWIM (Zero Trust Workload Identity Manager) operator is only available on OCP 4.19+
-          # For OCP < 4.19: Set this to 'false' or the Ansible installer will auto-disable it
+          # For OCP < 4.19: Set this to 'false' or the installer will auto-disable it
           enabled: true  # Use ZTWIM operator for OCP 4.19+
         tekton:
           enabled: true
         shipwright:
           enabled: true
-          # Skip Helm hook for OpenShiftBuild operand - Ansible creates it after CRD is ready
+          # Skip Helm hook for OpenShiftBuild operand - installer creates it after CRD is ready
           # This is needed on HyperShift/fresh installs where the CRD doesn't exist yet
           skipOpenShiftBuildOperand: true
         certManager:
@@ -102,6 +103,7 @@ charts:
           enabled: true
         backend:
           defaultRegistryUrl: "image-registry.openshift-image-registry.svc:5000"
+          shipwrightDefaultStrategy: "buildah"
       uiOAuthSecret:
         # for a OCP with self-signed certs for routes it should be true.
         # for a OCP with CA-signed certs for routes it should be false.

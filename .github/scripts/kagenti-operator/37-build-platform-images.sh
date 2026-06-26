@@ -99,16 +99,31 @@ spec:
       dockerfilePath: $DOCKERFILE
 EOF
 
-    # Start build
-    BUILD_NAME=$(oc start-build "$NAME" -n "$NS" -o name 2>&1)
-    log_info "$BUILD_NAME started"
+    # Start build with retry — ephemeral HyperShift clusters can have
+    # intermittent DNS failures ("Could not resolve host: github.com")
+    # when build pods try to clone the source repo.
+    build_ok=false
+    for attempt in 1 2 3; do
+        BUILD_NAME=$(oc start-build "$NAME" -n "$NS" -o name 2>&1)
+        log_info "$BUILD_NAME started (attempt $attempt/3)"
 
-    # Wait for build to complete
-    run_with_timeout 600 "oc wait --for=jsonpath='{.status.phase}'=Complete $BUILD_NAME -n $NS --timeout=600s" || {
-        log_error "$NAME build failed"
+        if run_with_timeout 600 "oc wait --for=jsonpath='{.status.phase}'=Complete $BUILD_NAME -n $NS --timeout=600s" 2>/dev/null; then
+            build_ok=true
+            break
+        fi
+
+        phase=$(oc get "$BUILD_NAME" -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+        if [ "$phase" = "Failed" ] && [ "$attempt" -lt 3 ]; then
+            log_warn "$NAME build failed (attempt $attempt) — retrying..."
+            oc logs "$BUILD_NAME" -n "$NS" 2>&1 | tail -5 || true
+        fi
+    done
+
+    if ! $build_ok; then
+        log_error "$NAME build failed after 3 attempts"
         oc logs "$BUILD_NAME" -n "$NS" 2>&1 | tail -30 || true
         exit 1
-    }
+    fi
     log_success "$NAME image built"
 
     # Patch deployment to use the new image
@@ -174,14 +189,28 @@ spec:
       dockerfilePath: auth/agent-oauth-secret/Dockerfile
 EOF
 
-BUILD_NAME=$(oc start-build "$AGENT_OAUTH_NAME" -n "$NS" -o name 2>&1)
-log_info "$BUILD_NAME started"
+build_ok=false
+for attempt in 1 2 3; do
+    BUILD_NAME=$(oc start-build "$AGENT_OAUTH_NAME" -n "$NS" -o name 2>&1)
+    log_info "$BUILD_NAME started (attempt $attempt/3)"
 
-run_with_timeout 600 "oc wait --for=jsonpath='{.status.phase}'=Complete $BUILD_NAME -n $NS --timeout=600s" || {
-    log_error "$AGENT_OAUTH_NAME build failed"
+    if run_with_timeout 600 "oc wait --for=jsonpath='{.status.phase}'=Complete $BUILD_NAME -n $NS --timeout=600s" 2>/dev/null; then
+        build_ok=true
+        break
+    fi
+
+    phase=$(oc get "$BUILD_NAME" -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+    if [ "$phase" = "Failed" ] && [ "$attempt" -lt 3 ]; then
+        log_warn "$AGENT_OAUTH_NAME build failed (attempt $attempt) — retrying..."
+        oc logs "$BUILD_NAME" -n "$NS" 2>&1 | tail -5 || true
+    fi
+done
+
+if ! $build_ok; then
+    log_error "$AGENT_OAUTH_NAME build failed after 3 attempts"
     oc logs "$BUILD_NAME" -n "$NS" 2>&1 | tail -30 || true
     exit 1
-}
+fi
 log_success "$AGENT_OAUTH_NAME image built"
 
 # Re-trigger the Job with the freshly built image

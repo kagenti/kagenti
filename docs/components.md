@@ -446,18 +446,19 @@ Kagenti provides a unified framework for identity and authorization in agentic s
 
 | Component | Purpose | Repository |
 |-----------|---------|------------|
-| **[Client Registration](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge/client-registration)** | Automatic OAuth2/OIDC client provisioning using SPIFFE ID | `AuthBridge/client-registration` |
-| **[AuthProxy](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge/authproxy)** | Inbound JWT validation (JWKS) and outbound token exchange | `AuthBridge/AuthProxy` |
+| **[AuthProxy](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** | Inbound JWT validation (JWKS) and outbound token exchange | `AuthBridge/AuthProxy` |
 | **[SPIRE](https://spiffe.io/docs/latest/spire-about/)** | Workload identity and attestation | External |
 | **[Keycloak](https://www.keycloak.org/)** | Identity provider and access management | External |
 
-### Client Registration
+### Keycloak Client Registration (Operator-Managed)
 
-Automatically registers Kubernetes workloads as Keycloak clients at pod startup:
+Keycloak client registration is handled by the kagenti-operator's ClientRegistrationReconciler controller:
 
+- Watches for Deployments/StatefulSets labeled with `kagenti.io/type: agent` or `tool`
 - Uses **SPIFFE ID** as client identifier (e.g., `spiffe://localtest.me/ns/team/sa/my-agent`)
-- Eliminates manual client creation and secret distribution
-- Writes credentials to shared volume for application use
+- Reads Keycloak admin credentials from the operator namespace (`kagenti-system`)
+- Creates a secret in the agent namespace containing client credentials
+- Eliminates the need for admin credentials in agent namespaces
 
 ### AuthProxy
 
@@ -497,7 +498,7 @@ An Envoy-based sidecar that handles both **inbound JWT validation** and **outbou
 - **Inbound JWT Validation** — Validates token signature, expiration, and issuer using JWKS keys fetched from Keycloak. Optionally validates the audience claim. Returns HTTP 401 for missing or invalid tokens.
 - **Outbound Token Exchange** — Performs [OAuth 2.0 Token Exchange (RFC 8693)](https://datatracker.ietf.org/doc/html/rfc8693) to replace the caller's token with one scoped to the target service audience
 - **Transparent to applications** — Traffic interception via iptables; no application code changes required
-- **Configuration** — Inbound validation is configured via `ISSUER` (required) and `EXPECTED_AUDIENCE` (optional) environment variables. Outbound exchange uses `TOKEN_URL`, `CLIENT_ID`, `CLIENT_SECRET`, and `TARGET_AUDIENCE`.
+- **Configuration** — Inbound validation is configured via `ISSUER` (required) and `EXPECTED_AUDIENCE` (optional) environment variables. Outbound exchange uses `TOKEN_URL`, `CLIENT_ID`, `CLIENT_SECRET` (provided by the operator via secret), and `TARGET_AUDIENCE`.
 
 ### SPIRE (Workload Identity)
 
@@ -518,7 +519,7 @@ An Envoy-based sidecar that handles both **inbound JWT validation** and **outbou
 | Feature | Description |
 |---------|-------------|
 | **User Management** | Create and manage Kagenti users |
-| **Client Registration** | OAuth clients for agents and UI (e.g. automated Keycloak Client registration via [Client Registration](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge/client-registration) component) |
+| **Client Registration** | OAuth clients for agents and UI (automated registration via kagenti-operator's ClientRegistrationReconciler) |
 | **Token Exchange** | Exchange tokens between audiences ([RFC 8693](https://datatracker.ietf.org/doc/html/rfc8693)) |
 | **SSO** | Single sign-on across Kagenti components |
 
@@ -555,9 +556,6 @@ For detailed overview of Identity and Authorization Patterns, see the [Identity 
 ### Tornjak (SPIRE Management UI)
 
 ```bash
-# API
-curl http://spire-tornjak-api.localtest.me:8080/
-
 # UI
 open http://spire-tornjak-ui.localtest.me:8080/
 ```
@@ -596,6 +594,14 @@ The Ingress Gateway routes external HTTP requests to internal services using the
 
 LLM observability and tracing for agent interactions. Phoenix is **disabled by default** and can be enabled via `components.phoenix.enabled: true` in both the `kagenti-deps` and `kagenti` charts. Requires `components.otel.enabled: true`.
 
+### Skillberry Store (Skill Registry) -- Optional
+
+In-cluster [skillberry-store](https://github.com/skillberry-ai/skillberry-store) skill registry. **Disabled by default**; enabled via `components.skillberryStore.enabled: true` in the `kagenti` chart (the Kind setup script's `--with-skills` flag sets it automatically). When enabled, the store runs as a single-replica Deployment (REST API on `8000`, web UI on `8002`, filesystem storage on a PVC at `/data`) and the chart seeds the `kagenti-skill-autosync-config` ConfigMap so the backend autosync loop polls it — no external registry or `--skill-registry-allowed-hosts` allow-listing required. Behavior is additionally gated by `featureFlags.externalSkills`. The store UI is exposed via an HTTPRoute at `http://skillberry-store.<domain>:8080`, and the Kagenti UI's "Manage in Skillberry Store" links point there (the ConfigMap also carries a `store-ui-url` the backend surfaces, since the in-cluster `registry-url` is server-side only and not browser-reachable).
+
+Because the store serves its UI with the Vite dev server (which rejects unknown `Host` headers), the chart sets `VITE_ALLOWED_HOSTS` on the store pod to the gateway host (derived from `skillberryStore.allowedHosts`, defaulting to `skillberry-store.<domain>`) so the gateway URL works. This requires a store image with `VITE_ALLOWED_HOSTS` support (≥ 0.2.0).
+
+The image defaults to `ghcr.io/skillberry-ai/skillberry-store:0.2.0` and is overridable via `skillberryStore.image.tag` / `skillberryStore.image.repository` (Helm) or the `SKILLBERRY_STORE_TAG` / `SKILLBERRY_STORE_IMAGE` env vars (Kind setup script). Additional store environment variables can be injected via `skillberryStore.extraEnv` (a list of standard `core/v1` `EnvVar` entries, so both literal `value` and `valueFrom` secret/configMap references are supported); these are appended after the chart-managed `SBS_*` / `ENABLE_UI` variables. See [docs/skills.md](skills.md) for usage.
+
 ---
 
 ## Supported Agent Frameworks
@@ -625,7 +631,7 @@ Kagenti is framework-neutral and supports agents built with any framework that c
 
 ### A2A (Agent-to-Agent)
 
-[A2A](https://google.github.io/A2A) is Google's standard protocol for agent communication.
+[A2A](https://a2a-protocol.org/latest/) is Google's standard protocol for agent communication.
 
 **Features**:
 

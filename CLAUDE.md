@@ -29,7 +29,6 @@ kagenti/
 │   ├── kagenti/            # Main platform chart
 │   └── kagenti-deps/       # Dependencies
 ├── deployments/
-│   ├── ansible/            # Ansible installer (recommended)
 │   └── envs/               # Environment values
 ├── .claude/skills/         # Claude Code skills
 └── docs/                   # Documentation
@@ -40,7 +39,7 @@ kagenti/
 | Task | Command |
 |------|---------|
 | Deploy to Kind | `./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy` |
-| Deploy to OpenShift | `./scripts/ocp/setup-kagenti.sh` |
+| Deploy to OpenShift | `scripts/ocp/setup-kagenti.sh` |
 | Run E2E tests | `uv run pytest kagenti/tests/e2e/ -v` |
 | Run linter | `make lint` |
 | Pre-commit | `pre-commit run --all-files` |
@@ -196,6 +195,7 @@ and lets us decouple merge velocity from release readiness.
 | `kagenti_feature_flag_sandbox` | Sandboxed agent runtime UI and APIs |
 | `kagenti_feature_flag_integrations` | Third-party integration endpoints |
 | `kagenti_feature_flag_triggers` | Event-driven trigger system |
+| `kagenti_feature_flag_admin` | Platform Status card and /platform-status endpoint |
 
 ### TODO
 

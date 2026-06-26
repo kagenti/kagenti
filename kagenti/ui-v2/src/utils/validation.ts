@@ -51,3 +51,65 @@ export const isValidImageTag = (tag: string): boolean => {
   if (!tag) return false;
   return /^[a-zA-Z0-9_][a-zA-Z0-9._-]*$/.test(tag);
 };
+
+/**
+ * Return true if url is a syntactically valid absolute URL.
+ * Requires a protocol (http/https). Used to gate skillberry registry fetches.
+ */
+export const isValidUrl = (url: string): boolean => {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Derive the skillberry-store web UI URL for a single skill.
+ *
+ * Prefers an explicit browser-facing store UI URL (e.g. the in-cluster store
+ * exposed via the gateway), since the API registryUrl may be an in-cluster
+ * address that is not reachable from a browser. Falls back to deriving the URL
+ * from the API registryUrl by substituting the UI port 8002 (external
+ * registries whose host:port the browser can reach).
+ *
+ * Returns '' if no usable URL can be built.
+ */
+export const getSkillberryUiUrl = (
+  registryUrl: string,
+  skillName: string,
+  storeUiUrl?: string,
+): string => {
+  if (storeUiUrl && isValidUrl(storeUiUrl)) {
+    return `${storeUiUrl.replace(/\/+$/, '')}/skills/${skillName}`;
+  }
+  try {
+    const url = new URL(registryUrl);
+    url.port = '8002';
+    return `${url.origin}/skills/${skillName}`;
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * Derive the skillberry-store root UI URL.
+ *
+ * Prefers an explicit browser-facing store UI URL when provided; otherwise
+ * derives it from the API registryUrl by substituting the UI port 8002.
+ * Returns '#' if no usable URL can be built.
+ */
+export const getSkillberryStoreUrl = (registryUrl: string, storeUiUrl?: string): string => {
+  if (storeUiUrl && isValidUrl(storeUiUrl)) {
+    return storeUiUrl.replace(/\/+$/, '') + '/';
+  }
+  try {
+    const url = new URL(registryUrl);
+    url.port = '8002';
+    return url.origin + '/';
+  } catch {
+    return '#';
+  }
+};

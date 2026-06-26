@@ -10,7 +10,7 @@ create_kind_cluster: false
 #
 # If your cluster is running OCP < 4.19:
 #   - Set components.spire.enabled to 'false' in kagenti-deps section (line 36)
-#   - The Ansible installer will auto-detect and disable SPIRE on older versions
+#   - The installer will auto-detect and disable SPIRE on older versions
 #   - See docs/ocp/openshift-install.md for upgrade instructions
 #
 # To check your OpenShift version:
@@ -40,16 +40,17 @@ charts:
           enabled: false
         mlflow:
           enabled: true
+          routeNamespace: "redhat-ods-applications"
         spire:
           # ⚠️  REQUIRES OpenShift 4.19 or higher
           # The ZTWIM (Zero Trust Workload Identity Manager) operator is only available on OCP 4.19+
-          # For OCP < 4.19: Set this to 'false' or the Ansible installer will auto-disable it
+          # For OCP < 4.19: Set this to 'false' or the installer will auto-disable it
           enabled: true  # Use ZTWIM operator for OCP 4.19+
         tekton:
           enabled: true
         shipwright:
           enabled: true
-          # Skip Helm hook for OpenShiftBuild operand - Ansible creates it after CRD is ready
+          # Skip Helm hook for OpenShiftBuild operand - installer creates it after CRD is ready
           # This is needed on HyperShift/fresh installs where the CRD doesn't exist yet
           skipOpenShiftBuildOperand: true
         certManager:
@@ -102,12 +103,19 @@ charts:
           enabled: true
         backend:
           defaultRegistryUrl: "image-registry.openshift-image-registry.svc:5000"
+          shipwrightDefaultStrategy: "buildah"
+      apiOAuthSecret:
+        enabled: true         # Create kagenti-api-oauth-secret for backend API auth
+        useServiceAccountCA: true
       uiOAuthSecret:
         # for a OCP with self-signed certs for routes it should be true.
         # for a OCP with CA-signed certs for routes it should be false.
         useServiceAccountCA: true
       keycloak:
         url: http://keycloak-service.keycloak:8080
+      # mcpGateway.openshiftDomain is set dynamically by the installer via:
+      #   --set "mcpGateway.openshiftDomain=${DOMAIN}"
+      # See scripts/ocp/setup-kagenti.sh. Example: apps.kagenti1.kubestellar.org
       agentNamespaces:
         - team1
         - team2

@@ -74,7 +74,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Validate secrets are configured
         run: bash .github/scripts/hypershift/ci/00-validate-secrets.sh
@@ -103,7 +103,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
-          go-version: '1.24'
+          go-version: '1.23'
           cache: false  # No go.sum at repo root; hcp CLI builds in /tmp
 
       - name: Build hcp CLI from source
@@ -205,6 +205,96 @@ jobs:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
           KAGENTI_CONFIG_FILE: deployments/envs/ocp_ci_values.yaml
 
+      # ── Token Exchange E2E (community KC = fatal, RHBK = non-fatal) ──
+      - name: Setup Keycloak realm for token exchange
+        if: success()
+        run: bash .github/scripts/token-exchange/40-setup-keycloak-realm.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Enable kagenti in token exchange namespace
+        if: success()
+        run: bash .github/scripts/token-exchange/50-enable-kagenti-ns.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          PLATFORM: ocp
+
+      - name: Setup SPIFFE Identity Provider
+        if: success()
+        run: bash .github/scripts/token-exchange/55-setup-spiffe-idp.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          PLATFORM: ocp
+
+      - name: Deploy token exchange test workloads
+        if: success()
+        run: bash .github/scripts/token-exchange/70-deploy-test-workloads.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Enable SPIFFE identity for token exchange
+        if: success()
+        run: bash .github/scripts/token-exchange/56-enable-spiffe.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          PLATFORM: ocp
+
+      - name: Configure FGAP token exchange
+        if: success()
+        run: bash .github/scripts/token-exchange/60-configure-fgap.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Wait for token exchange workloads to stabilize
+        if: success()
+        run: |
+          sleep 30
+          kubectl rollout status deployment/tx-e2e-agent -n tx-e2e --timeout=300s || true
+          kubectl rollout status deployment/tx-e2e-tool -n tx-e2e --timeout=300s || true
+          for i in $(seq 1 30); do
+            CREDS=$(kubectl get secrets -n tx-e2e -o name | grep -c kagenti-keycloak-client-credentials || echo "0")
+            [ "$CREDS" -ge 2 ] && echo "Credentials ready ($CREDS)" && break
+            echo "Waiting for credentials ($CREDS/2)..."
+            sleep 10
+          done
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Run token exchange E2E tests (community KC — fatal)
+        if: success()
+        run: bash .github/scripts/token-exchange/80-run-tests.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          KEYCLOAK_PROVIDER: community
+          PLATFORM: ocp
+
+      - name: Install RHBK and re-run token exchange tests (non-fatal)
+        if: success()
+        continue-on-error: true
+        run: |
+          # Cleanup community phase
+          kubectl delete namespace tx-e2e --ignore-not-found --timeout=60s || true
+          sleep 10
+          # Install RHBK
+          bash .github/scripts/token-exchange/35-install-keycloak-ocp.sh rhbk
+          # Re-run full setup + tests
+          bash .github/scripts/token-exchange/40-setup-keycloak-realm.sh
+          bash .github/scripts/token-exchange/50-enable-kagenti-ns.sh
+          bash .github/scripts/token-exchange/55-setup-spiffe-idp.sh
+          bash .github/scripts/token-exchange/70-deploy-test-workloads.sh
+          bash .github/scripts/token-exchange/56-enable-spiffe.sh
+          bash .github/scripts/token-exchange/60-configure-fgap.sh
+          sleep 30
+          kubectl rollout status deployment/tx-e2e-agent -n tx-e2e --timeout=300s || true
+          kubectl rollout status deployment/tx-e2e-tool -n tx-e2e --timeout=300s || true
+          bash .github/scripts/token-exchange/80-run-tests.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          KEYCLOAK_PROVIDER: rhbk
+          PLATFORM: ocp
+          FORCE: "true"
+      # ── End Token Exchange E2E ───────────────────────────────────────────
+
       - name: Run UI E2E tests
         if: success()
         run: bash .github/scripts/common/92-run-ui-tests.sh
@@ -274,7 +364,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Setup credentials
         run: bash .github/scripts/hypershift/ci/10-setup-credentials.sh
@@ -291,7 +381,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
-          go-version: '1.24'
+          go-version: '1.23'
           cache: false  # No go.sum at repo root; hcp CLI builds in /tmp
 
       - name: Build hcp CLI from source

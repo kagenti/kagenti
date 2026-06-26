@@ -31,15 +31,28 @@ Create chart name and version as used by the chart label.
 {{- end }}
 
 {{/*
-Common labels
+Common labels WITHOUT app.kubernetes.io/name. Use this on resources that set
+their own per-component name (e.g. kagenti-ui, kagenti-backend) so the name is
+emitted exactly once. Mixing an explicit name with "kagenti.labels" (which also
+adds app.kubernetes.io/name) would otherwise produce a duplicate YAML map key.
+This is the single source of truth for the shared (non-name) label keys.
 */}}
-{{- define "kagenti.labels" -}}
+{{- define "kagenti.commonLabels" -}}
 helm.sh/chart: {{ include "kagenti.chart" . }}
-{{ include "kagenti.selectorLabels" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
+Common labels, including app.kubernetes.io/name. Composed from
+kagenti.commonLabels so the shared keys are defined in one place.
+*/}}
+{{- define "kagenti.labels" -}}
+app.kubernetes.io/name: {{ include "kagenti.name" . }}
+{{ include "kagenti.commonLabels" . }}
 {{- end }}
 
 {{/*
@@ -70,4 +83,34 @@ It will be enabled if:
 */}}
 {{- define "kagenti.istio.communityCharts.enabled" -}}
 {{- tpl "{{ and .Values.components.istio.enabled (not .Values.openshift) }}" . | toString -}}
+{{- end -}}
+
+{{/*
+Validate that authBridge.clientAuthType=federated-jwt is only used when
+SPIRE is enabled. The federated-jwt path mints a JWT-SVID via the
+in-process SPIFFE provider, which is only constructed when spire.enabled
+gates a top-level `spiffe:` block into the rendered authbridge config.
+Without that, the new authbridge image fails to Configure with
+"spiffe identity requires a SPIFFE provider to be injected" at boot.
+Failing here at helm template time gives a clearer message than a
+CrashLoopBackOff. See kagenti-extensions#332.
+*/}}
+{{- define "kagenti.authBridge.validateSpiffeIdentity" -}}
+{{- if and (eq .Values.authBridge.clientAuthType "federated-jwt") (not .Values.spire.enabled) -}}
+{{- fail "authBridge.clientAuthType=federated-jwt requires spire.enabled=true (the in-process SPIFFE provider is needed to mint JWT-SVID client assertions)" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+AuthBridge runtime config YAML (config.yaml content for authbridge-runtime-config ConfigMap).
+Single source of truth: evaluates authBridge.pipeline from values.yaml via tpl(),
+prepends the conditional spiffe block when SPIRE is enabled.
+Both authbridge-template-configmaps.yaml and agent-namespaces.yaml include this.
+*/}}
+{{- define "kagenti.authbridge-runtime-config-yaml" -}}
+{{- if .Values.spire.enabled }}
+spiffe: {}
+{{- end }}
+pipeline:
+{{ tpl .Values.authBridge.pipeline . | indent 2 }}
 {{- end -}}
