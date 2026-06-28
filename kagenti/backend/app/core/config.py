@@ -93,6 +93,8 @@ class Settings(BaseSettings):
     # (case-insensitive) or the resolved IP (single IP or CIDR). Use for self-hosted
     # or in-cluster skill registries (e.g. "192.168.50.16,10.0.0.0/8").
     skill_registry_allowed_hosts: str = ""
+    # Trace-analysis Observability card (links to the standalone trace-analysis component)
+    kagenti_feature_flag_trace_analysis: bool = True
 
     # AuthBridge runtime config (mounted from Helm-managed ConfigMap)
     authbridge_runtime_config_path: str = "/etc/kagenti/authbridge/config.yaml"
@@ -106,6 +108,7 @@ class Settings(BaseSettings):
     traces_dashboard_url: str = ""
     network_dashboard_url: str = ""
     mlflow_dashboard_url: str = ""
+    trace_analysis_dashboard_url: str = ""
     mcp_inspector_url: str = ""
     mcp_proxy_full_address: str = ""
     keycloak_console_url: str = ""

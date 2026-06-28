@@ -33,6 +33,9 @@ featureFlags:
   # Enables Platform Status card
   # on http://kagenti-ui.localtest.me:8080/admin
   admin: true
+  # Trace-analysis Observability card. Links to the standalone trace-analysis
+  # component (separate repo) which must be deployed for the card to work.
+  traceAnalysis: true
 
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
@@ -168,8 +171,8 @@ ui:
   # Frontend (UI v2) configuration
   frontend:
     enabled: true
-    image: ghcr.io/kagenti/kagenti/ui-v2
-    tag: v0.7.0-alpha.3
+    image: ghcr.io/kagenti/kagenti-ui-v2
+    tag: latest
     resources:
       limits:
         cpu: 100m
@@ -185,8 +188,8 @@ ui:
     hostname: kagenti-api.localtest.me
   # Backend configuration
   backend:
-    image: ghcr.io/kagenti/kagenti/backend
-    tag: v0.7.0-alpha.3
+    image: ghcr.io/kagenti/kagenti-backend
+    tag: latest
     # Default registry for source-based builds (Kind: registry.cr-system.svc.cluster.local:5000)
     defaultRegistryUrl: ""
     # Default Shipwright build strategy for internal registries
@@ -463,6 +466,33 @@ mlflowOAuthSecret:
   # When true, mount the in-cluster serviceaccount CA
   # into the mlflow-oauth-secret job via the SSL_CERT_FILE environment variable.
   useServiceAccountCA: true
+
+# ------------------------------------------------------------------
+#  Trace Analysis Configuration
+#  Deployed into kagenti-system (alongside MLflow) when
+#  featureFlags.traceAnalysis is true. Backs the Observability
+#  "Trace Analysis" card; reachable at trace-analysis.<domainName>:8080.
+# ------------------------------------------------------------------
+traceAnalysis:
+  image:
+    repository: ghcr.io/kagenti/trace-analysis
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  # MLflow tracking endpoint the service reads traces from (in-cluster DNS).
+  mlflowTrackingUri: "http://mlflow:5000"
+  maxTraces: 50
+  # When MLflow has OIDC auth enabled (mlflow-oidc-auth), authenticate via
+  # OAuth2 client-credentials using the platform's mlflow-oauth-secret.
+  mlflowAuth:
+    enabled: true
+    secretName: mlflow-oauth-secret
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
 
 # ------------------------------------------------------------------
 #  Spiffe/Spire configs
