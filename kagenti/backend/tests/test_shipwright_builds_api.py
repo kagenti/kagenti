@@ -252,9 +252,10 @@ class TestListAgentsIncludesBuilds:
         kube.list_custom_resources.return_value = [] if buildrun is None else [buildrun]
 
         app.dependency_overrides[get_kubernetes_service] = lambda: kube
-        with patch("app.core.auth.settings") as mock_auth, patch(
-            "app.routers.agents.settings"
-        ) as mock_settings:
+        with (
+            patch("app.core.auth.settings") as mock_auth,
+            patch("app.routers.agents.settings") as mock_settings,
+        ):
             mock_auth.enable_auth = False
             mock_settings.kagenti_feature_flag_agent_sandbox = False
             mock_settings.enable_legacy_agent_crd = False
