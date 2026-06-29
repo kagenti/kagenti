@@ -29,6 +29,9 @@ func newDeployAgentCmd(ctx *CLIContext) *cobra.Command {
 		framework      string
 		protocol       string
 		deployMethod   string
+		workloadType   string
+		persistent     bool
+		storageSize    string
 		containerImage string
 		gitURL         string
 		gitBranch      string
@@ -46,6 +49,13 @@ func newDeployAgentCmd(ctx *CLIContext) *cobra.Command {
 		Use:   "agent",
 		Short: "Deploy an agent",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if persistent && workloadType != "statefulset" {
+				return fmt.Errorf("--persistent-storage is only supported with --workload-type statefulset")
+			}
+			if cmd.Flags().Changed("persistent-storage-size") && !persistent {
+				return fmt.Errorf("--persistent-storage-size requires --persistent-storage")
+			}
+
 			ns, _ := cmd.Flags().GetString("namespace")
 			if ns == "" {
 				ns = ctx.Client.Namespace
@@ -86,7 +96,7 @@ func newDeployAgentCmd(ctx *CLIContext) *cobra.Command {
 				Protocol:          protocol,
 				Framework:         framework,
 				DeploymentMethod:  deployMethod,
-				WorkloadType:      "deployment",
+				WorkloadType:      workloadType,
 				ContainerImage:    containerImage,
 				GitURL:            gitURL,
 				GitBranch:         gitBranch,
@@ -94,6 +104,12 @@ func newDeployAgentCmd(ctx *CLIContext) *cobra.Command {
 				AuthBridgeEnabled: true,
 				SpireEnabled:      spire,
 				EnvVars:           allEnv,
+			}
+			if persistent {
+				req.PersistentStorage = &api.PersistentStorageConfig{
+					Enabled: true,
+					Size:    storageSize,
+				}
 			}
 
 			resp, err := ctx.Client.CreateAgent(req)
@@ -112,6 +128,9 @@ func newDeployAgentCmd(ctx *CLIContext) *cobra.Command {
 	cmd.Flags().StringVar(&framework, "framework", "LangGraph", "Framework (LangGraph, CrewAI, AG2, Custom)")
 	cmd.Flags().StringVar(&protocol, "protocol", "a2a", "Protocol (a2a, mcp)")
 	cmd.Flags().StringVar(&deployMethod, "deploy-method", "image", "Deployment method (image, source)")
+	cmd.Flags().StringVar(&workloadType, "workload-type", "deployment", "Workload type (deployment, statefulset, job)")
+	cmd.Flags().BoolVar(&persistent, "persistent-storage", false, "Enable persistent storage (statefulset only)")
+	cmd.Flags().StringVar(&storageSize, "persistent-storage-size", "1Gi", "Persistent volume claim size (e.g., 1Gi, 5Gi, 10Gi)")
 	cmd.Flags().StringVar(&containerImage, "container-image", "", "Container image")
 	cmd.Flags().StringVar(&gitURL, "git-url", "", "Git repository URL")
 	cmd.Flags().StringVar(&gitBranch, "git-branch", "main", "Git branch")

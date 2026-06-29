@@ -315,6 +315,123 @@ func TestDeployAgent(t *testing.T) {
 	}
 }
 
+func TestDeployAgentWorkloadType(t *testing.T) {
+	var got api.CreateAgentRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/agents" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		json.NewEncoder(w).Encode(api.CreateAgentResponse{
+			Success: true, Name: got.Name, Namespace: got.Namespace,
+		})
+	}))
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL, "test-token", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+	deployCmd := newDeployCmd(ctx)
+	deployCmd.SetArgs([]string{
+		"agent",
+		"--name", "stateful-agent",
+		"--container-image", "img:v1",
+		"--workload-type", "statefulset",
+	})
+	deployCmd.PersistentFlags().String("namespace", "team1", "")
+
+	if err := deployCmd.Execute(); err != nil {
+		t.Fatalf("deploy agent command failed: %v", err)
+	}
+	if got.WorkloadType != "statefulset" {
+		t.Fatalf("expected workloadType=statefulset, got %q", got.WorkloadType)
+	}
+}
+
+func TestDeployAgentPersistentStorage(t *testing.T) {
+	var got api.CreateAgentRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/agents" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		json.NewEncoder(w).Encode(api.CreateAgentResponse{
+			Success: true, Name: got.Name, Namespace: got.Namespace,
+		})
+	}))
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL, "test-token", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+	deployCmd := newDeployCmd(ctx)
+	deployCmd.SetArgs([]string{
+		"agent",
+		"--name", "stateful-agent",
+		"--container-image", "img:v1",
+		"--workload-type", "statefulset",
+		"--persistent-storage",
+		"--persistent-storage-size", "5Gi",
+	})
+	deployCmd.PersistentFlags().String("namespace", "team1", "")
+
+	if err := deployCmd.Execute(); err != nil {
+		t.Fatalf("deploy agent command failed: %v", err)
+	}
+	if got.PersistentStorage == nil {
+		t.Fatal("expected persistentStorage in request")
+	}
+	if !got.PersistentStorage.Enabled {
+		t.Fatal("expected persistentStorage.enabled=true")
+	}
+	if got.PersistentStorage.Size != "5Gi" {
+		t.Fatalf("expected persistentStorage.size=5Gi, got %q", got.PersistentStorage.Size)
+	}
+}
+
+func TestDeployAgentPersistentStorageRequiresStatefulSet(t *testing.T) {
+	client := api.NewClient("http://example.invalid", "test-token", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+	deployCmd := newDeployCmd(ctx)
+	deployCmd.SetArgs([]string{
+		"agent",
+		"--name", "deployment-agent",
+		"--container-image", "img:v1",
+		"--persistent-storage",
+	})
+
+	err := deployCmd.Execute()
+	if err == nil {
+		t.Fatal("expected persistent storage with deployment workload to fail")
+	}
+	if !strings.Contains(err.Error(), "--workload-type statefulset") {
+		t.Fatalf("expected statefulset validation error, got: %v", err)
+	}
+}
+
+func TestDeployAgentPersistentStorageSizeRequiresPersistentStorage(t *testing.T) {
+	client := api.NewClient("http://example.invalid", "test-token", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+	deployCmd := newDeployCmd(ctx)
+	deployCmd.SetArgs([]string{
+		"agent",
+		"--name", "stateful-agent",
+		"--container-image", "img:v1",
+		"--workload-type", "statefulset",
+		"--persistent-storage-size", "5Gi",
+	})
+
+	err := deployCmd.Execute()
+	if err == nil {
+		t.Fatal("expected storage size without persistent storage to fail")
+	}
+	if !strings.Contains(err.Error(), "--persistent-storage-size requires --persistent-storage") {
+		t.Fatalf("expected persistent storage size validation error, got: %v", err)
+	}
+}
+
 func TestDeployTool(t *testing.T) {
 	_, ctx := newTestServer(t)
 	deployCmd := newDeployCmd(ctx)
