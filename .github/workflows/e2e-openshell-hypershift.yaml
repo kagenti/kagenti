@@ -113,7 +113,7 @@ jobs:
 
     steps:
       - name: Checkout PR code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           ref: ${{ needs.authorize.outputs.pr_sha || github.sha }}
 
@@ -192,7 +192,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Setup credentials
         run: bash .github/scripts/hypershift/ci/10-setup-credentials.sh

@@ -477,7 +477,7 @@ When the CLI disconnects (network drop, terminal close), the SSH session ends an
 
 ### Solution
 
-[dtach](https://github.com/cribit/dtach) is a minimal (~20KB) statically-compiled process detacher. It is delivered via the same init container as the supervisor binary. Every sandbox has detach/reattach capability without custom images or network egress.
+[dtach](https://github.com/crigler/dtach) is a minimal (~20KB) statically-compiled process detacher. It is delivered via the same init container as the supervisor binary. Every sandbox has detach/reattach capability without custom images or network egress.
 
 ### Usage
 
