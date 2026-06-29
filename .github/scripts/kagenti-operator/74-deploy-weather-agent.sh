@@ -89,7 +89,13 @@ fi
 
 # ============================================================================
 # Step 2: Deploy using standard Kubernetes Deployment + Service
-# (No longer uses Agent CRD - direct Deployment for operator independence)
+#
+# Uses plain Kubernetes Deployments instead of the deprecated Agent CRD
+# (kind: Agent) which wrapped Deployments. The operator webhook still injects
+# authbridge sidecars based on labels (kagenti.io/type: agent).
+#
+# AgentRuntime CR (added in Step 2.5) provides optional configuration for
+# authbridge (e.g., allowedAudiences) without creating the Deployment itself.
 # ============================================================================
 
 log_info "Creating Deployment and Service..."
@@ -165,6 +171,38 @@ fi
 kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_service.yaml"
 
 log_success "Weather-service deployed via Deployment + Service (operator-independent)"
+
+# ============================================================================
+# Step 2.5: Create AgentRuntime CR for authbridge configuration
+# The AgentRuntime CR provides per-agent configuration overrides to the
+# operator webhook, including allowedAudiences for inbound JWT validation.
+# This is required for user-to-agent flows (UI → backend → agent) where
+# the backend forwards Keycloak-issued user tokens.
+# ============================================================================
+log_info "Creating AgentRuntime CR for weather-service..."
+
+# Read the Keycloak issuer URL from the namespace authbridge-config
+# Falls back to Kind default if ConfigMap doesn't exist or field is missing
+KEYCLOAK_ISSUER=$(kubectl get configmap authbridge-config -n team1 -o jsonpath='{.data.ISSUER}' 2>/dev/null || echo "http://keycloak.localtest.me:8080/realms/kagenti")
+
+kubectl apply -f - <<EOF
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: weather-service
+  namespace: team1
+spec:
+  type: agent
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: weather-service
+  identity:
+    allowedAudiences:
+      - "${KEYCLOAK_ISSUER}"
+EOF
+
+log_success "AgentRuntime CR created with allowedAudiences: ${KEYCLOAK_ISSUER}"
 
 # ============================================================================
 # Step 3: Wait for operator to create the client credentials secret

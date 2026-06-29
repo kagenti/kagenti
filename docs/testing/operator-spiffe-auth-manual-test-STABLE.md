@@ -191,15 +191,6 @@ export DOCKER_HOST=unix://$(find /var/folders -name "podman-machine-default-api.
 
 **Time:** 15-20 minutes (Helm installs with `--wait` can be slow). 
 
-**⚠️ Known Issue:** If the script fails with `resource ServiceAccount/kagenti-system/kagenti-agent-oauth-secret-writer still exists`, you have leftover resources from a previous install. 
-
-**Solution:** Delete the cluster and start fresh from Step 1:
-```bash
-kind delete cluster --name kagenti
-```
-
-This is faster and cleaner than trying to manually clean up failed helm installs.
-
 **When complete, verify the operator:**
 
 ```bash
@@ -615,6 +606,327 @@ helm uninstall kagenti -n kagenti-system
 **Symptom:** SPIRE OIDC discovery provider shows ImagePullBackOff in Kind
 
 **Status:** This is expected and does NOT block the test. The operator doesn't depend on the OIDC provider being fully running.
+
+---
+
+### Step 10: Test with Real Weather Agent (Optional)
+
+After verifying operator SPIFFE auth with the basic test agent, you can deploy a real working agent to see end-to-end functionality. This step replicates what the E2E tests do.
+
+**Deploy using the same scripts as E2E CI:**
+
+```bash
+# These are the exact scripts called by .github/workflows/e2e-kind.yaml
+./.github/scripts/kagenti-operator/70-setup-team1-namespace.sh
+./.github/scripts/kagenti-operator/72-deploy-weather-tool.sh
+./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+```
+
+**Verify operator registered the weather service:**
+
+```bash
+# Check operator logs for client registration
+kubectl logs -n kagenti-system -l control-plane=controller-manager -c manager --tail=200 | grep -E "(ClientRegistration|client-credentials|weather-service)"
+
+# Check credentials secret was created
+# Note: Secret names are hashed (kagenti-keycloak-client-credentials-<hash>)
+# and owned by the deployment via ownerReferences
+kubectl get secret -n team1 -l app.kubernetes.io/managed-by=kagenti-operator
+
+# Verify the secret contains the correct SPIFFE ID for weather-service
+# Find secrets owned by weather-service deployment
+for secret in $(kubectl get secret -n team1 -o json | jq -r '.items[] | select(.metadata.ownerReferences[]?.name == "weather-service") | .metadata.name'); do
+  echo "=== Secret: $secret ==="
+  echo "Client ID: $(kubectl get secret $secret -n team1 -o jsonpath='{.data.client-id\.txt}' | base64 -d)"
+  echo ""
+done
+```
+
+**Expected:**
+- Client ID: `spiffe://localtest.me/ns/team1/sa/weather-service`
+- Secret exists and contains non-empty client-secret
+- Operator logs show successful registration
+
+**Test via A2A protocol (same as E2E tests):**
+
+The E2E tests access the agent via port-forward and use the A2A protocol client. You can replicate this:
+
+```bash
+# 1. Setup test credentials (creates kagenti-e2e-tests confidential client)
+./.github/scripts/common/87-setup-test-credentials.sh
+
+# 2. Create AgentRuntime CR (ONLY if operator ClientRegistration is broken)
+# This is a fallback - see "Why AgentRuntime is needed" below
+kubectl apply -f - <<EOF
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: weather-service
+  namespace: team1
+spec:
+  type: agent
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: weather-service
+  identity:
+    allowedAudiences:
+      - "http://keycloak.localtest.me:8080/realms/kagenti"
+EOF
+
+# 3. Fix Ollama connectivity (Kind doesn't resolve 'dockerhost')
+kubectl patch deployment weather-service -n team1 --type=strategic -p '{"spec":{"template":{"spec":{"containers":[{"name":"agent","env":[{"name":"LLM_API_BASE","value":"http://host.docker.internal:11434/v1"},{"name":"LLM_MODEL","value":"llama3.2:3b-instruct-fp16"}]}]}}}}'
+
+# 4. Start port-forward (run this in a separate terminal)
+./.github/scripts/common/85-start-port-forward.sh
+# This forwards weather-service to localhost:8000
+
+# 5. Ensure Ollama is running with the model
+# In another terminal:
+ollama serve  # If not already running
+ollama pull llama3.2:3b-instruct-fp16
+
+# 6. Run the E2E test (from repo root in your main terminal)
+uv run pytest kagenti/tests/e2e/common/test_agent_conversation.py::TestWeatherAgentConversation::test_agent_simple_query -v
+```
+
+**Why AgentRuntime is needed (local development only):**
+
+In normal CI operation:
+1. ✅ Operator registers weather-service in Keycloak with SPIFFE ID
+2. ✅ Creates `agent-team1-weather-service-aud` client scope
+3. ✅ Setup-test-credentials attaches scope to kagenti-e2e-tests client
+4. ✅ Tokens have the agent-specific audience, authbridge accepts them
+5. ✅ Tests pass **WITHOUT** AgentRuntime CR
+
+In local development with operator issues (e.g., Sandbox CRD errors):
+1. ❌ Operator fails ClientRegistration (error: "no matches for kind Sandbox")
+2. ❌ No agent audience scopes created in Keycloak
+3. ⚠️ Setup-test-credentials creates confidential client but no agent scopes
+4. ⚠️ Tokens only have Keycloak realm URL as audience (default)
+5. ❌ Authbridge expects SPIFFE ID as audience (default), rejects tokens (401)
+6. ✅ AgentRuntime CR configures authbridge to accept realm URL as audience
+7. ✅ Tests pass **WITH** AgentRuntime CR
+
+**Important:** The AgentRuntime CR workaround is needed **regardless of how you create the agent**:
+- ❌ Via deployment script (74-deploy-weather-agent.sh) → still needs AgentRuntime
+- ❌ Via Kagenti UI → still needs AgentRuntime
+- ❌ Directly with kubectl → still needs AgentRuntime
+
+The issue is the **operator's ClientRegistration reconciler**, not the agent creation method. All agent creation paths rely on the operator to register them in Keycloak, and if that's broken (Sandbox CRD errors), you'll get 401 errors when accessing agents with user tokens.
+
+Check if you need AgentRuntime:
+```bash
+# If this shows agent audience scopes, you DON'T need AgentRuntime
+kubectl logs -n kagenti-system -l control-plane=controller-manager -c manager --tail=100 | grep "agent audience scope"
+
+# If this shows Sandbox CRD errors, you DO need AgentRuntime
+kubectl logs -n kagenti-system -l control-plane=controller-manager -c manager --tail=100 | grep "no matches for kind.*Sandbox"
+```
+
+**Known Issues to Track:**
+
+1. **Operator ClientRegistration fails with Sandbox CRD errors** - The kagenti-operator expects Sandbox CRDs from `agents.x-k8s.io/v1alpha1` that don't exist in the cluster. This breaks Keycloak client registration for agents.
+   - Impact: Local development requires AgentRuntime CR workaround
+   - Root cause: Version mismatch or missing CRD installation
+   - TODO: Investigate if newer operator versions fix this or if Sandbox CRDs need installation
+
+2. **AgentRuntime CR is a workaround, not a solution** - The proper fix is to resolve the operator's ClientRegistration reconciler so it creates agent audience scopes in Keycloak. The AgentRuntime CR should only be needed for specialized JWT validation policies, not as a default requirement.
+
+**Expected output:**
+```
+[keycloak_agent_token] Using confidential client 'kagenti-e2e-tests'
+[keycloak_agent_token] Acquired token for realm=kagenti user=admin client=kagenti-e2e-tests (token length=1534)
+
+kagenti/tests/e2e/common/test_agent_conversation.py::TestWeatherAgentConversation::test_agent_simple_query PASSED [100%]
+```
+
+**What this tests:**
+
+- **A2A protocol**: Test client → weather agent via A2A (Agent-to-Agent protocol)
+- **MCP protocol**: Weather agent → weather-tool via MCP (Model Context Protocol)
+- **Operator SPIFFE auth**: Weather agent uses client credentials (SPIFFE ID) to authenticate to weather-tool
+- **LLM integration**: Agent queries Ollama/OpenAI for natural language processing
+- **External API**: Weather tool calls api.open-meteo.com
+
+**Architecture:**
+```
+E2E test --(A2A)--> weather agent --(MCP)--> weather-tool --(HTTP)--> api.open-meteo.com
+         localhost:8000          k8s service            external API
+```
+
+**Note on authentication:** The E2E tests use a confidential Keycloak client (`kagenti-e2e-tests`) that has the proper audience scopes configured. The setup script creates this client and updates the `kagenti-test-user` secret with its credentials. Without this, tests would use the public `admin-cli` client, which doesn't have agent audience scopes and would fail with 401 errors (same issue as the UI flow).
+
+**Troubleshooting:**
+
+If the test fails with **401 Unauthorized**:
+- Check that `kagenti-test-user` secret has `client_id` and `client_secret` fields:
+  ```bash
+  kubectl get secret kagenti-test-user -n keycloak -o jsonpath='{.data}' | jq -r 'keys'
+  ```
+- Re-run the setup script if missing: `./.github/scripts/common/87-setup-test-credentials.sh`
+
+If the test fails with **"LLM execution failed: Error code: 502"**:
+- Ensure Ollama is running: `ollama serve`
+- Check the LLM_API_BASE is correct (should be `host.docker.internal:11434` on Kind)
+- Verify the model is pulled: `ollama pull llama3.2:3b-instruct-fp16`
+
+If the test fails with **"Server disconnected without sending a response"**:
+- Port-forward may have died - restart it: `./.github/scripts/common/85-start-port-forward.sh`
+- Pod may have restarted after patching - wait for rollout and restart port-forward
+
+**Using the UI (requires token configuration):**
+
+If you want to test via the Kagenti UI instead of the E2E test, you'll need the AgentRuntime CR that was added to the deployment script in Step 2.5. The UI flow forwards user JWT tokens, which trigger authbridge's jwt-validation plugin. See [Step 11](#step-11-jwt-audience-configuration-issue-and-solution) for details on why this is required.
+
+---
+
+### Step 11: Understanding JWT Audience Configuration
+
+When testing the weather agent through the Kagenti UI (user-to-agent flows), you may encounter an **"Agent rejected token (audience mismatch)"** error. This section explains why and how the deployment script addresses it.
+
+#### The Problem: JWT Audience Validation
+
+**How JWT audience SHOULD work:**
+```
+User logs in → Token with:
+  issuer: "http://keycloak.localtest.me:8080/realms/kagenti"
+  audience: "weather-service"  ← The intended recipient
+
+Weather service validates: "Is my service name in the audience? Yes → Accept"
+```
+
+**What actually happens in Kagenti (current implementation):**
+```
+User logs in → Token with:
+  issuer: "http://keycloak.localtest.me:8080/realms/kagenti"
+  audience: "http://keycloak.localtest.me:8080/realms/kagenti"  ← Keycloak realm URL
+
+Backend forwards user token → Weather service checks:
+  "Is the Keycloak realm URL in my allowed_audiences? (needs configuration)"
+```
+
+**Why the audience is the Keycloak realm URL:**
+
+Keycloak's default behavior is to set the token audience to the issuer (realm URL) unless you explicitly configure "Audience Mapper" in the OAuth client. The Kagenti UI uses a single OAuth client named `kagenti`, and tokens issued for this client have the realm URL as the audience.
+
+**Why this matters:**
+
+- **Outbound auth** (agent → other services): Uses SPIFFE IDs or client-secret, configured via `CLIENT_AUTH_TYPE`
+- **Inbound auth** (user/backend → agent): Validates JWT tokens, requires `allowedAudiences` configuration
+
+Without explicit configuration, authbridge's jwt-validation plugin expects the SPIFFE ID as the audience, which doesn't match user tokens from Keycloak.
+
+#### The Solution: AgentRuntime CR
+
+The deployment script [74-deploy-weather-agent.sh](../../.github/scripts/kagenti-operator/74-deploy-weather-agent.sh) now creates an **AgentRuntime CR** to configure authbridge:
+
+```yaml
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: weather-service
+  namespace: team1
+spec:
+  type: agent
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: weather-service
+  identity:
+    allowedAudiences:
+      - "http://keycloak.localtest.me:8080/realms/kagenti"
+```
+
+**What this does:**
+
+1. **Labels trigger injection**: The Deployment has `kagenti.io/type: agent` label → webhook injects authbridge
+2. **AgentRuntime provides configuration**: The `allowedAudiences` field tells authbridge: "Accept tokens with this audience"
+3. **Webhook applies configuration**: Generates authbridge ConfigMap with `allowed_audiences` in the jwt-validation plugin
+
+**Verify the configuration:**
+
+```bash
+# Check AgentRuntime exists
+kubectl get agentruntime weather-service -n team1
+
+# Check authbridge config has allowed_audiences
+kubectl get configmap authbridge-config-weather-service -n team1 -o yaml | grep -A 5 "allowed_audiences"
+
+# Expected output:
+#   allowed_audiences:
+#   - http://keycloak.localtest.me:8080/realms/kagenti
+```
+
+#### Architecture: Labels vs AgentRuntime
+
+**What triggers authbridge injection?**
+- **Labels** on the Deployment: `kagenti.io/type: agent` makes the webhook inject authbridge sidecars
+- The webhook works without AgentRuntime (uses defaults)
+
+**What does AgentRuntime provide?**
+- **Optional configuration overrides** for advanced features:
+  - `allowedAudiences`: Additional JWT audiences to accept
+  - `authBridgeMode`: Sidecar variant (proxy-sidecar, envoy-sidecar, lite, waypoint)
+  - `mtlsMode`: Transport security (disabled, permissive, strict)
+  - `identity.spiffe.trustDomain`: Custom SPIFFE trust domain
+
+**Without AgentRuntime:**
+- Authbridge uses strict defaults
+- Inbound tokens must have SPIFFE ID as audience
+- Works for service-to-service flows (SPIFFE tokens)
+- **Fails for user-to-agent flows** (Keycloak tokens)
+
+**With AgentRuntime:**
+- Authbridge accepts both SPIFFE tokens AND Keycloak user tokens
+- Required for UI → backend → agent flows
+
+#### Security Considerations
+
+**Current implementation (development/demo):**
+- Single OAuth client for entire platform
+- All services accept realm URL as audience
+- Backend doesn't validate audience (`verify_aud: False`)
+- Simple but less secure
+
+**Production-ready implementation (future):**
+- Each service registered as audience in Keycloak
+- UI requests audience scopes per service: `aud: ["weather-service", "backend-api"]`
+- Backend validates audience
+- Token exchange when backend calls agents
+- More secure but more complex
+
+The current approach is a **pragmatic tradeoff**: simpler configuration and fewer moving parts during development, with a clear path to tighten security for production.
+
+#### Why This Wasn't Caught Earlier
+
+**E2E tests access agents directly via A2A protocol** without authentication:
+
+```python
+# kagenti/tests/e2e/common/test_agent_conversation.py
+async def test_agent_simple_query(self, keycloak_agent_token):
+    headers = {}
+    if keycloak_agent_token:  # This fixture doesn't exist - always None
+        headers["Authorization"] = f"Bearer {keycloak_agent_token}"
+```
+
+The `keycloak_agent_token` fixture was never implemented, so tests run without JWT validation. This means:
+
+1. **CI tests pass** - They don't trigger the audience mismatch error
+2. **Direct A2A access works** - No authentication required when accessing agents directly
+3. **UI flows fail** - User tokens from Keycloak trigger audience validation
+
+**Why AgentRuntime wasn't added before:**
+- The deployment script was created when Agent CRD (old, deprecated) was replaced with plain Deployments
+- AgentRuntime CR support was added later (issue #862, completed in early 2026)
+- The script comment "operator independence" referred to not using the OLD Agent CRD wrapper
+- AgentRuntime configuration was never added because:
+  - E2E tests don't use authentication
+  - Manual UI testing wasn't part of the automated workflow
+  - The audience validation gap went unnoticed
+
+**Testing recommendation:**
+To catch authentication issues in CI, implement the `keycloak_agent_token` fixture to obtain a valid user token and include it in E2E tests. This would have caught the audience mismatch earlier.
 
 ---
 
