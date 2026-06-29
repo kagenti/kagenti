@@ -376,10 +376,10 @@ kagenti-operator-chart:
   # sidecar. Client registration is operator-managed.
   defaults:
     images:
-      authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.9
-      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.9
-      authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.9
-      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.9
+      authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.10
+      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.10
+      authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.10
+      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.10
 
 # ------------------------------------------------------------------
 #  MCP Gateway Configuration
