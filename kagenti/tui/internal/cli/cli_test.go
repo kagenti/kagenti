@@ -432,6 +432,71 @@ func TestDeployAgentPersistentStorageSizeRequiresPersistentStorage(t *testing.T)
 	}
 }
 
+func TestValidateStorageSize(t *testing.T) {
+	cases := []struct {
+		name       string
+		size       string
+		wantErr    bool
+		wantSubstr string
+	}{
+		{name: "valid Gi", size: "5Gi", wantErr: false},
+		{name: "valid Mi", size: "500Mi", wantErr: false},
+		{name: "valid decimal G", size: "5G", wantErr: false},
+		{name: "valid fractional", size: "1.5Gi", wantErr: false},
+		{name: "valid bare bytes", size: "1073741824", wantErr: false},
+		{name: "default 1Gi", size: "1Gi", wantErr: false},
+		{name: "bad unit", size: "1XB", wantErr: true, wantSubstr: "not a valid"},
+		{name: "non-numeric", size: "banana", wantErr: true, wantSubstr: "not a valid"},
+		{name: "zero", size: "0Gi", wantErr: true, wantSubstr: "must be a positive"},
+		{name: "below 1Mi", size: "1Ki", wantErr: true, wantSubstr: "too small"},
+		{name: "above 10Ti", size: "100Ti", wantErr: true, wantSubstr: "too large"},
+		{name: "empty", size: "", wantErr: true, wantSubstr: "not a valid"},
+		{name: "leading dash", size: "-1Gi", wantErr: true, wantSubstr: "not a valid"},
+		{name: "trailing junk", size: "5Gi extra", wantErr: true, wantSubstr: "not a valid"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateStorageSize(tc.size)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for size %q, got nil", tc.size)
+				}
+				if tc.wantSubstr != "" && !strings.Contains(err.Error(), tc.wantSubstr) {
+					t.Fatalf("expected error containing %q, got: %v", tc.wantSubstr, err)
+				}
+			} else if err != nil {
+				t.Fatalf("expected no error for size %q, got: %v", tc.size, err)
+			}
+		})
+	}
+}
+
+func TestDeployAgentRejectsInvalidStorageSize(t *testing.T) {
+	// Sanity check that the validator is wired into the deploy command path,
+	// not just exposed as a standalone function. Use an invalid size — the
+	// command must fail before any HTTP call is attempted.
+	client := api.NewClient("http://example.invalid", "test-token", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+	deployCmd := newDeployCmd(ctx)
+	deployCmd.SetArgs([]string{
+		"agent",
+		"--name", "stateful-agent",
+		"--container-image", "img:v1",
+		"--workload-type", "statefulset",
+		"--persistent-storage",
+		"--persistent-storage-size", "banana",
+	})
+	deployCmd.PersistentFlags().String("namespace", "team1", "")
+
+	err := deployCmd.Execute()
+	if err == nil {
+		t.Fatal("expected invalid storage size to fail")
+	}
+	if !strings.Contains(err.Error(), "not a valid Kubernetes size") {
+		t.Fatalf("expected size-format error, got: %v", err)
+	}
+}
+
 func TestDeployTool(t *testing.T) {
 	_, ctx := newTestServer(t)
 	deployCmd := newDeployCmd(ctx)
