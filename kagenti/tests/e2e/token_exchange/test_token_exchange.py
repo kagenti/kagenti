@@ -384,8 +384,9 @@ class TestSpiffeTokenExchange:
                 "exec",
                 "-n",
                 TX_NAMESPACE,
-                "-l",
-                f"app={deploy}",
+                # kubectl exec takes a pod/resource, not a -l label selector;
+                # deploy/<name> resolves to a pod in the deployment.
+                f"deploy/{deploy}",
                 "-c",
                 container,
                 "--",
@@ -531,8 +532,8 @@ def _call_tool_from_agent(token: str, path: str = "/echo") -> dict:
             "exec",
             "-n",
             TX_NAMESPACE,
-            "-l",
-            "app=tx-e2e-agent",
+            # kubectl exec takes a pod/resource, not a -l label selector.
+            "deploy/tx-e2e-agent",
             "-c",
             "agent",
             "--",
@@ -852,8 +853,8 @@ class TestInboundJwtValidation:
                 "exec",
                 "-n",
                 TX_NAMESPACE,
-                "-l",
-                "app=tx-e2e-agent",
+                # kubectl exec takes a pod/resource, not a -l label selector.
+                "deploy/tx-e2e-agent",
                 "-c",
                 "agent",
                 "--",
