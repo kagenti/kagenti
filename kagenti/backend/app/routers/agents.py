@@ -904,7 +904,7 @@ async def list_agents(
                     )
                 )
                 agent_names.add(build.name)
-        except ApiException as e:
+        except ApiException:
             logger.warning("Failed to list Shipwright builds for agents", exc_info=True)
 
         return AgentListResponse(items=agents)
