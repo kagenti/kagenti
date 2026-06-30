@@ -199,7 +199,10 @@ jobs:
       - name: Setup Keycloak for token exchange
         if: success()
         run: |
-          bash .github/scripts/token-exchange/35-install-keycloak-ocp.sh community
+          # On Kind, Keycloak is already installed by the platform installer
+          # (35-install-keycloak-ocp.sh is OpenShift-only and would stand up a
+          # second, colliding Keycloak). Reuse the platform Keycloak — its
+          # KC_FEATURES now include token-exchange + admin-fine-grained-authz.
           bash .github/scripts/token-exchange/40-setup-keycloak-realm.sh
           bash .github/scripts/token-exchange/50-enable-kagenti-ns.sh
           bash .github/scripts/token-exchange/55-setup-spiffe-idp.sh
