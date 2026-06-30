@@ -896,6 +896,7 @@ async def list_agents(
                         description="Building from source",
                         status=status,
                         labels=_extract_labels({KAGENTI_TYPE_LABEL: build.resourceType}),
+                        # Note that we may be building a non-deployment.  TODO record and retrieve build type.
                         workloadType=WORKLOAD_TYPE_DEPLOYMENT,
                         # Collector already formats this as an ISO string, so do
                         # not pass it through _format_timestamp (datetime-only).
@@ -904,8 +905,7 @@ async def list_agents(
                 )
                 agent_names.add(build.name)
         except ApiException as e:
-            if e.status not in (404, 403):
-                logger.warning("Failed to list Shipwright builds for agents")
+            logger.warning("Failed to list Shipwright builds for agents", exc_info=True)
 
         return AgentListResponse(items=agents)
 

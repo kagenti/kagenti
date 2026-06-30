@@ -218,12 +218,13 @@ class TestListAgentShipwrightBuilds:
 
 
 def _buildrun(name: str, succeeded_status: str | None):
-    """A BuildRun dict. succeeded_status is the 'Succeeded' condition status
+    """Mock a BuildRun dict. succeeded_status is the 'Succeeded' condition status
     ("True"/"False"/"Unknown"), or None for a BuildRun with no conditions."""
     conditions = []
     if succeeded_status is not None:
         conditions = [{"type": "Succeeded", "status": succeeded_status, "message": "boom"}]
     return {
+        # No tests care about timestamps -- mock a dummy timestamp
         "metadata": {"name": name, "creationTimestamp": "2025-01-02T00:00:00Z"},
         "status": {"conditions": conditions},
     }
