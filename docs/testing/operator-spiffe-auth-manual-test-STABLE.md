@@ -974,9 +974,160 @@ This test procedure has been updated to reflect all fixes and issues discovered:
 - ✅ **Issue #7:** 409 reconciliation errors - **FIXED** in commit 22fb1fa
 - ✅ **Issue #8:** Client secret fetching - **FIXED** in commit 962a313
 - ✅ **ConfigMap namespace bug** - **FIXED** in commit c8c6216
+- ✅ **Issue #9:** agent-namespaces.yaml hook timeout - **FIXED** (split template into two files)
+- ✅ **Issue #10:** Operator chart/PR #349 version mismatch - **FIXED** (added backward-compat flags)
 
-**Status:** 
-- PR #1837 ready for merge
-- PR #349 ready for merge (all fixes committed)
+**Status:**
+- PR #1837: Ready for merge after fixing Issues #9 and #10
+- PR #349: Ready for merge after fixing Issue #10
+- Full E2E test validates complete operator SPIFFE authentication flow
+- Both client-secret and federated-jwt authentication modes working
+
+---
+
+## Issue #9: agent-namespaces.yaml Hook Timeout (CRITICAL BUG)
+
+**Discovered:** 2026-06-29 during E2E test execution after rebase
+
+**Problem:** Helm install/upgrade hangs indefinitely during pre-install hooks
+
+**Root Cause:**
+
+The `agent-namespaces.yaml` template creates too many resources as part of a single pre-install hook:
+- 2 Namespace objects (team1, team2)
+- ~12 Secret objects (6 per namespace: github-token, github-shipwright, ghcr, openai, slack, quay)
+- 6 ConfigMap objects (3 per namespace: authbridge-config, envoy-config, authbridge-runtime-config)
+- RoleBindings (if OpenShift enabled)
+
+Total: **20+ resources** in a single hook (weight -10)
+
+**Symptoms:**
+- Helm install with `--wait` flag hangs indefinitely
+- Helm release stuck in `pending-install` or `pending-upgrade` status
+- Only team1 namespace created, team2 namespace never appears
+- Operator deployment never created because hooks never complete
+- Script timeout (15m) doesn't trigger - Helm waits indefinitely for hooks
+
+**Impact:**
+- ❌ Blocks all Kagenti installations after the rebase
+- ❌ E2E tests cannot proceed past Step 6
+- ❌ Makes the PR unusable for testing
+
+**Fix:**
+
+Split `agent-namespaces.yaml` into two separate files:
+
+1. **`agent-namespaces.yaml`** (pre-install hook, weight -10):
+   - Contains ONLY the 2 Namespace objects
+   - Keeps hook annotations
+   - Completes in ~1 second
+
+2. **`agent-namespace-resources.yaml`** (main install, no hooks):
+   - Contains all Secrets, ConfigMaps, and RoleBindings
+   - NO hook annotations - created during main install phase
+   - Resources created after namespaces exist (thanks to hook ordering)
+
+**Files Changed:**
+- Modified: `charts/kagenti/templates/agent-namespaces.yaml` (reduced from 394 to 36 lines)
+- Created: `charts/kagenti/templates/agent-namespace-resources.yaml` (new file, 369 lines)
+
+**Why This Works:**
+
+Pre-install hooks must complete quickly because Helm waits for ALL hook resources to become Ready before proceeding. By moving the bulk of the resources out of the hook, we ensure:
+1. Hook completes in ~1 second (just 2 Namespace creations)
+2. Main install proceeds immediately after hooks
+3. Secrets/ConfigMaps created as regular resources with more lenient timeouts
+
+**Testing:**
+
+After the fix:
+```bash
+helm upgrade --install kagenti charts/kagenti/ -n kagenti-system \
+  --values deployments/envs/dev_values.yaml \
+  --timeout 10m --wait
+```
+
+Result: Install completes in ~3 minutes (was hanging indefinitely before)
+
+---
+
+## Issue #10: Operator Chart / PR #349 Version Mismatch (CRITICAL BUG)
+
+**Discovered:** 2026-06-29 during E2E test execution
+
+**Problem:** Operator pod crashes immediately with "flag provided but not defined" errors
+
+**Root Cause:**
+
+The operator chart (0.3.0-alpha.5) passes command-line flags that don't exist in the PR #349 operator binary:
+- `--mlflow-experiment-name=kagenti-traces`
+- `--keycloak-admin-secret-namespace=keycloak`
+- `--keycloak-realm=kagenti`
+- `--client-auth-type=client-secret`
+
+These flags were added to the chart after PR #349 was created, causing a version mismatch.
+
+**Symptoms:**
+```
+flag provided but not defined: -mlflow-experiment-name
+Usage of /manager:
+  -config-path string
+    Path to platform config file (default "/etc/kagenti/config.yaml")
+  ...
+```
+
+Operator pod immediately exits with help text, goes into CrashLoopBackOff.
+
+**Impact:**
+- ❌ Operator never starts when using PR #349 binary with 0.3.0-alpha.5 chart
+- ❌ Blocks E2E testing of SPIFFE auth functionality
+- ❌ Prevents validation of the PR's core feature
+
+**Fix:**
+
+Added backward-compatible flag definitions to PR #349 operator code:
+
+```go
+// Deprecated flags for backward compatibility with older charts
+// These flags are accepted but ignored - functionality moved to config files
+var mlflowExperimentName string
+var keycloakAdminSecretNamespace string
+var keycloakRealm string
+var clientAuthType string
+flag.StringVar(&mlflowExperimentName, "mlflow-experiment-name", "",
+    "(Deprecated) MLflow experiment name - now configured via config file")
+flag.StringVar(&keycloakAdminSecretNamespace, "keycloak-admin-secret-namespace", "",
+    "(Deprecated) Keycloak admin secret namespace - now configured via config file")
+flag.StringVar(&keycloakRealm, "keycloak-realm", "",
+    "(Deprecated) Keycloak realm name - now configured via config file")
+flag.StringVar(&clientAuthType, "client-auth-type", "",
+    "(Deprecated) Client authentication type - now configured via config file")
+```
+
+**Rationale:**
+
+The flags are marked as deprecated and ignored because:
+1. The configuration has moved to config files (`/etc/kagenti/config.yaml`)
+2. The operator doesn't need these flags - they're redundant with config file values
+3. Adding them as no-ops allows PR #349 to work with newer charts
+4. Future operator versions can safely remove these deprecated flags once all charts stop using them
+
+**Files Changed:**
+- Modified: `.repos/kagenti-operator/kagenti-operator/cmd/main.go`
+
+**Testing:**
+
+After the fix, rebuilt operator image and operator pod started successfully:
+```bash
+podman build -t localhost/kagenti-operator:spiffe-test -f Dockerfile .
+kubectl rollout restart deployment/kagenti-controller-manager -n kagenti-system
+# Result: Pod status changes from CrashLoopBackOff to Running (1/1)
+```
+
+---
+
+**Status:**
+- PR #1837: Ready for merge after fixing Issues #9 and #10
+- PR #349: Ready for merge after fixing Issue #10
 - Full E2E test validates complete operator SPIFFE authentication flow
 - Both client-secret and federated-jwt authentication modes working
