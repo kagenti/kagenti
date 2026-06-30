@@ -67,7 +67,7 @@ spec:
       revision: ${GIT_BRANCH}
     contextDir: ${GIT_PATH}
   strategy:
-    name: buildah-insecure
+    name: buildah
     kind: ClusterBuildStrategy
   output:
     image: ${REGISTRY}/${TOOL_NAME}:${IMAGE_TAG}
@@ -133,6 +133,12 @@ echo ""
 echo "Step 4: Retrieving output image..."
 OUTPUT_IMAGE=$(kubectl get buildrun "${BUILDRUN_NAME}" -n "${NAMESPACE}" -o jsonpath='{.status.output.image}')
 OUTPUT_DIGEST=$(kubectl get buildrun "${BUILDRUN_NAME}" -n "${NAMESPACE}" -o jsonpath='{.status.output.digest}')
+# Some Shipwright versions leave .status.output.image empty (only digest is set).
+# Fall back to the registry path we asked the build to push to.
+if [ -z "${OUTPUT_IMAGE}" ]; then
+    OUTPUT_IMAGE="${REGISTRY}/${TOOL_NAME}:${IMAGE_TAG}"
+    echo "Output image empty in BuildRun status; falling back to ${OUTPUT_IMAGE}"
+fi
 echo "Output Image: ${OUTPUT_IMAGE}"
 echo "Output Digest: ${OUTPUT_DIGEST}"
 
@@ -177,6 +183,14 @@ spec:
         - name: mcp
           image: ${OUTPUT_IMAGE}
           imagePullPolicy: Always
+          env:
+            # OpenShift runs the container with an arbitrary non-root UID, so
+            # uv's default cache (\$HOME/.cache -> /.cache) is not writable.
+            # Point both at the writable /tmp emptyDir mounted below.
+            - name: UV_CACHE_DIR
+              value: /tmp/uv-cache
+            - name: HOME
+              value: /tmp
           ports:
             - containerPort: 8000
               name: http
