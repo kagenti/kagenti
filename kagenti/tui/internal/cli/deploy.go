@@ -101,6 +101,7 @@ func newDeployAgentCmd(ctx *CLIContext) *cobra.Command {
 		storageSize    string
 		containerImage string
 		gitURL         string
+		gitPath        string
 		gitBranch      string
 		createRoute    bool
 		spire          bool
@@ -171,6 +172,7 @@ func newDeployAgentCmd(ctx *CLIContext) *cobra.Command {
 				WorkloadType:      workloadType,
 				ContainerImage:    containerImage,
 				GitURL:            gitURL,
+				GitPath:           gitPath,
 				GitBranch:         gitBranch,
 				CreateHTTPRoute:   createRoute,
 				AuthBridgeEnabled: true,
@@ -205,6 +207,7 @@ func newDeployAgentCmd(ctx *CLIContext) *cobra.Command {
 	cmd.Flags().StringVar(&storageSize, "persistent-storage-size", "1Gi", "Persistent volume claim size (e.g., 1Gi, 5Gi, 10Gi)")
 	cmd.Flags().StringVar(&containerImage, "container-image", "", "Container image")
 	cmd.Flags().StringVar(&gitURL, "git-url", "", "Git repository URL")
+	cmd.Flags().StringVar(&gitPath, "git-path", "", "Path to agent source within the repository (e.g. a2a/my_agent)")
 	cmd.Flags().StringVar(&gitBranch, "git-branch", "main", "Git branch")
 	cmd.Flags().BoolVar(&createRoute, "create-route", false, "Create HTTP route")
 	cmd.Flags().BoolVar(&spire, "spire", false, "Enable SPIRE identity")

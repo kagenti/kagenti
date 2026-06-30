@@ -349,6 +349,45 @@ func TestDeployAgentWorkloadType(t *testing.T) {
 	}
 }
 
+func TestDeployAgentGitPath(t *testing.T) {
+	// --git-path must reach the backend as request.gitPath, otherwise the
+	// resulting Shipwright Build uses contextDir "." (repo root) and fails
+	// for any monorepo where the agent source is a subfolder.
+	var got api.CreateAgentRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/agents" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		json.NewEncoder(w).Encode(api.CreateAgentResponse{
+			Success: true, Name: got.Name, Namespace: got.Namespace,
+		})
+	}))
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL, "test-token", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+	deployCmd := newDeployCmd(ctx)
+	deployCmd.SetArgs([]string{
+		"agent",
+		"--name", "sub-folder-agent",
+		"--deploy-method", "source",
+		"--git-url", "https://github.com/example/monorepo",
+		"--git-path", "a2a/my_agent",
+		"--git-branch", "main",
+	})
+	deployCmd.PersistentFlags().String("namespace", "team1", "")
+
+	if err := deployCmd.Execute(); err != nil {
+		t.Fatalf("deploy agent command failed: %v", err)
+	}
+	if got.GitPath != "a2a/my_agent" {
+		t.Fatalf("expected gitPath=a2a/my_agent, got %q", got.GitPath)
+	}
+}
+
 func TestDeployAgentPersistentStorage(t *testing.T) {
 	var got api.CreateAgentRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
