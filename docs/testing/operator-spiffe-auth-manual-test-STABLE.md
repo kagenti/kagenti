@@ -1271,21 +1271,37 @@ Keycloak validates this URL and rejects HTTP:
 
 **Required Fix:**
 
-The SPIRE OIDC discovery provider must serve HTTPS. Options:
+The SPIRE OIDC discovery provider must serve HTTPS with certificates that Keycloak will trust. This is architecturally complex because:
 
-1. **Enable SPIRE TLS** (preferred):
+1. **SPIRE Chart Limitation:** The spiffe/spire Helm chart (v0.27.0) doesn't provide a simple flag to enable HTTPS for the OIDC provider with SPIRE-issued certificates
+2. **Certificate Trust:** Even with HTTPS, Keycloak must trust the certificate (can't be self-signed without additional configuration)
+3. **Service Mesh Complexity:** Proper solution requires either publicly trusted certs or configuring Keycloak's truststore
+
+**Attempted Solutions:**
+
+1. ❌ **Enable nginx HTTPS in OIDC provider:**
+   - Patched ConfigMap to add SSL configuration
+   - No spiffe-helper container to fetch certificates
+   - SPIRE denies identity to OIDC provider ("PermissionDenied: no identity issued")
+
+2. ❌ **Helm chart TLS option:**
    ```bash
-   helm upgrade spire spiffe/spire -n <namespace> \
-     --reuse-values \
+   helm upgrade spire spiffe/spire \
      --set spiffe-oidc-discovery-provider.tls.spire.enabled=true
    ```
-   Then update bootstrap job to use `https://` URL
+   - Chart doesn't expose this option or it's not implemented
 
-2. **Use ingress with TLS**:
-   - Create Ingress with cert-manager certificate
-   - Point bootstrap job to ingress HTTPS URL
+3. **Ingress with TLS (untested):**
+   - Would require Keycloak to trust the cert-manager CA
+   - Additional complexity for test environment
 
-3. **Patch Keycloak** to disable bundle endpoint validation (not recommended)
+**What's Actually Needed:**
+
+A complete solution requires one of:
+- **Publicly accessible HTTPS endpoint** for SPIRE OIDC (using real certs or service mesh)
+- **Keycloak truststore configuration** to trust SPIRE-issued or self-signed certificates
+- **Modified SPIRE deployment** with spiffe-helper sidecar for certificate management
+- **Service mesh TLS** (Istio/Linkerd) with proper certificate handling
 
 **Status:**
 - ❌ Issue #12 BLOCKING - must be fixed to complete E2E test
