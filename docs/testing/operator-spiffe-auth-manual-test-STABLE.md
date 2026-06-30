@@ -1,12 +1,39 @@
 # Manual Test: Operator SPIFFE ID Authentication
 
-**Last Updated:** 2026-06-22 (includes all PR #1837 fixes)
+**Last Updated:** 2026-06-30
+
+---
+
+## ⚠️ CRITICAL REQUIREMENTS
+
+### 1. SPIFFE Auth is MANDATORY
+**This test MUST use SPIFFE authentication. NEVER use admin credentials as a workaround or fallback.**
+- The entire purpose of PR #1837 and PR #349 is to eliminate credential-based authentication
+- Any test using admin credentials is INVALID and proves nothing
+- If SPIFFE auth doesn't work, the test has FAILED - do not bypass it
+
+### 2. Full E2E Test is MANDATORY
+**NEVER declare these PRs "ready to merge" without completing the full end-to-end test:**
+- All steps 1-9 must complete successfully
+- Agent registration via SPIFFE auth must work
+- Agent must authenticate to services using operator-provided credentials
+- If any step fails, the PRs are NOT ready
+
+### 3. Known Blocker: HTTPS Requirement
+**CURRENT STATUS: This test is BLOCKED by a Keycloak HTTPS requirement**
+
+Keycloak validates that the SPIRE OIDC discovery `bundleEndpoint` URL uses HTTPS. The test setup uses HTTP, causing this error:
+```
+"The url [bundleEndpoint] requires secure connections"
+```
+
+**This must be fixed before the E2E test can complete.** See Issue #12 below.
 
 ---
 
 ## Overview
 
-This document provides **working** instructions for manually testing operator SPIFFE ID authentication across two PRs. Several deployment issues were discovered during initial testing and have been **fixed in PR #1837**.
+This document provides instructions for manually testing operator SPIFFE ID authentication across two PRs. Several deployment issues were discovered during initial testing and have been **fixed in PR #1837**.
 
 ## Pull Requests Under Test
 
@@ -1218,9 +1245,63 @@ kubectl logs -n kagenti-system -l control-plane=controller-manager -c manager --
 
 ---
 
+## Issue #12: Keycloak Requires HTTPS for SPIRE OIDC Bundle Endpoint (CRITICAL BLOCKER)
+
+**Discovered:** 2026-06-30 during E2E test execution (bootstrap job)
+
+**Problem:** Keycloak's Identity Provider configuration validates that the `bundleEndpoint` URL uses HTTPS, but the SPIRE OIDC discovery provider serves HTTP only in the test environment.
+
+**Root Cause:**
+
+The bootstrap job creates a SPIFFE Identity Provider in Keycloak with:
+```python
+"bundleEndpoint": f"{SPIRE_OIDC_URL}/keys"
+```
+
+Keycloak validates this URL and rejects HTTP:
+```
+"errorMessage": "The url [bundleEndpoint] requires secure connections"
+```
+
+**Impact:**
+- ❌ Bootstrap job fails - cannot configure SPIFFE Identity Provider
+- ❌ Operator cannot use SPIFFE auth without the IDP
+- ❌ **BLOCKS ENTIRE E2E TEST** - no workaround possible
+- ❌ **PRs CANNOT BE VALIDATED** without this fix
+
+**Required Fix:**
+
+The SPIRE OIDC discovery provider must serve HTTPS. Options:
+
+1. **Enable SPIRE TLS** (preferred):
+   ```bash
+   helm upgrade spire spiffe/spire -n <namespace> \
+     --reuse-values \
+     --set spiffe-oidc-discovery-provider.tls.spire.enabled=true
+   ```
+   Then update bootstrap job to use `https://` URL
+
+2. **Use ingress with TLS**:
+   - Create Ingress with cert-manager certificate
+   - Point bootstrap job to ingress HTTPS URL
+
+3. **Patch Keycloak** to disable bundle endpoint validation (not recommended)
+
 **Status:**
-- ✅ Issue #11 FIXED in PR #349 (commit 5d86889)
-- PR #1837: Ready for merge after fixing Issues #9, #10, and #11
-- PR #349: Ready for merge after fixing Issues #10 and #11
-- Full E2E test validates complete operator SPIFFE authentication flow
-- Both client-secret and federated-jwt authentication modes working
+- ❌ Issue #12 BLOCKING - must be fixed to complete E2E test
+- Test setup script (`docs/testing/setup-operator-spiffe-test.sh`) also affected
+- **NO WORKAROUNDS ACCEPTABLE** - SPIFFE auth is mandatory
+
+**Files That Need Changes:**
+- `docs/testing/setup-operator-spiffe-test.sh` - Enable HTTPS for SPIRE OIDC
+- Possibly: SPIRE Helm values in kagenti-deps chart
+
+---
+
+**FINAL STATUS:**
+- ✅ Issue #9: FIXED in PR #1837 (commit 926b8320)
+- ✅ Issue #10: FIXED in PR #349 (commit e22806d)
+- ✅ Issue #11: FIXED in PR #349 (commit 5d86889)
+- ❌ Issue #12: BLOCKING - must fix before E2E test can complete
+- ⚠️ **PRs ARE NOT READY TO MERGE** - E2E test is blocked by Issue #12
+- ⚠️ **DO NOT merge until full E2E test completes successfully with SPIFFE auth**
