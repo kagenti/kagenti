@@ -1151,20 +1151,31 @@ Operator detects agent deployments and constructs SPIFFE IDs correctly, but regi
 - ❌ Agent pods stuck in `ContainerCreating` waiting for credentials secret that never gets created
 - ❌ Blocks end-to-end validation of PR #349's core feature
 
-**Required Fix:**
+**Fix Applied:**
 
-The Helm chart needs to:
-1. Mount the SPIRE CSI volume in the operator deployment when `spire.enabled=true`
-2. Add the standard SPIFFE CSI volume definition:
+Added chart support for SPIFFE ID authentication (commit 5d86889):
+
+1. New values section:
+   ```yaml
+   spiffeIdAuth:
+     enabled: false
+     spireSocketPath: "unix:///spiffe-workload-api/spire-agent.sock"
+   ```
+
+2. Conditional flags when `spiffeIdAuth.enabled=true`:
+   ```yaml
+   args:
+   - "--enable-spiffe-id-auth=true"
+   - "--spire-socket-path={{ .Values.spiffeIdAuth.spireSocketPath }}"
+   ```
+
+3. Conditional SPIRE CSI volume mount:
    ```yaml
    volumes:
    - name: spire-agent-socket
      csi:
        driver: csi.spiffe.io
        readOnly: true
-   ```
-3. Mount it in the manager container:
-   ```yaml
    volumeMounts:
    - name: spire-agent-socket
      mountPath: /spiffe-workload-api
@@ -1208,8 +1219,8 @@ kubectl logs -n kagenti-system -l control-plane=controller-manager -c manager --
 ---
 
 **Status:**
+- ✅ Issue #11 FIXED in PR #349 (commit 5d86889)
 - PR #1837: Ready for merge after fixing Issues #9, #10, and #11
 - PR #349: Ready for merge after fixing Issues #10 and #11
-- Issue #11 requires chart changes - not in PR #349 scope
 - Full E2E test validates complete operator SPIFFE authentication flow
 - Both client-secret and federated-jwt authentication modes working
