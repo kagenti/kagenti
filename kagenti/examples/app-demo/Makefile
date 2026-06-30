@@ -7,6 +7,8 @@ IMAGE_PREFIX ?= localhost/
 
 # --- Full workflow: build, load, setup keycloak, deploy ---
 
+# Set `DOCKER_BUILD_FLAGS=--load` if using Podman
+
 all: build kind-load keycloak-setup deploy
 	@echo ""
 	@echo "=========================================="
@@ -45,13 +47,13 @@ dev-frontend:
 # --- Docker builds ---
 
 build-backend:
-	docker build -t $(IMAGE_PREFIX)app-demo-backend:latest -f backend/Dockerfile backend/
+	docker build -t $(IMAGE_PREFIX)app-demo-backend:latest -f backend/Dockerfile backend/ $(DOCKER_BUILD_FLAGS)
 
 build-frontend:
-	docker build -t $(IMAGE_PREFIX)app-demo-frontend:latest -f frontend/Dockerfile frontend/
+	docker build -t $(IMAGE_PREFIX)app-demo-frontend:latest -f frontend/Dockerfile frontend/ $(DOCKER_BUILD_FLAGS)
 
 build-keycloak:
-	docker build -t $(IMAGE_PREFIX)app-demo-keycloak:latest -f keycloak/Dockerfile keycloak/
+	docker build -t $(IMAGE_PREFIX)app-demo-keycloak:latest -f keycloak/Dockerfile keycloak/ $(DOCKER_BUILD_FLAGS)
 
 build: build-backend build-frontend build-keycloak
 
@@ -61,6 +63,7 @@ kind-load: build
 	kind load docker-image $(IMAGE_PREFIX)app-demo-backend:latest --name $(CLUSTER_NAME)
 	kind load docker-image $(IMAGE_PREFIX)app-demo-frontend:latest --name $(CLUSTER_NAME)
 	kind load docker-image $(IMAGE_PREFIX)app-demo-keycloak:latest --name $(CLUSTER_NAME)
+	kind load docker-image curlimages/curl:latest --name $(CLUSTER_NAME)
 
 keycloak-setup: kind-load
 	kubectl delete job app-demo-keycloak-client -n $(NAMESPACE) --ignore-not-found

@@ -19,6 +19,7 @@ spec:
       initContainers:
         - name: wait-for-keycloak
           image: curlimages/curl:latest
+          imagePullPolicy: IfNotPresent
           command:
             - sh
             - -c
