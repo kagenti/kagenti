@@ -1126,8 +1126,90 @@ kubectl rollout restart deployment/kagenti-controller-manager -n kagenti-system
 
 ---
 
+## Issue #11: Operator SPIRE Socket Volume Not Mounted (CRITICAL BUG)
+
+**Discovered:** 2026-06-29 during E2E test execution (Step 8)
+
+**Problem:** Operator cannot fetch JWT-SVID from SPIRE because the CSI socket volume is not mounted
+
+**Root Cause:**
+
+When `--enable-spiffe-id-auth=true` is enabled, the operator tries to fetch JWT-SVIDs from the SPIRE Workload API socket at `/spiffe-workload-api/spire-agent.sock`, but the Helm chart doesn't mount the SPIRE CSI volume in the operator deployment.
+
+**Symptoms:**
+
+```
+{"level":"error","msg":"SPIFFE ID client registration failed",
+ "error":"fetch JWT-SVID for SPIFFE ID auth: fetch JWT-SVID: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial unix /spiffe-workload-api/spire-agent.sock: connect: no such file or directory\""}
+```
+
+Operator detects agent deployments and constructs SPIFFE IDs correctly, but registration fails because it cannot obtain its own JWT-SVID to authenticate to Keycloak.
+
+**Impact:**
+- ❌ Operator SPIFFE authentication completely non-functional
+- ❌ Falls back to admin credentials (which don't exist) → registration fails
+- ❌ Agent pods stuck in `ContainerCreating` waiting for credentials secret that never gets created
+- ❌ Blocks end-to-end validation of PR #349's core feature
+
+**Required Fix:**
+
+The Helm chart needs to:
+1. Mount the SPIRE CSI volume in the operator deployment when `spire.enabled=true`
+2. Add the standard SPIFFE CSI volume definition:
+   ```yaml
+   volumes:
+   - name: spire-agent-socket
+     csi:
+       driver: csi.spiffe.io
+       readOnly: true
+   ```
+3. Mount it in the manager container:
+   ```yaml
+   volumeMounts:
+   - name: spire-agent-socket
+     mountPath: /spiffe-workload-api
+     readOnly: true
+   ```
+
+**Workaround for Testing:**
+
+Manually patch the operator deployment:
+```bash
+# Add the CSI volume
+kubectl patch deployment kagenti-controller-manager -n kagenti-system --type=json -p='[
+  {"op":"add","path":"/spec/template/spec/volumes/-","value":{"name":"spire-agent-socket","csi":{"driver":"csi.spiffe.io","readOnly":true}}},
+  {"op":"add","path":"/spec/template/spec/containers/0/volumeMounts/-","value":{"name":"spire-agent-socket","mountPath":"/spiffe-workload-api","readOnly":true}}
+]'
+```
+
+**Related Configuration:**
+
+The operator also needs these flags (via helm values or manual patch):
+- `--enable-spiffe-id-auth=true` (enables the feature)
+- `--spire-trust-domain=localtest.me` (sets the trust domain)
+- `--spire-socket-path=unix:///spiffe-workload-api/spire-agent.sock` (socket path)
+
+**Files That Need Changes:**
+- `charts/kagenti-operator/templates/deployment.yaml` - Add CSI volume mount conditionally when SPIFFE auth is enabled
+
+**Testing:**
+
+After applying the workaround:
+```bash
+# Verify volume is mounted
+kubectl get pod -n kagenti-system -l control-plane=controller-manager -o yaml | grep -A 5 spire-agent-socket
+
+# Check operator can connect to SPIRE
+kubectl logs -n kagenti-system -l control-plane=controller-manager -c manager --tail=50 | grep -i spiffe
+
+# Should see successful JWT-SVID fetch and client registration
+```
+
+---
+
 **Status:**
-- PR #1837: Ready for merge after fixing Issues #9 and #10
-- PR #349: Ready for merge after fixing Issue #10
+- PR #1837: Ready for merge after fixing Issues #9, #10, and #11
+- PR #349: Ready for merge after fixing Issues #10 and #11
+- Issue #11 requires chart changes - not in PR #349 scope
 - Full E2E test validates complete operator SPIFFE authentication flow
 - Both client-secret and federated-jwt authentication modes working
