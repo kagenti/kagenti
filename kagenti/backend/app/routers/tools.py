@@ -23,6 +23,9 @@ from pydantic import BaseModel, field_validator
 from app.core.auth import ROLE_OPERATOR, ROLE_VIEWER, require_roles
 from app.core.config import settings
 from app.core.constants import (
+    CRD_GROUP,
+    CRD_VERSION,
+    AGENTRUNTIMES_PLURAL,
     KAGENTI_TYPE_LABEL,
     PROTOCOL_LABEL_PREFIX,
     KAGENTI_FRAMEWORK_LABEL,
@@ -233,15 +236,9 @@ class CreateToolRequest(BaseModel):
     # SPIRE identity (gates spiffe-helper inside the combined authbridge container)
     spireEnabled: bool = False
 
-    # Per-workload AuthBridge mode override. Tools don't create an
-    # AgentRuntime CR (they use the deprecated kagenti.io/authbridge-mode
-    # pod annotation, see tools.py:1041-1046), so this field flows
-    # through the annotation path, not via Spec.AuthBridgeMode.
-    #
-    # mtlsMode is intentionally NOT exposed for tools: it lives on the
-    # AgentRuntime CR's Spec, and there's no equivalent pod annotation
-    # for it. Once tools start producing AgentRuntime CRs (tracked as
-    # an operator-side follow-up), mtlsMode can be added here too.
+    # Per-workload AuthBridge mode override. Tools now create an
+    # AgentRuntime CR, so this field flows through both the CR's
+    # Spec.AuthBridgeMode and the deprecated pod annotation path.
     authBridgeMode: Optional[Literal["proxy-sidecar", "envoy-sidecar", "lite", "waypoint"]] = None
 
     # Port exclusion annotations
@@ -803,6 +800,7 @@ async def delete_tool(
     3. Deployment or StatefulSet
     4. Service
     5. HTTPRoute or OpenShift Route (whichever exists)
+    6. AgentRuntime CR (if exists)
     """
     deleted_resources = []
 
@@ -899,6 +897,20 @@ async def delete_tool(
         if e.status != 404:
             logger.warning(f"Failed to delete Route '{name}': {e}")
 
+    # Delete the AgentRuntime CR (if exists)
+    try:
+        kube.delete_custom_resource(
+            group=CRD_GROUP,
+            version=CRD_VERSION,
+            namespace=namespace,
+            plural=AGENTRUNTIMES_PLURAL,
+            name=name,
+        )
+        deleted_resources.append(f"AgentRuntime/{name}")
+    except ApiException as e:
+        if e.status != 404:
+            logger.warning(f"Failed to delete AgentRuntime '{name}': {e}")
+
     if deleted_resources:
         return DeleteResponse(
             success=True,
@@ -974,6 +986,56 @@ def _build_service_ports(
     return ports
 
 
+def _ensure_tool_agentruntime(
+    kube: "KubernetesService",
+    name: str,
+    namespace: str,
+    workload_type: str,
+    auth_bridge_mode: Optional[str] = None,
+) -> None:
+    """Create an AgentRuntime CR for the tool workload. Skip if it already exists."""
+    kind_map = {
+        WORKLOAD_TYPE_DEPLOYMENT: "Deployment",
+        WORKLOAD_TYPE_STATEFULSET: "StatefulSet",
+    }
+    manifest = {
+        "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
+        "kind": "AgentRuntime",
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "labels": {
+                APP_KUBERNETES_IO_NAME: name,
+                APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
+            },
+        },
+        "spec": {
+            "type": RESOURCE_TYPE_TOOL,
+            "targetRef": {
+                "apiVersion": "apps/v1",
+                "kind": kind_map.get(workload_type, "Deployment"),
+                "name": name,
+            },
+        },
+    }
+    if auth_bridge_mode:
+        manifest["spec"]["authBridgeMode"] = auth_bridge_mode
+    try:
+        kube.create_custom_resource(
+            group=CRD_GROUP,
+            version=CRD_VERSION,
+            namespace=namespace,
+            plural=AGENTRUNTIMES_PLURAL,
+            body=manifest,
+        )
+        logger.info("Created AgentRuntime '%s' (tool) in namespace '%s'", name, namespace)
+    except ApiException as e:
+        if e.status == 409:
+            logger.info("AgentRuntime '%s' already exists in namespace '%s'", name, namespace)
+        else:
+            raise
+
+
 def _build_tool_deployment_manifest(
     name: str,
     namespace: str,
@@ -1020,7 +1082,6 @@ def _build_tool_deployment_manifest(
 
     # Build labels - required labels per migration plan
     labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
         APP_KUBERNETES_IO_NAME: name,
         f"{PROTOCOL_LABEL_PREFIX}{VALUE_PROTOCOL_MCP}": "",
         KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
@@ -1032,7 +1093,6 @@ def _build_tool_deployment_manifest(
 
     # Pod template labels (subset used on pod template metadata)
     pod_labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
         APP_KUBERNETES_IO_NAME: name,
         f"{PROTOCOL_LABEL_PREFIX}{VALUE_PROTOCOL_MCP}": "",
         KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
@@ -1057,10 +1117,9 @@ def _build_tool_deployment_manifest(
     if inbound_ports_exclude:
         pod_annotations[KAGENTI_INBOUND_PORTS_EXCLUDE] = inbound_ports_exclude
     if auth_bridge_mode:
-        # The deprecated kagenti.io/authbridge-mode annotation is the
-        # only per-pod mode override path for workloads without an
-        # AgentRuntime CR (tools today). The operator's resolution
-        # chain still honors it.
+        # The deprecated kagenti.io/authbridge-mode annotation.
+        # The operator's resolution chain still honors it alongside
+        # the AgentRuntime CR's authBridgeMode field.
         pod_annotations["kagenti.io/authbridge-mode"] = auth_bridge_mode
 
     manifest = {
@@ -1076,7 +1135,6 @@ def _build_tool_deployment_manifest(
             "replicas": 1,
             "selector": {
                 "matchLabels": {
-                    KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
                     APP_KUBERNETES_IO_NAME: name,
                 }
             },
@@ -1184,7 +1242,6 @@ def _build_tool_statefulset_manifest(
 
     # Build labels - required labels per migration plan
     labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
         APP_KUBERNETES_IO_NAME: name,
         f"{PROTOCOL_LABEL_PREFIX}{VALUE_PROTOCOL_MCP}": "",
         KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
@@ -1196,7 +1253,6 @@ def _build_tool_statefulset_manifest(
 
     # Pod template labels (subset used on pod template metadata)
     pod_labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
         APP_KUBERNETES_IO_NAME: name,
         f"{PROTOCOL_LABEL_PREFIX}{VALUE_PROTOCOL_MCP}": "",
         KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
@@ -1221,10 +1277,9 @@ def _build_tool_statefulset_manifest(
     if inbound_ports_exclude:
         pod_annotations[KAGENTI_INBOUND_PORTS_EXCLUDE] = inbound_ports_exclude
     if auth_bridge_mode:
-        # The deprecated kagenti.io/authbridge-mode annotation is the
-        # only per-pod mode override path for workloads without an
-        # AgentRuntime CR (tools today). The operator's resolution
-        # chain still honors it.
+        # The deprecated kagenti.io/authbridge-mode annotation.
+        # The operator's resolution chain still honors it alongside
+        # the AgentRuntime CR's authBridgeMode field.
         pod_annotations["kagenti.io/authbridge-mode"] = auth_bridge_mode
 
     manifest = {
@@ -1241,7 +1296,6 @@ def _build_tool_statefulset_manifest(
             "replicas": 1,
             "selector": {
                 "matchLabels": {
-                    KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
                     APP_KUBERNETES_IO_NAME: name,
                 }
             },
@@ -1340,7 +1394,6 @@ def _build_tool_service_manifest(
             "name": service_name,
             "namespace": namespace,
             "labels": {
-                KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
                 f"{PROTOCOL_LABEL_PREFIX}{VALUE_PROTOCOL_MCP}": "",
                 APP_KUBERNETES_IO_NAME: name,
                 APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
@@ -1349,7 +1402,6 @@ def _build_tool_service_manifest(
         "spec": {
             "type": "ClusterIP",
             "selector": {
-                KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
                 APP_KUBERNETES_IO_NAME: name,
             },
             "ports": ports,
@@ -1570,6 +1622,15 @@ async def create_tool(
             service_name = _get_tool_service_name(request.name)
             logger.info(
                 f"Created Service '{service_name}' for tool in namespace '{request.namespace}'"
+            )
+
+            # Create AgentRuntime CR so the operator manages the type label
+            _ensure_tool_agentruntime(
+                kube=kube,
+                name=request.name,
+                namespace=request.namespace,
+                workload_type=request.workloadType,
+                auth_bridge_mode=request.authBridgeMode,
             )
 
             message = f"Tool '{request.name}' deployment started ({request.workloadType})."
@@ -2025,6 +2086,15 @@ async def finalize_tool_shipwright_build(
         service_name = _get_tool_service_name(name)
         logger.info(
             f"Created Service '{service_name}' in namespace '{namespace}' from Shipwright build"
+        )
+
+        # Create AgentRuntime CR so the operator manages the type label
+        _ensure_tool_agentruntime(
+            kube=kube,
+            name=name,
+            namespace=namespace,
+            workload_type=workload_type,
+            auth_bridge_mode=auth_bridge_mode,
         )
 
         message = f"Tool '{name}' created from Shipwright build ({workload_type})."

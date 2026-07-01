@@ -40,7 +40,6 @@ class TestToolDeploymentManifest:
         manifest = _build_tool_deployment_manifest(**base_params)
 
         labels = manifest["metadata"]["labels"]
-        assert labels.get("kagenti.io/type") == "tool"
         assert labels.get("protocol.kagenti.io/mcp") == ""
         assert labels.get("app.kubernetes.io/name") == "weather-tool"
         assert labels.get("kagenti.io/workload-type") == "deployment"
@@ -175,7 +174,6 @@ class TestToolStatefulSetManifest:
         manifest = _build_tool_statefulset_manifest(**base_params)
 
         labels = manifest["metadata"]["labels"]
-        assert labels.get("kagenti.io/type") == "tool"
         assert labels.get("protocol.kagenti.io/mcp") == ""
         assert labels.get("app.kubernetes.io/name") == "persistent-tool"
         assert labels.get("kagenti.io/workload-type") == "statefulset"
@@ -263,7 +261,6 @@ class TestToolServiceManifest:
         manifest = _build_tool_service_manifest(**base_params)
 
         labels = manifest["metadata"]["labels"]
-        assert labels.get("kagenti.io/type") == "tool"
         assert labels.get("protocol.kagenti.io/mcp") == ""
         assert labels.get("app.kubernetes.io/name") == "weather-tool"
 
@@ -272,7 +269,6 @@ class TestToolServiceManifest:
         manifest = _build_tool_service_manifest(**base_params)
 
         selector = manifest["spec"]["selector"]
-        assert selector.get("kagenti.io/type") == "tool"
         assert selector.get("app.kubernetes.io/name") == "weather-tool"
 
     def test_service_type_is_cluster_ip(self, base_params):
@@ -424,7 +420,6 @@ def _build_tool_deployment_manifest(
     service_ports = service_ports or [{"name": "http", "port": 8000, "targetPort": 8000}]
 
     labels = {
-        "kagenti.io/type": "tool",
         f"protocol.kagenti.io/{protocol}": "",
         "kagenti.io/transport": "streamable_http",
         "kagenti.io/framework": framework,
@@ -488,7 +483,6 @@ def _build_tool_deployment_manifest(
             "replicas": 1,
             "selector": {
                 "matchLabels": {
-                    "kagenti.io/type": "tool",
                     "app.kubernetes.io/name": name,
                 }
             },
@@ -522,7 +516,6 @@ def _build_tool_statefulset_manifest(
     service_ports = service_ports or [{"name": "http", "port": 8000, "targetPort": 8000}]
 
     labels = {
-        "kagenti.io/type": "tool",
         f"protocol.kagenti.io/{protocol}": "",
         "kagenti.io/transport": "streamable_http",
         "kagenti.io/framework": framework,
@@ -584,7 +577,6 @@ def _build_tool_statefulset_manifest(
             "replicas": 1,
             "selector": {
                 "matchLabels": {
-                    "kagenti.io/type": "tool",
                     "app.kubernetes.io/name": name,
                 }
             },
@@ -622,7 +614,6 @@ def _build_tool_service_manifest(
             "name": f"{name}-mcp",
             "namespace": namespace,
             "labels": {
-                "kagenti.io/type": "tool",
                 "protocol.kagenti.io/mcp": "",
                 "app.kubernetes.io/name": name,
                 "app.kubernetes.io/managed-by": "kagenti-ui",
@@ -631,7 +622,6 @@ def _build_tool_service_manifest(
         "spec": {
             "type": "ClusterIP",
             "selector": {
-                "kagenti.io/type": "tool",
                 "app.kubernetes.io/name": name,
             },
             "ports": [
