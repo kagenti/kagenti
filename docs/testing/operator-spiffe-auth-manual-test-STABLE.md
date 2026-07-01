@@ -141,15 +141,15 @@ kind delete cluster --name kagenti
 ### Step 2: Build Operator Image (PR #349)
 
 ```bash
-# Navigate to your kagenti-operator repo (adjust path as needed)
-cd /path/to/kagenti-operator
+# Navigate to the kagenti-operator code directory (note the nested structure)
+# The repo has this structure: kagenti-operator/ (repo root) -> kagenti-operator/ (code)
+cd /path/to/kagenti-operator/kagenti-operator
 
 git checkout pr-349
 git pull origin pr-349
 
 # Use docker or podman
 docker build -t localhost/kagenti-operator:spiffe-test -f Dockerfile .
-# OR: podman build -t localhost/kagenti-operator:spiffe-test -f Dockerfile .
 
 # Verify build succeeded
 if ! docker images | grep -q "localhost/kagenti-operator.*spiffe-test"; then
@@ -159,7 +159,7 @@ fi
 echo "✓ Operator image built successfully"
 ```
 
-**Note:** Replace `/path/to/kagenti-operator` with your actual kagenti-operator repository path.
+**Note:** The kagenti-operator repo has a nested structure - you need to `cd` into the **inner** `kagenti-operator` directory where the Dockerfile is located.
 
 ---
 
