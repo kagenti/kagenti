@@ -46,7 +46,6 @@ metadata:
   name: ${TOOL_NAME}
   namespace: ${NAMESPACE}
   labels:
-    kagenti.io/type: tool
     kagenti.io/managed-by: shipwright
   annotations:
     kagenti.io/tool-config: |
@@ -86,7 +85,6 @@ metadata:
   name: ${BUILDRUN_NAME}
   namespace: ${NAMESPACE}
   labels:
-    kagenti.io/type: tool
     kagenti.io/build-name: ${TOOL_NAME}
 spec:
   build:
@@ -152,7 +150,6 @@ metadata:
   name: ${TOOL_NAME}
   namespace: ${NAMESPACE}
   labels:
-    kagenti.io/type: tool
     protocol.kagenti.io/mcp: ""
     kagenti.io/transport: streamable_http
     kagenti.io/built-by: shipwright
@@ -165,12 +162,10 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: tool
       app.kubernetes.io/name: ${TOOL_NAME}
   template:
     metadata:
       labels:
-        kagenti.io/type: tool
         protocol.kagenti.io/mcp: ""
         kagenti.io/transport: streamable_http
         app.kubernetes.io/name: ${TOOL_NAME}
@@ -241,6 +236,24 @@ spec:
 EOF
 
 echo "Deployment '${TOOL_NAME}' and Service '${TOOL_NAME}-mcp' created."
+
+# Step 5c: Create AgentRuntime CR
+echo "Creating AgentRuntime CR..."
+cat <<EOF | kubectl apply -f -
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: ${TOOL_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: ${TOOL_NAME}
+spec:
+  type: tool
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ${TOOL_NAME}
+EOF
 
 # Step 6: Wait for Deployment to be ready
 echo ""
