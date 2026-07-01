@@ -35,7 +35,7 @@ featureFlags:
   admin: true
   # Trace-analysis Observability card. Links to the standalone trace-analysis
   # component (separate repo) which must be deployed for the card to work.
-  traceAnalysis: true
+  traceAnalysis: false
 
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
@@ -171,8 +171,8 @@ ui:
   # Frontend (UI v2) configuration
   frontend:
     enabled: true
-    image: ghcr.io/kagenti/kagenti-ui-v2
-    tag: latest
+    image: ghcr.io/kagenti/kagenti/ui-v2
+    tag: v0.7.0-alpha.3
     resources:
       limits:
         cpu: 100m
@@ -188,8 +188,8 @@ ui:
     hostname: kagenti-api.localtest.me
   # Backend configuration
   backend:
-    image: ghcr.io/kagenti/kagenti-backend
-    tag: latest
+    image: ghcr.io/kagenti/kagenti/backend
+    tag: v0.7.0-alpha.3
     # Default registry for source-based builds (Kind: registry.cr-system.svc.cluster.local:5000)
     defaultRegistryUrl: ""
     # Default Shipwright build strategy for internal registries
@@ -482,16 +482,13 @@ traceAnalysis:
   # MLflow tracking endpoint the service reads traces from (in-cluster DNS).
   mlflowTrackingUri: "http://mlflow:5000"
   maxTraces: 50
-  # When MLflow has OIDC auth enabled (mlflow-oidc-auth), authenticate via
-  # OAuth2 client-credentials using the platform's mlflow-oauth-secret.
-  mlflowAuth:
+  # When enabled, turns on both: OAuth2 client-credentials auth to MLflow
+  # (mlflow-oidc-auth) and the Keycloak UI login gate. Both use credentials
+  # from secretName (the platform's mlflow-oauth-secret). Set false when
+  # Keycloak is not available in the cluster.
+  auth:
     enabled: true
     secretName: mlflow-oauth-secret
-  # User-facing authentication. When enabled, the trace-analysis UI requires
-  # a Keycloak login before traces can be viewed. Uses the same mlflow Keycloak
-  # client (standardFlowEnabled=true, redirectUris=["*"]) — no new client needed.
-  auth:
-    enabled: true   # set true when Keycloak is available in the cluster
   resources:
     requests:
       cpu: 50m

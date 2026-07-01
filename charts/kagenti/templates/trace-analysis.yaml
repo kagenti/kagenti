@@ -34,33 +34,29 @@ spec:
               value: {{ .Values.traceAnalysis.mlflowTrackingUri | quote }}
             - name: MAX_TRACES
               value: {{ .Values.traceAnalysis.maxTraces | quote }}
-            {{- if .Values.traceAnalysis.mlflowAuth.enabled }}
-            # OAuth2 client-credentials for MLflow (mlflow-oidc-auth). Keys match
-            # the platform's mlflow-oauth-secret (also used by the OTEL collector).
+            {{- if .Values.traceAnalysis.auth.enabled }}
+            # Full auth: OAuth2 client-credentials for MLflow + Keycloak UI login.
+            # All credentials come from the same mlflow-oauth-secret.
+            - name: AUTH_ENABLED
+              value: "true"
             - name: MLFLOW_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.traceAnalysis.mlflowAuth.secretName | quote }}
+                  name: {{ .Values.traceAnalysis.auth.secretName | quote }}
                   key: OIDC_CLIENT_ID
                   optional: true
             - name: MLFLOW_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.traceAnalysis.mlflowAuth.secretName | quote }}
+                  name: {{ .Values.traceAnalysis.auth.secretName | quote }}
                   key: OIDC_CLIENT_SECRET
                   optional: true
             - name: KEYCLOAK_TOKEN_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.traceAnalysis.mlflowAuth.secretName | quote }}
+                  name: {{ .Values.traceAnalysis.auth.secretName | quote }}
                   key: OIDC_TOKEN_URL
                   optional: true
-            {{- end }}
-            {{- if .Values.traceAnalysis.auth.enabled }}
-            # User-facing auth: Keycloak login required to view traces.
-            # Reuses the mlflow Keycloak client (standardFlowEnabled=true).
-            - name: ENABLE_AUTH
-              value: "true"
             - name: KEYCLOAK_URL
               value: {{ .Values.keycloak.url | quote }}
             - name: KEYCLOAK_PUBLIC_URL
@@ -72,7 +68,7 @@ spec:
             - name: SESSION_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.traceAnalysis.mlflowAuth.secretName | quote }}
+                  name: {{ .Values.traceAnalysis.auth.secretName | quote }}
                   key: OIDC_CLIENT_SECRET
                   optional: true
             {{- end }}

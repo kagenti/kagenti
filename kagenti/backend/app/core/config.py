@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     # or in-cluster skill registries (e.g. "192.168.50.16,10.0.0.0/8").
     skill_registry_allowed_hosts: str = ""
     # Trace-analysis Observability card (links to the standalone trace-analysis component)
-    kagenti_feature_flag_trace_analysis: bool = True
+    kagenti_feature_flag_trace_analysis: bool = False  # Trace-analysis Observability card
 
     # AuthBridge runtime config (mounted from Helm-managed ConfigMap)
     authbridge_runtime_config_path: str = "/etc/kagenti/authbridge/config.yaml"
