@@ -101,6 +101,7 @@ from app.models.responses import (
     ResourceLabels,
     DeleteResponse,
 )
+from app.services.agent_env_defaults import apply_agent_import_defaults
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
 from app.routers.skills import _sanitize_k8s_name
 from app.utils.routes import (
@@ -239,6 +240,11 @@ class CreateAgentRequest(BaseModel):
     framework: str = "LangGraph"
     envVars: Optional[List[EnvVar]] = None
     skills: Optional[List[str]] = None
+    # Optional MCP tool link — when agent import defaults are enabled, MCP_URL is injected
+    mcpToolName: Optional[str] = None
+    # LLM preset: openai, ollama, openrouter (used with agent import defaults)
+    llmPreset: Optional[str] = None
+    llmModel: Optional[str] = None
 
     # Workload type: 'deployment', 'statefulset', or 'job'
     workloadType: str = WORKLOAD_TYPE_DEPLOYMENT
@@ -2579,6 +2585,7 @@ def _build_agent_shipwright_build_manifest(
         "authBridgeEnabled": request.authBridgeEnabled,
         "spireEnabled": request.spireEnabled,
         "authBridgeMode": request.authBridgeMode,
+        "gitPath": request.gitPath,
     }
     if request.outboundRoutes:
         resource_config["outboundRoutes"] = [r.model_dump() for r in request.outboundRoutes]
@@ -2597,6 +2604,12 @@ def _build_agent_shipwright_build_manifest(
     # Add env vars if present
     if request.envVars:
         resource_config["envVars"] = [ev.model_dump(exclude_none=True) for ev in request.envVars]
+    if request.mcpToolName:
+        resource_config["mcpToolName"] = request.mcpToolName
+    if request.llmPreset:
+        resource_config["llmPreset"] = request.llmPreset
+    if request.llmModel:
+        resource_config["llmModel"] = request.llmModel
     if request.skills:
         resource_config["skills"] = request.skills
     # Add service ports if present
@@ -3742,6 +3755,8 @@ async def create_agent(
             s for s in request.skills if s and not _is_skill_external(kube, request.namespace, s)
         ]
 
+    request = apply_agent_import_defaults(request, kube)
+
     try:
         if request.deploymentMethod == "image":
             # Deploy from existing container image
@@ -4027,6 +4042,9 @@ class FinalizeShipwrightBuildRequest(BaseModel):
     inboundPortsExclude: Optional[str] = None
     defaultOutboundPolicy: Optional[Literal["passthrough", "exchange"]] = None
     persistentStorage: Optional[PersistentStorageConfig] = None
+    mcpToolName: Optional[str] = None
+    llmPreset: Optional[str] = None
+    llmModel: Optional[str] = None
 
     @model_validator(mode="after")
     def _check_mtls_compatible_with_mode(self) -> "FinalizeShipwrightBuildRequest":
@@ -4357,6 +4375,18 @@ async def finalize_shipwright_build(
         if final_persistent_storage is None and stored_config.get("persistentStorage"):
             final_persistent_storage = PersistentStorageConfig(**stored_config["persistentStorage"])
 
+        final_mcp_tool_name = (
+            request.mcpToolName
+            if request.mcpToolName is not None
+            else stored_config.get("mcpToolName")
+        )
+        final_llm_preset = (
+            request.llmPreset if request.llmPreset is not None else stored_config.get("llmPreset")
+        )
+        final_llm_model = (
+            request.llmModel if request.llmModel is not None else stored_config.get("llmModel")
+        )
+
         # Step 3: Create workload + Service with the built image
         # Build a CreateAgentRequest-like object for manifest builders
         agent_request = CreateAgentRequest(
@@ -4382,7 +4412,13 @@ async def finalize_shipwright_build(
             inboundPortsExclude=final_inbound_ports_exclude,
             defaultOutboundPolicy=final_default_outbound_policy,
             persistentStorage=final_persistent_storage,
+            gitPath=stored_config.get("gitPath")
+            or build.get("spec", {}).get("source", {}).get("contextDir", ""),
+            mcpToolName=final_mcp_tool_name,
+            llmPreset=final_llm_preset,
+            llmModel=final_llm_model,
         )
+        agent_request = apply_agent_import_defaults(agent_request, kube)
 
         # Ensure a dedicated ServiceAccount exists so the webhook's
         # SPIFFE identity uses the workload name, not the ReplicaSet hash.
