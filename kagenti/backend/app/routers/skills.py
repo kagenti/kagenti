@@ -195,6 +195,11 @@ class SkillAutoSyncStatus(BaseModel):
     enabled: bool
     registryType: Optional[str] = None
     registryUrl: Optional[str] = None
+    # Browser-facing store UI URL (e.g. via the ingress gateway). The
+    # registryUrl is the in-cluster API address used server-side for syncing and
+    # is not necessarily reachable from a browser, so the UI uses this instead
+    # when present. Populated from the optional `store-ui-url` ConfigMap key.
+    storeUiUrl: Optional[str] = None
     syncInterval: Optional[int] = None
     lastSyncedAt: Optional[str] = None
     skillCount: Optional[int] = None
@@ -780,6 +785,7 @@ def _configmap_to_autosync_status(cm) -> SkillAutoSyncStatus:
         enabled=data.get("enabled") == "true",
         registryType=data.get("registry-type"),
         registryUrl=data.get("registry-url"),
+        storeUiUrl=data.get("store-ui-url"),
         syncInterval=int(data["sync-interval"]) if data.get("sync-interval") else None,
         lastSyncedAt=data.get("last-synced-at"),
         skillCount=int(skill_count_raw) if skill_count_raw else None,

@@ -1,0 +1,27 @@
+{{- if and .Values.components.skillberryStore.enabled .Values.skillberryStore.autosync.enabled }}
+# Seeds the autosync config the backend loop already reads
+# (app/services/skill_autosync.py -> sync_skills_once). With this present and
+# featureFlags.externalSkills enabled, the backend polls the in-cluster store
+# and reconciles skills into namespaces. No backend changes required.
+#
+# The backend writes status keys (last-synced-at, skill-count) back into this
+# same ConfigMap. Helm's 3-way merge preserves keys it never set, so backend
+# status survives `helm upgrade`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kagenti-skill-autosync-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: skillberry-store
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
+data:
+  enabled: "true"
+  registry-type: "skillberry"
+  registry-url: "http://skillberry-store.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.skillberryStore.apiPort }}"
+  # Browser-facing store UI URL (via the gateway), surfaced by the backend to the
+  # UI. The registry-url above is server-side only and not browser-reachable.
+  store-ui-url: "{{ .Values.skillberryStore.uiUrl | default (printf "http://skillberry-store.%s:%v" (.Values.domain | default "localtest.me") (.Values.ingressPort | default 8080)) }}"
+  sync-interval: "{{ .Values.skillberryStore.autosync.syncInterval }}"
+  allowed-tags: "{{ .Values.skillberryStore.autosync.allowedTags }}"
+{{- end }}
