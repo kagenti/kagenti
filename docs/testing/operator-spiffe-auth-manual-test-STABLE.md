@@ -20,7 +20,7 @@
 | Issue #13 (JWT issuer) | ✅ FIXED | DNS resolution + bootstrap job sets correct issuer |
 | Issue #14 (TLS certs) | ✅ FIXED | SPIRE CA bundle imported into Java truststore |
 
-**Conclusion:** PRs #1837 and #349 are **READY TO MERGE** - all E2E test criteria met.
+**Conclusion:** PRs #2135 and #349 are **READY TO MERGE** - all E2E test criteria met.
 
 ---
 
@@ -28,7 +28,7 @@
 
 ### 1. SPIFFE Auth is MANDATORY
 **This test MUST use SPIFFE authentication. NEVER use admin credentials as a workaround or fallback.**
-- The entire purpose of PR #1837 and PR #349 is to eliminate credential-based authentication
+- The entire purpose of PR #2135 and PR #349 is to eliminate credential-based authentication
 - Any test using admin credentials is INVALID and proves nothing
 - If SPIFFE auth doesn't work, the test has FAILED - do not bypass it
 
@@ -47,11 +47,11 @@
 
 ## Overview
 
-This document provides instructions for manually testing operator SPIFFE ID authentication across two PRs. Several deployment issues were discovered during initial testing and have been **fixed in PR #1837**.
+This document provides instructions for manually testing operator SPIFFE ID authentication across two PRs. Several deployment issues were discovered during initial testing and have been **fixed in PR #2135**.
 
 ## Pull Requests Under Test
 
-### PR #1837 (kagenti repo): `feat/operator-spiffe-auth-bootstrap`
+### PR #2135 (kagenti repo): `feat/operator-spiffe-auth-clean`
 - Bootstrap job that registers operator as Keycloak client
 - SPIFFE Identity Provider configuration in Keycloak
 - Operator client configured with `clientAuthenticatorType: federated-jwt`
@@ -98,7 +98,7 @@ docker ps
 
 ---
 
-## Fixed Issues (Included in PR #1837)
+## Fixed Issues (Included in PR #2135)
 
 ✅ All deployment issues discovered during testing have been **fixed**:
 
@@ -109,7 +109,7 @@ docker ps
 5. **Helm template syntax bug** (commit faa237ff) - Fixed extra `{{- end }}` statements in `agent-namespace-resources.yaml`
 6. **OCI registry override issue** - Setup script now automatically removes OCI tarball and applies local subchart with custom operator image
 
-This test procedure now uses the **fixed** PR #1837 code.
+This test procedure now uses the **fixed** PR #2135 code.
 
 ## Known Issues
 
@@ -189,14 +189,14 @@ echo "✓ Operator image built successfully"
 
 ---
 
-### Step 3: Build Bootstrap Image (PR #1837)
+### Step 3: Build Bootstrap Image (PR #2135)
 
 ```bash
 # Navigate to your kagenti repo root
 cd /path/to/kagenti
 
-git checkout feat/operator-spiffe-auth-bootstrap
-git pull origin feat/operator-spiffe-auth-bootstrap
+git checkout feat/operator-spiffe-auth-clean
+git pull origin feat/operator-spiffe-auth-clean
 
 # Use docker or podman
 docker build -t ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest \
@@ -1110,7 +1110,7 @@ helm uninstall kagenti -n kagenti-system
 
 ### "namespace 'team1' not found" During Install (FIXED)
 
-**Note:** This was Issue #1 - fixed in commit e4514196. If you still see this, you're not using the updated PR #1837 code.
+**Note:** This was Issue #1 - fixed in commit e4514196. If you still see this, you're not using the updated PR #2135 code.
 
 ---
 
@@ -1464,7 +1464,7 @@ rm -f /tmp/weather-agent.yaml
 
 This test procedure has been updated to reflect all fixes and issues discovered:
 
-**Code Fixes (PR #1837):**
+**Code Fixes (PR #2135):**
 - ✅ Simplified from 3 values files to 2
 - ✅ Agent namespaces work correctly (pre-install hook ordering fixed)
 - ✅ Bootstrap job auto-enabled with single flag
@@ -1491,7 +1491,7 @@ This test procedure has been updated to reflect all fixes and issues discovered:
 - ✅ **Issue #10:** Operator chart/PR #349 version mismatch - **FIXED** (added backward-compat flags)
 
 **Status:**
-- PR #1837: Ready for merge after fixing Issues #9 and #10
+- PR #2135: Ready for merge after fixing Issues #9 and #10
 - PR #349: Ready for merge after fixing Issue #10
 - Full E2E test validates complete operator SPIFFE authentication flow
 - Both client-secret and federated-jwt authentication modes working
@@ -1801,7 +1801,7 @@ A complete solution requires one of:
 ---
 
 **FINAL STATUS:**
-- ✅ Issue #9: FIXED in PR #1837 (commit 926b8320)
+- ✅ Issue #9: FIXED in PR #2135 (commit 926b8320)
 - ✅ Issue #10: FIXED in PR #349 (commit e22806d)
 - ✅ Issue #11: FIXED in PR #349 (commit 5d86889)
 - ❌ Issue #12: BLOCKING - must fix before E2E test can complete
