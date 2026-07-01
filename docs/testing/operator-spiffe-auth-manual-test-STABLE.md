@@ -117,6 +117,28 @@ None - all issues have been fixed!
 
 ---
 
+## Repository Structure
+
+**IMPORTANT:** The kagenti-operator repo has a **nested directory structure**. Make sure you navigate to the correct directory:
+
+```
+Your filesystem:
+├── /path/to/kagenti/                          ← kagenti repo (main platform)
+│   ├── charts/
+│   ├── docs/
+│   └── auth/operator-spiffe-bootstrap/
+│       └── Dockerfile                         ← Bootstrap image Dockerfile
+│
+└── /path/to/kagenti-operator/                 ← kagenti-operator repo root (git clone creates this)
+    └── kagenti-operator/                      ← Nested code directory (cd into this!)
+        ├── Dockerfile                         ← Operator image Dockerfile
+        └── cmd/main.go
+```
+
+**Key point:** After cloning `kagenti-operator`, you must `cd` into the **inner** `kagenti-operator` directory to find the Dockerfile.
+
+---
+
 ## Test Procedure
 
 ### Step 1: Clean Environment
@@ -140,15 +162,21 @@ kind delete cluster --name kagenti
 
 ### Step 2: Build Operator Image (PR #349)
 
+**IMPORTANT:** Navigate to the **inner** `kagenti-operator` directory (nested structure).
+
+Example paths:
+- If your repo is at: `/Users/you/repos/kagenti-operator/`
+- Then Dockerfile is at: `/Users/you/repos/kagenti-operator/kagenti-operator/Dockerfile`
+- You need to: `cd /Users/you/repos/kagenti-operator/kagenti-operator`
+
 ```bash
-# Navigate to the kagenti-operator code directory (note the nested structure)
-# The repo has this structure: kagenti-operator/ (repo root) -> kagenti-operator/ (code)
+# Navigate to the kagenti-operator CODE directory (note the nested structure!)
 cd /path/to/kagenti-operator/kagenti-operator
 
 git checkout pr-349
 git pull origin pr-349
 
-# Use docker or podman
+# Build the operator image
 docker build -t localhost/kagenti-operator:spiffe-test -f Dockerfile .
 
 # Verify build succeeded
@@ -158,8 +186,6 @@ if ! docker images | grep -q "localhost/kagenti-operator.*spiffe-test"; then
 fi
 echo "✓ Operator image built successfully"
 ```
-
-**Note:** The kagenti-operator repo has a nested structure - you need to `cd` into the **inner** `kagenti-operator` directory where the Dockerfile is located.
 
 ---
 
