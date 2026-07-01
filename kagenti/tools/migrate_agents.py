@@ -256,7 +256,6 @@ def build_deployment_from_agent_crd(agent: Dict) -> Dict:
 
     # Build selector labels
     selector_labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: name,
     }
 
@@ -311,7 +310,6 @@ def build_service_from_agent_crd(agent: Dict) -> Dict:
 
     # Build selector labels
     selector_labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: name,
     }
 

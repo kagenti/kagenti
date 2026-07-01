@@ -27,7 +27,6 @@ metadata:
   name: weather-tool
   namespace: team1
   labels:
-    kagenti.io/type: tool
     protocol.kagenti.io/mcp: ""
     kagenti.io/transport: streamable_http
     kagenti.io/framework: Python
@@ -39,12 +38,10 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: tool
       app.kubernetes.io/name: weather-tool
   template:
     metadata:
       labels:
-        kagenti.io/type: tool
         protocol.kagenti.io/mcp: ""
         kagenti.io/transport: streamable_http
         kagenti.io/framework: Python
@@ -140,5 +137,23 @@ spec:
       targetPort: 8000
       protocol: TCP
 SERVICE_EOF
+
+# Create AgentRuntime CR so the operator manages the kagenti.io/type label
+cat <<'AGENTRUNTIME_EOF' | kubectl apply -f -
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: weather-tool
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: weather-tool
+    app.kubernetes.io/managed-by: e2e-test
+spec:
+  type: tool
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: weather-tool
+AGENTRUNTIME_EOF
 
 log_success "Weather-tool deployed (not waiting for pods — use kubectl wait if needed)"
