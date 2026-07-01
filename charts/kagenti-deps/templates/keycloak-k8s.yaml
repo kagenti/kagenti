@@ -227,7 +227,10 @@ extraEnvVars with the same name override these defaults.
 */}}
 {{- define "kagenti.keycloak.defaultEnv" -}}
 - name: KC_FEATURES
-  value: "client-auth-federated:v1,spiffe:v1"
+  # token-exchange + admin-fine-grained-authz are required by the token-exchange
+  # E2E suite (realm/FGAP setup). Enabling them on the platform Keycloak lets the
+  # suite reuse it instead of standing up a second, colliding Keycloak on Kind.
+  value: "client-auth-federated:v1,spiffe:v1,token-exchange,admin-fine-grained-authz:v1"
 - name: KC_BOOTSTRAP_ADMIN_USERNAME
   value: "admin"
 - name: KC_BOOTSTRAP_ADMIN_PASSWORD
