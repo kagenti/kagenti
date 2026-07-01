@@ -164,6 +164,7 @@ To learn how to deploy agents and MCP tools, follow the **[Weather Agent Demo](h
 | **Skills Configuration & Usage** | [Skills Guide](./docs/skills.md) |
 | **Architecture Details** | [Technical Details](./docs/tech-details.md) |
 | **Identity, Security, and Auth Bridge** | [Identity and Auth Bridge](./docs/identity-guide.md) |
+| **Fine-Grained Zero-Trust Access Control** | [Access Control](./docs/access-control/README.md) |
 | **Developer Guide** | [Contributing](./docs/dev-guide.md) |
 | **Troubleshooting** | [Troubleshooting Guide](./docs/troubleshooting.md) |
 | **Blog Posts** | [Kagenti Blog](./docs/blogs.md) |
