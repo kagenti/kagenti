@@ -15,12 +15,12 @@ AGENT_OAUTH_SECRET_TAG := $(TAG)
 
 # UI v2 Frontend
 UI_FRONTEND_REPO := ghcr.io/kagenti/kagenti-ui-v2
-UI_FRONTEND_TAG := latest
+UI_FRONTEND_TAG := $(TAG)
 UI_FRONTEND_DIR := kagenti/ui-v2
 
 # UI v2 Backend
 UI_BACKEND_REPO := ghcr.io/kagenti/kagenti-backend
-UI_BACKEND_TAG := latest
+UI_BACKEND_TAG := $(TAG)
 UI_BACKEND_DIR := kagenti/backend
 
 # Shared Docker build context (matches CI build.yaml)
