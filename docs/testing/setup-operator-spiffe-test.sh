@@ -267,6 +267,23 @@ helm upgrade --install kagenti charts/kagenti/ \
 
 log_success "kagenti installed"
 
+# Fix: Helm downloaded the operator subchart from OCI registry (v0.3.0-alpha.5)
+# which doesn't have SPIFFE auth changes. We need to force it to use the local
+# subchart by removing the tarball and upgrading again.
+log_info "Applying local operator subchart (removing OCI registry tarball)..."
+rm -f charts/kagenti/charts/kagenti-operator-chart-*.tgz
+
+helm upgrade kagenti charts/kagenti/ \
+  -n kagenti-system \
+  --reuse-values \
+  --set "kagenti-operator-chart.controllerManager.container.image.repository=localhost/kagenti-operator" \
+  --set "kagenti-operator-chart.controllerManager.container.image.tag=spiffe-test" \
+  --set "kagenti-operator-chart.controllerManager.container.image.pullPolicy=Never" \
+  --timeout 5m \
+  --wait
+
+log_success "Local operator subchart applied"
+
 # Verify deployment
 log_info "Verifying deployment..."
 kubectl get pod -n kagenti-system -l control-plane=controller-manager
