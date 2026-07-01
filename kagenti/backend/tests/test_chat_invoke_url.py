@@ -160,22 +160,16 @@ class TestResolveInvokeUrl:
         assert url == "http://myagent.ns.svc.cluster.local:8443"
 
     @pytest.mark.asyncio
-    async def test_skips_card_fetch_for_invalid_name(self, mock_kube, mock_resolve_base):
-        """Non-K8s names skip the card fetch entirely (SSRF prevention)."""
-        with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
-            url = await _resolve_invoke_url("INVALID NAME!", "ns", mock_kube)
-
-        assert url == "http://myagent.ns.svc.cluster.local:8443"
-        mock_get.assert_not_called()
+    async def test_rejects_invalid_name(self, mock_kube, mock_resolve_base):
+        """[SI-10] Non-K8s names are rejected to prevent SSRF via tainted URL construction."""
+        with pytest.raises(Exception, match="Invalid agent name or namespace"):
+            await _resolve_invoke_url("INVALID NAME!", "ns", mock_kube)
 
     @pytest.mark.asyncio
-    async def test_skips_card_fetch_for_invalid_namespace(self, mock_kube, mock_resolve_base):
-        """Non-K8s namespaces skip the card fetch entirely (SSRF prevention)."""
-        with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
-            url = await _resolve_invoke_url("myagent", "ns with spaces", mock_kube)
-
-        assert url == "http://myagent.ns.svc.cluster.local:8443"
-        mock_get.assert_not_called()
+    async def test_rejects_invalid_namespace(self, mock_kube, mock_resolve_base):
+        """[SI-10] Non-K8s namespaces are rejected to prevent SSRF via tainted URL construction."""
+        with pytest.raises(Exception, match="Invalid agent name or namespace"):
+            await _resolve_invoke_url("myagent", "ns with spaces", mock_kube)
 
     @pytest.mark.asyncio
     async def test_drops_unsafe_query_string(self, mock_kube, mock_resolve_base):
@@ -259,7 +253,9 @@ class TestInvokeUrlCache:
         }
         mock_resp = httpx.Response(200, json=card, request=httpx.Request("GET", "http://x"))
 
-        with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp) as mock_get:
+        with patch(
+            "httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp
+        ) as mock_get:
             url1 = await _resolve_invoke_url("myagent", "ns", mock_kube)
             url2 = await _resolve_invoke_url("myagent", "ns", mock_kube)
 
@@ -275,7 +271,9 @@ class TestInvokeUrlCache:
         }
         mock_resp = httpx.Response(200, json=card, request=httpx.Request("GET", "http://x"))
 
-        with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp) as mock_get:
+        with patch(
+            "httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp
+        ) as mock_get:
             t = 1000.0
             with patch("app.routers.chat.time.monotonic", side_effect=[t, t + 31.0, t + 31.0]):
                 url1 = await _resolve_invoke_url("myagent", "ns", mock_kube)
@@ -374,7 +372,7 @@ class TestCacheWiring:
 
     @pytest.mark.asyncio
     async def test_cache_does_not_bypass_input_validation(self, mock_kube, mock_resolve_base):
-        """[SI-10] Invalid K8s names still skip card fetch even after cache exists for valid names."""
+        """[SI-10] Invalid K8s names are rejected even after cache exists for valid names."""
         card = {
             "name": "test-agent",
             "url": "https://myagent.ns.svc.cluster.local:8443/a2a/invoke",
@@ -384,8 +382,5 @@ class TestCacheWiring:
         with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
             await _resolve_invoke_url("myagent", "ns", mock_kube)
 
-        with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
-            url = await _resolve_invoke_url("INVALID!", "ns", mock_kube)
-            mock_get.assert_not_called()
-
-        assert url == "http://myagent.ns.svc.cluster.local:8443"
+        with pytest.raises(Exception, match="Invalid agent name or namespace"):
+            await _resolve_invoke_url("INVALID!", "ns", mock_kube)

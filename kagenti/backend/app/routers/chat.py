@@ -72,7 +72,10 @@ async def _resolve_invoke_url(name: str, namespace: str, kube: KubernetesService
     name_match = _K8S_NAME_RE.fullmatch(name)
     ns_match = _K8S_NAME_RE.fullmatch(namespace)
     if not name_match or not ns_match:
-        return resolve_agent_url(name, namespace, kube)
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid agent name or namespace",
+        )
 
     cache_key = (name, namespace)
     now = time.monotonic()
