@@ -3409,10 +3409,14 @@ def _build_statefulset_manifest(
                     "volumes": [
                         {"name": "cache", "emptyDir": {}},
                         {"name": "marvin", "emptyDir": {}},
-                        {"name": "shared-data", "emptyDir": {}},
                         *skill_volumes,
                         *ext_volumes,
-                    ],
+                    ]
+                    + (
+                        []
+                        if request.persistentStorage and request.persistentStorage.enabled
+                        else [{"name": "shared-data", "emptyDir": {}}]
+                    ),
                 },
             },
         },
@@ -3421,6 +3425,24 @@ def _build_statefulset_manifest(
     # Add init containers for external skills
     if ext_init_containers:
         manifest["spec"]["template"]["spec"]["initContainers"] = ext_init_containers
+
+    # When persistent storage is requested, declare a volumeClaimTemplate so the
+    # StatefulSet provisions a PVC bound to the pod's stable identity; the
+    # shared-data volume above is omitted from `volumes` in that case because
+    # the template name (shared-data) becomes the volume.
+    if request.persistentStorage and request.persistentStorage.enabled:
+        manifest["spec"]["volumeClaimTemplates"] = [
+            {
+                "metadata": {
+                    "name": "shared-data",
+                    "labels": {APP_KUBERNETES_IO_NAME: request.name},
+                },
+                "spec": {
+                    "accessModes": ["ReadWriteOnce"],
+                    "resources": {"requests": {"storage": request.persistentStorage.size}},
+                },
+            }
+        ]
 
     # Add image pull secrets if specified
     if request.imagePullSecret:
