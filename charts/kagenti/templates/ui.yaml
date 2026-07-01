@@ -523,6 +523,10 @@ metadata:
     {{- include "kagenti.commonLabels" . | nindent 4 }}
   annotations:
     openshift.io/host.generated: "true"
+    # Agent chat proxied through the UI involves a cold MCP session + multiple
+    # LLM round-trips that can exceed HAProxy's 30s default, surfacing as a 504
+    # on the first request even though the agent itself completes.
+    haproxy.router.openshift.io/timeout: "120s"
 spec:
   path: /
   port:
@@ -547,6 +551,10 @@ metadata:
     {{- include "kagenti.commonLabels" . | nindent 4 }}
   annotations:
     openshift.io/host.generated: "true"
+    # Agent chat proxied through the backend API involves a cold MCP session +
+    # multiple LLM round-trips that can exceed HAProxy's 30s default, surfacing
+    # as a 504 on the first request even though the agent itself completes.
+    haproxy.router.openshift.io/timeout: "120s"
 spec:
   path: /
   port:
