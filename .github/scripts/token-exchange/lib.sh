@@ -52,6 +52,26 @@ get_keycloak_url() {
   echo "${KEYCLOAK_URL:-http://keycloak-service.${KC_NAMESPACE}.svc:8080}"
 }
 
+# Resolve the Keycloak CR external hostname.
+# On OCP, derive it from the ingress domain via `oc`. On Kind (or any cluster
+# without `oc`), fall back to an in-cluster hostname so the install does not
+# abort under `set -e` when `oc` is absent (the Keycloak CR uses strict: false).
+resolve_kc_host() {
+  if [[ -n "${KEYCLOAK_HOST:-}" ]]; then
+    echo "$KEYCLOAK_HOST"
+    return
+  fi
+  local domain=""
+  if command -v oc &>/dev/null; then
+    domain=$(oc get ingresses.config/cluster -o jsonpath='{.spec.domain}' 2>/dev/null || true)
+  fi
+  if [[ -n "$domain" ]]; then
+    echo "keycloak-keycloak.${domain}"
+  else
+    echo "keycloak-service.${KC_NAMESPACE}.svc.cluster.local"
+  fi
+}
+
 # Get Keycloak admin credentials
 get_kc_admin_creds() {
   local user pass

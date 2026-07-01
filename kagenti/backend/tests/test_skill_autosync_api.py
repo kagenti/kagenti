@@ -19,6 +19,7 @@ def _make_autosync_cm(
     sync_interval="30",
     last_synced_at=None,
     skill_count=None,
+    store_ui_url=None,
 ):
     cm = MagicMock()
     cm.data = {
@@ -31,6 +32,8 @@ def _make_autosync_cm(
         cm.data["last-synced-at"] = last_synced_at
     if skill_count is not None:
         cm.data["skill-count"] = str(skill_count)
+    if store_ui_url:
+        cm.data["store-ui-url"] = store_ui_url
     return cm
 
 
@@ -71,15 +74,24 @@ class TestGetAutoSync:
 
     def test_returns_full_status_when_active(self, client, kube):
         kube.core_api.read_namespaced_config_map.return_value = _make_autosync_cm(
-            last_synced_at="2026-06-17T10:00:00Z", skill_count=5
+            last_synced_at="2026-06-17T10:00:00Z",
+            skill_count=5,
+            store_ui_url="http://skillberry-store.localtest.me:8080",
         )
         resp = client.get("/api/v1/skills/autosync")
         assert resp.status_code == 200
         body = resp.json()
         assert body["enabled"] is True
         assert body["registryUrl"] == "http://reg:8000"
+        assert body["storeUiUrl"] == "http://skillberry-store.localtest.me:8080"
         assert body["syncInterval"] == 30
         assert body["skillCount"] == 5
+
+    def test_store_ui_url_absent_when_not_configured(self, client, kube):
+        kube.core_api.read_namespaced_config_map.return_value = _make_autosync_cm()
+        resp = client.get("/api/v1/skills/autosync")
+        assert resp.status_code == 200
+        assert resp.json()["storeUiUrl"] is None
 
 
 class TestEnableAutoSync:

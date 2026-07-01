@@ -60,6 +60,66 @@ components:
     # Path prefix where MLflow UI is served (appended to the route URL).
     # RHOAI MLflow uses --static-prefix=/mlflow by default.
     routePath: "/mlflow"
+  # In-cluster skillberry-store skill registry (deployed by --with-skills).
+  # When enabled, the store runs as a pod and autosync is seeded against it
+  # via the kagenti-skill-autosync-config ConfigMap (see skillberryStore below).
+  # Behavior is additionally gated by featureFlags.externalSkills.
+  skillberryStore:
+    enabled: false
+
+# ------------------------------------------------------------------
+#  In-cluster skillberry-store configuration
+#  (only rendered when components.skillberryStore.enabled=true)
+# ------------------------------------------------------------------
+skillberryStore:
+  image:
+    repository: ghcr.io/skillberry-ai/skillberry-store
+    tag: "0.2.0"             # override via --set or values overlay
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []        # public image; empty default
+  apiPort: 8000
+  uiPort: 8002
+  baseDir: /data              # SBS_BASE_DIR; PVC mount point
+  # Hosts the store's Vite dev server accepts in the Host header
+  # (VITE_ALLOWED_HOSTS). The UI is reached through the gateway under a
+  # non-localhost hostname, which Vite blocks by default. Empty = derive the
+  # gateway host from domain (skillberry-store.<domain>). Set to "true" to allow
+  # any host. Requires a store image with VITE_ALLOWED_HOSTS support (>= 0.2.0).
+  allowedHosts: ""
+  # Browser-facing store UI URL surfaced in the Kagenti UI (the in-cluster
+  # registry-url is server-side only and not browser-reachable). Empty = derive
+  # from domain: http://skillberry-store.<domain>:<ingressPort>. Set explicitly
+  # for OpenShift routes or custom ingress.
+  uiUrl: ""
+  # Extra environment variables appended to the store container, after the
+  # chart-managed SBS_* / ENABLE_UI vars. Standard core/v1 EnvVar entries, so
+  # both literal values and valueFrom (secretKeyRef/configMapKeyRef) work.
+  # Example:
+  #   extraEnv:
+  #     - name: SBS_LOG_LEVEL
+  #       value: "debug"
+  #     - name: SBS_API_TOKEN
+  #       valueFrom:
+  #         secretKeyRef:
+  #           name: skillberry-store-secrets
+  #           key: api-token
+  extraEnv: []
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClassName: ""      # "" = cluster default
+    accessMode: ReadWriteOnce
+  autosync:
+    enabled: true             # seed kagenti-skill-autosync-config when store deployed
+    syncInterval: 30
+    allowedTags: ""           # optional tag filter
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
 
 # Secrets — override via a .secrets.yaml file or --set secrets.<key>=<value>.
 # githubUser/githubToken are optional: only needed to deploy agents/tools from
@@ -280,7 +340,7 @@ kagenti-operator-chart:
     container:
       cmd: /manager
       image:
-        tag: 0.3.0-alpha.5
+        tag: 0.3.0-alpha.6
       args:
       - "--leader-elect"
       - "--metrics-bind-address=:8443"
@@ -316,10 +376,10 @@ kagenti-operator-chart:
   # sidecar. Client registration is operator-managed.
   defaults:
     images:
-      authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.9
-      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.9
-      authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.9
-      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.9
+      authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.10
+      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.10
+      authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.10
+      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.10
 
 # ------------------------------------------------------------------
 #  MCP Gateway Configuration

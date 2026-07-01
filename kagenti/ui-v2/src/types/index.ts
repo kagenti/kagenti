@@ -483,6 +483,8 @@ export interface SkillAutoSyncStatus {
   enabled: boolean;
   registryType?: string;
   registryUrl?: string;
+  /** Browser-facing store UI URL (via gateway); registryUrl is server-side only. */
+  storeUiUrl?: string;
   syncInterval?: number;
   lastSyncedAt?: string;
   skillCount?: number;

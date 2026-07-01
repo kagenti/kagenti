@@ -185,6 +185,11 @@ except Exception:
   fi
 }
 
+# ── Shared dependency installers (Tekton, Shipwright, build strategies) ─────
+# Sourced after log_*/run_cmd are defined; the lib reads DRY_RUN from this
+# scope and uses the helpers above.
+. "$REPO_ROOT/scripts/lib/install-deps.sh"
+
 # Load a single image into the Kind node via docker save piped to ctr import.
 # Avoids 'kind load docker-image' failures (e.g. "failed to detect containerd
 # snapshotter") on WSL2 and Rancher Desktop.
@@ -242,11 +247,15 @@ while [[ $# -gt 0 ]]; do
       echo "  --with-agent-sandbox Install agent-sandbox controller (kubernetes-sigs)"
       echo "  --with-skills       Enable skills and external skill registries"
       echo "                      (enables featureFlags.skills and featureFlags.externalSkills;"
-      echo "                      auto-enables --with-backend and --with-ui)"
+      echo "                      deploys an in-cluster skillberry-store and auto-enables"
+      echo "                      autosync against it; auto-enables --with-backend and --with-ui)."
+      echo "                      Override the store image with the SKILLBERRY_STORE_IMAGE /"
+      echo "                      SKILLBERRY_STORE_TAG env vars (default tag 0.2.0)."
       echo "  --skill-registry-allowed-hosts HOSTS"
       echo "                      Comma-separated hosts/IPs/CIDRs allowed past the registry-URL"
       echo "                      SSRF block (e.g. \"192.168.50.16\" or \"192.168.0.0/16\")."
-      echo "                      Needed for self-hosted/LAN skill registries on private IPs."
+      echo "                      Needed only for EXTERNAL skill registries on private IPs;"
+      echo "                      the in-cluster store needs no allow-listing."
       echo "  --with-all          Enable all optional components"
       echo ""
       echo "Skip flags (override --with-all for resource-constrained environments):"
@@ -317,7 +326,10 @@ START_SECONDS=$SECONDS
 
 echo ""
 echo "============================================"
-echo "  Kagenti Platform Setup (Kind)"
+case "${KAGENTI_SETUP_FLAVOR:-kind}" in
+  k8s) echo "  Kagenti Platform Setup (Kubernetes)" ;;
+  *)   echo "  Kagenti Platform Setup (Kind)" ;;
+esac
 echo "============================================"
 echo ""
 echo "  Cluster:       $CLUSTER_NAME"
@@ -585,10 +597,7 @@ fi
 # ============================================================================
 if $WITH_BUILDS; then
   log_info "Step 3b: Tekton"
-  log_info "Installing Tekton ${TEKTON_VERSION}..."
-  run_cmd kubectl apply --server-side \
-    -f "https://storage.googleapis.com/tekton-releases/pipeline/previous/${TEKTON_VERSION}/release.yaml"
-  log_success "Tekton applied"
+  install_tekton "$TEKTON_VERSION"
   echo ""
 fi
 
@@ -737,7 +746,14 @@ log_success "kagenti-deps installed"
 echo ""
 
 # ── Configure Kind node to reach in-cluster container registry ──────────────
-if $WITH_BUILDS; then
+# Kind-only: writes /etc/hosts and /etc/containerd/certs.d on the Kind
+# control-plane container so kubelet can pull images from the in-cluster
+# registry by its cluster-DNS hostname. Vanilla Kubernetes operators need
+# to configure their nodes via the distribution's normal mechanism (e.g.
+# /etc/rancher/k3s/registries.yaml on K3s, /etc/containerd/config.toml +
+# restart on kubeadm); this script intentionally doesn't try to SSH into
+# nodes or guess the distro. Skip the block under the k8s flavor.
+if $WITH_BUILDS && [[ "${KAGENTI_SETUP_FLAVOR:-kind}" != "k8s" ]]; then
   REGISTRY_NAME="registry"
   REGISTRY_NS="cr-system"
   REGISTRY_HOST="${REGISTRY_NAME}.${REGISTRY_NS}.svc.cluster.local"
@@ -770,6 +786,14 @@ TOML
     fi
   fi
   echo ""
+elif $WITH_BUILDS; then
+  log_info "Skipping Kind registry-DNS step on vanilla Kubernetes."
+  log_info "  To pull images from the in-cluster registry by its cluster-DNS"
+  log_info "  hostname (registry.cr-system.svc.cluster.local:5000), configure"
+  log_info "  containerd on each node via your distribution's mechanism:"
+  log_info "    K3s:     /etc/rancher/k3s/registries.yaml + restart k3s/k3s-agent"
+  log_info "    kubeadm: /etc/containerd/config.toml + systemctl restart containerd"
+  echo ""
 fi
 
 # ============================================================================
@@ -777,165 +801,7 @@ fi
 # ============================================================================
 if $WITH_BUILDS; then
   log_info "Step 6b: Shipwright"
-
-  log_info "Installing Shipwright ${SHIPWRIGHT_VERSION}..."
-  run_cmd kubectl apply --server-side \
-    -f "https://github.com/shipwright-io/build/releases/download/${SHIPWRIGHT_VERSION}/release.yaml"
-
-  if ! $DRY_RUN; then
-    kubectl wait --for=jsonpath='{.status.phase}'=Active namespace/shipwright-build --timeout=30s 2>/dev/null || true
-
-    # cert-manager resources for webhook TLS
-    kubectl apply -f - <<'EOF'
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: shipwright-selfsigned-issuer
-spec:
-  selfSigned: {}
-EOF
-    kubectl apply -f - <<EOF
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: shipwright-ca
-  namespace: shipwright-build
-spec:
-  isCA: true
-  commonName: shipwright-ca
-  secretName: shipwright-ca-secret
-  duration: 26280h
-  privateKey:
-    algorithm: ECDSA
-    size: 256
-  issuerRef:
-    name: shipwright-selfsigned-issuer
-    kind: ClusterIssuer
-EOF
-    kubectl wait --for=condition=Ready certificate/shipwright-ca \
-      -n shipwright-build --timeout=60s 2>/dev/null || true
-
-    kubectl apply -f - <<'EOF'
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: shipwright-ca-issuer
-  namespace: shipwright-build
-spec:
-  ca:
-    secretName: shipwright-ca-secret
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: shipwright-build-webhook-cert
-  namespace: shipwright-build
-spec:
-  secretName: shipwright-build-webhook-cert
-  duration: 8760h
-  renewBefore: 720h
-  dnsNames:
-    - shp-build-webhook
-    - shp-build-webhook.shipwright-build
-    - shp-build-webhook.shipwright-build.svc
-    - shp-build-webhook.shipwright-build.svc.cluster.local
-  issuerRef:
-    name: shipwright-ca-issuer
-    kind: Issuer
-EOF
-    kubectl wait --for=condition=Ready certificate/shipwright-build-webhook-cert \
-      -n shipwright-build --timeout=60s 2>/dev/null || true
-
-    # Annotate CRDs for CA injection
-    for crd in clusterbuildstrategies.shipwright.io buildstrategies.shipwright.io \
-               builds.shipwright.io buildruns.shipwright.io; do
-      kubectl annotate crd "$crd" \
-        cert-manager.io/inject-ca-from=shipwright-build/shipwright-build-webhook-cert \
-        --overwrite 2>/dev/null || true
-    done
-
-    # Restart webhook to pick up TLS
-    kubectl rollout restart deployment/shipwright-build-webhook -n shipwright-build 2>/dev/null || true
-    _wait_deployment_ready shipwright-build-webhook shipwright-build "Shipwright webhook"
-
-    # Install sample build strategies
-    kubectl apply --server-side \
-      -f "https://github.com/shipwright-io/build/releases/download/${SHIPWRIGHT_VERSION}/sample-strategies.yaml" \
-      2>/dev/null || true
-
-    # Install buildah-insecure-push strategy for in-cluster registry (no TLS)
-    log_info "Installing buildah-insecure-push ClusterBuildStrategy..."
-    kubectl apply -f - <<'STRATEGY_EOF'
-apiVersion: shipwright.io/v1beta1
-kind: ClusterBuildStrategy
-metadata:
-  name: buildah-insecure-push
-spec:
-  parameters:
-    - name: dockerfile
-      description: Path to the Dockerfile
-      type: string
-      default: Dockerfile
-    - name: build-args
-      description: Build arguments in KEY=VALUE format
-      type: array
-      defaults: []
-    - name: storage-driver
-      description: The storage driver to use (overlay or vfs)
-      type: string
-      default: vfs
-  securityContext:
-    runAsUser: 0
-    runAsGroup: 0
-  steps:
-    - name: build-and-push
-      image: quay.io/containers/buildah:v1.37.5
-      workingDir: $(params.shp-source-root)
-      securityContext:
-        capabilities:
-          add:
-            - SETFCAP
-      command:
-        - /bin/bash
-      args:
-        - -c
-        - |
-          set -euo pipefail
-
-          BUILD_ARGS=()
-          for arg in "$@"; do
-            if [[ "$arg" == "--build-arg="* ]]; then
-              BUILD_ARGS+=("--build-arg" "${arg#--build-arg=}")
-            fi
-          done
-
-          echo "Building image..."
-          buildah --storage-driver=$(params.storage-driver) bud \
-            "${BUILD_ARGS[@]}" \
-            -f "$(params.shp-source-context)/$(params.dockerfile)" \
-            -t "$(params.shp-output-image)" \
-            "$(params.shp-source-context)"
-
-          echo "Pushing image to $(params.shp-output-image)..."
-          buildah --storage-driver=$(params.storage-driver) push \
-            --tls-verify=false \
-            "$(params.shp-output-image)" \
-            "docker://$(params.shp-output-image)"
-
-          echo "Build and push completed successfully!"
-        - --
-        - $(params.build-args[*])
-      resources:
-        limits:
-          cpu: "1"
-          memory: 2Gi
-        requests:
-          cpu: 250m
-          memory: 256Mi
-STRATEGY_EOF
-  fi
-
-  log_success "Shipwright installed"
+  install_shipwright "$SHIPWRIGHT_VERSION"
   echo ""
 fi
 
@@ -1293,6 +1159,7 @@ KAGENTI_FLAGS=(
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
   --set "featureFlags.skills=${WITH_SKILLS}"
   --set "featureFlags.externalSkills=${WITH_SKILLS}"
+  --set "components.skillberryStore.enabled=${WITH_SKILLS}"
   --set "components.mlflow.enabled=${WITH_MLFLOW}"
   --set "ui.auth.enabled=$($WITH_SPIRE && echo true || echo false)"
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
@@ -1305,6 +1172,13 @@ KAGENTI_FLAGS=(
 # single string rather than a list.
 if [[ -n "$SKILL_REGISTRY_ALLOWED_HOSTS" ]]; then
   KAGENTI_FLAGS+=(--set-string "ui.backend.skillRegistryAllowedHosts=${SKILL_REGISTRY_ALLOWED_HOSTS//,/\\,}")
+fi
+
+# Optional in-cluster skillberry-store image override (no dedicated flag).
+# Defaults come from charts/kagenti/values.yaml (tag 0.2.0).
+if $WITH_SKILLS; then
+  [[ -n "${SKILLBERRY_STORE_IMAGE:-}" ]] && KAGENTI_FLAGS+=(--set "skillberryStore.image.repository=${SKILLBERRY_STORE_IMAGE}")
+  [[ -n "${SKILLBERRY_STORE_TAG:-}" ]]   && KAGENTI_FLAGS+=(--set "skillberryStore.image.tag=${SKILLBERRY_STORE_TAG}")
 fi
 
 KAGENTI_FLAGS=( "${KAGENTI_FLAGS[@]}" ${KAGENTI_VALUES_FILES[@]+"${KAGENTI_VALUES_FILES[@]}"} )
