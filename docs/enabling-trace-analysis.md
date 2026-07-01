@@ -9,40 +9,6 @@ separate install is required.
 Like all Kagenti features, it is gated behind a feature flag that is **off by
 default** (see the Feature Flags section of [CLAUDE.md](../CLAUDE.md)).
 
-## How the flag flows through the stack
-
-```
-Helm value featureFlags.traceAnalysis
-   │
-   ├─► env KAGENTI_FEATURE_FLAG_TRACE_ANALYSIS  ─► backend Settings.kagenti_feature_flag_trace_analysis
-   ├─► env TRACE_ANALYSIS_DASHBOARD_URL         ─► backend Settings.trace_analysis_dashboard_url
-   │
-   └─► backend GET /api/v1/config/features   → { ..., "traceAnalysis": true }
-       backend GET /api/v1/config/dashboards → { ..., "traceAnalysis": "<url>" }
-                                              │
-                                              └─► UI useFeatureFlags() / ObservabilityPage renders the card
-```
-
-Key files:
-
-| Layer | File |
-|-------|------|
-| Flag definition | `kagenti/backend/app/core/config.py` (`kagenti_feature_flag_trace_analysis`, `trace_analysis_dashboard_url`) |
-| API response | `kagenti/backend/app/routers/config.py`, `kagenti/backend/app/models/responses.py` |
-| Helm value | `charts/kagenti/values.yaml` (`featureFlags.traceAnalysis` flag + `traceAnalysis.*` deployment config) |
-| Helm wiring | `charts/kagenti/templates/ui.yaml` (ConfigMap key + env vars) |
-| Component deploy | `charts/kagenti/templates/trace-analysis.yaml` (Deployment + Service + Route/HTTPRoute, gated on the flag) |
-| UI | `kagenti/ui-v2/src/hooks/useFeatureFlags.ts`, `src/pages/ObservabilityPage.tsx` |
-| Override values | `deployments/envs/enable_trace_analysis.yaml` (enables flag + pins images to `:latest`) |
-
-> **Important:** because the API response *shape* (the `traceAnalysis` field on
-> `FeatureFlagsResponse`) is defined in the backend **code**, setting the Helm
-> value or env var alone is **not enough** on a cluster running an older image.
-> The backend image must contain the code that knows about the field, otherwise
-> the env var is read but silently dropped from the response. **Rebuild the
-> images from your branch** whenever the flag code is not yet in the deployed
-> image.
-
 ## Build prerequisite: docker buildx
 
 `make build-load-ui` runs `docker build --load`, which is a **buildx / BuildKit**
@@ -71,20 +37,24 @@ docker buildx version            # should now print: github.com/docker/buildx v0
 (Alternatively, add `"cliPluginsExtraDirs": ["/opt/homebrew/lib/docker/cli-plugins"]`
 to `~/.docker/config.json` — the symlink above does the same thing and persists.)
 
-## A. Enable on an existing Kind dev cluster
+## A. Enable the on a kind installation
 
 ```bash
 
+ # 1. Start the Kagenti installation  
+ kind delete cluster --name kagenti ; \
+  env CONTAINER_ENGINE=podman \
+  scripts/kind/setup-kagenti.sh --with-all --preload-images \
+  --kagenti-values deployments/envs/enable_trace_analysis.yaml ; \
+  .github/scripts/local-setup/show-services.sh
 
-# 1. Build and load the trace-analysis image into Kind
-#    (from the kagenti-trace-analysis repo)
+# 2. While the installation is running (but after the cluster is created) ,  build and upload the image to the cluster
+
 cd /path/to/kagenti-trace-analysis
-make build-load
+make TAG=latest build-load
 
-# 2. Build and load the kagenti UI + backend images into Kind
-#    Needs docker buildx / BuildKit (see "Build prerequisite" above).
 cd /path/to/kagenti
-make build-load-ui                       # or -frontend / -backend for one side only
+make TAG=latest build-load-ui           
 
 
-## B. To redploy only changes
+
