@@ -226,14 +226,15 @@ log_success "SPIFFE IdP setup completed"
 # Install kagenti with operator SPIFFE auth enabled
 log_info "Installing kagenti with operator SPIFFE auth..."
 
-# Run helm dependency update to pull charts, then immediately remove the OCI
-# tarball and Chart.lock so helm uses the local charts/kagenti/charts/kagenti-operator-chart/
-# directory (which has the spiffe-helper sidecar template from kagenti-operator PR #349).
-# Without this, the published OCI chart is used — it lacks the SPIFFE auth changes.
+# Run helm dependency update to pull other chart dependencies, then remove the
+# OCI operator tarball and Chart.lock so helm uses the committed
+# charts/kagenti/charts/kagenti-operator-chart/ directory (which contains the
+# spiffe-helper sidecar template required for SPIFFE auth). The published OCI
+# chart does not include these changes.
 helm dependency update charts/kagenti
 rm -f charts/kagenti/charts/kagenti-operator-chart-*.tgz
 rm -f charts/kagenti/Chart.lock
-log_info "Using local operator subchart (OCI tarball removed)"
+log_info "Using committed operator subchart with spiffe-helper support"
 
 cat > /tmp/kagenti-spiffe-test-values.yaml <<EOF
 # Use local operator image

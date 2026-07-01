@@ -1,0 +1,58 @@
+{{- if .Values.certmanager.enable }}
+# Self-signed Issuer
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  name: selfsigned-issuer-{{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  selfSigned: {}
+{{- if .Values.webhook.enable }}
+---
+# Certificate for the webhook
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+  name: serving-cert-{{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  dnsNames:
+    - {{ include "chart.fullname" . }}-webhook-service.{{ .Release.Namespace }}.svc
+    - {{ include "chart.fullname" . }}-webhook-service.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: selfsigned-issuer-{{ .Release.Name }}
+  secretName: kagenti-operator-webhook-server-cert
+{{- end }}
+{{- if .Values.metrics.enable }}
+---
+# Certificate for the metrics
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  name: metrics-certs-{{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  dnsNames:
+    - {{ include "chart.fullname" . }}-controller-manager-metrics-service.{{ .Release.Namespace }}.svc
+    - {{ include "chart.fullname" . }}-controller-manager-metrics-service.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: selfsigned-issuer-{{ .Release.Name }}
+  secretName: kagenti-operator-metrics-server-cert
+{{- end }}
+{{- end }}

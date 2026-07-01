@@ -1,0 +1,221 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kagenti-controller-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+    control-plane: controller-manager
+spec:
+  replicas:  {{ .Values.controllerManager.replicas }}
+  selector:
+    matchLabels:
+      {{- include "chart.selectorLabels" . | nindent 6 }}
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        {{- include "chart.labels" . | nindent 8 }}
+        control-plane: controller-manager
+        {{- if and .Values.controllerManager.pod .Values.controllerManager.pod.labels }}
+        {{- range $key, $value := .Values.controllerManager.pod.labels }}
+        {{ $key }}: {{ $value }}
+        {{- end }}
+        {{- end }}
+    spec:
+      containers:
+        - name: manager
+          args:
+            {{- range .Values.controllerManager.container.args }}
+            - {{ . }}
+            {{- end }}
+            {{- if .Values.mlflow.enable }}
+            - "--enable-mlflow=true"
+            {{- end }}
+            {{- if and .Values.spiffe.enabled .Values.spiffe.operatorAuth.enabled }}
+            - "--enable-spiffe-id-auth=true"
+            - "--spire-socket-path=unix://{{ .Values.spiffe.operatorAuth.spiffeHelper.agentSocketPath }}"
+            - "--spire-trust-domain={{ .Values.spiffe.operatorAuth.spireTrustDomain }}"
+            {{- end }}
+            {{- if .Values.verifiedFetch.enabled }}
+            - "--enable-verified-fetch=true"
+            - "--verified-fetch-spiffe-socket={{ .Values.verifiedFetch.spiffeEndpointSocket }}"
+            {{- if and .Values.verifiedFetch.spireTrustDomain (not .Values.signatureVerification.enabled) }}
+            - "--spire-trust-domain={{ .Values.verifiedFetch.spireTrustDomain }}"
+            {{- end }}
+            {{- end }}
+            {{- if or .Values.enforceNetworkPolicies .Values.signatureVerification.enforceNetworkPolicies }}
+            - "--enforce-network-policies=true"
+            {{- end }}
+            {{- if .Values.signatureVerification.enabled }}
+            - "--require-a2a-signature=true"
+            {{- if .Values.signatureVerification.auditMode }}
+            - "--signature-audit-mode=true"
+            {{- end }}
+            {{- if .Values.signatureVerification.enforceNetworkPolicies }}
+            - "--enforce-network-policies=true"
+            {{- end }}
+            {{- if .Values.signatureVerification.spireTrustDomain }}
+            - "--spire-trust-domain={{ .Values.signatureVerification.spireTrustDomain }}"
+            {{- end }}
+            {{- if .Values.signatureVerification.spireTrustBundle.configMapName }}
+            - "--spire-trust-bundle-configmap={{ .Values.signatureVerification.spireTrustBundle.configMapName }}"
+            {{- end }}
+            {{- if .Values.signatureVerification.spireTrustBundle.configMapNamespace }}
+            - "--spire-trust-bundle-configmap-namespace={{ .Values.signatureVerification.spireTrustBundle.configMapNamespace }}"
+            {{- end }}
+            {{- if .Values.signatureVerification.spireTrustBundle.configMapKey }}
+            - "--spire-trust-bundle-configmap-key={{ .Values.signatureVerification.spireTrustBundle.configMapKey }}"
+            {{- end }}
+            {{- if .Values.signatureVerification.spireTrustBundle.refreshInterval }}
+            - "--spire-trust-bundle-refresh-interval={{ .Values.signatureVerification.spireTrustBundle.refreshInterval }}"
+            {{- end }}
+            {{- if .Values.signatureVerification.svidExpiryGracePeriod }}
+            - "--svid-expiry-grace-period={{ .Values.signatureVerification.svidExpiryGracePeriod }}"
+            {{- end }}
+            {{- end }}
+            {{/*
+              --spire-trust-domain is rendered independently of
+              signatureVerification.enabled. The flag is also consumed by the
+              ClientRegistrationReconciler, which resolves SPIFFE client IDs of
+              the form spiffe://<trust-domain>/ns/<ns>/sa/<sa> when
+              authbridge-config has SPIRE_ENABLED=true. Gating it on signature
+              verification would break operator-managed client registration in
+              clusters that use SPIRE for workload identity but do not enable
+              A2A signature enforcement.
+            */}}
+            {{- if .Values.signatureVerification.spireTrustDomain }}
+            - "--spire-trust-domain={{ .Values.signatureVerification.spireTrustDomain }}"
+            {{- end }}
+          command:
+            - {{ .Values.controllerManager.container.cmd }}
+          image: {{ .Values.controllerManager.container.image.repository }}:{{ .Values.controllerManager.container.image.tag }}
+          imagePullPolicy: {{ .Values.controllerManager.container.image.pullPolicy | default "IfNotPresent" }}
+          env:
+            # POD_NAMESPACE is used by the client registration controller to locate
+            # keycloak-admin-secret in the operator's namespace
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- if .Values.controllerManager.container.env }}
+            {{- range $key, $value := .Values.controllerManager.container.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.controllerManager.container.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.controllerManager.container.readinessProbe | nindent 12 }}
+          {{- if .Values.webhook.enable }}
+          ports:
+            - containerPort: 9443
+              name: webhook-server
+              protocol: TCP
+          {{- end }}
+          resources:
+            {{- toYaml .Values.controllerManager.container.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.controllerManager.container.securityContext | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.webhook.enable }}
+            - name: platform-config
+              mountPath: /etc/kagenti
+              readOnly: true
+            - name: feature-gates
+              mountPath: /etc/kagenti/feature-gates
+              readOnly: true
+            {{- end }}
+            {{- if and .Values.webhook.enable .Values.certmanager.enable }}
+            - name: webhook-cert
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+            {{- end }}
+            {{- if and .Values.metrics.enable .Values.certmanager.enable }}
+            - name: metrics-certs
+              mountPath: /tmp/k8s-metrics-server/metrics-certs
+              readOnly: true
+            {{- end }}
+            {{- if .Values.verifiedFetch.enabled }}
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+              readOnly: true
+            {{- end }}
+            {{- if and .Values.spiffe.enabled .Values.spiffe.operatorAuth.enabled }}
+            - name: spire-agent-socket
+              mountPath: /run/spire/sockets
+              readOnly: true
+            - name: jwt-svid
+              mountPath: /opt
+            {{- end }}
+        {{- if and .Values.spiffe.enabled .Values.spiffe.operatorAuth.enabled }}
+        - name: spiffe-helper
+          image: {{ .Values.spiffe.operatorAuth.spiffeHelper.image.repository }}:{{ .Values.spiffe.operatorAuth.spiffeHelper.image.tag }}
+          imagePullPolicy: {{ .Values.spiffe.operatorAuth.spiffeHelper.image.pullPolicy }}
+          args:
+            - "-config"
+            - "/etc/spiffe-helper/config.hcl"
+          volumeMounts:
+            - name: spiffe-helper-config
+              mountPath: /etc/spiffe-helper
+              readOnly: true
+            - name: spire-agent-socket
+              mountPath: /run/spire/sockets
+              readOnly: true
+            - name: jwt-svid
+              mountPath: /opt
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 65532
+        {{- end }}
+      securityContext:
+        {{- toYaml .Values.controllerManager.securityContext | nindent 8 }}
+      serviceAccountName: {{ .Values.controllerManager.serviceAccountName }}
+      terminationGracePeriodSeconds: {{ .Values.controllerManager.terminationGracePeriodSeconds }}
+      volumes:
+        {{- if .Values.webhook.enable }}
+        - name: platform-config
+          configMap:
+            name: kagenti-platform-config
+        - name: feature-gates
+          configMap:
+            name: kagenti-feature-gates
+        {{- end }}
+        {{- if and .Values.webhook.enable .Values.certmanager.enable }}
+        - name: webhook-cert
+          secret:
+            secretName: kagenti-operator-webhook-server-cert
+        {{- end }}
+        {{- if and .Values.metrics.enable .Values.certmanager.enable }}
+        - name: metrics-certs
+          secret:
+            secretName: kagenti-operator-metrics-server-cert
+        {{- end }}
+        {{- if .Values.verifiedFetch.enabled }}
+        - name: spiffe-workload-api
+          csi:
+            driver: "csi.spiffe.io"
+            readOnly: true
+        {{- end }}
+        {{- if and .Values.spiffe.enabled .Values.spiffe.operatorAuth.enabled }}
+        - name: spire-agent-socket
+          csi:
+            driver: "csi.spiffe.io"
+            readOnly: true
+            volumeAttributes:
+              podKind: "Deployment"
+              podName: {{ include "chart.fullname" . }}-controller-manager
+              podNamespace: {{ .Release.Namespace }}
+        - name: jwt-svid
+          emptyDir: {}
+        - name: spiffe-helper-config
+          configMap:
+            name: kagenti-operator-spiffe-helper-config
+        {{- end }}

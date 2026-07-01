@@ -1,0 +1,106 @@
+{{- if .Values.webhook.enable }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ include "chart.fullname" . }}-mutating-webhook-configuration
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  {{- if .Values.certmanager.enable }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/serving-cert-{{ .Release.Name }}
+  {{- end }}
+webhooks:
+- name: inject.kagenti.io
+  admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "chart.fullname" . }}-webhook-service
+      namespace: {{ .Release.Namespace }}
+      path: /mutate-workloads-authbridge
+      port: 443
+  failurePolicy: Fail
+  reinvocationPolicy: IfNeeded
+  timeoutSeconds: 10
+  sideEffects: None
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: NotIn
+        values:
+          - kube-system
+          - kube-public
+          - kube-node-lease
+          - {{ .Release.Namespace }}
+    matchLabels:
+      kagenti-enabled: "true"
+  objectSelector:
+    matchExpressions:
+      - key: kagenti.io/type
+        operator: In
+        values:
+          - agent
+          - tool
+      - key: kagenti.io/inject
+        operator: NotIn
+        values:
+          - disabled
+  rules:
+  - operations:
+    - CREATE
+    apiGroups:
+    - ""
+    apiVersions:
+    - v1
+    resources:
+    - pods
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "chart.fullname" . }}-validating-webhook-configuration
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  {{- if .Values.certmanager.enable }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/serving-cert-{{ .Release.Name }}
+  {{- end }}
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "chart.fullname" . }}-webhook-service
+      namespace: {{ .Release.Namespace }}
+      path: /validate-agent-kagenti-dev-v1alpha1-agentcard
+      port: 443
+  failurePolicy: Fail
+  name: vagentcard.kb.io
+  rules:
+  - apiGroups:
+    - agent.kagenti.dev
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - agentcards
+  sideEffects: None
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "chart.fullname" . }}-webhook-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: webhook-server
+  selector:
+    {{- include "chart.selectorLabels" . | nindent 4 }}
+    control-plane: controller-manager
+{{- end }}

@@ -1,0 +1,13 @@
+{{- if .Values.webhook.enable }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kagenti-feature-gates
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+    app.kubernetes.io/component: feature-gates
+data:
+  feature-gates.yaml: |
+    {{- .Values.featureGates | default dict | toYaml | nindent 4 }}
+{{- end }}

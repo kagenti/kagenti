@@ -1,0 +1,17 @@
+{{- if .Values.verifiedFetch.enabled }}
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: kagenti-operator
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  spiffeIDTemplate: "spiffe://{{ "{{ .TrustDomain }}" }}/ns/{{ "{{ .PodMeta.Namespace }}" }}/sa/{{ "{{ .PodSpec.ServiceAccountName }}" }}"
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "chart.name" . }}
+      control-plane: controller-manager
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: {{ .Release.Namespace }}
+{{- end }}

@@ -1,0 +1,13 @@
+{{- if .Values.webhook.enable }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kagenti-platform-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-defaults
+data:
+  config.yaml: |
+    {{- .Values.defaults | default dict | toYaml | nindent 4 }}
+{{- end }}

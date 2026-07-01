@@ -1,0 +1,502 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.1
+  name: agentruntimes.agent.kagenti.dev
+spec:
+  group: agent.kagenti.dev
+  names:
+    kind: AgentRuntime
+    listKind: AgentRuntimeList
+    plural: agentruntimes
+    shortNames:
+    - art
+    - agentrt
+    singular: agentruntime
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Workload Type
+      jsonPath: .spec.type
+      name: Type
+      type: string
+    - description: Target Workload
+      jsonPath: .spec.targetRef.name
+      name: Target
+      type: string
+    - description: Runtime Phase
+      jsonPath: .status.phase
+      name: Phase
+      type: string
+    - description: Card Sync Status
+      jsonPath: .status.conditions[?(@.type=='CardSynced')].status
+      name: CardSynced
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          AgentRuntime attaches runtime configuration to a backing workload classified as an
+          agent or tool, providing per-workload overrides for SPIFFE identity and OpenTelemetry
+          tracing. The controller reports pod configuration coverage and phase in status.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: AgentRuntimeSpec defines the desired state of AgentRuntime.
+            properties:
+              authBridgeMode:
+                description: |-
+                  AuthBridgeMode selects the deployment shape for this workload's
+                  authbridge sidecar. When unset, the namespace-level
+                  authbridge-runtime-config ConfigMap's mode is used; if that is
+                  also unset, the operator falls back to "proxy-sidecar".
+
+                  Four valid values:
+
+                    proxy-sidecar  HTTP_PROXY env + authbridge-proxy (full plugin
+                                   set, including a2a/mcp/inference parsers) +
+                                   spiffe-helper bundled. No Envoy, no iptables.
+                                   Default mode.
+                    envoy-sidecar  Envoy + ext_proc authbridge + spiffe-helper
+                                   bundled. Requires the proxy-init iptables
+                                   container.
+                    lite           Same listener layout as proxy-sidecar but uses
+                                   the authbridge-lite image (jwt-validation +
+                                   token-exchange only, parsers dropped to shrink
+                                   the binary). For size-constrained deployments
+                                   that don't need protocol-aware abctl events.
+                    waypoint       Standalone deployment, not injected as a
+                                   sidecar. Used by Istio ambient mesh.
+
+                  Set this when a single workload needs a different shape than the
+                  namespace default. Most deployments leave it unset and let the
+                  namespace ConfigMap drive the choice.
+                enum:
+                - proxy-sidecar
+                - envoy-sidecar
+                - lite
+                - waypoint
+                type: string
+              identity:
+                description: Identity specifies optional per-workload identity overrides
+                properties:
+                  spiffe:
+                    description: SPIFFE specifies SPIFFE identity configuration overrides
+                    properties:
+                      trustDomain:
+                        description: |-
+                          TrustDomain overrides the operator-level --spire-trust-domain for this workload.
+                          If empty, the operator flag value is used.
+                        pattern: ^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?$
+                        type: string
+                    type: object
+                type: object
+              mtlsMode:
+                description: |-
+                  MTLSMode selects the mTLS posture between authbridge sidecars on
+                  the proxy-sidecar / lite paths. envoy-sidecar handles transport
+                  security through Envoy SDS, which is currently not configured by
+                  the kagenti envoy-config — admission rejects mtlsMode != disabled
+                  when authBridgeMode is envoy-sidecar (tracked as a follow-up).
+
+                  Three valid values:
+
+                    disabled    Plaintext between sidecars (default).
+                    permissive  Inbound: byte-peek listener accepts both TLS and
+                                plaintext on the same port. Outbound: tries TLS,
+                                falls back to plaintext on handshake failure (one-line
+                                WARN log per fallback). Use during rollout.
+                    strict      Inbound: TLS-only, plaintext callers closed at
+                                accept. Outbound: TLS-or-fail. Use after rollout
+                                completes.
+
+                  Resolution: AgentRuntime CR > namespace authbridge-runtime-config
+                  mtls.mode > "disabled". Setting mtlsMode != disabled implicitly
+                  requires SPIRE — the operator auto-enables spire for the workload.
+
+                  CR-empty vs CR="disabled" are observably different in
+                  `kubectl get agentruntime -o yaml` (the former omits the field,
+                  the latter shows mtlsMode: disabled) but produce the same
+                  effective mode: empty falls through to the namespace ConfigMap,
+                  "disabled" is an explicit override that pins mode off even when
+                  the namespace default is non-disabled.
+
+                  Note: changing mtlsMode triggers a pod rollout because authbridge
+                  cannot hot-reload mTLS config (the byte-peek listener is wired at
+                  process start).
+                enum:
+                - disabled
+                - permissive
+                - strict
+                type: string
+              targetRef:
+                description: TargetRef identifies the workload backing this agent
+                  runtime (duck typing).
+                properties:
+                  apiVersion:
+                    description: APIVersion is the API version of the target resource
+                      (e.g., "apps/v1")
+                    minLength: 1
+                    type: string
+                  kind:
+                    description: Kind is the kind of the target resource (e.g., "Deployment",
+                      "StatefulSet")
+                    minLength: 1
+                    type: string
+                  name:
+                    minLength: 1
+                    type: string
+                required:
+                - apiVersion
+                - kind
+                - name
+                type: object
+              trace:
+                description: Trace specifies optional per-workload observability overrides
+                properties:
+                  endpoint:
+                    description: Endpoint is the OTEL collector endpoint override
+                    type: string
+                  protocol:
+                    description: Protocol is the OTEL export protocol (grpc or http)
+                    enum:
+                    - grpc
+                    - http
+                    type: string
+                  sampling:
+                    description: Sampling specifies trace sampling configuration
+                    properties:
+                      rate:
+                        description: Rate is the sampling rate (0.0-1.0)
+                        maximum: 1
+                        minimum: 0
+                        type: number
+                    required:
+                    - rate
+                    type: object
+                type: object
+              type:
+                description: Type classifies the workload as an agent or tool
+                enum:
+                - agent
+                - tool
+                type: string
+            required:
+            - targetRef
+            - type
+            type: object
+          status:
+            description: AgentRuntimeStatus defines the observed state of AgentRuntime.
+            properties:
+              card:
+                description: Card holds A2A agent card data discovered from the workload's
+                  Service endpoint.
+                properties:
+                  attestedAgentSpiffeID:
+                    description: AttestedAgentSpiffeID is the SPIFFE ID extracted
+                      from the mTLS peer certificate.
+                    type: string
+                  capabilities:
+                    description: The A2A capability set supported by the agent.
+                    properties:
+                      extensions:
+                        description: A list of protocol extensions supported by the
+                          agent.
+                        items:
+                          description: AgentExtension describes an A2A protocol extension
+                            supported by the agent.
+                          properties:
+                            description:
+                              description: A human-readable description of how this
+                                agent uses the extension.
+                              type: string
+                            params:
+                              additionalProperties:
+                                x-kubernetes-preserve-unknown-fields: true
+                              description: Extension-specific configuration parameters.
+                              type: object
+                            required:
+                              description: |-
+                                If true, the client must understand and comply with the extension's
+                                requirements.
+                              type: boolean
+                            uri:
+                              description: The unique URI identifying the extension.
+                              type: string
+                          type: object
+                        type: array
+                      pushNotifications:
+                        description: |-
+                          Indicates if the agent supports sending push notifications for
+                          asynchronous task updates.
+                        type: boolean
+                      streaming:
+                        description: Indicates if the agent supports streaming responses.
+                        type: boolean
+                    type: object
+                  cardId:
+                    description: CardID is a SHA-256 content hash of the fetched card
+                      data.
+                    type: string
+                  defaultInputModes:
+                    description: |-
+                      The set of interaction modes that the agent supports across all skills,
+                      defined as media types.
+                    items:
+                      type: string
+                    type: array
+                  defaultOutputModes:
+                    description: The media types supported as outputs from this agent.
+                    items:
+                      type: string
+                    type: array
+                  description:
+                    description: |-
+                      A human-readable description of the agent, assisting users and other
+                      agents in understanding its purpose.
+                    type: string
+                  documentationUrl:
+                    description: A URL providing additional documentation about the
+                      agent.
+                    type: string
+                  fetchedAt:
+                    description: FetchedAt is the timestamp of the last successful
+                      card fetch.
+                    format: date-time
+                    type: string
+                  iconUrl:
+                    description: A URL to an icon for the agent.
+                    type: string
+                  name:
+                    description: A human-readable name for the agent.
+                    type: string
+                  protocol:
+                    description: Protocol is the detected agent protocol (e.g., "a2a").
+                    type: string
+                  provider:
+                    description: The service provider of the agent.
+                    properties:
+                      organization:
+                        description: The name of the agent provider's organization.
+                        type: string
+                      url:
+                        description: A URL for the agent provider's website or relevant
+                          documentation.
+                        type: string
+                    type: object
+                  signatureKeyID:
+                    description: SignatureKeyID is the key ID from the verified JWS
+                      header.
+                    type: string
+                  signatureVerificationDetails:
+                    description: SignatureVerificationDetails contains details or
+                      errors from signature verification.
+                    type: string
+                  signatures:
+                    description: JWS signatures per A2A spec §8.4.2.
+                    items:
+                      description: AgentCardSignature represents a JWS signature on
+                        an AgentCard (A2A spec §8.4.2).
+                      properties:
+                        header:
+                          description: Header contains optional unprotected JWS header
+                            parameters.
+                          properties:
+                            timestamp:
+                              description: Timestamp is when the signature was created
+                                (ISO 8601 string)
+                              type: string
+                          type: object
+                        protected:
+                          description: Protected is the base64url-encoded JWS protected
+                            header (contains alg, kid, x5c).
+                          type: string
+                        signature:
+                          description: Signature is the base64url-encoded JWS signature
+                            value.
+                          type: string
+                      required:
+                      - protected
+                      - signature
+                      type: object
+                    type: array
+                  skills:
+                    description: |-
+                      Skills represent the abilities of an agent. A skill is a focused set of
+                      behaviors that the agent is likely to succeed at.
+                    items:
+                      description: AgentSkill represents a skill offered by the agent.
+                      properties:
+                        description:
+                          description: A detailed description of the skill.
+                          type: string
+                        examples:
+                          description: Example prompts or scenarios that this skill
+                            can handle.
+                          items:
+                            type: string
+                          type: array
+                        id:
+                          description: A unique identifier for the agent's skill.
+                          type: string
+                        inputModes:
+                          description: |-
+                            The set of supported input media types for this skill, overriding the
+                            agent's defaults.
+                          items:
+                            type: string
+                          type: array
+                        name:
+                          description: A human-readable name for the skill.
+                          type: string
+                        outputModes:
+                          description: |-
+                            The set of supported output media types for this skill, overriding the
+                            agent's defaults.
+                          items:
+                            type: string
+                          type: array
+                        parameters:
+                          description: The parameters accepted by this skill.
+                          items:
+                            description: SkillParameter defines a parameter accepted
+                              by a skill.
+                            properties:
+                              default:
+                                description: The default value for this parameter.
+                                type: string
+                              description:
+                                description: A human-readable description of the parameter.
+                                type: string
+                              name:
+                                description: The name of the parameter.
+                                type: string
+                              required:
+                                description: Indicates if this parameter must be provided.
+                                type: boolean
+                              type:
+                                description: The type of the parameter (e.g., "string",
+                                  "number", "boolean", "object", "array").
+                                type: string
+                            type: object
+                          type: array
+                        tags:
+                          description: A set of keywords describing the skill's capabilities.
+                          items:
+                            type: string
+                          type: array
+                      type: object
+                    type: array
+                  supportsAuthenticatedExtendedCard:
+                    description: |-
+                      Indicates if the agent supports providing an extended agent card when
+                      authenticated.
+                    type: boolean
+                  url:
+                    description: The URL of the agent's endpoint.
+                    type: string
+                  validSignature:
+                    description: ValidSignature is the result of JWS signature verification.
+                    type: boolean
+                  version:
+                    description: The version of the agent.
+                    type: string
+                type: object
+              conditions:
+                description: Conditions represent the current state of the AgentRuntime
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              configuredPods:
+                description: ConfiguredPods is the count of pods with expected labels/config
+                format: int32
+                type: integer
+              phase:
+                description: Phase is the high-level state of the AgentRuntime
+                enum:
+                - Pending
+                - Active
+                - Error
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
