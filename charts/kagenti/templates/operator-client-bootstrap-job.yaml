@@ -1,240 +1,129 @@
-{{- if and .Values.kagentiOperator .Values.kagentiOperator.spiffeAuth .Values.kagentiOperator.spiffeAuth.enabled }}
+{{- if and (index .Values "kagenti-operator-chart") (index .Values "kagenti-operator-chart" "spiffe") (index .Values "kagenti-operator-chart" "spiffe" "operatorAuth") (index .Values "kagenti-operator-chart" "spiffe" "operatorAuth" "enabled") }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kagenti-operator-client-bootstrap
+  namespace: {{ .Values.keycloak.namespace | default "keycloak" }}
+  labels:
+    app.kubernetes.io/name: kagenti-operator-client-bootstrap
+    app.kubernetes.io/component: bootstrap
+    app.kubernetes.io/part-of: kagenti
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "100"
+    helm.sh/hook-delete-policy: before-hook-creation
+---
+# Role in keycloak namespace to read admin secret
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kagenti-operator-client-bootstrap
+  namespace: keycloak
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "100"
+    helm.sh/hook-delete-policy: before-hook-creation
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["keycloak-initial-admin"]
+  verbs: ["get"]
+---
+# RoleBinding grants the ServiceAccount access to read the Keycloak admin secret
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kagenti-operator-client-bootstrap
+  namespace: keycloak
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "100"
+    helm.sh/hook-delete-policy: before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kagenti-operator-client-bootstrap
+subjects:
+- kind: ServiceAccount
+  name: kagenti-operator-client-bootstrap
+  namespace: {{ .Values.keycloak.namespace | default "keycloak" }}
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: kagenti-operator-client-bootstrap
   namespace: {{ .Values.keycloak.namespace | default "keycloak" }}
+  labels:
+    app.kubernetes.io/name: kagenti-operator-client-bootstrap
+    app.kubernetes.io/component: bootstrap
+    app.kubernetes.io/part-of: kagenti
   annotations:
     helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-weight: "5"
+    helm.sh/hook-weight: "200"
     helm.sh/hook-delete-policy: before-hook-creation
-  labels:
-    app.kubernetes.io/name: kagenti
-    app.kubernetes.io/component: operator-bootstrap
 spec:
   ttlSecondsAfterFinished: 300
+  backoffLimit: 3
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: kagenti
-        app.kubernetes.io/component: operator-bootstrap
+        app.kubernetes.io/name: kagenti-operator-client-bootstrap
+        app.kubernetes.io/component: bootstrap
     spec:
+      serviceAccountName: kagenti-operator-client-bootstrap
       restartPolicy: OnFailure
-      serviceAccountName: default
       containers:
       - name: bootstrap
-        image: {{ .Values.kagentiOperator.spiffeAuth.bootstrapImage | default "curlimages/curl:latest" }}
+        image: {{ (index .Values "kagenti-operator-chart" "spiffe" "operatorAuth" "bootstrapImage") | default "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest" }}
+        imagePullPolicy: IfNotPresent
         env:
         - name: KEYCLOAK_URL
-          value: "http://keycloak-service.{{ .Values.keycloak.namespace | default "keycloak" }}.svc:8080"
+          value: "http://keycloak-service.keycloak.svc:8080"
         - name: KEYCLOAK_REALM
-          value: {{ .Values.keycloak.realm | default "kagenti" }}
-        - name: OPERATOR_CLIENT_ID
-          value: {{ .Values.kagentiOperator.spiffeAuth.operatorClientID | default (printf "spiffe://%s/ns/%s/sa/%s" (.Values.spireTrustDomain | default "localtest.me") (.Values.kagentiOperator.namespace | default "kagenti-operator-system") (.Values.kagentiOperator.serviceAccountName | default "controller-manager")) }}
+          value: "{{ .Values.keycloak.realm | default "kagenti" }}"
+        - name: KEYCLOAK_ADMIN_SECRET_NAME
+          value: "keycloak-initial-admin"
+        - name: KEYCLOAK_ADMIN_SECRET_NAMESPACE
+          value: "keycloak"
+        - name: KEYCLOAK_ADMIN_USERNAME_KEY
+          value: "username"
+        - name: KEYCLOAK_ADMIN_PASSWORD_KEY
+          value: "password"
         - name: SPIFFE_IDP_ALIAS
-          value: {{ .Values.spiffe.idpAlias | default "spire-spiffe" }}
+          value: "{{ .Values.spiffe.idpAlias | default "spire-spiffe" }}"
         - name: SPIRE_OIDC_URL
-          value: {{ .Values.spiffe.oidcDiscoveryURL | default "http://spire-spiffe-oidc-discovery-provider.zero-trust-workload-identity-manager.svc:8080" }}
-        - name: KEYCLOAK_ADMIN_USER
-          valueFrom:
-            secretKeyRef:
-              name: keycloak-initial-admin
-              key: username
-        - name: KEYCLOAK_ADMIN_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: keycloak-initial-admin
-              key: password
-        command:
-        - /bin/sh
-        - -c
-        - |
-          set -e
-
-          echo "==============================================="
-          echo "Kagenti Operator Client Bootstrap (SPIFFE)"
-          echo "==============================================="
-          echo "Keycloak URL: $KEYCLOAK_URL"
-          echo "Realm: $KEYCLOAK_REALM"
-          echo "Operator Client ID: $OPERATOR_CLIENT_ID"
-          echo "SPIFFE IdP Alias: $SPIFFE_IDP_ALIAS"
-          echo "==============================================="
-
-          # Get admin token
-          echo "1. Authenticating to Keycloak..."
-          TOKEN_RESPONSE=$(curl -s -X POST "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
-            -d "grant_type=password" \
-            -d "client_id=admin-cli" \
-            -d "username=$KEYCLOAK_ADMIN_USER" \
-            -d "password=$KEYCLOAK_ADMIN_PASSWORD")
-
-          TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
-          if [ -z "$TOKEN" ]; then
-            echo "ERROR: Failed to get admin token"
-            echo "Response: $TOKEN_RESPONSE"
-            exit 1
-          fi
-          echo "   ✓ Admin token obtained"
-
-          # Check if SPIFFE IdP exists
-          echo "2. Checking if SPIFFE Identity Provider exists..."
-          IDP_RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
-            -H "Authorization: Bearer $TOKEN" \
-            "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/identity-provider/instances/$SPIFFE_IDP_ALIAS")
-          IDP_HTTP_CODE=$(echo "$IDP_RESPONSE" | tail -n1)
-
-          if [ "$IDP_HTTP_CODE" = "404" ]; then
-            echo "   Creating SPIFFE Identity Provider..."
-            IDP_CREATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Content-Type: application/json" \
-              "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/identity-provider/instances" \
-              -d @- <<EOF
-{
-  "alias": "$SPIFFE_IDP_ALIAS",
-  "providerId": "oidc",
-  "enabled": true,
-  "config": {
-    "issuer": "$SPIRE_OIDC_URL",
-    "jwksUrl": "$SPIRE_OIDC_URL/keys",
-    "validateSignature": "true",
-    "useJwksUrl": "true"
-  }
-}
-EOF
-)
-            IDP_CREATE_HTTP_CODE=$(echo "$IDP_CREATE_RESPONSE" | tail -n1)
-            if [ "$IDP_CREATE_HTTP_CODE" = "201" ]; then
-              echo "   ✓ SPIFFE Identity Provider created"
-            else
-              echo "   ERROR: Failed to create SPIFFE Identity Provider (HTTP $IDP_CREATE_HTTP_CODE)"
-              echo "   Response: $(echo "$IDP_CREATE_RESPONSE" | head -n-1)"
-              exit 1
-            fi
-          else
-            echo "   ✓ SPIFFE Identity Provider already exists"
-          fi
-
-          # Check if operator client exists
-          echo "3. Checking if operator client exists..."
-          CLIENT_SEARCH_RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
-            -H "Authorization: Bearer $TOKEN" \
-            "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients?clientId=$(printf %s "$OPERATOR_CLIENT_ID" | jq -sRr @uri)")
-          CLIENT_SEARCH_HTTP_CODE=$(echo "$CLIENT_SEARCH_RESPONSE" | tail -n1)
-          CLIENT_SEARCH_BODY=$(echo "$CLIENT_SEARCH_RESPONSE" | head -n-1)
-
-          if [ "$CLIENT_SEARCH_HTTP_CODE" != "200" ]; then
-            echo "   ERROR: Failed to search for client (HTTP $CLIENT_SEARCH_HTTP_CODE)"
-            exit 1
-          fi
-
-          CLIENT_UUID=$(echo "$CLIENT_SEARCH_BODY" | grep -o '"id":"[^"]*' | head -n1 | cut -d'"' -f4)
-
-          if [ -n "$CLIENT_UUID" ]; then
-            echo "   ✓ Operator client already exists (UUID: $CLIENT_UUID)"
-          else
-            echo "   Creating operator client..."
-            CLIENT_CREATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Content-Type: application/json" \
-              "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients" \
-              -d @- <<EOF
-{
-  "clientId": "$OPERATOR_CLIENT_ID",
-  "enabled": true,
-  "clientAuthenticatorType": "federated-jwt",
-  "serviceAccountsEnabled": true,
-  "standardFlowEnabled": false,
-  "directAccessGrantsEnabled": false,
-  "publicClient": false,
-  "attributes": {
-    "jwt.credential.issuer": "$SPIFFE_IDP_ALIAS",
-    "jwt.credential.sub": "$OPERATOR_CLIENT_ID"
-  }
-}
-EOF
-)
-            CLIENT_CREATE_HTTP_CODE=$(echo "$CLIENT_CREATE_RESPONSE" | tail -n1)
-
-            if [ "$CLIENT_CREATE_HTTP_CODE" = "201" ]; then
-              echo "   ✓ Operator client created"
-              # Get the UUID from the Location header or search again
-              sleep 2
-              CLIENT_SEARCH_RESPONSE=$(curl -s -X GET \
-                -H "Authorization: Bearer $TOKEN" \
-                "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients?clientId=$(printf %s "$OPERATOR_CLIENT_ID" | jq -sRr @uri)")
-              CLIENT_UUID=$(echo "$CLIENT_SEARCH_RESPONSE" | grep -o '"id":"[^"]*' | head -n1 | cut -d'"' -f4)
-            else
-              echo "   ERROR: Failed to create operator client (HTTP $CLIENT_CREATE_HTTP_CODE)"
-              echo "   Response: $(echo "$CLIENT_CREATE_RESPONSE" | head -n-1)"
-              exit 1
-            fi
-          fi
-
-          # Get service account for the client
-          echo "4. Getting operator client's service account..."
-          SA_RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
-            -H "Authorization: Bearer $TOKEN" \
-            "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients/$CLIENT_UUID/service-account-user")
-          SA_HTTP_CODE=$(echo "$SA_RESPONSE" | tail -n1)
-          SA_BODY=$(echo "$SA_RESPONSE" | head -n-1)
-
-          if [ "$SA_HTTP_CODE" != "200" ]; then
-            echo "   ERROR: Failed to get service account (HTTP $SA_HTTP_CODE)"
-            exit 1
-          fi
-
-          SA_USER_ID=$(echo "$SA_BODY" | grep -o '"id":"[^"]*' | head -n1 | cut -d'"' -f4)
-          if [ -z "$SA_USER_ID" ]; then
-            echo "   ERROR: Could not extract service account user ID"
-            exit 1
-          fi
-          echo "   ✓ Service account ID: $SA_USER_ID"
-
-          # Get manage-clients role
-          echo "5. Getting manage-clients role..."
-          ROLE_RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
-            -H "Authorization: Bearer $TOKEN" \
-            "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients?clientId=realm-management")
-          ROLE_HTTP_CODE=$(echo "$ROLE_RESPONSE" | tail -n1)
-          ROLE_BODY=$(echo "$ROLE_RESPONSE" | head -n-1)
-
-          if [ "$ROLE_HTTP_CODE" != "200" ]; then
-            echo "   ERROR: Failed to get realm-management client (HTTP $ROLE_HTTP_CODE)"
-            exit 1
-          fi
-
-          REALM_MGMT_UUID=$(echo "$ROLE_BODY" | grep -o '"id":"[^"]*' | head -n1 | cut -d'"' -f4)
-
-          MANAGE_CLIENTS_RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
-            -H "Authorization: Bearer $TOKEN" \
-            "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients/$REALM_MGMT_UUID/roles/manage-clients")
-          MANAGE_CLIENTS_HTTP_CODE=$(echo "$MANAGE_CLIENTS_RESPONSE" | tail -n1)
-          MANAGE_CLIENTS_BODY=$(echo "$MANAGE_CLIENTS_RESPONSE" | head -n-1)
-
-          if [ "$MANAGE_CLIENTS_HTTP_CODE" != "200" ]; then
-            echo "   ERROR: Failed to get manage-clients role (HTTP $MANAGE_CLIENTS_HTTP_CODE)"
-            exit 1
-          fi
-          echo "   ✓ manage-clients role found"
-
-          # Assign manage-clients role to service account
-          echo "6. Assigning manage-clients role to operator service account..."
-          ROLE_ASSIGN_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: application/json" \
-            "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/users/$SA_USER_ID/role-mappings/clients/$REALM_MGMT_UUID" \
-            -d "[$MANAGE_CLIENTS_BODY]")
-          ROLE_ASSIGN_HTTP_CODE=$(echo "$ROLE_ASSIGN_RESPONSE" | tail -n1)
-
-          if [ "$ROLE_ASSIGN_HTTP_CODE" = "204" ]; then
-            echo "   ✓ manage-clients role assigned"
-          else
-            echo "   WARNING: Role assignment returned HTTP $ROLE_ASSIGN_HTTP_CODE (may already be assigned)"
-          fi
-
-          echo "==============================================="
-          echo "✓ Bootstrap completed successfully"
-          echo "==============================================="
+          value: "{{ .Values.spiffe.oidcDiscoveryURL | default "http://spire-spiffe-oidc-discovery-provider.zero-trust-workload-identity-manager.svc:8080" }}"
+        # SPIFFE trust domain - used to derive operator's SPIFFE ID
+        - name: SPIFFE_TRUST_DOMAIN
+          value: "{{ .Values.spireTrustDomain | default "localtest.me" }}"
+        # Operator namespace and ServiceAccount - used to derive SPIFFE ID
+        # The bootstrap script constructs: spiffe://<trust-domain>/ns/<namespace>/sa/<service-account>
+        # Namespace is where the operator subchart is actually deployed
+        - name: OPERATOR_NAMESPACE
+          value: "{{ .Release.Namespace }}"
+        - name: OPERATOR_SERVICE_ACCOUNT
+          # Read from the operator subchart to ensure consistency with actual operator SA
+          value: "{{ index .Values "kagenti-operator-chart" "controllerManager" "serviceAccountName" | default "controller-manager" }}"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
 {{- end }}
