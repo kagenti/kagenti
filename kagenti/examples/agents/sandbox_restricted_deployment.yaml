@@ -7,7 +7,6 @@ metadata:
   name: sandbox-restricted
   namespace: team1
   labels:
-    kagenti.io/type: agent
     kagenti.io/protocol: a2a
     kagenti.io/framework: LangGraph
     kagenti.io/workload-type: deployment
@@ -22,12 +21,10 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: agent
       app.kubernetes.io/name: sandbox-restricted
   template:
     metadata:
       labels:
-        kagenti.io/type: agent
         kagenti.io/protocol: a2a
         kagenti.io/framework: LangGraph
         app.kubernetes.io/name: sandbox-restricted
@@ -102,3 +99,18 @@ spec:
           sizeLimit: 1Gi
       - name: cache
         emptyDir: {}
+---
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: sandbox-restricted
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: sandbox-restricted
+    app.kubernetes.io/managed-by: kagenti-e2e
+spec:
+  type: agent
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: sandbox-restricted

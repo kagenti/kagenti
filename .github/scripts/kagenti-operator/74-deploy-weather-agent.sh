@@ -223,6 +223,9 @@ metadata:
   namespace: team1
   annotations:
     openshift.io/host.generated: "true"
+    # Agent chat involves a cold MCP session + multiple LLM round-trips that can
+    # exceed HAProxy's 30s default, surfacing as a 504 on the first request.
+    haproxy.router.openshift.io/timeout: "120s"
 spec:
   path: /
   port:

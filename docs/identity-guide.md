@@ -260,7 +260,7 @@ grant_type=authorization_code
 #### Stage 2: Keycloak Client Registration Flow (Operator-managed)
 
 Keycloak client registration is now handled by the kagenti-operator's ClientRegistrationReconciler controller. The controller:
-1. Watches for Deployments/StatefulSets labeled with `kagenti.io/type: agent` or `tool`
+1. Reconciles AgentRuntime CRs and applies `kagenti.io/type: agent` or `tool` labels to target workloads
 2. Reads Keycloak admin credentials from the `keycloak-admin-secret` in the operator namespace (`kagenti-system`)
 3. Uses the workload's SPIFFE ID as the client identifier
 4. Registers the client with Keycloak and creates a secret containing client credentials in the agent namespace
@@ -471,14 +471,13 @@ def validate_request(request):
 
 Keycloak client registration is handled automatically by the kagenti-operator's ClientRegistrationReconciler. When you deploy an agent or tool:
 
-1. **Label the workload** with `kagenti.io/type: agent` or `kagenti.io/type: tool`
-2. **The operator watches** for these labeled workloads
-3. **The operator registers** the workload with Keycloak using:
+1. **Create an AgentRuntime CR** targeting the workload with `spec.type: agent` or `spec.type: tool`
+2. **The operator reconciles** the AgentRuntime, applies the `kagenti.io/type` label to the target workload, and registers it with Keycloak using:
    - Client ID pattern depends on whether SPIFFE is enabled:
      - **SPIFFE disabled**: `namespace/workload-name` (e.g., `team1/slack-researcher`)
      - **SPIFFE enabled**: `spiffe://trustdomain/ns/namespace/sa/serviceaccount` (e.g., `spiffe://localtest.me/ns/team1/sa/slack-researcher-sa`)
    - Keycloak admin credentials from the `keycloak-admin-secret` in the operator namespace
-4. **The operator creates** a secret in the agent namespace containing client credentials
+3. **The operator creates** a secret in the agent namespace containing client credentials
 
 This is fully automatic and requires no manual intervention or init containers.
 
@@ -572,7 +571,7 @@ The [AuthBridge Component](https://github.com/kagenti/kagenti-extensions/tree/ma
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│  1. Operator watches workloads with kagenti.io/type label                       │
+│  1. Operator reconciles AgentRuntime CRs and labels target workloads            │
 │  2. Operator registers client with Keycloak (using admin credentials from       │
 │     operator namespace) and creates credentials secret in agent namespace       │
 │  3. (If SPIFFE enabled) SPIFFE Helper obtains SVID from SPIRE Agent             │
@@ -622,7 +621,7 @@ The [AuthBridge Component](https://github.com/kagenti/kagenti-extensions/tree/ma
 
 | Component | Type | Purpose |
 |-----------|------|---------|
-| **Kagenti Operator** | Controller | Watches for workloads with `kagenti.io/type` label, registers them as OAuth clients in Keycloak, and creates credentials secrets in agent namespaces |
+| **Kagenti Operator** | Controller | Reconciles AgentRuntime CRs, applies `kagenti.io/type` labels to target workloads, registers them as OAuth clients in Keycloak, and creates credentials secrets in agent namespaces |
 | **SPIFFE Helper** | Container | (Optional, when SPIFFE enabled) Obtains SVID from SPIRE Agent for workload identity |
 | **Envoy + Go Processor (Ext Proc)** | Sidecar | Intercepts traffic in both directions: **inbound** — validates JWT (signature, expiration, issuer, optional audience) via JWKS, returns 401 for invalid tokens; **outbound** — exchanges tokens for target audience via Keycloak |
 
