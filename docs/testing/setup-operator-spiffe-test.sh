@@ -225,7 +225,15 @@ log_success "SPIFFE IdP setup completed"
 
 # Install kagenti with operator SPIFFE auth enabled
 log_info "Installing kagenti with operator SPIFFE auth..."
+
+# Run helm dependency update to pull charts, then immediately remove the OCI
+# tarball and Chart.lock so helm uses the local charts/kagenti/charts/kagenti-operator-chart/
+# directory (which has the spiffe-helper sidecar template from kagenti-operator PR #349).
+# Without this, the published OCI chart is used — it lacks the SPIFFE auth changes.
 helm dependency update charts/kagenti
+rm -f charts/kagenti/charts/kagenti-operator-chart-*.tgz
+rm -f charts/kagenti/Chart.lock
+log_info "Using local operator subchart (OCI tarball removed)"
 
 cat > /tmp/kagenti-spiffe-test-values.yaml <<EOF
 # Use local operator image
@@ -235,6 +243,7 @@ kagenti-operator-chart:
       image:
         repository: localhost/kagenti-operator
         tag: spiffe-test
+        pullPolicy: Never
   spiffe:
     enabled: true
     operatorAuth:
@@ -266,25 +275,6 @@ helm upgrade --install kagenti charts/kagenti/ \
   --wait
 
 log_success "kagenti installed"
-
-# Fix: Helm downloads the operator subchart from the OCI registry (the published
-# version doesn't have SPIFFE auth changes from kagenti-operator PR #349). Remove
-# the tarball AND Chart.lock so helm uses the local charts/kagenti/charts/kagenti-operator-chart/
-# directory (alpha.4, which has the spiffe-helper sidecar template) instead.
-log_info "Applying local operator subchart (removing OCI registry tarball and Chart.lock)..."
-rm -f charts/kagenti/charts/kagenti-operator-chart-*.tgz
-rm -f charts/kagenti/Chart.lock
-
-helm upgrade kagenti charts/kagenti/ \
-  -n kagenti-system \
-  --reuse-values \
-  --set "kagenti-operator-chart.controllerManager.container.image.repository=localhost/kagenti-operator" \
-  --set "kagenti-operator-chart.controllerManager.container.image.tag=spiffe-test" \
-  --set "kagenti-operator-chart.controllerManager.container.image.pullPolicy=Never" \
-  --timeout 5m \
-  --wait
-
-log_success "Local operator subchart applied"
 
 # Verify deployment
 log_info "Verifying deployment..."
