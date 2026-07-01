@@ -121,12 +121,18 @@ None - all issues have been fixed!
 
 ### Step 1: Clean Environment
 
-Delete existing Kind cluster if it exists:
+Delete existing Kind cluster if it exists.
 
+**If using Podman:**
 ```bash
 export KIND_EXPERIMENTAL_PROVIDER=podman
-export DOCKER_HOST=unix:///var/folders/jt/b_5yc_tn32sc7n60d6dht_3c0000gn/T/podman/podman-machine-default-api.sock
+export DOCKER_HOST=unix://$(find /var/folders -name "podman-machine-default-api.sock" 2>/dev/null | head -1)
+kind delete cluster --name kagenti
+```
 
+**If using Docker (Colima or Docker Desktop):**
+```bash
+# No extra environment variables needed - Kind uses Docker by default
 kind delete cluster --name kagenti
 ```
 
@@ -135,52 +141,69 @@ kind delete cluster --name kagenti
 ### Step 2: Build Operator Image (PR #349)
 
 ```bash
-cd /Users/alan/Documents/Work/kagenti/.repos/kagenti-operator/kagenti-operator
+# Navigate to your kagenti-operator repo (adjust path as needed)
+cd /path/to/kagenti-operator
 
 git checkout pr-349
 git pull origin pr-349
 
-podman build -t localhost/kagenti-operator:spiffe-test -f Dockerfile .
+# Use docker or podman
+docker build -t localhost/kagenti-operator:spiffe-test -f Dockerfile .
+# OR: podman build -t localhost/kagenti-operator:spiffe-test -f Dockerfile .
 
 # Verify build succeeded
-if ! podman images | grep -q "localhost/kagenti-operator.*spiffe-test"; then
+if ! docker images | grep -q "localhost/kagenti-operator.*spiffe-test"; then
   echo "ERROR: Operator image build failed"
   exit 1
 fi
 echo "✓ Operator image built successfully"
 ```
 
+**Note:** Replace `/path/to/kagenti-operator` with your actual kagenti-operator repository path.
+
 ---
 
 ### Step 3: Build Bootstrap Image (PR #1837)
 
 ```bash
-cd /Users/alan/Documents/Work/kagenti/kagenti
+# Navigate to your kagenti repo root
+cd /path/to/kagenti
 
 git checkout feat/operator-spiffe-auth-bootstrap
 git pull origin feat/operator-spiffe-auth-bootstrap
 
-podman build -t ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest \
+# Use docker or podman
+docker build -t ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest \
   -f auth/operator-spiffe-bootstrap/Dockerfile .
+# OR: podman build -t ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest \
+#       -f auth/operator-spiffe-bootstrap/Dockerfile .
 
 # Verify build succeeded
-if ! podman images | grep -q "operator-spiffe-bootstrap.*latest"; then
+if ! docker images | grep -q "operator-spiffe-bootstrap.*latest"; then
   echo "ERROR: Bootstrap image build failed"
   exit 1
 fi
 echo "✓ Bootstrap image built successfully"
 ```
 
+**Note:** Replace `/path/to/kagenti` with your actual kagenti repository path.
+
 ---
 
 ### Step 4: Create Kind Cluster
 
-Create the cluster with port mappings so services are accessible from your browser:
+Create the cluster with port mappings so services are accessible from your browser.
 
+**If using Podman:**
 ```bash
 export KIND_EXPERIMENTAL_PROVIDER=podman
 export DOCKER_HOST=unix://$(find /var/folders -name "podman-machine-default-api.sock" 2>/dev/null | head -1)
+kind create cluster --name kagenti --config scripts/kind/kind-config-registry.yaml
+```
 
+**If using Docker (Colima or Docker Desktop):**
+```bash
+# No extra environment variables needed
 kind create cluster --name kagenti --config scripts/kind/kind-config-registry.yaml
 ```
 
@@ -203,9 +226,9 @@ kubectl cluster-info
 ```bash
 mkdir -p /tmp/kagenti-test-images
 
-# Save images to tarballs
-podman save -o /tmp/kagenti-test-images/operator.tar localhost/kagenti-operator:spiffe-test
-podman save -o /tmp/kagenti-test-images/bootstrap.tar ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest
+# Save images to tarballs (use docker or podman)
+docker save -o /tmp/kagenti-test-images/operator.tar localhost/kagenti-operator:spiffe-test
+docker save -o /tmp/kagenti-test-images/bootstrap.tar ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest
 
 # Load into Kind
 kind load image-archive /tmp/kagenti-test-images/operator.tar --name kagenti
@@ -228,15 +251,14 @@ docker exec -i kagenti-control-plane crictl images | grep -E "kagenti-operator|o
 Run the dedicated test setup script that installs everything with your local images:
 
 ```bash
-cd /Users/alan/Documents/Work/kagenti
+# Navigate to kagenti repo root
+cd /path/to/kagenti
 
-# Set environment (use same values from Step 4)
-export KIND_EXPERIMENTAL_PROVIDER=podman
-export DOCKER_HOST=unix://$(find /var/folders -name "podman-machine-default-api.sock" 2>/dev/null | head -1)
-
-# Run the test setup script
+# Run the test setup script (no environment variables needed - works with both Docker and Podman)
 ./docs/testing/setup-operator-spiffe-test.sh
 ```
+
+**Note:** The script automatically detects your container runtime and works with both Docker and Podman.
 
 **The script will:**
 1. Install cert-manager, Istio (without Gateway API CRDs - kagenti-deps installs them)
