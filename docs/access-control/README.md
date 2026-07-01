@@ -13,13 +13,13 @@ Note: While allowing plugins to directly execute drop decisions provides immedia
 
 Security in rossoctl is enforced natively at the boundary of every runtime component via the Cortex (formerly AuthBridge) sidecar and gateway infrastructure. This distributed layout allows coping with the premises of zero trust where offenders are assumed to not only be outsiders but also insiders acting as part of the agent platform. Cortex offers control over four traffic directions, separating Requests from Responses to provide complete security coverage:
 
-                                
+```                             
    ┌──────────┐  (1) INBOUND REQ    ┌─────────────────────────────┐  (2) OUTBOUND REQ   ┌───────────────────────┐ 
    │          │ ──────────────────► │ CORTEX  ┌────────┐ CORTEX   │ ──────────────────► │                       │
    │  CALLER  │                     │ INBOUND │ AGENT  │ OUTBOUND │                     │  TARGET AGENT / TOOL  │
    │          │ ◄────────────────── │         └────────┘          │ ◄────────────────── │                       │
    └──────────┘  (4) INBOUND RESP   └─────────────────────────────┘  (3) OUTBOUND RESP  └───────────────────────┘
-
+```
 
 1. Inbound Request: This path controls incoming traffic requests arriving at an agent. For example, Cortex verifies the caller’s identity, checks if the request serves a task sent by a user with the correct role, and ensures it does not include a dangerous prompt.
 
