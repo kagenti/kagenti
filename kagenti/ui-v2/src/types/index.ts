@@ -20,7 +20,7 @@ export interface Agent {
   name: string;
   namespace: string;
   description: string;
-  status: 'Ready' | 'Not Ready' | 'Progressing';
+  status: 'Ready' | 'Not Ready' | 'Progressing' | 'Building' | 'Build Failed';
   labels: AgentLabels;
   workloadType?: WorkloadType;
   createdAt?: string;
