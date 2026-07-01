@@ -267,11 +267,13 @@ helm upgrade --install kagenti charts/kagenti/ \
 
 log_success "kagenti installed"
 
-# Fix: Helm downloaded the operator subchart from OCI registry (v0.3.0-alpha.5)
-# which doesn't have SPIFFE auth changes. We need to force it to use the local
-# subchart by removing the tarball and upgrading again.
-log_info "Applying local operator subchart (removing OCI registry tarball)..."
+# Fix: Helm downloads the operator subchart from the OCI registry (the published
+# version doesn't have SPIFFE auth changes from kagenti-operator PR #349). Remove
+# the tarball AND Chart.lock so helm uses the local charts/kagenti/charts/kagenti-operator-chart/
+# directory (alpha.4, which has the spiffe-helper sidecar template) instead.
+log_info "Applying local operator subchart (removing OCI registry tarball and Chart.lock)..."
 rm -f charts/kagenti/charts/kagenti-operator-chart-*.tgz
+rm -f charts/kagenti/Chart.lock
 
 helm upgrade kagenti charts/kagenti/ \
   -n kagenti-system \
