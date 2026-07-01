@@ -37,6 +37,9 @@ class FeatureFlagsResponse(BaseModel):
     externalSkills: bool = Field(description="External skill registry references")
     authbridgeAPI: bool = Field(description="AuthBridge statistics (API and UI)")
     admin: bool = Field(description="Platform Status card and /platform-status endpoint")
+    agentImportDefaults: bool = Field(
+        description="Auto-inject MCP_URL and LLM env vars on agent import"
+    )
 
 
 class ComponentStatus(BaseModel):
@@ -87,6 +90,7 @@ async def get_feature_flags(
         externalSkills=settings.kagenti_feature_flag_external_skills,
         authbridgeAPI=settings.kagenti_feature_flag_authbridge_api,
         admin=settings.kagenti_feature_flag_admin,
+        agentImportDefaults=settings.kagenti_feature_flag_agent_import_defaults,
     )
 
 
