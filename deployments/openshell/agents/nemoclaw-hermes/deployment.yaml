@@ -66,7 +66,6 @@ metadata:
   name: nemoclaw-hermes
   namespace: team1
   labels:
-    kagenti.io/type: agent
     kagenti.io/framework: NemoClaw
     kagenti.io/workload-type: deployment
     app.kubernetes.io/name: nemoclaw-hermes
@@ -82,12 +81,12 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: agent
+      # kagenti.io/type label was removed due to VAP introduction.
+      # Existing deployments must be deleted and re-applied.
       app.kubernetes.io/name: nemoclaw-hermes
   template:
     metadata:
       labels:
-        kagenti.io/type: agent
         kagenti.io/inject: disabled
         kagenti.io/framework: NemoClaw
         app.kubernetes.io/name: nemoclaw-hermes

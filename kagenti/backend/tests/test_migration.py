@@ -40,13 +40,11 @@ with patch.dict(
     from kagenti.tools.migrate_agents import (
         build_deployment_from_agent_crd,
         build_service_from_agent_crd,
-        KAGENTI_TYPE_LABEL,
         KAGENTI_WORKLOAD_TYPE_LABEL,
         APP_KUBERNETES_IO_NAME,
         APP_KUBERNETES_IO_MANAGED_BY,
         MIGRATION_SOURCE_ANNOTATION,
         MIGRATION_TIMESTAMP_ANNOTATION,
-        RESOURCE_TYPE_AGENT,
         WORKLOAD_TYPE_DEPLOYMENT,
         KAGENTI_UI_CREATOR_LABEL,
     )
@@ -101,7 +99,6 @@ class TestBuildDeploymentFromAgentCRD:
 
         # Verify selector
         selector = deployment["spec"]["selector"]["matchLabels"]
-        assert selector[KAGENTI_TYPE_LABEL] == RESOURCE_TYPE_AGENT
         assert selector[APP_KUBERNETES_IO_NAME] == "test-agent"
 
     def test_deployment_with_pod_template_spec(self):
@@ -185,7 +182,6 @@ class TestBuildServiceFromAgentCRD:
 
         # Verify selector
         selector = service["spec"]["selector"]
-        assert selector[KAGENTI_TYPE_LABEL] == RESOURCE_TYPE_AGENT
         assert selector[APP_KUBERNETES_IO_NAME] == "test-agent"
 
         # Verify ports

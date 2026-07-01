@@ -42,16 +42,10 @@ spec:
     name: weather-service
 ```
 
-The deprecated annotation is retained for tools and other workloads that
-don't have their own AgentRuntime CR yet:
-
-```yaml
-metadata:
-  labels:
-    kagenti.io/type: tool
-  annotations:
-    kagenti.io/authbridge-mode: "envoy-sidecar"
-```
+> **Note:** All workloads should use an AgentRuntime CR to enroll with the
+> platform. The operator applies `kagenti.io/type` labels automatically.
+> The deprecated `kagenti.io/authbridge-mode` annotation is still honored
+> but `AgentRuntime.Spec.AuthBridgeMode` is the canonical method.
 
 ## Proxy-Sidecar Mode (Default)
 
@@ -240,7 +234,7 @@ kubectl exec deploy/weather-service -n team1 -c envoy-proxy -- \
 
 ### Proxy Not Injected
 
-1. Verify the pod has `kagenti.io/type: agent` label
+1. Verify the workload has an AgentRuntime CR targeting it (the operator applies the `kagenti.io/type` label automatically)
 2. Check that the Kagenti operator webhook is running:
    ```bash
    kubectl get mutatingwebhookconfigurations | grep kagenti

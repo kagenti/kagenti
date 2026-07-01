@@ -315,6 +315,227 @@ func TestDeployAgent(t *testing.T) {
 	}
 }
 
+func TestDeployAgentWorkloadType(t *testing.T) {
+	var got api.CreateAgentRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/agents" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		json.NewEncoder(w).Encode(api.CreateAgentResponse{
+			Success: true, Name: got.Name, Namespace: got.Namespace,
+		})
+	}))
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL, "test-token", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+	deployCmd := newDeployCmd(ctx)
+	deployCmd.SetArgs([]string{
+		"agent",
+		"--name", "stateful-agent",
+		"--container-image", "img:v1",
+		"--workload-type", "statefulset",
+	})
+	deployCmd.PersistentFlags().String("namespace", "team1", "")
+
+	if err := deployCmd.Execute(); err != nil {
+		t.Fatalf("deploy agent command failed: %v", err)
+	}
+	if got.WorkloadType != "statefulset" {
+		t.Fatalf("expected workloadType=statefulset, got %q", got.WorkloadType)
+	}
+}
+
+func TestDeployAgentGitPath(t *testing.T) {
+	// --git-path must reach the backend as request.gitPath, otherwise the
+	// resulting Shipwright Build uses contextDir "." (repo root) and fails
+	// for any monorepo where the agent source is a subfolder.
+	var got api.CreateAgentRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/agents" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		json.NewEncoder(w).Encode(api.CreateAgentResponse{
+			Success: true, Name: got.Name, Namespace: got.Namespace,
+		})
+	}))
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL, "test-token", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+	deployCmd := newDeployCmd(ctx)
+	deployCmd.SetArgs([]string{
+		"agent",
+		"--name", "sub-folder-agent",
+		"--deploy-method", "source",
+		"--git-url", "https://github.com/example/monorepo",
+		"--git-path", "a2a/my_agent",
+		"--git-branch", "main",
+	})
+	deployCmd.PersistentFlags().String("namespace", "team1", "")
+
+	if err := deployCmd.Execute(); err != nil {
+		t.Fatalf("deploy agent command failed: %v", err)
+	}
+	if got.GitPath != "a2a/my_agent" {
+		t.Fatalf("expected gitPath=a2a/my_agent, got %q", got.GitPath)
+	}
+}
+
+func TestDeployAgentPersistentStorage(t *testing.T) {
+	var got api.CreateAgentRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/agents" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		json.NewEncoder(w).Encode(api.CreateAgentResponse{
+			Success: true, Name: got.Name, Namespace: got.Namespace,
+		})
+	}))
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL, "test-token", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+	deployCmd := newDeployCmd(ctx)
+	deployCmd.SetArgs([]string{
+		"agent",
+		"--name", "stateful-agent",
+		"--container-image", "img:v1",
+		"--workload-type", "statefulset",
+		"--persistent-storage",
+		"--persistent-storage-size", "5Gi",
+	})
+	deployCmd.PersistentFlags().String("namespace", "team1", "")
+
+	if err := deployCmd.Execute(); err != nil {
+		t.Fatalf("deploy agent command failed: %v", err)
+	}
+	if got.PersistentStorage == nil {
+		t.Fatal("expected persistentStorage in request")
+	}
+	if !got.PersistentStorage.Enabled {
+		t.Fatal("expected persistentStorage.enabled=true")
+	}
+	if got.PersistentStorage.Size != "5Gi" {
+		t.Fatalf("expected persistentStorage.size=5Gi, got %q", got.PersistentStorage.Size)
+	}
+}
+
+func TestDeployAgentPersistentStorageRequiresStatefulSet(t *testing.T) {
+	client := api.NewClient("http://example.invalid", "test-token", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+	deployCmd := newDeployCmd(ctx)
+	deployCmd.SetArgs([]string{
+		"agent",
+		"--name", "deployment-agent",
+		"--container-image", "img:v1",
+		"--persistent-storage",
+	})
+
+	err := deployCmd.Execute()
+	if err == nil {
+		t.Fatal("expected persistent storage with deployment workload to fail")
+	}
+	if !strings.Contains(err.Error(), "--workload-type statefulset") {
+		t.Fatalf("expected statefulset validation error, got: %v", err)
+	}
+}
+
+func TestDeployAgentPersistentStorageSizeRequiresPersistentStorage(t *testing.T) {
+	client := api.NewClient("http://example.invalid", "test-token", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+	deployCmd := newDeployCmd(ctx)
+	deployCmd.SetArgs([]string{
+		"agent",
+		"--name", "stateful-agent",
+		"--container-image", "img:v1",
+		"--workload-type", "statefulset",
+		"--persistent-storage-size", "5Gi",
+	})
+
+	err := deployCmd.Execute()
+	if err == nil {
+		t.Fatal("expected storage size without persistent storage to fail")
+	}
+	if !strings.Contains(err.Error(), "--persistent-storage-size requires --persistent-storage") {
+		t.Fatalf("expected persistent storage size validation error, got: %v", err)
+	}
+}
+
+func TestValidateStorageSize(t *testing.T) {
+	cases := []struct {
+		name       string
+		size       string
+		wantErr    bool
+		wantSubstr string
+	}{
+		{name: "valid Gi", size: "5Gi", wantErr: false},
+		{name: "valid Mi", size: "500Mi", wantErr: false},
+		{name: "valid decimal G", size: "5G", wantErr: false},
+		{name: "valid fractional", size: "1.5Gi", wantErr: false},
+		{name: "valid bare bytes", size: "1073741824", wantErr: false},
+		{name: "default 1Gi", size: "1Gi", wantErr: false},
+		{name: "bad unit", size: "1XB", wantErr: true, wantSubstr: "not a valid"},
+		{name: "non-numeric", size: "banana", wantErr: true, wantSubstr: "not a valid"},
+		{name: "zero", size: "0Gi", wantErr: true, wantSubstr: "must be a positive"},
+		{name: "below 1Mi", size: "1Ki", wantErr: true, wantSubstr: "too small"},
+		{name: "above 10Ti", size: "100Ti", wantErr: true, wantSubstr: "too large"},
+		{name: "empty", size: "", wantErr: true, wantSubstr: "not a valid"},
+		{name: "leading dash", size: "-1Gi", wantErr: true, wantSubstr: "not a valid"},
+		{name: "trailing junk", size: "5Gi extra", wantErr: true, wantSubstr: "not a valid"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateStorageSize(tc.size)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for size %q, got nil", tc.size)
+				}
+				if tc.wantSubstr != "" && !strings.Contains(err.Error(), tc.wantSubstr) {
+					t.Fatalf("expected error containing %q, got: %v", tc.wantSubstr, err)
+				}
+			} else if err != nil {
+				t.Fatalf("expected no error for size %q, got: %v", tc.size, err)
+			}
+		})
+	}
+}
+
+func TestDeployAgentRejectsInvalidStorageSize(t *testing.T) {
+	// Sanity check that the validator is wired into the deploy command path,
+	// not just exposed as a standalone function. Use an invalid size — the
+	// command must fail before any HTTP call is attempted.
+	client := api.NewClient("http://example.invalid", "test-token", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+	deployCmd := newDeployCmd(ctx)
+	deployCmd.SetArgs([]string{
+		"agent",
+		"--name", "stateful-agent",
+		"--container-image", "img:v1",
+		"--workload-type", "statefulset",
+		"--persistent-storage",
+		"--persistent-storage-size", "banana",
+	})
+	deployCmd.PersistentFlags().String("namespace", "team1", "")
+
+	err := deployCmd.Execute()
+	if err == nil {
+		t.Fatal("expected invalid storage size to fail")
+	}
+	if !strings.Contains(err.Error(), "not a valid Kubernetes size") {
+		t.Fatalf("expected size-format error, got: %v", err)
+	}
+}
+
 func TestDeployTool(t *testing.T) {
 	_, ctx := newTestServer(t)
 	deployCmd := newDeployCmd(ctx)

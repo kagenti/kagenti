@@ -59,7 +59,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           ref: ${{ inputs.ref }}
           fetch-depth: 1
@@ -102,7 +102,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           ref: ${{ inputs.ref }}
 
@@ -199,7 +199,10 @@ jobs:
       - name: Setup Keycloak for token exchange
         if: success()
         run: |
-          bash .github/scripts/token-exchange/35-install-keycloak-ocp.sh community
+          # On Kind, Keycloak is already installed by the platform installer
+          # (35-install-keycloak-ocp.sh is OpenShift-only and would stand up a
+          # second, colliding Keycloak). Reuse the platform Keycloak — its
+          # KC_FEATURES now include token-exchange + admin-fine-grained-authz.
           bash .github/scripts/token-exchange/40-setup-keycloak-realm.sh
           bash .github/scripts/token-exchange/50-enable-kagenti-ns.sh
           bash .github/scripts/token-exchange/55-setup-spiffe-idp.sh
@@ -268,7 +271,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           ref: ${{ inputs.ref }}
 
@@ -488,7 +491,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           ref: ${{ inputs.ref }}
 
