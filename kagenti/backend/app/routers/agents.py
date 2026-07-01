@@ -1689,9 +1689,8 @@ def _build_deployment_from_agent_crd(agent: dict) -> dict:
     # derivation uses the workload name rather than the ReplicaSet hash.
     pod_spec.setdefault("serviceAccountName", name)
 
-    # Build selector labels
+    # Build selector labels (type label is applied by the operator via AgentRuntime)
     selector_labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: name,
     }
 
@@ -1744,9 +1743,8 @@ def _build_service_from_agent_crd(agent: dict) -> dict:
     labels = metadata.get("labels", {}).copy()
     labels[APP_KUBERNETES_IO_MANAGED_BY] = KAGENTI_UI_CREATOR_LABEL
 
-    # Build selector labels
+    # Build selector labels (type label is applied by the operator via AgentRuntime)
     selector_labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: name,
     }
 
@@ -2963,10 +2961,8 @@ def _build_common_labels(
     """
     Build common labels for agent workloads.
 
-    All agent workloads MUST have these labels:
-    - kagenti.io/type: agent
-    - app.kubernetes.io/name: <agent-name>
-    - protocol.kagenti.io/<protocol>: "" (at least one)
+    Common labels for agent workloads. The kagenti.io/type label is applied
+    by the kagenti-operator via AgentRuntime reconciliation, not here.
 
     Args:
         request: The agent creation request.
@@ -2976,10 +2972,7 @@ def _build_common_labels(
         Dictionary of labels.
     """
     labels = {
-        # Required labels
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: request.name,
-        # Recommended labels
         KAGENTI_FRAMEWORK_LABEL: request.framework,
         KAGENTI_WORKLOAD_TYPE_LABEL: workload_type,
         APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
@@ -3018,7 +3011,6 @@ def _build_selector_labels(request: "CreateAgentRequest") -> Dict[str, str]:
         Dictionary of selector labels.
     """
     return {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: request.name,
     }
 

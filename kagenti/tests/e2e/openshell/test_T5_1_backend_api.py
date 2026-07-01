@@ -158,8 +158,8 @@ class TestT5AgentList:
         agents = data if isinstance(data, list) else data.get("agents", [])
         if len(agents) == 0:
             pytest.skip(
-                "Backend agent list returns 0 — openshell agents lack "
-                "kagenti.io/type=agent label. Needs label alignment."
+                "Backend agent list returns 0 — AgentRuntime CRs may be missing "
+                "or kagenti-operator has not yet reconciled kagenti.io/type labels."
             )
 
     def test_T5_agent_list__has_metadata(self, backend_url):

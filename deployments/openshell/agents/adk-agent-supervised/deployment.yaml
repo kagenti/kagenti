@@ -11,7 +11,6 @@ metadata:
   name: adk-agent-supervised
   namespace: team1
   labels:
-    kagenti.io/type: agent
     app.kubernetes.io/name: adk-agent-supervised
     app.kubernetes.io/managed-by: openshell
 spec:
@@ -22,7 +21,6 @@ spec:
   template:
     metadata:
       labels:
-        kagenti.io/type: agent
         kagenti.io/inject: disabled
         app.kubernetes.io/name: adk-agent-supervised
     spec:
@@ -125,3 +123,18 @@ spec:
   ports:
   - port: 8080
     targetPort: 8080
+---
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: adk-agent-supervised
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: adk-agent-supervised
+    app.kubernetes.io/managed-by: openshell
+spec:
+  type: agent
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: adk-agent-supervised
