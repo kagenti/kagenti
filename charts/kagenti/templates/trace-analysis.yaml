@@ -56,6 +56,26 @@ spec:
                   key: OIDC_TOKEN_URL
                   optional: true
             {{- end }}
+            {{- if .Values.traceAnalysis.auth.enabled }}
+            # User-facing auth: Keycloak login required to view traces.
+            # Reuses the mlflow Keycloak client (standardFlowEnabled=true).
+            - name: ENABLE_AUTH
+              value: "true"
+            - name: KEYCLOAK_URL
+              value: {{ .Values.keycloak.url | quote }}
+            - name: KEYCLOAK_PUBLIC_URL
+              value: {{ .Values.keycloak.publicUrl | quote }}
+            - name: KEYCLOAK_REALM
+              value: {{ .Values.keycloak.realm | quote }}
+            - name: OIDC_REDIRECT_URI
+              value: "http://trace-analysis.{{ .Values.ui.domainName }}:8080/auth/callback"
+            - name: SESSION_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.traceAnalysis.mlflowAuth.secretName | quote }}
+                  key: OIDC_CLIENT_SECRET
+                  optional: true
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz

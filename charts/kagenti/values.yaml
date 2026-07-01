@@ -487,6 +487,11 @@ traceAnalysis:
   mlflowAuth:
     enabled: true
     secretName: mlflow-oauth-secret
+  # User-facing authentication. When enabled, the trace-analysis UI requires
+  # a Keycloak login before traces can be viewed. Uses the same mlflow Keycloak
+  # client (standardFlowEnabled=true, redirectUris=["*"]) — no new client needed.
+  auth:
+    enabled: true   # set true when Keycloak is available in the cluster
   resources:
     requests:
       cpu: 50m

@@ -189,3 +189,13 @@ The component reads traces from MLflow, so MLflow must be reachable at
 | API | `GET /api/v1/config/features` | `"traceAnalysis": true` present in JSON |
 | API | `GET /api/v1/config/dashboards` | `"traceAnalysis": "<url>"` |
 | UI | Observability page | Trace Analysis card visible |
+
+## Reapply
+
+```bash
+helm template kagenti charts/kagenti \
+  -f deployments/envs/dev_values.yaml \
+  --set openshift=false \
+  -s templates/trace-analysis.yaml \
+  | kubectl apply -f -
+```
