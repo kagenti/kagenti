@@ -848,6 +848,65 @@ async def list_agents(
                 if e.status not in (404, 403):
                     logger.warning(f"Failed to list legacy Agent CRDs: {e.reason}")
 
+        # Surface in-progress / failed Shipwright source builds that have no
+        # workload yet. A source-built agent has no Deployment/StatefulSet/etc.
+        # until its build Succeeds and is finalized, so without this it would be
+        # invisible here while building or after a failure. Guarded so a
+        # build-listing failure never breaks the core agent list.
+        try:
+            builds = collect_kagenti_shipwright_builds(
+                kube, [namespace], RESOURCE_TYPE_AGENT, logger
+            )
+            for build in builds:
+                # Workload already exists (build Succeeded + finalized, or a
+                # name collision) -> already listed above; skip to avoid dupes.
+                if build.name in agent_names:
+                    continue
+
+                try:
+                    buildruns = kube.list_custom_resources(
+                        group=SHIPWRIGHT_CRD_GROUP,
+                        version=SHIPWRIGHT_CRD_VERSION,
+                        namespace=build.namespace,
+                        plural=SHIPWRIGHT_BUILDRUNS_PLURAL,
+                        label_selector=f"kagenti.io/build-name={build.name}",
+                    )
+                except ApiException:
+                    # Constant message only (CodeQL py/log-injection): never
+                    # interpolate namespace / build name / API reason.
+                    logger.warning("Failed to list BuildRuns for a Shipwright build")
+                    buildruns = []
+
+                # No BuildRun yet -> build just started; treat as "Building".
+                phase = "Pending"
+                latest = get_latest_buildrun(buildruns) if buildruns else None
+                if latest:
+                    phase = extract_buildrun_info(latest)["phase"]
+
+                # Succeeded builds either already have a workload (listed above)
+                # or are about to be finalized into one; don't surface them here.
+                if phase == "Succeeded":
+                    continue
+                status = "Build Failed" if phase == "Failed" else "Building"
+
+                agents.append(
+                    AgentSummary(
+                        name=build.name,
+                        namespace=build.namespace,
+                        description="Building from source",
+                        status=status,
+                        labels=_extract_labels({KAGENTI_TYPE_LABEL: build.resourceType}),
+                        # Note that we may be building a non-deployment.  TODO record and retrieve build type.
+                        workloadType=WORKLOAD_TYPE_DEPLOYMENT,
+                        # Collector already formats this as an ISO string, so do
+                        # not pass it through _format_timestamp (datetime-only).
+                        createdAt=build.creationTimestamp,
+                    )
+                )
+                agent_names.add(build.name)
+        except ApiException:
+            logger.warning("Failed to list Shipwright builds for agents", exc_info=True)
+
         return AgentListResponse(items=agents)
 
     except ApiException as e:
@@ -1624,9 +1683,8 @@ def _build_deployment_from_agent_crd(agent: dict) -> dict:
     # derivation uses the workload name rather than the ReplicaSet hash.
     pod_spec.setdefault("serviceAccountName", name)
 
-    # Build selector labels
+    # Build selector labels (type label is applied by the operator via AgentRuntime)
     selector_labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: name,
     }
 
@@ -1679,9 +1737,8 @@ def _build_service_from_agent_crd(agent: dict) -> dict:
     labels = metadata.get("labels", {}).copy()
     labels[APP_KUBERNETES_IO_MANAGED_BY] = KAGENTI_UI_CREATOR_LABEL
 
-    # Build selector labels
+    # Build selector labels (type label is applied by the operator via AgentRuntime)
     selector_labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: name,
     }
 
@@ -2891,10 +2948,8 @@ def _build_common_labels(
     """
     Build common labels for agent workloads.
 
-    All agent workloads MUST have these labels:
-    - kagenti.io/type: agent
-    - app.kubernetes.io/name: <agent-name>
-    - protocol.kagenti.io/<protocol>: "" (at least one)
+    Common labels for agent workloads. The kagenti.io/type label is applied
+    by the kagenti-operator via AgentRuntime reconciliation, not here.
 
     Args:
         request: The agent creation request.
@@ -2904,10 +2959,7 @@ def _build_common_labels(
         Dictionary of labels.
     """
     labels = {
-        # Required labels
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: request.name,
-        # Recommended labels
         KAGENTI_FRAMEWORK_LABEL: request.framework,
         KAGENTI_WORKLOAD_TYPE_LABEL: workload_type,
         APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
@@ -2946,7 +2998,6 @@ def _build_selector_labels(request: "CreateAgentRequest") -> Dict[str, str]:
         Dictionary of selector labels.
     """
     return {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: request.name,
     }
 

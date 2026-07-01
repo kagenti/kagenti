@@ -2,13 +2,16 @@
 """
 UI Agent Discovery E2E Tests
 
-Tests that agents deployed via standard Kubernetes Deployments with the
-kagenti.io/type=agent label are discoverable through the UI backend API.
+Tests that agents enrolled via AgentRuntime CRs are discoverable through the
+UI backend API.  The kagenti-operator reconciles each AgentRuntime and applies
+the ``kagenti.io/type`` label to the target Deployment; the backend discovers
+agents by querying that operator-managed label.
 
 This validates the agent discovery flow:
-1. Deployment with kagenti.io/type=agent label exists
-2. Backend API can query the Deployment
-3. Agent appears in the list with correct metadata
+1. AgentRuntime CR exists and references a Deployment
+2. Operator has reconciled the kagenti.io/type label onto the Deployment
+3. Backend API can query the labelled Deployment
+4. Agent appears in the list with correct metadata
 
 Usage:
     pytest tests/e2e/common/test_ui_agent_discovery.py -v
@@ -22,6 +25,10 @@ Environment Variables:
 import os
 import pytest
 import httpx
+
+AGENTRUNTIME_GROUP = "agent.kagenti.dev"
+AGENTRUNTIME_VERSION = "v1alpha1"
+AGENTRUNTIME_PLURAL = "agentruntimes"
 
 
 class TestUIAgentDiscovery:
@@ -80,17 +87,35 @@ class TestUIAgentDiscovery:
 
     @pytest.mark.critical
     def test_weather_service_agent_discoverable(
-        self, backend_url, http_client, k8s_apps_client
+        self, backend_url, http_client, k8s_apps_client, k8s_custom_client
     ):
         """
         Verify weather-service agent is discoverable through the UI backend API.
 
         Prerequisites:
-        1. weather-service Deployment exists in team1 namespace
-        2. Deployment has label kagenti.io/type=agent
+        1. weather-service AgentRuntime CR exists in team1 namespace
+        2. kagenti-operator has reconciled kagenti.io/type=agent onto the Deployment
         3. Backend is accessible (port-forwarded or via route)
         """
-        # First, verify the Deployment exists and has correct labels
+        # Verify the AgentRuntime CR exists
+        try:
+            ar = k8s_custom_client.get_namespaced_custom_object(
+                group=AGENTRUNTIME_GROUP,
+                version=AGENTRUNTIME_VERSION,
+                namespace="team1",
+                plural=AGENTRUNTIME_PLURAL,
+                name="weather-service",
+            )
+        except Exception as e:
+            pytest.fail(
+                f"weather-service AgentRuntime CR not found in team1: {e}. "
+                f"Create an AgentRuntime CR to enroll this workload."
+            )
+        assert ar["spec"]["type"] == "agent", (
+            f"weather-service AgentRuntime has type={ar['spec']['type']}, expected agent"
+        )
+
+        # Verify the operator has reconciled the label onto the Deployment
         deployment = k8s_apps_client.read_namespaced_deployment(
             name="weather-service", namespace="team1"
         )
@@ -98,6 +123,7 @@ class TestUIAgentDiscovery:
 
         assert labels.get("kagenti.io/type") == "agent", (
             f"weather-service Deployment missing kagenti.io/type=agent label. "
+            f"The kagenti-operator should apply this via AgentRuntime reconciliation. "
             f"Found labels: {labels}"
         )
 
@@ -210,10 +236,14 @@ class TestUIAgentDiscovery:
 
     def test_backend_rbac_can_list_deployments(self, k8s_apps_client):
         """
-        Verify that listing Deployments with kagenti.io/type=agent label works.
+        Verify that listing Deployments with the operator-managed
+        kagenti.io/type=agent label works.
 
         This simulates what the backend does to discover agents.
-        If this fails, check the backend ServiceAccount RBAC permissions.
+        The label is applied by the kagenti-operator via AgentRuntime
+        reconciliation, not manually.
+        If this fails, check that AgentRuntime CRs exist and the operator
+        has reconciled them, or check backend ServiceAccount RBAC permissions.
         """
         deployments = k8s_apps_client.list_namespaced_deployment(
             namespace="team1", label_selector="kagenti.io/type=agent"
@@ -221,7 +251,7 @@ class TestUIAgentDiscovery:
 
         assert len(deployments.items) > 0, (
             "No Deployments found with kagenti.io/type=agent label in team1. "
-            "Check that weather-service is deployed correctly."
+            "Ensure AgentRuntime CRs exist and the kagenti-operator has reconciled them."
         )
 
         deployment_names = [d.metadata.name for d in deployments.items]
@@ -275,15 +305,35 @@ class TestToolDiscovery:
         # Kind cluster with port-forward (port 8002 to avoid conflict with weather-service)
         return "http://localhost:8002"
 
-    def test_weather_tool_discoverable(self, backend_url, k8s_apps_client):
+    def test_weather_tool_discoverable(
+        self, backend_url, k8s_apps_client, k8s_custom_client
+    ):
         """
         Verify weather-tool is discoverable through the UI backend API.
 
         Prerequisites:
-        1. weather-tool Deployment exists in team1 namespace
-        2. Deployment has label kagenti.io/type=tool
+        1. weather-tool AgentRuntime CR exists in team1 namespace
+        2. kagenti-operator has reconciled kagenti.io/type=tool onto the Deployment
         """
-        # First verify the Deployment exists
+        # Verify the AgentRuntime CR exists
+        try:
+            ar = k8s_custom_client.get_namespaced_custom_object(
+                group=AGENTRUNTIME_GROUP,
+                version=AGENTRUNTIME_VERSION,
+                namespace="team1",
+                plural=AGENTRUNTIME_PLURAL,
+                name="weather-tool",
+            )
+        except Exception as e:
+            pytest.fail(
+                f"weather-tool AgentRuntime CR not found in team1: {e}. "
+                f"Create an AgentRuntime CR to enroll this workload."
+            )
+        assert ar["spec"]["type"] == "tool", (
+            f"weather-tool AgentRuntime has type={ar['spec']['type']}, expected tool"
+        )
+
+        # Verify the operator has reconciled the label onto the Deployment
         deployment = k8s_apps_client.read_namespaced_deployment(
             name="weather-tool", namespace="team1"
         )
@@ -291,6 +341,7 @@ class TestToolDiscovery:
 
         assert labels.get("kagenti.io/type") == "tool", (
             f"weather-tool Deployment missing kagenti.io/type=tool label. "
+            f"The kagenti-operator should apply this via AgentRuntime reconciliation. "
             f"Found labels: {labels}"
         )
 
