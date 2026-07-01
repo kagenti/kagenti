@@ -22,7 +22,6 @@ metadata:
   name: tx-e2e-tool
   labels:
     app: tx-e2e-tool
-    kagenti.io/type: tool
 spec:
   replicas: 1
   selector:
@@ -32,7 +31,6 @@ spec:
     metadata:
       labels:
         app: tx-e2e-tool
-        kagenti.io/type: tool
     spec:
       serviceAccountName: tx-e2e-tool
       containers:
@@ -114,7 +112,6 @@ metadata:
   name: tx-e2e-agent
   labels:
     app: tx-e2e-agent
-    kagenti.io/type: agent
 spec:
   replicas: 1
   selector:
@@ -124,7 +121,6 @@ spec:
     metadata:
       labels:
         app: tx-e2e-agent
-        kagenti.io/type: agent
     spec:
       serviceAccountName: tx-e2e-agent
       containers:

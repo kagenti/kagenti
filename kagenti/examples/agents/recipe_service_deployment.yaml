@@ -6,7 +6,6 @@ metadata:
   name: recipe-agent
   namespace: team1
   labels:
-    kagenti.io/type: agent
     protocol.kagenti.io/a2a: ""
     kagenti.io/framework: OpenAI
     kagenti.io/workload-type: deployment
@@ -20,12 +19,10 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: agent
       app.kubernetes.io/name: recipe-agent
   template:
     metadata:
       labels:
-        kagenti.io/type: agent
         protocol.kagenti.io/a2a: ""
         kagenti.io/framework: OpenAI
         app.kubernetes.io/name: recipe-agent
@@ -66,3 +63,18 @@ spec:
       volumes:
       - name: cache
         emptyDir: {}
+---
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: recipe-agent
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: recipe-agent
+    app.kubernetes.io/managed-by: kagenti-e2e
+spec:
+  type: agent
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: recipe-agent
