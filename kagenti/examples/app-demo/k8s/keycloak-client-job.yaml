@@ -55,7 +55,8 @@ spec:
       restartPolicy: OnFailure
       initContainers:
         - name: wait-for-keycloak
-          image: curlimages/curl:latest
+          image: curlimages/curl:8.13.0
+          # Allow Job to run if container registry is not reachable
           imagePullPolicy: IfNotPresent
           command:
             - sh

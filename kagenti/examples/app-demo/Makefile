@@ -63,7 +63,8 @@ kind-load: build
 	kind load docker-image $(IMAGE_PREFIX)app-demo-backend:latest --name $(CLUSTER_NAME)
 	kind load docker-image $(IMAGE_PREFIX)app-demo-frontend:latest --name $(CLUSTER_NAME)
 	kind load docker-image $(IMAGE_PREFIX)app-demo-keycloak:latest --name $(CLUSTER_NAME)
-	kind load docker-image curlimages/curl:latest --name $(CLUSTER_NAME)
+	# Pre-load the image (which helps with image pull rate limiting in some environments)
+	kind load docker-image curlimages/curl:8.13.0 --name $(CLUSTER_NAME)
 
 keycloak-setup: kind-load
 	kubectl delete job app-demo-keycloak-client -n $(NAMESPACE) --ignore-not-found
