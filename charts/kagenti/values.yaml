@@ -382,6 +382,23 @@ kagenti-operator-chart:
       proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.10
 
 # ------------------------------------------------------------------
+#  SPIFFE Configuration
+# ------------------------------------------------------------------
+# NOTE: Operator SPIFFE authentication is now configured under
+# kagenti-operator-chart.spiffe.operatorAuth (see line 265 below).
+# This consolidation eliminates the duplicate kagentiOperator.spiffeAuth
+# section that previously existed here.
+# ------------------------------------------------------------------
+spiffe:
+  # SPIFFE Identity Provider alias in Keycloak
+  idpAlias: "spire-spiffe"
+  # SPIRE OIDC Discovery Provider URL
+  oidcDiscoveryURL: "http://spire-spiffe-oidc-discovery-provider.zero-trust-workload-identity-manager.svc:8080"
+
+# Trust domain (used for SPIFFE IDs)
+spireTrustDomain: localtest.me
+
+# ------------------------------------------------------------------
 #  MCP Gateway Configuration
 # ------------------------------------------------------------------
 mcpGateway:
