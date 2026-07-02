@@ -11,15 +11,22 @@ set -euo pipefail
 #
 # Prerequisites:
 # - Kind cluster running
-# - Custom images loaded: kind load image-archive <operator.tar> <bootstrap.tar> --name kagenti
+# - Custom images loaded into Kind (see docs for commands)
 # - kubectl configured for the Kind cluster
 # - Helm 3 installed
+# - kagenti-operator repo checked out on feat/spiffe-dcr-client-registration (PR #349)
+#   Default location: ../kagenti-operator  Override: KAGENTI_OPERATOR_REPO=<path>
 #
 # Expected time: 15-20 minutes (helm --wait installs can be slow)
 # Output: All logs to stdout with colored status indicators
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
+
+# Path to the kagenti-operator repo (PR #349 branch: feat/spiffe-dcr-client-registration).
+# The chart in that repo adds the spiffe-helper sidecar which is required for SPIFFE auth.
+# The published OCI chart does not yet include these changes.
+KAGENTI_OPERATOR_REPO="${KAGENTI_OPERATOR_REPO:-$(cd "$REPO_ROOT/../kagenti-operator" 2>/dev/null && pwd || true)}"
 
 # Colors
 RED='\033[0;31m'
@@ -49,6 +56,14 @@ if ! kubectl cluster-info &>/dev/null; then
   log_error "No Kubernetes cluster access"
   exit 1
 fi
+
+OPERATOR_CHART_SRC="$KAGENTI_OPERATOR_REPO/charts/kagenti-operator"
+if [[ -z "$KAGENTI_OPERATOR_REPO" || ! -d "$OPERATOR_CHART_SRC" ]]; then
+  log_error "kagenti-operator chart not found at '${OPERATOR_CHART_SRC}'"
+  log_error "Clone kagenti-operator, check out feat/spiffe-dcr-client-registration, and set KAGENTI_OPERATOR_REPO=<path>"
+  exit 1
+fi
+log_info "Using kagenti-operator chart from: $OPERATOR_CHART_SRC"
 
 # Note: Image verification skipped - the setup will proceed and pods will use imagePullPolicy: Never
 # which will fail if images aren't loaded. Verify manually with:
@@ -226,15 +241,26 @@ log_success "SPIFFE IdP setup completed"
 # Install kagenti with operator SPIFFE auth enabled
 log_info "Installing kagenti with operator SPIFFE auth..."
 
-# Run helm dependency update to pull other chart dependencies, then remove the
-# OCI operator tarball and Chart.lock so helm uses the committed
-# charts/kagenti/charts/kagenti-operator-chart/ directory (which contains the
-# spiffe-helper sidecar template required for SPIFFE auth). The published OCI
-# chart does not include these changes.
+# Package the operator helm chart from the kagenti-operator source (PR #349) and
+# install it into charts/kagenti/charts/ as a directory. Helm uses a directory-based
+# subchart over a tarball of the same name, so we also remove the downloaded OCI
+# tarball and Chart.lock after running dependency update.
+#
+# This is necessary because the published OCI chart does not yet include the
+# spiffe-helper sidecar template from kagenti-operator PR #349. Once that PR is
+# merged and a new chart version is published, this block can be replaced with a
+# simple Chart.yaml version bump.
+CHART_PKG_DIR="$(mktemp -d)"
+helm package "$OPERATOR_CHART_SRC" -d "$CHART_PKG_DIR" >/dev/null
+mkdir -p charts/kagenti/charts/kagenti-operator-chart
+tar -xzf "$CHART_PKG_DIR"/kagenti-operator-chart-*.tgz -C "$CHART_PKG_DIR"
+cp -r "$CHART_PKG_DIR/kagenti-operator-chart/." charts/kagenti/charts/kagenti-operator-chart/
+rm -rf "$CHART_PKG_DIR"
+
 helm dependency update charts/kagenti
 rm -f charts/kagenti/charts/kagenti-operator-chart-*.tgz
 rm -f charts/kagenti/Chart.lock
-log_info "Using committed operator subchart with spiffe-helper support"
+log_info "Using operator subchart from kagenti-operator source (PR #349)"
 
 cat > /tmp/kagenti-spiffe-test-values.yaml <<EOF
 # Use local operator image
@@ -283,10 +309,11 @@ kubectl get pod -n kagenti-system -l control-plane=controller-manager
 kubectl wait --for=condition=ready pod -l control-plane=controller-manager -n kagenti-system --timeout=300s
 log_success "Operator is ready"
 
-# Restore Chart.lock — the setup script deleted it as part of the OCI override
-# workaround, but it's a tracked file and should not be left deleted in the
-# working tree after the script finishes.
+# Clean up temporary files created during install:
+# - Chart.lock was deleted to force use of the local chart directory; restore it
+# - The packaged chart directory was created temporarily for this install; remove it
 git checkout -- charts/kagenti/Chart.lock 2>/dev/null || true
+rm -rf charts/kagenti/charts/kagenti-operator-chart
 
 echo ""
 log_success "✓ Setup complete!"

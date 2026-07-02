@@ -123,13 +123,15 @@ kind delete cluster --name kagenti
 
 ### Step 2: Build Operator Image (PR #349)
 
-Navigate to the **inner** `kagenti-operator` directory:
+The PR #349 branch is `feat/spiffe-dcr-client-registration`. Navigate to the
+**inner** `kagenti-operator` directory to find the Dockerfile:
 
 ```bash
 cd /path/to/kagenti-operator/kagenti-operator
 
-git checkout pr-349
-git pull origin pr-349
+git fetch origin
+git checkout feat/spiffe-dcr-client-registration
+git pull origin feat/spiffe-dcr-client-registration
 
 docker build -t localhost/kagenti-operator:spiffe-test .
 
@@ -187,8 +189,15 @@ docker exec -i kagenti-control-plane crictl images 2>/dev/null | grep -E "kagent
 
 ### Step 6: Deploy Kagenti with Operator SPIFFE Auth
 
+The setup script packages the operator helm chart from your local kagenti-operator
+checkout (it needs the chart from PR #349 which adds the spiffe-helper sidecar —
+the published OCI chart doesn't have it yet).
+
 ```bash
 cd /path/to/kagenti
+
+# Point to your kagenti-operator checkout (default: ../kagenti-operator)
+export KAGENTI_OPERATOR_REPO=/path/to/kagenti-operator
 
 ./docs/testing/setup-operator-spiffe-test.sh
 ```
@@ -202,7 +211,7 @@ The script installs (in order): cert-manager → Istio → SPIRE → kagenti-dep
 ✓ SPIRE installed
 ✓ kagenti-deps installed
 ✓ SPIFFE IdP setup completed
-✓ Using committed operator subchart with spiffe-helper support
+✓ Using operator subchart from kagenti-operator source (PR #349)
 ✓ kagenti installed
 ✓ Operator is ready
 ✓ Setup complete!

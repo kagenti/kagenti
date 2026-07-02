@@ -1,7 +1,0 @@
-apiVersion: v2
-appVersion: 0.3.0-alpha.4
-description: A Helm chart to distribute the project kagenti-operator
-icon: https://example.com/icon.png
-name: kagenti-operator-chart
-type: application
-version: 0.3.0-alpha.4
