@@ -1,6 +1,4 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# CLAUDE.md - Kagenti Repository
 
 ## Project Overview
 
@@ -36,104 +34,15 @@ kagenti/
 └── docs/                   # Documentation
 ```
 
-## Architecture
-
-The platform is a three-layer stack: a **React UI** talks to a **FastAPI backend**, which
-in turn drives the Kubernetes API to manage agents, tools, and platform resources. There is
-no direct UI→Kubernetes path — the backend is the only K8s client.
-
-### Backend (`kagenti/backend/`)
-
-FastAPI app. Entry point `app/main.py`; all routers are mounted under `/api/v1`.
-
-- **`app/routers/`** — HTTP/WS endpoint handlers (one file per resource): `agents`, `tools`,
-  `chat` (A2A protocol), `auth`, `config` (dashboards + feature flags), `namespaces`,
-  `shipwright` (builds), `acp` (WebSocket gateway). Feature-flagged routers are **conditionally
-  imported** in `main.py` behind a try/except (see Feature Flags below).
-- **`app/services/`** — Business logic. `kubernetes.py` is the central K8s client wrapper;
-  `shipwright*.py` handle container builds; `reconciliation.py` runs a background loop (started
-  in the lifespan handler) to clean up orphaned builds; `session_db.py` is the asyncpg/Postgres
-  pool; `acp_bridge.py` translates ACP↔A2A; `sidecar_manager.py` + `openshell/` handle sandbox.
-- **`app/core/`** — `config.py` (Pydantic `Settings`, all `kagenti_feature_flag_*` flags),
-  `auth.py` (JWT/Keycloak validation, roles), `constants.py` (K8s CRD groups, labels).
-- **`app/models/`** — Pydantic request/response models.
-- Middleware: `CORSMiddleware` + a custom `NoCacheMiddleware` that disables caching of `/api/`
-  responses. Health: `/health` (liveness), `/ready` (readiness).
-
-### Frontend (`kagenti/ui-v2/`)
-
-React 18 + TypeScript + Vite, using PatternFly components, React Router v7, and
-TanStack React Query for server state.
-
-- **`src/services/api.ts`** — the single API client. `apiFetch<T>()` wraps fetch, injects the
-  Bearer token, and auto-refreshes on 401. All backend access goes through the typed service
-  objects here (`agentService`, `toolService`, `sandboxService`, `configService`, etc.).
-- **`src/contexts/AuthContext.tsx`** — fetches `/api/v1/auth/config`; if auth is enabled,
-  initializes Keycloak (realm/client come from the backend) and registers the token getter
-  with `api.ts`. `ProtectedRoute` guards routes.
-- **`src/hooks/useFeatureFlags.ts`** — reads `/api/v1/config/features`. `App.tsx` gates both
-  routes and nav items on these flags, so the frontend feature set is **driven by the backend**.
-- Dev server proxies `/api` → `localhost:8000` (`vite.config.ts`). In production, `nginx.conf`
-  proxies `/api/` → `kagenti-backend:8000` and serves the SPA (`try_files … /index.html`), with
-  a special unbuffered route for SSE streaming under `/api/v1/sandbox/`.
-
-### Deployment model (Helm)
-
-Two charts layer on top of each other:
-- **`charts/kagenti-deps/`** — infrastructure: Keycloak, Istio (ambient), SPIRE, cert-manager,
-  Tekton/Shipwright, Kiali, OpenTelemetry, Phoenix, MLflow.
-- **`charts/kagenti/`** — the platform itself (UI, backend, AuthBridge, MCP Gateway,
-  integration webhooks). Depends on the `kagenti-operator` chart (pulled as an OCI artifact),
-  which reconciles agent/tool/sandbox workloads.
-
-Environment-specific values live in `deployments/envs/` (`dev_values*.yaml`, `ocp_*values.yaml`).
-
-## Backend Development (`kagenti/backend/`)
-
-```bash
-cd kagenti/backend
-uv venv && source .venv/bin/activate
-uv pip install -e ".[dev]"          # runtime + dev (pytest, ruff, pylint)
-
-uvicorn app.main:app --reload --port 8000   # dev server; docs at /api/docs
-
-pytest                                       # all backend unit tests
-pytest tests/test_auth.py -v                 # single file
-pytest tests/test_auth.py::test_name -v      # single test
-```
-
-## Frontend Development (`kagenti/ui-v2/`)
-
-```bash
-cd kagenti/ui-v2
-npm install                  # use --legacy-peer-deps if it fails
-
-npm run dev                  # dev server on :3000, proxies /api to :8000
-npm run build                # tsc type-check + Vite bundle to dist/
-npm run lint                 # ESLint, zero-warning policy (CI blocker)
-npm run typecheck            # tsc --noEmit
-npm run test:unit            # Vitest unit tests
-npm run test:e2e             # Playwright E2E (KAGENTI_UI_URL overrides base URL)
-npm run test:e2e -- agent-chat.spec.ts   # single Playwright spec
-```
-
-Rebuild + load both images into Kind from the repo root: `make build-load-ui`
-(`make build-load-ui-frontend` / `-backend` for one side only).
-
 ## Key Commands
 
 | Task | Command |
 |------|---------|
 | Deploy to Kind | `./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy` |
 | Deploy to OpenShift | `scripts/ocp/setup-kagenti.sh` |
-| Run E2E tests | `uv sync --extra test && uv run pytest kagenti/tests/e2e/ -v` |
-| Run a single E2E test | `uv run pytest kagenti/tests/e2e/common/<file>.py::<Class>::<test> -v` |
-| Run linter (backend pylint) | `make lint` |
+| Run E2E tests | `uv run pytest kagenti/tests/e2e/ -v` |
+| Run linter | `make lint` |
 | Pre-commit | `pre-commit run --all-files` |
-
-E2E tests (`kagenti/tests/e2e/`) are pytest-based and run against a live cluster. They use
-markers for environment filtering — e.g. `-m "not observability"`, `@pytest.mark.kind_only`,
-`@pytest.mark.openshift_only`, `@pytest.mark.requires_features(...)`.
 
 ## Claude Code Skills
 
@@ -287,7 +196,6 @@ and lets us decouple merge velocity from release readiness.
 | `kagenti_feature_flag_integrations` | Third-party integration endpoints |
 | `kagenti_feature_flag_triggers` | Event-driven trigger system |
 | `kagenti_feature_flag_admin` | Platform Status card and /platform-status endpoint |
-| `kagenti_feature_flag_trace_analysis` | Trace Analysis Observability card + deploys the trace-analysis component (`charts/kagenti/templates/trace-analysis.yaml`) |
 
 ### TODO
 
