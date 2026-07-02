@@ -133,7 +133,8 @@ git pull origin pr-349
 
 docker build -t localhost/kagenti-operator:spiffe-test .
 
-docker images | grep "localhost/kagenti-operator.*spiffe-test" && echo "✓ Operator image built"
+echo "Exit: $?"
+# Expected: Exit: 0
 ```
 
 ---
