@@ -1,0 +1,56 @@
+# Example Kagenti OPA AuthorizationPolicy (namespace-scoped, team1)
+#
+# A single policy CR that enforces two rules for every AuthBridge-injected
+# workload in the `team1` namespace:
+#
+#   1. INBOUND  — deny user "alice" from reaching any agent in team1.
+#   2. OUTBOUND — deny agents in team1 from reaching api.github.com.
+#
+# It carries two rego files, one per pipeline tier. The bundle-service composes
+# them with the shipped global policy: for inbound/request and outbound/request,
+# the global combiner allows only when `ns_ok AND client_ok`, and `ns_ok` comes
+# from THIS package's `allow`. So making `allow` false blocks the request; any
+# tier we don't define is treated as "allow" and left to the other tiers.
+#
+# Identity note: the OPA plugin exposes only input.identity.{subject,client_id,
+# scopes}. `subject` is the JWT `sub` claim. In this cluster the kagenti-realm
+# tokens carry the username in `sub` (via a username->sub protocol mapper on the
+# `kagenti` client — see scripts/test-opa-weather.sh `setup`). The OUTBOUND leg
+# has NO identity (it is a fresh request; jwt-validation runs inbound only), so
+# the outbound rule decides on the destination `input.host` instead.
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: team1-opa-policy
+  namespace: team1
+spec:
+  scope: namespace
+  policies:
+    # ── Rule 1: block alice from reaching agents (inbound) ──────────────────
+    - path: "inbound/request.rego"
+      content: |
+        package authbridge.ns.inbound.request
+        import rego.v1
+
+        # Allow everyone except alice. `allow` false -> ns_ok false -> deny (403).
+        default allow := false
+
+        allow if input.identity.subject != "alice"
+
+    # ── Rule 2: block agents from reaching api.github.com (outbound) ──
+    - path: "outbound/request.rego"
+      content: |
+        package authbridge.ns.outbound.request
+        import rego.v1
+
+        # Outbound has no user identity — gate on the destination host.
+        # Deny api.github.com; allow every other host the agent needs
+        # (the weather tool, the LLM at api.openai.com, the otel collector).
+        #
+        # input.host may carry a port, so match on the hostname prefix to cover
+        # both "api.github.com" and "api.github.com:80".
+        default allow := false
+
+        allow if not is_blocked_host
+
+        is_blocked_host if startswith(input.host, "api.github.com")
