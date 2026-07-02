@@ -146,11 +146,14 @@ cd /path/to/kagenti
 git checkout feat/operator-spiffe-auth-clean
 git pull origin feat/operator-spiffe-auth-clean
 
-# Build context is the bootstrap subdirectory
+# Build context must be kagenti/ — the Dockerfile uses COPY auth/operator-spiffe-bootstrap/...
+# relative to that directory
 docker build -t ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest \
-  kagenti/auth/operator-spiffe-bootstrap/
+  -f kagenti/auth/operator-spiffe-bootstrap/Dockerfile \
+  kagenti/
 
-docker images | grep "operator-spiffe-bootstrap.*latest" && echo "✓ Bootstrap image built"
+echo "Exit: $?"
+# Expected: Exit: 0
 ```
 
 ---
