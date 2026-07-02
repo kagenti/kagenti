@@ -283,6 +283,11 @@ kubectl get pod -n kagenti-system -l control-plane=controller-manager
 kubectl wait --for=condition=ready pod -l control-plane=controller-manager -n kagenti-system --timeout=300s
 log_success "Operator is ready"
 
+# Restore Chart.lock — the setup script deleted it as part of the OCI override
+# workaround, but it's a tracked file and should not be left deleted in the
+# working tree after the script finishes.
+git checkout -- charts/kagenti/Chart.lock 2>/dev/null || true
+
 echo ""
 log_success "✓ Setup complete!"
 echo ""
