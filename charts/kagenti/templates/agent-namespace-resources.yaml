@@ -2,7 +2,6 @@
 # The namespaces themselves are created as pre-install hooks in agent-namespaces.yaml.
 # This separation ensures hooks complete quickly (only 2 Namespace objects in the hook).
 # All resources here are created during the main install phase, not as hooks.
-# See https://github.com/kagenti/kagenti/issues/XXXX for context.
 {{- include "kagenti.authBridge.validateSpiffeIdentity" . -}}
 {{- if .Values.agentNamespaces }}
 {{- $root := . }}
