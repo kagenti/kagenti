@@ -75,7 +75,10 @@ spec:
       restartPolicy: OnFailure
       containers:
       - name: bootstrap
-        image: {{ required "kagenti-operator-chart.spiffe.operatorAuth.bootstrapImage must be set (e.g. ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:v0.7.0-alpha.3)" (index .Values "kagenti-operator-chart" "spiffe" "operatorAuth" "bootstrapImage") }}
+        # NOTE: operator-spiffe-bootstrap has not been published yet; :latest is a placeholder
+        # until the image is built and pushed as part of the release pipeline.
+        # Override via kagenti-operator-chart.spiffe.operatorAuth.bootstrapImage.
+        image: {{ (index .Values "kagenti-operator-chart" "spiffe" "operatorAuth" "bootstrapImage") | default "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest" }}
         imagePullPolicy: IfNotPresent
         env:
         - name: KEYCLOAK_URL
