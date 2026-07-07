@@ -30,7 +30,7 @@ import os
 import sys
 import logging
 import base64
-from typing import Optional, Dict, Any
+from typing import Optional
 import requests
 from kubernetes import client, config as kube_config
 from kubernetes.client.rest import ApiException

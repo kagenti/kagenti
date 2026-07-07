@@ -35,18 +35,18 @@ This bootstrap job is **ONLY** responsible for configuring the **operator client
 
 ## Usage
 
-Automatically deployed when `kagentiOperator.spiffeAuth.enabled=true` in Helm values.
+Automatically deployed when `kagenti-operator-chart.spiffe.operatorAuth.enabled=true` in Helm values.
 
 **Via shell scripts** (sets Helm value):
 ```bash
 # Environment variable → Helm value mapping:
-# ENABLE_OPERATOR_SPIFFE_AUTH=true → kagentiOperator.spiffeAuth.enabled=true
+# ENABLE_OPERATOR_SPIFFE_AUTH=true → kagenti-operator-chart.spiffe.operatorAuth.enabled=true
 ENABLE_OPERATOR_SPIFFE_AUTH=true ./.github/scripts/local-setup/kind-full-test.sh
 ```
 
 **Directly with Helm**:
 ```bash
-helm install kagenti charts/kagenti --set kagentiOperator.spiffeAuth.enabled=true
+helm install kagenti charts/kagenti --set kagenti-operator-chart.spiffe.operatorAuth.enabled=true
 ```
 
 ## Configuration

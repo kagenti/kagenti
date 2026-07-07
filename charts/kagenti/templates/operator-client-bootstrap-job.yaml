@@ -19,7 +19,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: kagenti-operator-client-bootstrap
-  namespace: keycloak
+  namespace: {{ .Values.keycloak.namespace | default "keycloak" }}
   annotations:
     helm.sh/hook: post-install,post-upgrade
     helm.sh/hook-weight: "100"
@@ -35,7 +35,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: kagenti-operator-client-bootstrap
-  namespace: keycloak
+  namespace: {{ .Values.keycloak.namespace | default "keycloak" }}
   annotations:
     helm.sh/hook: post-install,post-upgrade
     helm.sh/hook-weight: "100"
@@ -79,13 +79,13 @@ spec:
         imagePullPolicy: IfNotPresent
         env:
         - name: KEYCLOAK_URL
-          value: "http://keycloak-service.keycloak.svc:8080"
+          value: "http://keycloak-service.{{ .Values.keycloak.namespace | default "keycloak" }}.svc:8080"
         - name: KEYCLOAK_REALM
           value: "{{ .Values.keycloak.realm | default "kagenti" }}"
         - name: KEYCLOAK_ADMIN_SECRET_NAME
           value: "keycloak-initial-admin"
         - name: KEYCLOAK_ADMIN_SECRET_NAMESPACE
-          value: "keycloak"
+          value: "{{ .Values.keycloak.namespace | default "keycloak" }}"
         - name: KEYCLOAK_ADMIN_USERNAME_KEY
           value: "username"
         - name: KEYCLOAK_ADMIN_PASSWORD_KEY
