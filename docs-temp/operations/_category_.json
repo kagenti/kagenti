@@ -1,0 +1,9 @@
+{
+  "label": "Operations",
+  "position": 7,
+  "link": {
+    "type": "generated-index",
+    "title": "Operations",
+    "description": "Day-two operations — managing the agent lifecycle, state, scaling, and resiliency once you are running."
+  }
+}

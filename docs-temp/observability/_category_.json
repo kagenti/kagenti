@@ -1,0 +1,9 @@
+{
+  "label": "Observability",
+  "position": 8,
+  "link": {
+    "type": "generated-index",
+    "title": "Observability",
+    "description": "See what your agents are doing — traces, metrics, token cost, and network topology."
+  }
+}
