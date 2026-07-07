@@ -498,9 +498,7 @@ def _get_tool_build_status(kube: KubernetesService, name: str, namespace: str) -
     return "Build Failed" if phase == "Failed" else "Building"
 
 
-def _get_tool_build_detail(
-    kube: KubernetesService, name: str, namespace: str
-) -> Optional[dict]:
+def _get_tool_build_detail(kube: KubernetesService, name: str, namespace: str) -> Optional[dict]:
     """Build a synthetic get_tool response for a source-built tool with no workload.
 
     Returns a response dict (same shape as get_tool's workload response) with a
