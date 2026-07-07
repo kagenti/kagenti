@@ -75,7 +75,7 @@ spec:
       restartPolicy: OnFailure
       containers:
       - name: bootstrap
-        image: {{ (index .Values "kagenti-operator-chart" "spiffe" "operatorAuth" "bootstrapImage") | default "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest" }}
+        image: {{ (index .Values "kagenti-operator-chart" "spiffe" "operatorAuth" "bootstrapImage") | default (printf "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:%s" .Chart.AppVersion) }}
         imagePullPolicy: IfNotPresent
         env:
         - name: KEYCLOAK_URL
