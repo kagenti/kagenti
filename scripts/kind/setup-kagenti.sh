@@ -60,6 +60,7 @@ INSTALL_EXAMPLES=false
 DRY_RUN=false
 SECRETS_FILE_ARG=""
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
+ENABLE_OPERATOR_SPIFFE_AUTH=false
 
 # Versions
 CERT_MANAGER_VERSION="v1.17.2"
@@ -228,6 +229,7 @@ while [[ $# -gt 0 ]]; do
     --kagenti-values)   KAGENTI_VALUES_FILES+=("--values" "$2"); shift 2 ;;
     --kagenti-deps-values) KAGENTI_DEPS_VALUES_FILES+=("--values" "$2"); shift 2 ;;
     --with-examples)    INSTALL_EXAMPLES=true; shift ;;
+    --enable-operator-spiffe-auth) ENABLE_OPERATOR_SPIFFE_AUTH=true; shift ;;
     --dry-run)          DRY_RUN=true; shift ;;
     -h|--help)
       echo "Usage: $0 [OPTIONS]"
@@ -277,6 +279,8 @@ while [[ $# -gt 0 ]]; do
       echo "  --kagenti-deps-values FILE"
       echo "                      Helm override file to apply to Kagenti-deps chart"
       echo "  --with-examples     Install weather agent and weather tool examples"
+      echo "  --enable-operator-spiffe-auth"
+      echo "                      Enable SPIFFE authentication for operator (requires SPIRE)"
       echo "  --dry-run           Show commands without executing"
       echo "  -h, --help          Show this help"
       exit 0 ;;
@@ -1165,6 +1169,7 @@ KAGENTI_FLAGS=(
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
   --set "kagenti-operator-chart.featureGates.injectTools=true"
   --set "kagenti-operator-chart.kuadrant.enable=${WITH_KUADRANT}"
+  --set "kagenti-operator-chart.spiffe.operatorAuth.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
 )
 
 # Allow-list hosts/IPs/CIDRs past the registry-URL SSRF block (for LAN / in-cluster
