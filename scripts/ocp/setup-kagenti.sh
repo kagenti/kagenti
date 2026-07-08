@@ -1268,6 +1268,31 @@ if [ -z "$OPERATOR_REPO" ]; then
   run_cmd helm dependency update "$KAGENTI_REPO/charts/kagenti/"
 fi
 
+# Helm applies a subchart's crds/ only on install, never on upgrade (kagenti#1335).
+# Pre-apply the operator CRDs from the resolved operator subchart (local copy
+# above, or the vendored tgz) so an upgrade that introduces a new CRD doesn't
+# crash-loop the controller-manager.
+_op_crds=""
+_op_tmp=""
+if [ -d "$KAGENTI_REPO/charts/kagenti/charts/kagenti-operator-chart/crds" ]; then
+  _op_crds="$KAGENTI_REPO/charts/kagenti/charts/kagenti-operator-chart/crds"
+else
+  _op_tgz=$(ls "$KAGENTI_REPO"/charts/kagenti/charts/kagenti-operator-chart-*.tgz 2>/dev/null | head -1 || true)
+  if [ -n "$_op_tgz" ]; then
+    _op_tmp=$(mktemp -d)
+    tar xzf "$_op_tgz" -C "$_op_tmp"
+    _op_crds="$_op_tmp/kagenti-operator-chart/crds"
+  fi
+fi
+if [ -n "$_op_crds" ] && [ -d "$_op_crds" ]; then
+  log_info "Applying kagenti-operator CRDs (Helm skips subchart CRDs on upgrade)..."
+  run_cmd $KUBECTL apply --server-side --force-conflicts -f "$_op_crds"
+  run_cmd $KUBECTL wait --for=condition=Established --timeout=60s -f "$_op_crds"
+else
+  log_warn "kagenti-operator CRDs not found under charts/kagenti/charts/ — skipping (agent operator disabled?)"
+fi
+if [ -n "$_op_tmp" ]; then rm -rf "$_op_tmp"; fi
+
 # Detect Keycloak public URL from route (for OIDC redirects in the browser).
 # The internal URL (keycloak-service.KC_NAMESPACE:8080) is NOT reachable from outside the cluster.
 KC_ROUTE=$($KUBECTL get route keycloak -n "$KC_NAMESPACE" -o jsonpath='{.spec.host}' 2>/dev/null || echo "")

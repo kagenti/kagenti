@@ -1084,6 +1084,30 @@ fi
 log_info "Updating kagenti chart dependencies..."
 run_cmd helm dependency update "$REPO_ROOT/charts/kagenti/"
 
+# Helm applies a subchart's crds/ only on install, never on upgrade (kagenti#1335).
+# Pre-apply the operator CRDs from the resolved operator subchart so an upgrade
+# that introduces a new CRD doesn't crash-loop the controller-manager.
+_op_crds=""
+_op_tmp=""
+if [ -d "$REPO_ROOT/charts/kagenti/charts/kagenti-operator-chart/crds" ]; then
+  _op_crds="$REPO_ROOT/charts/kagenti/charts/kagenti-operator-chart/crds"
+else
+  _op_tgz=$(ls "$REPO_ROOT"/charts/kagenti/charts/kagenti-operator-chart-*.tgz 2>/dev/null | head -1 || true)
+  if [ -n "$_op_tgz" ]; then
+    _op_tmp=$(mktemp -d)
+    tar xzf "$_op_tgz" -C "$_op_tmp"
+    _op_crds="$_op_tmp/kagenti-operator-chart/crds"
+  fi
+fi
+if [ -n "$_op_crds" ] && [ -d "$_op_crds" ]; then
+  log_info "Applying kagenti-operator CRDs (Helm skips subchart CRDs on upgrade)..."
+  run_cmd kubectl apply --server-side --force-conflicts -f "$_op_crds"
+  run_cmd kubectl wait --for=condition=Established --timeout=60s -f "$_op_crds"
+else
+  log_warn "kagenti-operator CRDs not found under charts/kagenti/charts/ — skipping (agent operator disabled?)"
+fi
+if [ -n "$_op_tmp" ]; then rm -rf "$_op_tmp"; fi
+
 # Delete old OAuth secret jobs (immutable — must delete before helm upgrade)
 kubectl delete job kagenti-ui-oauth-secret-job -n kagenti-system --ignore-not-found 2>/dev/null || true
 kubectl delete job kagenti-agent-oauth-secret-job -n kagenti-system --ignore-not-found 2>/dev/null || true
