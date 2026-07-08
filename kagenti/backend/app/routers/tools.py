@@ -459,6 +459,98 @@ def _get_workload_status(workload: dict) -> str:
     return "Not Ready"
 
 
+def _get_tool_build_status(kube: KubernetesService, name: str, namespace: str) -> Optional[str]:
+    """Derive a build-status indicator for a source-built tool with no workload.
+
+    Looks at the latest Shipwright BuildRun for the given build name and maps its
+    phase to a status string:
+      - "Build Failed"  -> latest BuildRun failed
+      - "Building"      -> BuildRun pending/running, or no BuildRun yet
+      - None            -> build succeeded (a workload exists or is being finalized)
+
+    Returns None (not a status) for Succeeded builds so callers can fall through
+    to the real workload / 404 handling.
+    """
+    try:
+        buildruns = kube.list_custom_resources(
+            group=SHIPWRIGHT_CRD_GROUP,
+            version=SHIPWRIGHT_CRD_VERSION,
+            namespace=namespace,
+            plural=SHIPWRIGHT_BUILDRUNS_PLURAL,
+            label_selector=f"kagenti.io/build-name={name}",
+        )
+    except ApiException:
+        # Constant message only (CodeQL py/log-injection): never
+        # interpolate namespace / build name / API reason.
+        logger.warning("Failed to list BuildRuns for a Shipwright build")
+        buildruns = []
+
+    # No BuildRun yet -> build just started; treat as "Building".
+    phase = "Pending"
+    latest = get_latest_buildrun(buildruns) if buildruns else None
+    if latest:
+        phase = extract_buildrun_info(latest)["phase"]
+
+    # Succeeded builds either already have a workload or are about to be
+    # finalized into one; let the caller handle that case.
+    if phase == "Succeeded":
+        return None
+    return "Build Failed" if phase == "Failed" else "Building"
+
+
+def _get_tool_build_detail(kube: KubernetesService, name: str, namespace: str) -> Optional[dict]:
+    """Build a synthetic get_tool response for a source-built tool with no workload.
+
+    Returns a response dict (same shape as get_tool's workload response) with a
+    readyStatus of "Building" or "Build Failed" when a Shipwright Build exists
+    for this tool and its latest BuildRun is in progress or failed. Returns None
+    when there is no build, or when the build has Succeeded (a workload exists or
+    is being finalized), so the caller can fall through to its 404 handling.
+    """
+    try:
+        build = kube.get_custom_resource(
+            group=SHIPWRIGHT_CRD_GROUP,
+            version=SHIPWRIGHT_CRD_VERSION,
+            namespace=namespace,
+            plural=SHIPWRIGHT_BUILDS_PLURAL,
+            name=name,
+        )
+    except ApiException as e:
+        if e.status != 404:
+            logger.warning("Failed to get Shipwright Build for a tool")
+        return None
+
+    status = _get_tool_build_status(kube, name, namespace)
+    if status is None:
+        return None
+
+    metadata = build.get("metadata", {}) or {}
+    labels = metadata.get("labels", {}) or {}
+    return {
+        "metadata": {
+            "name": metadata.get("name", name),
+            "namespace": metadata.get("namespace", namespace),
+            "labels": labels,
+            "annotations": metadata.get("annotations", {}) or {},
+            "creationTimestamp": _format_timestamp(
+                metadata.get("creationTimestamp") or metadata.get("creation_timestamp")
+            ),
+            "uid": metadata.get("uid"),
+        },
+        # No workload spec/status yet; expose the Build spec so callers that
+        # inspect source/git details still have them.
+        "spec": build.get("spec", {}) or {},
+        "status": {},
+        "readyStatus": status,
+        # We may be building a non-deployment.
+        # TODO record and retrieve build type.
+        "workloadType": WORKLOAD_TYPE_DEPLOYMENT,
+        "service": None,
+        # Signals to the frontend that this is a build placeholder, not a workload.
+        "isBuild": True,
+    }
+
+
 def _get_workload_type_from_resource(resource: dict) -> str:
     """Determine workload type from a Kubernetes resource.
 
@@ -697,6 +789,46 @@ async def list_tools(
             if e.status != 404:
                 logger.warning(f"Error listing StatefulSets: {e}")
 
+        # Surface in-progress / failed Shipwright source builds that have no
+        # workload yet. A source-built tool has no Deployment/StatefulSet until
+        # its build Succeeds and is finalized, so without this it would be
+        # invisible here while building or after a failure. Guarded so a
+        # build-listing failure never breaks the core tool list.
+        try:
+            builds = collect_kagenti_shipwright_builds(
+                kube, [namespace], RESOURCE_TYPE_TOOL, logger
+            )
+            for build in builds:
+                # Workload already exists (build Succeeded + finalized, or a
+                # name collision) -> already listed above; skip to avoid dupes.
+                if build.name in existing_names:
+                    continue
+
+                # Succeeded builds either already have a workload (listed above)
+                # or are about to be finalized into one; don't surface them here.
+                status = _get_tool_build_status(kube, build.name, build.namespace)
+                if status is None:
+                    continue
+
+                tools.append(
+                    ToolSummary(
+                        name=build.name,
+                        namespace=build.namespace,
+                        description="Building from source",
+                        status=status,
+                        labels=_extract_labels({KAGENTI_TYPE_LABEL: build.resourceType}),
+                        # Note that we may be building a non-deployment.
+                        # TODO record and retrieve build type.
+                        workloadType=WORKLOAD_TYPE_DEPLOYMENT,
+                        # Collector already formats this as an ISO string, so do
+                        # not pass it through _format_timestamp (datetime-only).
+                        createdAt=build.creationTimestamp,
+                    )
+                )
+                existing_names.add(build.name)
+        except ApiException:
+            logger.warning("Failed to list Shipwright builds for tools", exc_info=True)
+
         return ToolListResponse(items=tools)
 
     except ApiException as e:
@@ -718,6 +850,12 @@ async def get_tool(
 
     Tries to find the tool as a Deployment first, then as a StatefulSet.
     Returns the workload details along with associated Service information.
+
+    A source-built tool has no Deployment/StatefulSet until its Shipwright
+    build Succeeds and is finalized. When no workload exists but a build does,
+    a synthetic response is returned with a readyStatus of "Building" or
+    "Build Failed" so the detail page can surface in-progress / failed builds
+    instead of a 404.
     """
     workload = None
     workload_type = None
@@ -736,12 +874,18 @@ async def get_tool(
             workload = kube.get_statefulset(namespace, name)
             workload_type = WORKLOAD_TYPE_STATEFULSET
         except ApiException as e:
-            if e.status == 404:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Tool '{name}' not found in namespace '{namespace}'",
-                )
-            raise HTTPException(status_code=e.status, detail=str(e.reason))
+            if e.status != 404:
+                raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # No workload yet -> fall back to a source build (in-progress or failed).
+    if workload is None:
+        build_response = _get_tool_build_detail(kube, name, namespace)
+        if build_response is not None:
+            return build_response
+        raise HTTPException(
+            status_code=404,
+            detail=f"Tool '{name}' not found in namespace '{namespace}'",
+        )
 
     # Get associated Service
     service_info = None
