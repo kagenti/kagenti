@@ -127,6 +127,17 @@ if settings.kagenti_feature_flag_acp:
         logging.getLogger(__name__).warning(
             "ACP flag enabled but acp modules not installed — skipping"
         )
+
+_simulation_modules_loaded = False
+if settings.kagenti_feature_flag_simulated_tools:
+    try:
+        from app.routers import simulation  # noqa: E402
+
+        _simulation_modules_loaded = True
+    except ImportError:
+        logging.getLogger(__name__).warning(
+            "SIMULATED_TOOLS flag enabled but simulation modules not installed — skipping"
+        )
 # pylint: enable=wrong-import-position,no-name-in-module,import-error
 
 # Configure logging
@@ -268,6 +279,10 @@ if _skills_modules_loaded:
 if _acp_modules_loaded:
     app.include_router(acp.router, prefix="/api/v1")
     logger.info("Feature flag ACP enabled — ACP WebSocket routes registered")
+
+if _simulation_modules_loaded:
+    app.include_router(simulation.router, prefix="/api/v1")
+    logger.info("Feature flag SIMULATED_TOOLS enabled — simulation routes registered")
 # pylint: enable=used-before-assignment
 
 
