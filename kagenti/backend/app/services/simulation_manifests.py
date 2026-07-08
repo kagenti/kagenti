@@ -238,3 +238,32 @@ def build_simulation_statefulset(
             ],
         },
     }
+
+
+def build_simulation_service(
+    name: str,
+    namespace: str,
+    *,
+    port: int = DEFAULT_IN_CLUSTER_PORT,
+) -> dict:
+    """Build a ClusterIP Service manifest for a simulated tool ({name}-mcp)."""
+    return {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "name": f"{name}{TOOL_SERVICE_SUFFIX}",
+            "namespace": namespace,
+            "labels": {
+                _MCP_PROTOCOL_LABEL: "",
+                APP_KUBERNETES_IO_NAME: name,
+                APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
+                KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+                KAGENTI_SIMULATED_LABEL: "true",
+            },
+        },
+        "spec": {
+            "type": "ClusterIP",
+            "selector": {APP_KUBERNETES_IO_NAME: name},
+            "ports": [{"name": "http", "port": port, "targetPort": port, "protocol": "TCP"}],
+        },
+    }

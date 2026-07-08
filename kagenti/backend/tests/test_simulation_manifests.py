@@ -115,3 +115,20 @@ def test_statefulset_spire_and_authbridge_flags():
     m = _sts(auth_bridge_mode="lite")
     pod_ann = m["spec"]["template"]["metadata"]["annotations"]
     assert pod_ann["kagenti.io/authbridge-mode"] == "lite"
+
+
+from app.services.simulation_manifests import build_simulation_service
+
+
+def test_service_shape_and_labels():
+    m = build_simulation_service("petstore", "team1", port=8000)
+    assert m["kind"] == "Service"
+    assert m["metadata"]["name"] == "petstore-mcp"
+    assert m["spec"]["type"] == "ClusterIP"
+    assert m["spec"]["selector"]["app.kubernetes.io/name"] == "petstore"
+    assert m["spec"]["ports"][0]["port"] == 8000
+    assert m["spec"]["ports"][0]["targetPort"] == 8000
+    labels = m["metadata"]["labels"]
+    assert labels["protocol.kagenti.io/mcp"] == ""
+    assert labels["kagenti.io/simulated"] == "true"
+    assert labels["kagenti.io/type"] == "tool"
