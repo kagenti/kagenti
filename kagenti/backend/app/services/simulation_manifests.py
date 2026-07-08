@@ -220,11 +220,15 @@ def build_simulation_statefulset(
                             },
                             "volumeMounts": [
                                 {"name": "data", "mountPath": skills_folder},
+                                {"name": "cache", "mountPath": "/app/.cache"},
                                 {"name": "tmp", "mountPath": "/tmp"},
                             ],
                         }
                     ],
-                    "volumes": [{"name": "tmp", "emptyDir": {}}],
+                    "volumes": [
+                        {"name": "cache", "emptyDir": {}},
+                        {"name": "tmp", "emptyDir": {}},
+                    ],
                 },
             },
             "volumeClaimTemplates": [

@@ -169,6 +169,19 @@ def test_derive_name_falls_back():
     assert derive_simulation_name({}, None) == "simulated-tool"
 
 
+def test_statefulset_cache_emptydir_volume():
+    m = _sts()
+    mounts = m["spec"]["template"]["spec"]["containers"][0]["volumeMounts"]
+    cache_mount = next((v for v in mounts if v["name"] == "cache"), None)
+    assert cache_mount is not None, "cache volumeMount not found"
+    assert cache_mount["mountPath"] == "/app/.cache"
+
+    volumes = m["spec"]["template"]["spec"]["volumes"]
+    cache_vol = next((v for v in volumes if v["name"] == "cache"), None)
+    assert cache_vol is not None, "cache volume not found"
+    assert cache_vol["emptyDir"] == {}
+
+
 def test_parity_simulation_matches_tool_identity_surface():
     """Guard: simulation StatefulSet must carry the same identity/mesh/security
     surface a tool StatefulSet does, so the standalone builders can't silently drift."""
