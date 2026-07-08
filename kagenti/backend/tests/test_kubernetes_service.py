@@ -810,3 +810,27 @@ class TestCustomResourceOperations:
         )
 
         kubernetes_service._custom_api.delete_namespaced_custom_object.assert_called_once()
+
+
+class TestLogInjectionSanitization:
+    """Proof test for CWE-117: user-controlled values must not reach logs unsanitized."""
+
+    def test_create_statefulset_sanitizes_namespace_in_log(self, kubernetes_service, caplog):
+        """A namespace containing a newline must not inject a forged log line."""
+        kubernetes_service._apps_api.create_namespaced_stateful_set.side_effect = ApiException(
+            status=500, reason="Internal Server Error"
+        )
+
+        malicious_namespace = "team1\ninjected"
+
+        with caplog.at_level("ERROR"):
+            with pytest.raises(ApiException):
+                kubernetes_service.create_statefulset(malicious_namespace, {"metadata": {}})
+
+        assert len(caplog.records) == 1
+        message = caplog.records[0].getMessage()
+        # The sanitized namespace must be glued together with no embedded newline,
+        # so the attacker-supplied "injected" segment cannot appear as its own log line.
+        assert "team1injected" in message
+        assert "team1\ninjected" not in message
+        assert not any(line == "injected" for line in message.splitlines())
