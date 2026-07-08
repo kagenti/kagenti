@@ -41,9 +41,7 @@ class FeatureFlagsResponse(BaseModel):
         description="Auto-inject MCP_URL and LLM env vars on agent import"
     )
     traceAnalysis: bool = Field(description="Trace-analysis Observability card")
-    simulatedTools: bool = Field(
-        description="Simulated MCP tools generated from an OpenAPI spec"
-    )
+    simulatedTools: bool = Field(description="Simulated MCP tools generated from an OpenAPI spec")
 
 
 class ComponentStatus(BaseModel):
