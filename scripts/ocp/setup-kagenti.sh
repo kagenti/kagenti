@@ -1280,18 +1280,24 @@ else
   _op_tgz=$(ls "$KAGENTI_REPO"/charts/kagenti/charts/kagenti-operator-chart-*.tgz 2>/dev/null | head -1 || true)
   if [ -n "$_op_tgz" ]; then
     _op_tmp=$(mktemp -d)
-    tar xzf "$_op_tgz" -C "$_op_tmp"
-    _op_crds="$_op_tmp/kagenti-operator-chart/crds"
+    if tar xzf "$_op_tgz" -C "$_op_tmp"; then
+      _op_crds="$_op_tmp/kagenti-operator-chart/crds"
+    else
+      log_warn "Failed to extract operator CRDs from $(basename "$_op_tgz")"
+    fi
   fi
 fi
+_op_rc=0
 if [ -n "$_op_crds" ] && [ -d "$_op_crds" ]; then
   log_info "Applying kagenti-operator CRDs (Helm skips subchart CRDs on upgrade)..."
-  run_cmd $KUBECTL apply --server-side --force-conflicts -f "$_op_crds"
-  run_cmd $KUBECTL wait --for=condition=Established --timeout=60s -f "$_op_crds"
+  { run_cmd $KUBECTL apply --server-side --force-conflicts -f "$_op_crds" &&
+    run_cmd $KUBECTL wait --for=condition=Established --timeout=60s -f "$_op_crds"; } || _op_rc=$?
 else
   log_warn "kagenti-operator CRDs not found under charts/kagenti/charts/ — skipping (agent operator disabled?)"
 fi
+# Always clean the temp dir (even if the apply failed under set -e), then surface any error.
 if [ -n "$_op_tmp" ]; then rm -rf "$_op_tmp"; fi
+if [ "$_op_rc" -ne 0 ]; then log_error "Failed to apply kagenti-operator CRDs"; exit "$_op_rc"; fi
 
 # Detect Keycloak public URL from route (for OIDC redirects in the browser).
 # The internal URL (keycloak-service.KC_NAMESPACE:8080) is NOT reachable from outside the cluster.
