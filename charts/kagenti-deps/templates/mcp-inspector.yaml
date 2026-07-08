@@ -50,7 +50,7 @@ subjects:
 # are reachable on a SINGLE origin: "/" -> UI, "/mcp-proxy/" -> proxy server
 # (prefix-stripped). This lets the browser use one already-trusted cert/host
 # instead of a separate mcp-proxy Route whose self-signed cert is never
-# accepted (only hit via background fetch). See kagenti#2100.
+# accepted (only hit via background fetch).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -248,7 +248,7 @@ spec:
     app: mcp-inspector
   ports:
   # Single entrypoint: nginx sidecar fronts both the UI (6274) and the proxy
-  # server (6277) so everything is served from one host. See kagenti#2100.
+  # server (6277) so everything is served from one host.
   - name: http
     port: 8080
     protocol: TCP
@@ -263,7 +263,7 @@ metadata:
     openshift.io/host.generated: "true"
     # The Inspector proxy uses a long-lived SSE stream (streamable-http MCP
     # transport). HAProxy's default route timeout (~30s) would drop it, so
-    # extend it. See kagenti#2100.
+    # extend it.
     haproxy.router.openshift.io/timeout: {{ .Values.mcpInspector.routeTimeout | default "1h" | quote }}
   name: mcp-inspector
   namespace: {{ .Release.Namespace }}
@@ -302,6 +302,6 @@ spec:
         value: /
     backendRefs:
     - name: mcp-inspector
-      port: 8080 # nginx sidecar fronts both UI and proxy (see kagenti#2100)
+      port: 8080 # nginx sidecar fronts both UI and proxy
 {{- end }}
 {{- end }}

@@ -110,7 +110,7 @@ data:
       "kagenti-system,mcp-inspector,true,MCP_INSPECTOR_URL"
       # The proxy is served on the inspector host under /mcp-proxy by the nginx
       # sidecar (single origin), so reuse the mcp-inspector route + path suffix
-      # instead of a separate mcp-proxy route. See kagenti#2100.
+      # instead of a separate mcp-proxy route.
       "kagenti-system,mcp-inspector,true,MCP_PROXY_FULL_ADDRESS,/mcp-proxy"
       {{- if .Values.components.phoenix.enabled }}
       "kagenti-system,phoenix,true,TRACES_DASHBOARD_URL"

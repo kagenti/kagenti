@@ -26,7 +26,7 @@ data:
   NETWORK_TRAFFIC_DASHBOARD_URL: "http://kiali.{{ .Values.ui.domainName }}:8080"
   MCP_INSPECTOR_URL: "http://mcp-inspector.{{ .Values.ui.domainName }}:8080"
   # Proxy served on the inspector host under /mcp-proxy by the nginx sidecar
-  # (single origin). See kagenti#2100.
+  # (single origin).
   MCP_PROXY_FULL_ADDRESS: "http://mcp-inspector.{{ .Values.ui.domainName }}:8080/mcp-proxy"
   KEYCLOAK_CONSOLE_URL: "http://keycloak.{{ .Values.ui.domainName }}:8080/admin/{{ .Values.keycloak.realm }}/console/"
 ---

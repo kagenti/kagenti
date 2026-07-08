@@ -402,10 +402,10 @@ mcpInspector:
   image: ghcr.io/modelcontextprotocol/inspector
   tag: 0.17.2
   # Reverse-proxy sidecar that serves the Inspector UI and its proxy server on
-  # a single origin (see kagenti#2100).
+  # a single origin
   nginxImage: mirror.gcr.io/nginx:1.27-alpine
   # OpenShift Route timeout for the Inspector host. The proxy's SSE stream is
-  # long-lived, so this must exceed HAProxy's ~30s default. See kagenti#2100.
+  # long-lived, so this must exceed HAProxy's ~30s default.
   routeTimeout: "1h"
 
 # ------------------------------------------------------------------
