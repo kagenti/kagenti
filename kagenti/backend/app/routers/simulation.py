@@ -15,7 +15,7 @@ from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from kubernetes.client import ApiException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.core.auth import ROLE_OPERATOR, require_roles
 from app.core.config import settings
@@ -27,7 +27,10 @@ from app.services.simulation_manifests import (
     build_simulation_service,
     build_simulation_statefulset,
     derive_simulation_name,
+    validate_custom_name,
+    validate_namespace,
     validate_openapi_spec,
+    validate_storage_size,
 )
 from app.utils.routes import sanitize_log
 
@@ -53,6 +56,21 @@ class SimulationCreateRequest(BaseModel):
     spireEnabled: bool = False
     authBridgeEnabled: bool = False
     authBridgeMode: Optional[Literal["proxy-sidecar", "envoy-sidecar", "lite", "waypoint"]] = None
+
+    @field_validator("namespace")
+    @classmethod
+    def _check_namespace(cls, v: str) -> str:
+        return validate_namespace(v)
+
+    @field_validator("storageSize")
+    @classmethod
+    def _check_storage_size(cls, v: str) -> str:
+        return validate_storage_size(v)
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: Optional[str]) -> Optional[str]:
+        return v if v is None else validate_custom_name(v)
 
 
 class SimulationCreateResponse(BaseModel):

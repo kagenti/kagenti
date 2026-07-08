@@ -219,3 +219,53 @@ def test_parity_simulation_matches_tool_identity_surface():
     spc = sim["spec"]["template"]["spec"]
     assert spc["securityContext"] == tpc["securityContext"]
     assert spc["containers"][0]["securityContext"] == tpc["containers"][0]["securityContext"]
+
+
+from app.services.simulation_manifests import (
+    MAX_SIMULATION_NAME_LEN,
+    validate_custom_name,
+    validate_namespace,
+    validate_storage_size,
+)
+
+
+class TestInputValidators:
+    def test_valid_namespace_passes(self):
+        assert validate_namespace("team1") == "team1"
+        assert validate_namespace("a-b-9") == "a-b-9"
+
+    @pytest.mark.parametrize(
+        "bad", ["Team1", "team_1", "-team", "team-", "team 1", "team\n1", "", "a" * 64]
+    )
+    def test_invalid_namespace_raises(self, bad):
+        with pytest.raises(ValueError):
+            validate_namespace(bad)
+
+    @pytest.mark.parametrize("good", ["1Gi", "500Mi", "2G", "10Ti", "1024Ki"])
+    def test_valid_storage_size_passes(self, good):
+        assert validate_storage_size(good) == good
+
+    @pytest.mark.parametrize("bad", ["big", "1gb", "Gi", "0Gi", "-1Gi", "1.Gi", "1 Gi", ""])
+    def test_invalid_storage_size_raises(self, bad):
+        with pytest.raises(ValueError):
+            validate_storage_size(bad)
+
+    def test_valid_custom_name_passes(self):
+        assert validate_custom_name("pet-store") == "pet-store"
+
+    @pytest.mark.parametrize("bad", ["Pet Store", "pet_store", "-x", "x-", "", "UPPER"])
+    def test_invalid_custom_name_raises(self, bad):
+        with pytest.raises(ValueError):
+            validate_custom_name(bad)
+
+    def test_custom_name_too_long_for_service_suffix_raises(self):
+        # A name longer than MAX_SIMULATION_NAME_LEN would make "{name}-mcp" exceed 63.
+        with pytest.raises(ValueError):
+            validate_custom_name("a" * (MAX_SIMULATION_NAME_LEN + 1))
+        assert validate_custom_name("a" * MAX_SIMULATION_NAME_LEN)
+
+
+def test_derive_name_truncates_to_service_safe_length():
+    name = derive_simulation_name({"info": {"title": "x" * 100}}, None)
+    assert len(name) <= MAX_SIMULATION_NAME_LEN
+    assert not name.endswith("-")

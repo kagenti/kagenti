@@ -78,3 +78,39 @@ def test_route_absent_when_flag_off():
 
     r = TestClient(app.main.app).post("/api/v1/simulation/tools", json={})
     assert r.status_code == 404
+
+
+def test_create_rejects_invalid_namespace_with_422():
+    kube = _kube()
+    with patch("app.core.auth.settings") as auth:
+        auth.enable_auth = False
+        r = _client(kube).post(
+            "/simulation/tools",
+            json={"namespace": "Bad_NS", "openapiSpec": VALID_SPEC},
+        )
+    assert r.status_code == 422
+    kube.create_statefulset.assert_not_called()
+
+
+def test_create_rejects_invalid_storage_size_with_422():
+    kube = _kube()
+    with patch("app.core.auth.settings") as auth:
+        auth.enable_auth = False
+        r = _client(kube).post(
+            "/simulation/tools",
+            json={"namespace": "team1", "openapiSpec": VALID_SPEC, "storageSize": "big"},
+        )
+    assert r.status_code == 422
+    kube.create_statefulset.assert_not_called()
+
+
+def test_create_rejects_invalid_custom_name_with_422():
+    kube = _kube()
+    with patch("app.core.auth.settings") as auth:
+        auth.enable_auth = False
+        r = _client(kube).post(
+            "/simulation/tools",
+            json={"namespace": "team1", "openapiSpec": VALID_SPEC, "name": "Bad Name!"},
+        )
+    assert r.status_code == 422
+    kube.create_statefulset.assert_not_called()

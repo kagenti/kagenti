@@ -43,6 +43,50 @@ from app.core.constants import (
 
 _MCP_PROTOCOL_LABEL = f"{PROTOCOL_LABEL_PREFIX}{VALUE_PROTOCOL_MCP}"
 
+# DNS-1123 label: lowercase alphanumeric and '-', must start and end alphanumeric.
+_DNS1123_LABEL_RE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+# A simulated tool's Service is named "{name}-mcp" and must itself be a valid
+# DNS-1123 label (<=63), so the tool name is capped to leave room for the suffix.
+MAX_SIMULATION_NAME_LEN = 63 - len(TOOL_SERVICE_SUFFIX)
+# Kubernetes resource quantity, e.g. "1Gi", "500Mi", "2G".
+_QUANTITY_RE = re.compile(r"^[1-9][0-9]*(\.[0-9]+)?(Ei|Pi|Ti|Gi|Mi|Ki|E|P|T|G|M|k)?$")
+
+
+def _is_dns1123_label(value: str) -> bool:
+    """Return True if value is a valid DNS-1123 label (<=63 chars)."""
+    return bool(value) and len(value) <= 63 and _DNS1123_LABEL_RE.match(value) is not None
+
+
+def validate_namespace(namespace: str) -> str:
+    """Validate a target namespace as a DNS-1123 label. Raises ValueError if invalid."""
+    if not _is_dns1123_label(namespace):
+        raise ValueError(
+            "namespace must be a DNS-1123 label: lowercase alphanumeric or '-', "
+            "start and end alphanumeric, at most 63 characters"
+        )
+    return namespace
+
+
+def validate_storage_size(size: str) -> str:
+    """Validate a PVC storage size as a Kubernetes quantity. Raises ValueError if invalid."""
+    if not _QUANTITY_RE.match(size):
+        raise ValueError("storageSize must be a Kubernetes quantity, e.g. '1Gi', '500Mi', '2G'")
+    return size
+
+
+def validate_custom_name(name: str) -> str:
+    """Validate a user-supplied tool name (reject rather than silently mutate).
+
+    Must be a DNS-1123 label short enough that the derived "{name}-mcp" Service
+    name stays a valid label. Raises ValueError if invalid.
+    """
+    if not _is_dns1123_label(name) or len(name) > MAX_SIMULATION_NAME_LEN:
+        raise ValueError(
+            "name must be a DNS-1123 label (lowercase alphanumeric or '-', start and end "
+            f"alphanumeric) of at most {MAX_SIMULATION_NAME_LEN} characters"
+        )
+    return name
+
 
 class SecretKeyRef(BaseModel):
     """Reference to a key in a Secret."""
@@ -292,5 +336,9 @@ def validate_openapi_spec(text: str) -> dict:
 def derive_simulation_name(spec: dict, requested: Optional[str]) -> str:
     """Return a Kubernetes-safe name: requested if given, else slug of info.title."""
     candidate = requested or (spec.get("info", {}) or {}).get("title", "") or ""
-    slug = re.sub(r"[^a-z0-9]+", "-", candidate.lower()).strip("-")[:63].rstrip("-")
+    slug = (
+        re.sub(r"[^a-z0-9]+", "-", candidate.lower())
+        .strip("-")[:MAX_SIMULATION_NAME_LEN]
+        .rstrip("-")
+    )
     return slug or "simulated-tool"
