@@ -128,7 +128,7 @@ async function fetchDirectoryContents(
   repo: string,
   path: string,
   branch: string
-): Promise<GitHubFile[]> {
+): Promise<GitHubFile[] | GitHubFile> {
   const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
   
   const response = await fetch(apiUrl, {
@@ -280,7 +280,27 @@ async function fetchAllFiles(
   
   try {
     const contents = await fetchDirectoryContents(owner, repo, path, branch);
-    
+
+    // The GitHub Contents API returns an array for a directory, but a single
+    // object when `path` points at a file, and a `{ message, ... }` object on
+    // errors (e.g. rate limiting). `for...of` over a non-array throws
+    // "<var> is not iterable", so normalize/guard before iterating.
+    if (!Array.isArray(contents)) {
+      const single = contents as GitHubFile & { message?: string };
+      if (single && single.type === 'file' && single.download_url) {
+        // URL pointed directly at a file (e.g. a SKILL.md) rather than a directory.
+        const content = await fetchFileContent(single.download_url);
+        files.push({ path: basePath || single.name, content });
+        fileCount.count++;
+        return files;
+      }
+      throw new Error(
+        `Expected a directory at "${path}" but GitHub returned ${
+          single?.message ?? 'a non-directory response'
+        }. Point the URL at a skill directory that contains SKILL.md.`
+      );
+    }
+
     for (const item of contents) {
       // Check file count limit before processing each item
       if (fileCount.count >= maxFiles) {
@@ -335,12 +355,13 @@ export async function importSkillFromGitHub(
   url: string
 ): Promise<ImportedSkillData> {
   // Parse the URL
-  let urlParts = parseGitHubUrl(url);
+  const urlParts = parseGitHubUrl(url);
   if (!urlParts) {
     throw new Error('Invalid GitHub URL. Expected format: https://github.com/owner/repo/tree/branch/path');
   }
 
-  let { owner, repo, branch, path } = urlParts;
+  const { owner, repo } = urlParts;
+  let { branch, path } = urlParts;
 
   console.info(
     'Importing skill from GitHub. Note: Unauthenticated API requests are limited to 60/hour. ' +

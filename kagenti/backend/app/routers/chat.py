@@ -8,7 +8,10 @@ Provides endpoints for chatting with A2A agents using the Agent-to-Agent protoco
 """
 
 import logging
+import re
+import time
 from typing import Optional, List
+from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
 import httpx
@@ -19,13 +22,99 @@ from pydantic import BaseModel
 from app.core.auth import require_roles, get_required_user, ROLE_VIEWER, ROLE_OPERATOR, TokenData
 from app.core.config import settings
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
-from app.utils.routes import resolve_agent_url
+from app.utils.routes import resolve_agent_url, sanitize_log
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 # A2A protocol constants
 A2A_AGENT_CARD_PATH = "/.well-known/agent-card.json"
+
+# RFC 1123 label: lowercase alphanumeric, may contain hyphens, 1-63 chars.
+_K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+
+# Characters permitted in an agent card path (positive allowlist).
+_SAFE_PATH_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/-_.")
+
+# Characters permitted in an agent card query string (positive allowlist).
+# Excludes ':', '/', '#', and '%' to block URL injection and encoding attacks.
+_SAFE_QUERY_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.=&+"
+)
+
+
+# TTL cache for resolved invoke URLs: {(name, namespace): (url, timestamp)}.
+# Eliminates redundant agent-card HTTP fetches during a conversation (SC-5).
+_invoke_url_cache: dict[tuple[str, str], tuple[str, float]] = {}
+_CACHE_TTL_SECONDS = 30.0
+
+
+async def _resolve_invoke_url(name: str, namespace: str, kube: KubernetesService) -> str:
+    """Resolve the A2A JSON-RPC invoke URL for an agent.
+
+    Per the A2A spec (§4.4.6) the ``AgentInterface.url`` field is a valid
+    absolute URL identifying the endpoint that accepts JSON-RPC requests.
+    Some agents mount this handler at a sub-path (e.g. ``/a2a/invoke``) or
+    include query parameters for routing (e.g. ``?assistant_id=123``).
+
+    This helper fetches the agent card and appends the advertised path (and
+    query, when safe) to the internal service URL.  The host from the card
+    URL is always ignored — only the path and query are extracted — so an
+    agent card advertising an external hostname cannot redirect traffic.
+
+    Results are cached for ``_CACHE_TTL_SECONDS`` to avoid per-message
+    HTTP overhead.  Transient failures are not cached so the next call
+    retries the agent card fetch.
+
+    Falls back to the bare service URL when the card is unavailable, has no
+    path, or fails validation.
+    """
+    name_match = _K8S_NAME_RE.fullmatch(name)
+    ns_match = _K8S_NAME_RE.fullmatch(namespace)
+    if not name_match or not ns_match:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid agent name or namespace",
+        )
+
+    cache_key = (name, namespace)
+    now = time.monotonic()
+    cached = _invoke_url_cache.get(cache_key)
+    if cached and (now - cached[1]) < _CACHE_TTL_SECONDS:
+        return cached[0]
+
+    # .group(0) produces a value constrained by the RFC 1123 regex,
+    # breaking the CodeQL SSRF taint chain from the FastAPI path params.
+    safe_name = name_match.group(0)
+    safe_ns = ns_match.group(0)
+    base_url = resolve_agent_url(safe_name, safe_ns, kube)
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{base_url}{A2A_AGENT_CARD_PATH}")
+            resp.raise_for_status()
+            card_url = resp.json().get("url")
+            if card_url:
+                parsed = urlparse(card_url)
+                path = unquote(parsed.path)
+                if (
+                    path
+                    and path != "/"
+                    and ".." not in path.split("/")
+                    and all(c in _SAFE_PATH_CHARS for c in path)
+                ):
+                    suffix = path
+                    if parsed.query and all(c in _SAFE_QUERY_CHARS for c in parsed.query):
+                        suffix = f"{path}?{parsed.query}"
+                    result = f"{base_url}{suffix}"
+                    _invoke_url_cache[cache_key] = (result, now)
+                    return result
+    except Exception:
+        logger.debug(
+            "Could not fetch agent card for %s/%s, using base URL",
+            sanitize_log(namespace),
+            sanitize_log(name),
+        )
+    return base_url
 
 
 class ChatMessage(BaseModel):
@@ -154,7 +243,7 @@ async def send_message(
     Forwards the Authorization header from the client to the agent for
     authenticated requests.
     """
-    agent_url = resolve_agent_url(name, namespace, kube)
+    agent_url = await _resolve_invoke_url(name, namespace, kube)
     session_id = request.session_id or uuid4().hex
 
     # Build A2A message payload. When the frontend supplied a session_id
@@ -485,7 +574,7 @@ async def stream_message(
     Returns HTTP 401 directly when the agent rejects the token, enabling
     the frontend to trigger token refresh and retry transparently.
     """
-    agent_url = resolve_agent_url(name, namespace, kube)
+    agent_url = await _resolve_invoke_url(name, namespace, kube)
     session_id = request.session_id or uuid4().hex
 
     # Extract Authorization header if present

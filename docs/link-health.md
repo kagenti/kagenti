@@ -1,22 +1,23 @@
 # Link Health Report
 
-> Last scan: 2026-06-26 07:01 ET | Scan ID: 2026-06-26-001
+> Last scan: 2026-06-29 07:02 ET | Scan ID: 2026-06-29-001
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
 | Repos scanned | 17 |
-| Total links checked | 2629 |
+| Total links checked | 2652 |
 | Broken (internal) | 30 |
 | Broken (external) | 18 |
-| New since last scan | +2 |
+| New since last scan | +0 |
 | Fixed since last scan | -0 |
 
 ## Trend (last 10 scans)
 
 | Date | Internal | External | Delta |
 |------|----------|----------|-------|
+| 06-29 | 30 | 18 | 0 |
 | 06-26 | 30 | 18 | +2 |
 | 06-24 | 29 | 17 | -1 |
 | 06-22 | 29 | 18 | +3 |
@@ -26,7 +27,6 @@
 | 06-10 | 37 | 23 | +2 |
 | 06-08 | 36 | 22 | +6 |
 | 06-05 | 29 | 23 | 0 |
-| 06-05 | 29 | 23 | -7 |
 
 ## Broken Links by Repo
 
