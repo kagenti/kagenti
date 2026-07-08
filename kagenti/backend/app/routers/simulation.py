@@ -29,6 +29,7 @@ from app.services.simulation_manifests import (
     derive_simulation_name,
     validate_openapi_spec,
 )
+from app.utils.routes import sanitize_log
 
 logger = logging.getLogger(__name__)
 
@@ -119,10 +120,18 @@ async def create_simulated_tool(
                 status_code=409,
                 detail=f"Simulated tool '{name}' already exists in namespace '{request.namespace}'",
             )
-        logger.error("Failed to provision simulated tool '%s': %s", name, e)
+        logger.error(
+            "Failed to provision simulated tool '%s': %s",
+            sanitize_log(name),
+            sanitize_log(str(e)),
+        )
         raise HTTPException(status_code=502, detail="Failed to create simulated-tool resources")
 
-    logger.info("Provisioned simulated tool '%s' in namespace '%s'", name, request.namespace)
+    logger.info(
+        "Provisioned simulated tool '%s' in namespace '%s'",
+        sanitize_log(name),
+        sanitize_log(request.namespace),
+    )
     return SimulationCreateResponse(
         success=True,
         name=name,
