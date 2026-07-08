@@ -132,3 +132,77 @@ def test_service_shape_and_labels():
     assert labels["protocol.kagenti.io/mcp"] == ""
     assert labels["kagenti.io/simulated"] == "true"
     assert labels["kagenti.io/type"] == "tool"
+
+
+import pytest
+
+from app.services.simulation_manifests import (
+    derive_simulation_name,
+    validate_openapi_spec,
+)
+
+
+def test_validate_spec_accepts_valid_json_object():
+    spec = validate_openapi_spec(
+        '{"openapi": "3.0.0", "info": {"title": "Pet Store"}, "paths": {}}'
+    )
+    assert spec["info"]["title"] == "Pet Store"
+
+
+@pytest.mark.parametrize("bad", ["not json", "[]", '"a string"', "123", ""])
+def test_validate_spec_rejects_non_object_or_invalid(bad):
+    with pytest.raises(ValueError):
+        validate_openapi_spec(bad)
+
+
+def test_derive_name_prefers_requested():
+    assert derive_simulation_name({"info": {"title": "Pet Store"}}, "my-sim") == "my-sim"
+
+
+def test_derive_name_slugifies_title():
+    assert (
+        derive_simulation_name({"info": {"title": "Pet Store API v2!"}}, None) == "pet-store-api-v2"
+    )
+
+
+def test_derive_name_falls_back():
+    assert derive_simulation_name({}, None) == "simulated-tool"
+
+
+def test_parity_simulation_matches_tool_identity_surface():
+    """Guard: simulation StatefulSet must carry the same identity/mesh/security
+    surface a tool StatefulSet does, so the standalone builders can't silently drift."""
+    from app.routers.tools import _build_tool_statefulset_manifest
+    from app.services.simulation_manifests import build_simulation_statefulset
+
+    tool = _build_tool_statefulset_manifest(
+        name="x",
+        namespace="team1",
+        image="img",
+        framework="Python",
+        auth_bridge_enabled=True,
+        spire_enabled=True,
+    )
+    sim = build_simulation_statefulset(
+        name="x",
+        namespace="team1",
+        image="img",
+        env_vars=[],
+        framework="Python",
+        auth_bridge_enabled=True,
+        spire_enabled=True,
+    )
+    mesh_keys = [
+        "protocol.kagenti.io/mcp",
+        "kagenti.io/transport",
+        "kagenti.io/framework",
+        "kagenti.io/inject",
+        "kagenti.io/spire",
+    ]
+    tl, sl = tool["metadata"]["labels"], sim["metadata"]["labels"]
+    for k in mesh_keys:
+        assert sl.get(k) == tl.get(k), f"identity label drift on {k}"
+    tpc = tool["spec"]["template"]["spec"]
+    spc = sim["spec"]["template"]["spec"]
+    assert spc["securityContext"] == tpc["securityContext"]
+    assert spc["containers"][0]["securityContext"] == tpc["containers"][0]["securityContext"]

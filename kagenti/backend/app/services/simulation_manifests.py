@@ -267,3 +267,26 @@ def build_simulation_service(
             "ports": [{"name": "http", "port": port, "targetPort": port, "protocol": "TCP"}],
         },
     }
+
+
+def validate_openapi_spec(text: str) -> dict:
+    """Syntactic validation only: parse the spec as a JSON object.
+
+    The harness validates the OpenAPI schema itself; Kagenti only rejects a
+    syntactically invalid spec (non-JSON or not a JSON object) so no workload
+    is created for garbage input. Raises ValueError on failure.
+    """
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, TypeError) as e:
+        raise ValueError(f"OpenAPI spec is not valid JSON: {e}") from e
+    if not isinstance(parsed, dict):
+        raise ValueError("OpenAPI spec must be a JSON object")
+    return parsed
+
+
+def derive_simulation_name(spec: dict, requested: Optional[str]) -> str:
+    """Return a Kubernetes-safe name: requested if given, else slug of info.title."""
+    candidate = requested or (spec.get("info", {}) or {}).get("title", "") or ""
+    slug = re.sub(r"[^a-z0-9]+", "-", candidate.lower()).strip("-")[:63].rstrip("-")
+    return slug or "simulated-tool"
