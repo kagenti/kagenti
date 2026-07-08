@@ -119,3 +119,122 @@ def build_simulation_env_vars(
     for env in env_vars:
         seen[env["name"]] = env
     return list(seen.values())
+
+
+def build_simulation_statefulset(
+    name: str,
+    namespace: str,
+    image: str,
+    *,
+    env_vars: List[dict],
+    port: int = DEFAULT_IN_CLUSTER_PORT,
+    storage_size: str = "1Gi",
+    skills_folder: str = SIMULATION_HARNESS_SKILLS_MOUNT,
+    framework: str = "Python",
+    description: str = "",
+    spire_enabled: bool = False,
+    auth_bridge_enabled: bool = False,
+    auth_bridge_mode: Optional[str] = None,
+) -> dict:
+    """Build a StatefulSet manifest for a simulated tool (replicas 1, HPA off)."""
+    service_name = f"{name}{TOOL_SERVICE_SUFFIX}"
+    inject = "enabled" if auth_bridge_enabled else "disabled"
+
+    labels = {
+        APP_KUBERNETES_IO_NAME: name,
+        _MCP_PROTOCOL_LABEL: "",
+        KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
+        KAGENTI_FRAMEWORK_LABEL: framework,
+        KAGENTI_WORKLOAD_TYPE_LABEL: WORKLOAD_TYPE_STATEFULSET,
+        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+        KAGENTI_SIMULATED_LABEL: "true",
+        APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
+        KAGENTI_INJECT_LABEL: inject,
+    }
+    pod_labels = {
+        APP_KUBERNETES_IO_NAME: name,
+        _MCP_PROTOCOL_LABEL: "",
+        KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
+        KAGENTI_FRAMEWORK_LABEL: framework,
+        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+        KAGENTI_SIMULATED_LABEL: "true",
+        KAGENTI_INJECT_LABEL: inject,
+    }
+    if spire_enabled:
+        labels[KAGENTI_SPIRE_LABEL] = KAGENTI_SPIRE_ENABLED_VALUE
+        pod_labels[KAGENTI_SPIRE_LABEL] = KAGENTI_SPIRE_ENABLED_VALUE
+
+    annotations = {KAGENTI_AUTOSCALING_ANNOTATION: "disabled"}
+    if description:
+        annotations[KAGENTI_DESCRIPTION_ANNOTATION] = description
+    pod_annotations: Dict[str, str] = {}
+    if auth_bridge_mode:
+        pod_annotations["kagenti.io/authbridge-mode"] = auth_bridge_mode
+
+    return {
+        "apiVersion": "apps/v1",
+        "kind": "StatefulSet",
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "labels": labels,
+            "annotations": annotations,
+        },
+        "spec": {
+            "serviceName": service_name,
+            "replicas": 1,
+            "selector": {"matchLabels": {APP_KUBERNETES_IO_NAME: name}},
+            "template": {
+                "metadata": {"labels": pod_labels, "annotations": pod_annotations},
+                "spec": {
+                    "serviceAccountName": name,
+                    "securityContext": {
+                        "runAsNonRoot": True,
+                        "seccompProfile": {"type": "RuntimeDefault"},
+                    },
+                    "containers": [
+                        {
+                            "name": "harness",
+                            "image": image,
+                            "imagePullPolicy": "Always",
+                            "securityContext": {
+                                "allowPrivilegeEscalation": False,
+                                "capabilities": {"drop": ["ALL"]},
+                                "runAsUser": 1000,
+                            },
+                            "env": env_vars,
+                            "ports": [{"containerPort": port, "name": "http"}],
+                            "resources": {
+                                "limits": DEFAULT_RESOURCE_LIMITS,
+                                "requests": DEFAULT_RESOURCE_REQUESTS,
+                            },
+                            "readinessProbe": {
+                                "httpGet": {"path": "/readyz", "port": port},
+                                "initialDelaySeconds": 5,
+                                "periodSeconds": 10,
+                            },
+                            "livenessProbe": {
+                                "httpGet": {"path": "/healthz", "port": port},
+                                "initialDelaySeconds": 10,
+                                "periodSeconds": 20,
+                            },
+                            "volumeMounts": [
+                                {"name": "data", "mountPath": skills_folder},
+                                {"name": "tmp", "mountPath": "/tmp"},
+                            ],
+                        }
+                    ],
+                    "volumes": [{"name": "tmp", "emptyDir": {}}],
+                },
+            },
+            "volumeClaimTemplates": [
+                {
+                    "metadata": {"name": "data"},
+                    "spec": {
+                        "accessModes": ["ReadWriteOnce"],
+                        "resources": {"requests": {"storage": storage_size}},
+                    },
+                }
+            ],
+        },
+    }
