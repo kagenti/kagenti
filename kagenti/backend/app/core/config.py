@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     kagenti_feature_flag_external_skills: bool = False  # External skill registry references
     # Simulated MCP tools: LLM-driven, stateful tools generated from an OpenAPI spec
     kagenti_feature_flag_simulated_tools: bool = False
+    # Generic simulation-harness image serving all simulated tools (epic #2151)
+    simulation_harness_image: str = "ghcr.io/kagenti/simulation-harness:latest"
     # Auto-inject MCP_URL / LLM env vars on agent import (TUI parity; weather demo defaults)
     kagenti_feature_flag_agent_import_defaults: bool = False
     skill_autosync_interval: int = (
