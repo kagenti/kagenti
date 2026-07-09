@@ -372,41 +372,45 @@ kubectl get secret keycloak-initial-admin -n keycloak \
 
 ## Keycloak Admin Credentials for Agent Namespaces
 
-The [AuthBridge](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge) stack needs Keycloak admin credentials for automatic OAuth2 client registration. These credentials are provisioned automatically at install time by the `kagenti-agent-oauth-secret-job` Helm Job — no manual configuration is required.
+The [AuthBridge](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge) stack needs Keycloak admin credentials for automatic OAuth2 client registration. Two distinct secrets are involved:
+
+| Secret | Namespace | Purpose |
+|--------|-----------|---------|
+| `keycloak-admin-secret` | `kagenti-system` | Admin credentials used by the operator's ClientRegistrationReconciler and the AuthBridge client-registration sidecar to register per-agent OAuth clients in Keycloak |
+| per-agent OAuth client secrets | agent namespaces (`team1`, `team2`, …) | Per-workload credentials created *by* client registration; consumed by the agent pods |
+
+See the [Identity Guide](./identity-guide.md) for a full description of the client-registration flow.
 
 ### Automatic Provisioning
 
-During `helm install` / `helm upgrade`, the `kagenti-agent-oauth-secret-job` Job runs and:
+`keycloak-admin-secret` is created in `kagenti-system` by the installer (`36-fix-keycloak-admin.sh`), which reads the actual admin credentials from the `keycloak-initial-admin` Secret managed by the RHBK operator. Because the installer reads credentials at deploy time, the secret stays in sync across upgrades — including after an RHBK operator upgrade that rotates the `keycloak-initial-admin` password.
 
-1. Reads the actual admin credentials from the `keycloak-initial-admin` Secret in the Keycloak namespace (created and managed by the RHBK operator with a randomly-generated password).
-2. Creates the per-agent-namespace OAuth client secrets using those credentials.
+The per-agent OAuth client secrets are then provisioned by the `kagenti-agent-oauth-secret-job` Helm Job, which also reads `keycloak-initial-admin` directly.
 
-Because the Job reads credentials at deploy time rather than rendering them into the Helm release, credentials stay in sync across upgrades — including after an RHBK operator upgrade that rotates the `keycloak-initial-admin` password.
-
-The source secret name and key names are configurable via `values.yaml` if you use a different credential secret:
+The source secret name and key names are configurable via `values.yaml`:
 
 ```yaml
 keycloak:
-  adminSecretName: keycloak-initial-admin  # Secret name in keycloak namespace
-  adminUsernameKey: username               # Key within the secret
+  adminSecretName: keycloak-initial-admin  # Secret in the keycloak namespace
+  adminUsernameKey: username
   adminPasswordKey: password
 ```
 
 ### Manual Sync (break-glass)
 
-If a credential rotation leaves an agent namespace out of sync, re-run a `helm upgrade` to trigger a new Job run. Alternatively, update the secret directly:
+If a credential rotation leaves `keycloak-admin-secret` out of sync, re-run the installer or sync it manually:
 
 ```bash
 KC_USER=$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.username}' | base64 -d)
 KC_PASS=$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' | base64 -d)
 
-for ns in team1 team2; do
-  kubectl create secret generic keycloak-admin-secret -n $ns \
-    --from-literal=KEYCLOAK_ADMIN_USERNAME="$KC_USER" \
-    --from-literal=KEYCLOAK_ADMIN_PASSWORD="$KC_PASS" \
-    --dry-run=client -o yaml | kubectl apply -f -
-done
+kubectl create secret generic keycloak-admin-secret -n kagenti-system \
+  --from-literal=username="$KC_USER" \
+  --from-literal=password="$KC_PASS" \
+  --dry-run=client -o yaml | kubectl apply -f -
 ```
+
+Then re-run `helm upgrade` to trigger a new `kagenti-agent-oauth-secret-job` run and re-register OAuth clients.
 
 > **Security note:** For production deployments, use a dedicated Keycloak service account with limited permissions instead of the admin account. See the [Identity Guide](./identity-guide.md) for details.
 
