@@ -831,7 +831,13 @@ class TestLogInjectionSanitization:
         # doesn't break this test; the security invariant is the absence of the
         # injected newline in the record below, not the exact record count.
         assert len(caplog.records) >= 1
-        message = caplog.records[0].getMessage()
+        # Select the record that actually logged the namespace rather than assuming
+        # it is records[0]: a future debug line on the error path could land first,
+        # and records[0] would then check the wrong message. Matching on "team1"
+        # finds the security-relevant record whether or not it was sanitized.
+        namespace_records = [r.getMessage() for r in caplog.records if "team1" in r.getMessage()]
+        assert namespace_records, "expected a log record referencing the namespace"
+        message = namespace_records[0]
         # The sanitized namespace must be glued together with no embedded newline,
         # so the attacker-supplied "injected" segment cannot appear as its own log line.
         assert "team1injected" in message
