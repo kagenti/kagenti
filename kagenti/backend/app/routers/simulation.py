@@ -83,6 +83,65 @@ class SimulationCreateResponse(BaseModel):
     message: str
 
 
+class GenerationStatusResponse(BaseModel):
+    """UI-pollable generation status for a simulated tool (issue #2162)."""
+
+    status: str  # Generating | Ready | Failed | Error
+    reason: Optional[str] = None
+    mcpUrl: Optional[str] = None
+
+
+# Container waiting reasons that indicate a runtime/pod-level Error (not a
+# harness generation failure): missing LLM secret, bad image, crash loop.
+POD_ERROR_REASONS = {
+    "CrashLoopBackOff",
+    "ImagePullBackOff",
+    "ErrImagePull",
+    "CreateContainerConfigError",
+}
+
+
+def map_generation_status(
+    harness: Optional[dict],
+    pod_ready: bool,
+    pod_waiting_reason: Optional[str],
+    pod_waiting_message: Optional[str],
+    elapsed_seconds: float,
+    timeout_seconds: int,
+) -> GenerationStatusResponse:
+    """Map live harness + pod state to a stable UI phase.
+
+    `harness` is the parsed GET /api/v1/simulation body, or None when the harness
+    is unreachable or reports 404 (no simulation active yet). Pure — the caller
+    supplies elapsed time so this is fully unit-testable.
+    """
+    if harness is not None:
+        status = harness.get("status")
+        if status == "ready":
+            return GenerationStatusResponse(
+                status="Ready", reason=None, mcpUrl=harness.get("mcp_url")
+            )
+        if status == "failed":
+            err = harness.get("error") or {}
+            code = err.get("code") or "unknown"
+            message = err.get("message") or ""
+            reason = f"{code}: {message}".rstrip(": ") if message else code
+            return GenerationStatusResponse(status="Failed", reason=reason, mcpUrl=None)
+        # pending / generating_skill / initializing / generated
+        return GenerationStatusResponse(status="Generating", reason=None, mcpUrl=None)
+
+    # Harness unreachable or no simulation yet — distinguish "still starting"
+    # from "crash-looping" via pod state, and cap the wait with the watchdog.
+    if pod_waiting_reason in POD_ERROR_REASONS:
+        reason = pod_waiting_reason
+        if pod_waiting_message:
+            reason = f"{pod_waiting_reason}: {pod_waiting_message}"
+        return GenerationStatusResponse(status="Error", reason=reason, mcpUrl=None)
+    if elapsed_seconds > timeout_seconds:
+        return GenerationStatusResponse(status="Failed", reason="generation_stalled", mcpUrl=None)
+    return GenerationStatusResponse(status="Generating", reason=None, mcpUrl=None)
+
+
 @router.get("/health", response_model=SimulationHealthResponse)
 async def simulation_health() -> SimulationHealthResponse:
     """Return OK when the flag-gated simulation router is mounted."""
