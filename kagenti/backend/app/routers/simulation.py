@@ -125,7 +125,7 @@ def map_generation_status(
             err = harness.get("error") or {}
             code = err.get("code") or "unknown"
             message = err.get("message") or ""
-            reason = f"{code}: {message}".rstrip(": ") if message else code
+            reason = f"{code}: {message}" if message else code
             return GenerationStatusResponse(status="Failed", reason=reason, mcpUrl=None)
         # pending / generating_skill / initializing / generated
         return GenerationStatusResponse(status="Generating", reason=None, mcpUrl=None)

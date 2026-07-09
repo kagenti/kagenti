@@ -63,3 +63,23 @@ def test_no_harness_past_timeout_maps_to_failed_stalled():
     out = _map(harness=None, ready=True, elapsed=700.0, timeout=600)
     assert out.status == "Failed"
     assert out.reason == "generation_stalled"
+
+
+def test_failed_missing_code_defaults_to_unknown():
+    out = _map(harness={"status": "failed", "error": {"message": "boom"}})
+    assert out.status == "Failed"
+    assert out.reason == "unknown: boom"
+
+
+def test_failed_empty_message_uses_code_only():
+    out = _map(harness={"status": "failed", "error": {"code": "creation_timeout", "message": ""}})
+    assert out.status == "Failed"
+    assert out.reason == "creation_timeout"
+
+
+def test_failed_message_with_trailing_colon_is_preserved():
+    out = _map(
+        harness={"status": "failed", "error": {"code": "sidecar_start_failed", "message": "died: "}}
+    )
+    assert out.status == "Failed"
+    assert out.reason == "sidecar_start_failed: died: "
