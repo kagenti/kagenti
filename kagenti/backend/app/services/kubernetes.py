@@ -729,6 +729,8 @@ class KubernetesService:
         (e.g. CrashLoopBackOff, ImagePullBackOff, CreateContainerConfigError) — the
         signal used to derive a simulated tool's Error state (#2162).
         """
+        namespace = _sanitize(namespace)
+        label_selector = _sanitize(label_selector)
         try:
             pods = self.core_api.list_namespaced_pod(
                 namespace=namespace, label_selector=label_selector
