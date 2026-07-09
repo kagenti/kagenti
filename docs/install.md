@@ -405,8 +405,8 @@ KC_USER=$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.d
 KC_PASS=$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' | base64 -d)
 
 kubectl create secret generic keycloak-admin-secret -n kagenti-system \
-  --from-literal=username="$KC_USER" \
-  --from-literal=password="$KC_PASS" \
+  --from-literal=KEYCLOAK_ADMIN_USERNAME="$KC_USER" \
+  --from-literal=KEYCLOAK_ADMIN_PASSWORD="$KC_PASS" \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
