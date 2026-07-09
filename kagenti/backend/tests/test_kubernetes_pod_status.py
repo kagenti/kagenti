@@ -59,3 +59,36 @@ def test_api_error_reports_not_ready():
     core.list_namespaced_pod.side_effect = ApiException(status=500)
     result = svc.get_workload_pod_status("team1", "app.kubernetes.io/name=petstore")
     assert result == {"ready": False, "waiting_reason": None, "waiting_message": None}
+
+
+def test_ready_true_if_any_pod_ready():
+    # A later not-ready pod must not overwrite an earlier ready=True.
+    svc, _ = _svc_with_pods([_pod(ready=True), _pod(ready=False)])
+    result = svc.get_workload_pod_status("team1", "app.kubernetes.io/name=petstore")
+    assert result["ready"] is True
+
+
+def test_first_waiting_container_across_pods_wins():
+    # First waiting container found (pod order, then container order) wins.
+    svc, _ = _svc_with_pods(
+        [
+            _pod(ready=False, waiting_reason="ImagePullBackOff", waiting_message="pull failed"),
+            _pod(ready=False, waiting_reason="CrashLoopBackOff", waiting_message="back-off"),
+        ]
+    )
+    result = svc.get_workload_pod_status("team1", "app.kubernetes.io/name=petstore")
+    assert result["waiting_reason"] == "ImagePullBackOff"
+    assert result["waiting_message"] == "pull failed"
+
+
+def test_waiting_reason_picked_up_from_later_pod_when_first_has_none():
+    # A ready pod with no waiting container, plus a crash-looping pod → surface the crash.
+    svc, _ = _svc_with_pods(
+        [
+            _pod(ready=True),
+            _pod(ready=False, waiting_reason="CrashLoopBackOff", waiting_message="back-off"),
+        ]
+    )
+    result = svc.get_workload_pod_status("team1", "app.kubernetes.io/name=petstore")
+    assert result["ready"] is True
+    assert result["waiting_reason"] == "CrashLoopBackOff"

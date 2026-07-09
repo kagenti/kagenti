@@ -6,8 +6,10 @@ Simulated MCP tools API endpoints (epic #2151).
 
 Mounted only when ``kagenti_feature_flag_simulated_tools`` is enabled
 (see ``app/main.py``). This module owns the create path that provisions a
-simulated tool's workload (StatefulSet + per-tool PVC + Service). Generation
-orchestration, lifecycle, and database re-seed attach in later issues.
+simulated tool's workload (StatefulSet + per-tool PVC + Service), the
+generation-trigger task that posts the spec to the harness, and the
+generation-status endpoint that surfaces Generating/Ready/Failed/Error.
+Lifecycle and database re-seed attach in later issues.
 """
 
 import asyncio
@@ -64,38 +66,66 @@ async def _run_generation_trigger(namespace: str, name: str, spec: dict, port: i
     """Wait for the harness pod to accept connections, then POST the spec once.
 
     The harness generates in the background after a 202; this task's only job is
-    to deliver the spec, retrying while the pod is still starting. Bounded by
-    ``simulation_generation_timeout`` so it never loops forever; a give-up is
-    later surfaced by the status endpoint's watchdog as Failed/generation_stalled.
+    to deliver the spec, retrying while the pod is still starting (connection
+    failures) or briefly warming up (5xx). A 202/409 is terminal success; any
+    other 4xx is a terminal rejection. Bounded by ``simulation_generation_timeout``
+    so it never loops forever; a give-up is later surfaced by the status
+    endpoint's watchdog as Failed/generation_stalled.
+
+    Runs fire-and-forget via ``asyncio.create_task``, so it must never let an
+    exception escape (an unretrieved task exception would only surface as log
+    noise); any unexpected error is logged and ends the task.
     """
     base_url = _harness_base_url(name, namespace, port)
     deadline = time.monotonic() + settings.simulation_generation_timeout
     interval = settings.simulation_trigger_poll_interval
-    while True:
-        try:
-            code = await post_simulation(base_url, spec, name)
-        except HarnessUnreachable:
-            if time.monotonic() >= deadline:
-                logger.warning(
-                    "Gave up posting spec to harness for '%s' (unreachable past timeout)",
+    try:
+        while True:
+            try:
+                code = await post_simulation(base_url, spec, name)
+            except HarnessUnreachable:
+                if time.monotonic() >= deadline:
+                    logger.warning(
+                        "Gave up posting spec to harness for '%s' (unreachable past timeout)",
+                        sanitize_log(name),
+                    )
+                    return
+                await asyncio.sleep(interval)
+                continue
+            if code in (202, 409):
+                logger.info(
+                    "Generation triggered for simulated tool '%s' (HTTP %d)",
                     sanitize_log(name),
+                    code,
                 )
                 return
-            await asyncio.sleep(interval)
-            continue
-        if code in (202, 409):
-            logger.info(
-                "Generation triggered for simulated tool '%s' (HTTP %d)",
-                sanitize_log(name),
-                code,
-            )
-        else:
+            if code >= 500:
+                # Transient server error while the harness warms up — retry until
+                # the deadline rather than giving up on the first hiccup.
+                if time.monotonic() >= deadline:
+                    logger.warning(
+                        "Gave up posting spec to harness for '%s' (HTTP %d past timeout)",
+                        sanitize_log(name),
+                        code,
+                    )
+                    return
+                await asyncio.sleep(interval)
+                continue
+            # Terminal 4xx rejection (e.g. 413 too large, 422 invalid spec).
             logger.warning(
                 "Harness rejected spec for simulated tool '%s' (HTTP %d)",
                 sanitize_log(name),
                 code,
             )
-        return
+            return
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.warning(
+            "Unexpected error in generation trigger for simulated tool '%s'",
+            sanitize_log(name),
+            exc_info=True,
+        )
 
 
 async def cancel_generation_tasks() -> None:
@@ -175,7 +205,6 @@ POD_ERROR_REASONS = {
 
 def map_generation_status(
     harness: Optional[dict],
-    pod_ready: bool,
     pod_waiting_reason: Optional[str],
     pod_waiting_message: Optional[str],
     elapsed_seconds: float,
@@ -336,15 +365,23 @@ async def generation_status(
     try:
         harness = await get_simulation(base_url)
     except HarnessNotFound:
+        # No simulation active yet — routine before the spec is posted.
         harness = None
-    except (HarnessUnreachable, httpx.HTTPError) as e:
-        logger.debug("Harness read failed for '%s': %s", sanitize_log(name), sanitize_log(str(e)))
+    except HarnessUnreachable as e:
+        # Routine while the harness pod is still starting; maps to Generating.
+        logger.debug(
+            "Harness not reachable yet for '%s': %s", sanitize_log(name), sanitize_log(str(e))
+        )
+        harness = None
+    except httpx.HTTPError as e:
+        # An unexpected harness HTTP failure (e.g. 5xx) — degrade to pod state
+        # rather than 500, but surface it: this is not the routine not-started case.
+        logger.warning("Harness read error for '%s': %s", sanitize_log(name), sanitize_log(str(e)))
         harness = None
 
     pod = kube.get_workload_pod_status(namespace, f"{APP_KUBERNETES_IO_NAME}={name}")
     return map_generation_status(
         harness=harness,
-        pod_ready=pod["ready"],
         pod_waiting_reason=pod["waiting_reason"],
         pod_waiting_message=pod["waiting_message"],
         elapsed_seconds=elapsed,

@@ -123,6 +123,13 @@ def test_unknown_workload_returns_404():
     assert r.status_code == 404
 
 
+def test_statefulset_read_error_returns_502():
+    # A non-404 ApiException reading the StatefulSet surfaces as 502.
+    kube = _kube(sts_exc=ApiException(status=403))
+    r = _get(_client(kube))
+    assert r.status_code == 502
+
+
 def test_harness_http_error_degrades_to_pod_state():
     import httpx as _httpx
 

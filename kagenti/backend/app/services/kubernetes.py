@@ -734,7 +734,9 @@ class KubernetesService:
                 namespace=namespace, label_selector=label_selector
             ).items
         except ApiException as e:
-            logger.debug("Error listing pods in %s (%s): %s", namespace, label_selector, e)
+            # A real RBAC/connectivity failure here would otherwise silently
+            # look like "not ready" — surface it at warning level.
+            logger.warning("Error listing pods in %s (%s): %s", namespace, label_selector, e)
             return {"ready": False, "waiting_reason": None, "waiting_message": None}
 
         ready = False

@@ -7,9 +7,10 @@ from app.routers.simulation import map_generation_status
 
 
 def _map(harness=None, ready=False, reason=None, message=None, elapsed=1.0, timeout=600):
+    # `ready` is accepted for call-site compatibility; the mapper does not
+    # depend on pod readiness (reachability + waiting reason drive the result).
     return map_generation_status(
         harness=harness,
-        pod_ready=ready,
         pod_waiting_reason=reason,
         pod_waiting_message=message,
         elapsed_seconds=elapsed,

@@ -41,7 +41,7 @@ async def get_simulation(base_url: str) -> dict:
         except (httpx.ConnectError, httpx.TimeoutException) as e:
             raise HarnessUnreachable(str(e)) from e
         if resp.status_code == 404:
-            raise HarnessNotFound()
+            raise HarnessNotFound("harness reports no active simulation")
         resp.raise_for_status()
         return resp.json()
 
