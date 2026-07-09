@@ -22,7 +22,7 @@ async def test_trigger_posts_once_on_202():
         await sim._run_generation_trigger("team1", "petstore", {"openapi": "3.0.0"}, 8000)
     post.assert_awaited_once()
     args = post.await_args.args
-    assert args[0] == "http://petstore.team1.svc.cluster.local:8000"
+    assert args[0] == "http://petstore-mcp.team1.svc.cluster.local:8000"
     assert args[1] == {"openapi": "3.0.0"}
     assert args[2] == "petstore"
 

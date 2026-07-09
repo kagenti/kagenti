@@ -148,23 +148,28 @@ def test_create_rejects_invalid_custom_name_with_422():
 
 def test_create_spawns_generation_trigger():
     kube = _kube()
-    with (
-        patch("app.core.auth.settings") as auth,
-        patch("app.routers.simulation.settings") as s,
-        patch("app.routers.simulation._run_generation_trigger", new=MagicMock()) as trig,
-    ):
-        auth.enable_auth = False
-        s.simulation_harness_image = "img"
-        # _run_generation_trigger is wrapped in asyncio.create_task; the MagicMock
-        # returns a coroutine-like sentinel, so patch create_task to capture the call.
-        with patch("app.routers.simulation.asyncio.create_task") as create_task:
-            r = _client(kube).post(
-                "/simulation/tools",
-                json={"namespace": "team1", "openapiSpec": VALID_SPEC},
-            )
-    assert r.status_code == 202
-    create_task.assert_called_once()
-    trig.assert_called_once()
-    ns, name, spec, port = trig.call_args.args
-    assert ns == "team1"
-    assert name == "pet-store"
+    saved = set(sim_router._generation_tasks)
+    try:
+        with (
+            patch("app.core.auth.settings") as auth,
+            patch("app.routers.simulation.settings") as s,
+            patch("app.routers.simulation._run_generation_trigger", new=MagicMock()) as trig,
+        ):
+            auth.enable_auth = False
+            s.simulation_harness_image = "img"
+            # _run_generation_trigger is wrapped in asyncio.create_task; the MagicMock
+            # returns a coroutine-like sentinel, so patch create_task to capture the call.
+            with patch("app.routers.simulation.asyncio.create_task") as create_task:
+                r = _client(kube).post(
+                    "/simulation/tools",
+                    json={"namespace": "team1", "openapiSpec": VALID_SPEC},
+                )
+        assert r.status_code == 202
+        create_task.assert_called_once()
+        trig.assert_called_once()
+        ns, name, spec, port = trig.call_args.args
+        assert ns == "team1"
+        assert name == "pet-store"
+    finally:
+        sim_router._generation_tasks.clear()
+        sim_router._generation_tasks.update(saved)

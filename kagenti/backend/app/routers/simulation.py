@@ -23,7 +23,11 @@ from pydantic import BaseModel, field_validator
 
 from app.core.auth import ROLE_OPERATOR, ROLE_VIEWER, require_roles
 from app.core.config import settings
-from app.core.constants import APP_KUBERNETES_IO_NAME, DEFAULT_IN_CLUSTER_PORT
+from app.core.constants import (
+    APP_KUBERNETES_IO_NAME,
+    DEFAULT_IN_CLUSTER_PORT,
+    TOOL_SERVICE_SUFFIX,
+)
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
 from app.services.simulation_harness_client import (
     HarnessNotFound,
@@ -51,6 +55,11 @@ logger = logging.getLogger(__name__)
 _generation_tasks: set = set()
 
 
+def _harness_base_url(name: str, namespace: str, port: int) -> str:
+    """In-cluster URL of a simulated tool's harness Service ({name}-mcp)."""
+    return f"http://{name}{TOOL_SERVICE_SUFFIX}.{namespace}.svc.cluster.local:{port}"
+
+
 async def _run_generation_trigger(namespace: str, name: str, spec: dict, port: int) -> None:
     """Wait for the harness pod to accept connections, then POST the spec once.
 
@@ -59,7 +68,7 @@ async def _run_generation_trigger(namespace: str, name: str, spec: dict, port: i
     ``simulation_generation_timeout`` so it never loops forever; a give-up is
     later surfaced by the status endpoint's watchdog as Failed/generation_stalled.
     """
-    base_url = f"http://{name}.{namespace}.svc.cluster.local:{port}"
+    base_url = _harness_base_url(name, namespace, port)
     deadline = time.monotonic() + settings.simulation_generation_timeout
     interval = settings.simulation_trigger_poll_interval
     while True:
@@ -322,7 +331,7 @@ async def generation_status(
     created = sts.metadata.creation_timestamp
     elapsed = (datetime.now(timezone.utc) - created).total_seconds() if created else 0.0
 
-    base_url = f"http://{name}.{namespace}.svc.cluster.local:{DEFAULT_IN_CLUSTER_PORT}"
+    base_url = _harness_base_url(name, namespace, DEFAULT_IN_CLUSTER_PORT)
     harness = None
     try:
         harness = await get_simulation(base_url)
