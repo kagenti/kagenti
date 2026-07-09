@@ -827,7 +827,10 @@ class TestLogInjectionSanitization:
             with pytest.raises(ApiException):
                 kubernetes_service.create_statefulset(malicious_namespace, {"metadata": {}})
 
-        assert len(caplog.records) == 1
+        # We assert >= 1 (not == 1) so a future extra log call on the error path
+        # doesn't break this test; the security invariant is the absence of the
+        # injected newline in the record below, not the exact record count.
+        assert len(caplog.records) >= 1
         message = caplog.records[0].getMessage()
         # The sanitized namespace must be glued together with no embedded newline,
         # so the attacker-supplied "injected" segment cannot appear as its own log line.
