@@ -74,6 +74,21 @@ def test_create_wires_image_pull_secret_into_statefulset():
     assert sts["spec"]["template"]["spec"]["imagePullSecrets"] == [{"name": "ghcr-secret"}]
 
 
+def test_create_omits_image_pull_secret_when_setting_empty():
+    kube = _kube()
+    with patch("app.core.auth.settings") as auth, patch("app.routers.simulation.settings") as s:
+        auth.enable_auth = False
+        s.simulation_harness_image = "ghcr.io/kagenti/simulation-harness:latest"
+        s.simulation_image_pull_secret = ""
+        r = _client(kube).post(
+            "/simulation/tools",
+            json={"namespace": "team1", "openapiSpec": VALID_SPEC},
+        )
+    assert r.status_code == 202
+    sts = kube.create_statefulset.call_args.args[1]
+    assert "imagePullSecrets" not in sts["spec"]["template"]["spec"]
+
+
 def test_create_conflict_returns_409():
     kube = _kube()
     kube.create_statefulset.side_effect = ApiException(status=409)
