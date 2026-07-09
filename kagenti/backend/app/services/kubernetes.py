@@ -720,6 +720,42 @@ class KubernetesService:
             logger.error(f"Error patching StatefulSet {name} in {namespace}: {e}")
             raise
 
+    def get_workload_pod_status(self, namespace: str, label_selector: str) -> dict:
+        """Inspect pods matching a label selector for readiness and waiting state.
+
+        Returns {"ready": bool, "waiting_reason": str|None, "waiting_message": str|None}.
+        `ready` is True if any matching pod reports a Ready condition. The waiting
+        reason/message come from the first container found in a waiting state
+        (e.g. CrashLoopBackOff, ImagePullBackOff, CreateContainerConfigError) — the
+        signal used to derive a simulated tool's Error state (#2162).
+        """
+        try:
+            pods = self.core_api.list_namespaced_pod(
+                namespace=namespace, label_selector=label_selector
+            ).items
+        except ApiException as e:
+            logger.debug("Error listing pods in %s (%s): %s", namespace, label_selector, e)
+            return {"ready": False, "waiting_reason": None, "waiting_message": None}
+
+        ready = False
+        waiting_reason = None
+        waiting_message = None
+        for pod in pods:
+            conditions = (pod.status and pod.status.conditions) or []
+            if any(c.type == "Ready" and c.status == "True" for c in conditions):
+                ready = True
+            container_statuses = (pod.status and pod.status.container_statuses) or []
+            for cs in container_statuses:
+                waiting = cs.state and cs.state.waiting
+                if waiting and waiting.reason and waiting_reason is None:
+                    waiting_reason = waiting.reason
+                    waiting_message = waiting.message
+        return {
+            "ready": ready,
+            "waiting_reason": waiting_reason,
+            "waiting_message": waiting_message,
+        }
+
     # -------------------------------------------------------------------------
     # Job Operations
     # -------------------------------------------------------------------------
