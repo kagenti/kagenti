@@ -117,6 +117,21 @@ def test_statefulset_spire_and_authbridge_flags():
     assert pod_ann["kagenti.io/authbridge-mode"] == "lite"
 
 
+def test_statefulset_adds_image_pull_secret_when_provided():
+    spec = _sts(image_pull_secret="ghcr-secret")["spec"]["template"]["spec"]
+    assert spec["imagePullSecrets"] == [{"name": "ghcr-secret"}]
+
+
+def test_statefulset_omits_image_pull_secret_when_none():
+    spec = _sts()["spec"]["template"]["spec"]
+    assert "imagePullSecrets" not in spec
+
+
+def test_statefulset_omits_image_pull_secret_when_empty_string():
+    spec = _sts(image_pull_secret="")["spec"]["template"]["spec"]
+    assert "imagePullSecrets" not in spec
+
+
 from app.services.simulation_manifests import build_simulation_service
 
 

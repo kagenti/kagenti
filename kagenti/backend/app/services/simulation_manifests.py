@@ -179,6 +179,7 @@ def build_simulation_statefulset(
     spire_enabled: bool = False,
     auth_bridge_enabled: bool = False,
     auth_bridge_mode: Optional[str] = None,
+    image_pull_secret: Optional[str] = None,
 ) -> dict:
     """Build a StatefulSet manifest for a simulated tool (replicas 1, HPA off)."""
     service_name = f"{name}{TOOL_SERVICE_SUFFIX}"
@@ -215,7 +216,7 @@ def build_simulation_statefulset(
     if auth_bridge_mode:
         pod_annotations["kagenti.io/authbridge-mode"] = auth_bridge_mode
 
-    return {
+    manifest = {
         "apiVersion": "apps/v1",
         "kind": "StatefulSet",
         "metadata": {
@@ -286,6 +287,9 @@ def build_simulation_statefulset(
             ],
         },
     }
+    if image_pull_secret:
+        manifest["spec"]["template"]["spec"]["imagePullSecrets"] = [{"name": image_pull_secret}]
+    return manifest
 
 
 def build_simulation_service(
