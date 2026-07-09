@@ -15,10 +15,10 @@ from app.routers import simulation as sim_router
 from app.services.kubernetes import get_kubernetes_service
 
 
-def _sts(created=None, ready_replicas=1):
+def _sts(created=None, ready_replicas=1, name="petstore", namespace="team1"):
     created = created or datetime.now(timezone.utc)
     return SimpleNamespace(
-        metadata=SimpleNamespace(creation_timestamp=created),
+        metadata=SimpleNamespace(creation_timestamp=created, name=name, namespace=namespace),
         spec=SimpleNamespace(replicas=1),
         status=SimpleNamespace(ready_replicas=ready_replicas),
     )

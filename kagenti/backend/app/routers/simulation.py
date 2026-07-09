@@ -14,6 +14,7 @@ Lifecycle and database re-seed attach in later issues.
 
 import asyncio
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from typing import List, Literal, Optional
@@ -38,6 +39,7 @@ from app.services.simulation_harness_client import (
     post_simulation,
 )
 from app.services.simulation_manifests import (
+    MAX_SIMULATION_NAME_LEN,
     EnvVar,
     build_simulation_env_vars,
     build_simulation_service,
@@ -57,6 +59,14 @@ logger = logging.getLogger(__name__)
 _generation_tasks: set = set()
 
 
+# Full-string DNS-1123 label matcher, kept local so the sanitizing guard below
+# lives in the same frame as the URL sink. CodeQL recognizes an re.fullmatch
+# guard as an SSRF barrier only when it directly gates the tainted value at the
+# point of interpolation; the cross-frame boolean helpers in simulation_manifests
+# validate identically but are not seen through by the taint tracker.
+_DNS1123_LABEL_RE = re.compile(r"[a-z0-9](?:[-a-z0-9]*[a-z0-9])?")
+
+
 def _harness_base_url(name: str, namespace: str, port: int) -> str:
     """In-cluster URL of a simulated tool's harness Service ({name}-mcp).
 
@@ -66,9 +76,11 @@ def _harness_base_url(name: str, namespace: str, port: int) -> str:
     (CWE-918); the create path's names are already valid, so this never rejects
     a legitimate request.
     """
-    safe_name = validate_custom_name(name)
-    safe_namespace = validate_namespace(namespace)
-    return f"http://{safe_name}{TOOL_SERVICE_SUFFIX}.{safe_namespace}.svc.cluster.local:{port}"
+    if not (_DNS1123_LABEL_RE.fullmatch(name) and len(name) <= MAX_SIMULATION_NAME_LEN):
+        raise ValueError("name must be a DNS-1123 label")
+    if not _DNS1123_LABEL_RE.fullmatch(namespace):
+        raise ValueError("namespace must be a DNS-1123 label")
+    return f"http://{name}{TOOL_SERVICE_SUFFIX}.{namespace}.svc.cluster.local:{port}"
 
 
 async def _run_generation_trigger(namespace: str, name: str, spec: dict, port: int) -> None:
@@ -379,7 +391,10 @@ async def generation_status(
     created = sts.metadata.creation_timestamp
     elapsed = (datetime.now(timezone.utc) - created).total_seconds() if created else 0.0
 
-    base_url = _harness_base_url(name, namespace, DEFAULT_IN_CLUSTER_PORT)
+    # Build the harness URL from the StatefulSet's server-returned identity, not
+    # the raw path parameters: these come from the k8s API (not a remote-flow
+    # source) and name a resource we just confirmed exists (extra SSRF defense).
+    base_url = _harness_base_url(sts.metadata.name, sts.metadata.namespace, DEFAULT_IN_CLUSTER_PORT)
     harness = None
     try:
         harness = await get_simulation(base_url)
