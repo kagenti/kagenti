@@ -30,4 +30,5 @@ class SimulationHealthResponse(BaseModel):
 @router.get("/health", response_model=SimulationHealthResponse)
 async def simulation_health() -> SimulationHealthResponse:
     """Return OK when the flag-gated simulation router is mounted."""
+    logger.debug("simulation router health check")
     return SimulationHealthResponse(status="ok")
