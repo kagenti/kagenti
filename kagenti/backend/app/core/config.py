@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     # pulls :latest from the registry); set IfNotPresent/Never for local dev when
     # the image is side-loaded into the cluster (e.g. `kind load`).
     simulation_image_pull_policy: str = "Always"
+    # Generation orchestration (#2162): watchdog ceiling from StatefulSet
+    # creationTimestamp — covers image pull + pod start + the harness's own 120s
+    # creation budget. Also bounds the trigger task's post-retry window.
+    simulation_generation_timeout: int = 600
+    # httpx timeout (seconds) for harness control-plane calls.
+    simulation_harness_request_timeout: float = 10.0
+    # Seconds between trigger-task POST attempts while the harness is still starting.
+    simulation_trigger_poll_interval: int = 5
     # Auto-inject MCP_URL / LLM env vars on agent import (TUI parity; weather demo defaults)
     kagenti_feature_flag_agent_import_defaults: bool = False
     skill_autosync_interval: int = (

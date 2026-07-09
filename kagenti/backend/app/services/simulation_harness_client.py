@@ -1,0 +1,63 @@
+# Copyright 2025 IBM Corp.
+# Licensed under the Apache License, Version 2.0
+
+"""Async HTTP client for the simulation harness control plane (issue #2162).
+
+Thin wrappers over the harness REST API at `/api/v1/simulation`. Each call
+creates its own short-lived `httpx.AsyncClient`, matching the in-cluster HTTP
+call pattern used elsewhere in the backend (e.g. skill_autosync, sidecar_manager).
+"""
+
+import logging
+
+import httpx
+
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+class HarnessUnreachable(Exception):  # noqa: N818
+    """The harness could not be contacted (connect error or timeout)."""
+
+
+class HarnessNotFound(Exception):  # noqa: N818
+    """The harness is up but reports no active simulation (HTTP 404)."""
+
+
+def _timeout() -> float:
+    return settings.simulation_harness_request_timeout
+
+
+async def get_simulation(base_url: str) -> dict:
+    """GET the harness's active-simulation record.
+
+    Returns the parsed SimulationResponse dict. Raises HarnessNotFound on 404
+    (no simulation active yet) and HarnessUnreachable on connect/timeout.
+    """
+    async with httpx.AsyncClient(timeout=_timeout()) as client:
+        try:
+            resp = await client.get(f"{base_url}/api/v1/simulation")
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            raise HarnessUnreachable(str(e)) from e
+        if resp.status_code == 404:
+            raise HarnessNotFound()
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def post_simulation(base_url: str, spec: dict, name: str) -> int:
+    """POST the OpenAPI spec to start generation. Returns the HTTP status code.
+
+    202 = accepted (generating in background); 409 = already active. Raises
+    HarnessUnreachable on connect/timeout.
+    """
+    async with httpx.AsyncClient(timeout=_timeout()) as client:
+        try:
+            resp = await client.post(
+                f"{base_url}/api/v1/simulation",
+                json={"openapi_spec": spec, "name": name},
+            )
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            raise HarnessUnreachable(str(e)) from e
+        return resp.status_code
