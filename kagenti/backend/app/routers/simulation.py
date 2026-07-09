@@ -10,7 +10,9 @@ simulated tool's workload (StatefulSet + per-tool PVC + Service). Generation
 orchestration, lifecycle, and database re-seed attach in later issues.
 """
 
+import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from typing import List, Literal, Optional
 
@@ -27,6 +29,7 @@ from app.services.simulation_harness_client import (
     HarnessNotFound,
     HarnessUnreachable,
     get_simulation,
+    post_simulation,
 )
 from app.services.simulation_manifests import (
     EnvVar,
@@ -42,6 +45,59 @@ from app.services.simulation_manifests import (
 from app.utils.routes import sanitize_log
 
 logger = logging.getLogger(__name__)
+
+# Outstanding generation-trigger tasks, tracked so lifespan shutdown can cancel
+# them (mirrors main.py's reconciliation_task handling). Fire-and-forget per tool.
+_generation_tasks: set = set()
+
+
+async def _run_generation_trigger(namespace: str, name: str, spec: dict, port: int) -> None:
+    """Wait for the harness pod to accept connections, then POST the spec once.
+
+    The harness generates in the background after a 202; this task's only job is
+    to deliver the spec, retrying while the pod is still starting. Bounded by
+    ``simulation_generation_timeout`` so it never loops forever; a give-up is
+    later surfaced by the status endpoint's watchdog as Failed/generation_stalled.
+    """
+    base_url = f"http://{name}.{namespace}.svc.cluster.local:{port}"
+    deadline = time.monotonic() + settings.simulation_generation_timeout
+    interval = settings.simulation_trigger_poll_interval
+    while True:
+        try:
+            code = await post_simulation(base_url, spec, name)
+        except HarnessUnreachable:
+            if time.monotonic() >= deadline:
+                logger.warning(
+                    "Gave up posting spec to harness for '%s' (unreachable past timeout)",
+                    sanitize_log(name),
+                )
+                return
+            await asyncio.sleep(interval)
+            continue
+        if code in (202, 409):
+            logger.info(
+                "Generation triggered for simulated tool '%s' (HTTP %d)",
+                sanitize_log(name),
+                code,
+            )
+        else:
+            logger.warning(
+                "Harness rejected spec for simulated tool '%s' (HTTP %d)",
+                sanitize_log(name),
+                code,
+            )
+        return
+
+
+async def cancel_generation_tasks() -> None:
+    """Cancel any outstanding generation-trigger tasks (called on shutdown)."""
+    for task in list(_generation_tasks):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
 
 router = APIRouter(prefix="/simulation", tags=["simulation"])
 
@@ -218,6 +274,9 @@ async def create_simulated_tool(
         sanitize_log(name),
         sanitize_log(request.namespace),
     )
+    trigger = asyncio.create_task(_run_generation_trigger(request.namespace, name, spec, port))
+    _generation_tasks.add(trigger)
+    trigger.add_done_callback(_generation_tasks.discard)
     return SimulationCreateResponse(
         success=True,
         name=name,

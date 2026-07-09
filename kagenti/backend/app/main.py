@@ -198,6 +198,10 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
+    # Stop outstanding simulated-tool generation triggers
+    if _simulation_modules_loaded:
+        await simulation.cancel_generation_tasks()
+
     # Close OpenShell gateway gRPC channels
     if _acp_modules_loaded:
         try:
