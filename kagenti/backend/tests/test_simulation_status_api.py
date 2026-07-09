@@ -130,6 +130,44 @@ def test_statefulset_read_error_returns_502():
     assert r.status_code == 502
 
 
+def test_invalid_namespace_path_param_returns_404_without_backend_calls():
+    # A namespace that is not a DNS-1123 label can never name a real tool; it
+    # must be rejected before it can reach the harness URL (SSRF guard, CWE-918).
+    kube = _kube()
+    harness = AsyncMock()
+    with patch("app.routers.simulation.get_simulation", new=harness):
+        r = _get(_client(kube), ns="Bad_NS", name="petstore")
+    assert r.status_code == 404
+    harness.assert_not_called()
+    kube.apps_api.read_namespaced_stateful_set.assert_not_called()
+
+
+def test_invalid_name_path_param_returns_404_without_backend_calls():
+    kube = _kube()
+    harness = AsyncMock()
+    with patch("app.routers.simulation.get_simulation", new=harness):
+        r = _get(_client(kube), ns="team1", name="Bad_Name")
+    assert r.status_code == 404
+    harness.assert_not_called()
+    kube.apps_api.read_namespaced_stateful_set.assert_not_called()
+
+
+def test_harness_base_url_rejects_invalid_identifiers():
+    import pytest
+
+    with pytest.raises(ValueError):
+        sim_router._harness_base_url("Bad_Name", "team1", 8000)
+    with pytest.raises(ValueError):
+        sim_router._harness_base_url("petstore", "Bad_NS", 8000)
+
+
+def test_harness_base_url_builds_url_for_valid_identifiers():
+    assert (
+        sim_router._harness_base_url("petstore", "team1", 8000)
+        == "http://petstore-mcp.team1.svc.cluster.local:8000"
+    )
+
+
 def test_harness_http_error_degrades_to_pod_state():
     import httpx as _httpx
 

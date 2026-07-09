@@ -58,8 +58,17 @@ _generation_tasks: set = set()
 
 
 def _harness_base_url(name: str, namespace: str, port: int) -> str:
-    """In-cluster URL of a simulated tool's harness Service ({name}-mcp)."""
-    return f"http://{name}{TOOL_SERVICE_SUFFIX}.{namespace}.svc.cluster.local:{port}"
+    """In-cluster URL of a simulated tool's harness Service ({name}-mcp).
+
+    Both identifiers are re-validated as DNS-1123 labels here so no untrusted
+    value can ever be interpolated into the request URL. This is the single
+    chokepoint that closes SSRF via the status endpoint's path parameters
+    (CWE-918); the create path's names are already valid, so this never rejects
+    a legitimate request.
+    """
+    safe_name = validate_custom_name(name)
+    safe_namespace = validate_namespace(namespace)
+    return f"http://{safe_name}{TOOL_SERVICE_SUFFIX}.{safe_namespace}.svc.cluster.local:{port}"
 
 
 async def _run_generation_trigger(namespace: str, name: str, spec: dict, port: int) -> None:
@@ -341,6 +350,16 @@ async def generation_status(
     StatefulSet's creationTimestamp turns a never-started generation into Failed
     rather than hanging (issue #2162).
     """
+    # Reject path parameters that cannot name a real tool before they reach any
+    # backend call (k8s API or the harness URL) — an invalid identifier is
+    # definitionally "not found" and must not be interpolated into a request
+    # target (SSRF guard, CWE-918).
+    try:
+        validate_namespace(namespace)
+        validate_custom_name(name)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Simulated tool not found")
+
     try:
         sts = kube.apps_api.read_namespaced_stateful_set(name=name, namespace=namespace)
     except ApiException as e:
