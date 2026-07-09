@@ -25,6 +25,12 @@ def test_simulation_harness_image_setting_defaults():
     assert s.simulation_harness_image.startswith("ghcr.io/kagenti/simulation-harness")
 
 
+def test_simulation_image_pull_secret_setting_defaults():
+    from app.core.config import Settings
+
+    assert Settings().simulation_image_pull_secret == "ghcr-secret"
+
+
 def test_env_vars_include_harness_and_platform_defaults():
     env = build_simulation_env_vars(None, port=8000)
     by_name = {e["name"]: e for e in env}

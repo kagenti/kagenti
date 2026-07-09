@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     kagenti_feature_flag_simulated_tools: bool = False
     # Generic simulation-harness image serving all simulated tools (epic #2151)
     simulation_harness_image: str = "ghcr.io/kagenti/simulation-harness:latest"
+    # Pull secret for the harness image while it lives in a private registry (interim,
+    # epic #2151). References the Helm-created per-namespace `ghcr-secret`. Set empty
+    # to disable — once the image is public, anonymous pull works and this is unneeded.
+    simulation_image_pull_secret: str = "ghcr-secret"
     # Auto-inject MCP_URL / LLM env vars on agent import (TUI parity; weather demo defaults)
     kagenti_feature_flag_agent_import_defaults: bool = False
     skill_autosync_interval: int = (
