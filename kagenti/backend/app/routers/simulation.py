@@ -11,16 +11,23 @@ orchestration, lifecycle, and database re-seed attach in later issues.
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import List, Literal, Optional
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from kubernetes.client import ApiException
 from pydantic import BaseModel, field_validator
 
-from app.core.auth import ROLE_OPERATOR, require_roles
+from app.core.auth import ROLE_OPERATOR, ROLE_VIEWER, require_roles
 from app.core.config import settings
-from app.core.constants import DEFAULT_IN_CLUSTER_PORT
+from app.core.constants import APP_KUBERNETES_IO_NAME, DEFAULT_IN_CLUSTER_PORT
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
+from app.services.simulation_harness_client import (
+    HarnessNotFound,
+    HarnessUnreachable,
+    get_simulation,
+)
 from app.services.simulation_manifests import (
     EnvVar,
     build_simulation_env_vars,
@@ -217,4 +224,61 @@ async def create_simulated_tool(
         namespace=request.namespace,
         status="Generating",
         message=f"Simulated tool '{name}' provisioning started.",
+    )
+
+
+@router.get(
+    "/tools/{namespace}/{name}/generation-status",
+    response_model=GenerationStatusResponse,
+    dependencies=[Depends(require_roles(ROLE_VIEWER))],
+)
+async def generation_status(
+    namespace: str,
+    name: str,
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> GenerationStatusResponse:
+    """Return the live, UI-pollable generation status of a simulated tool.
+
+    Reads harness `GET /api/v1/simulation` plus pod state on every call and maps
+    to Generating / Ready / Failed / Error. A watchdog derived from the
+    StatefulSet's creationTimestamp turns a never-started generation into Failed
+    rather than hanging (issue #2162).
+    """
+    try:
+        sts = kube.apps_api.read_namespaced_stateful_set(name=name, namespace=namespace)
+    except ApiException as e:
+        if e.status == 404:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Simulated tool '{name}' not found in namespace '{namespace}'",
+            )
+        logger.error(
+            "Failed to read simulated tool '%s' in '%s': %s",
+            sanitize_log(name),
+            sanitize_log(namespace),
+            sanitize_log(str(e)),
+        )
+        raise HTTPException(status_code=502, detail="Failed to read simulated-tool workload")
+
+    created = sts.metadata.creation_timestamp
+    elapsed = (datetime.now(timezone.utc) - created).total_seconds() if created else 0.0
+
+    base_url = f"http://{name}.{namespace}.svc.cluster.local:{DEFAULT_IN_CLUSTER_PORT}"
+    harness = None
+    try:
+        harness = await get_simulation(base_url)
+    except HarnessNotFound:
+        harness = None
+    except (HarnessUnreachable, httpx.HTTPError) as e:
+        logger.debug("Harness read failed for '%s': %s", sanitize_log(name), sanitize_log(str(e)))
+        harness = None
+
+    pod = kube.get_workload_pod_status(namespace, f"{APP_KUBERNETES_IO_NAME}={name}")
+    return map_generation_status(
+        harness=harness,
+        pod_ready=pod["ready"],
+        pod_waiting_reason=pod["waiting_reason"],
+        pod_waiting_message=pod["waiting_message"],
+        elapsed_seconds=elapsed,
+        timeout_seconds=settings.simulation_generation_timeout,
     )
