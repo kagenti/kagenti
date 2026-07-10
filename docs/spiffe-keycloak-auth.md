@@ -138,11 +138,16 @@ Keycloak generates an internal client secret for all clients regardless of auth 
 
 - [ ] Skip creating credential Secrets for `federated-jwt` clients in the operator controller
 - [x] E2E test with both operator and agent SPIFFE auth enabled simultaneously — see Issues Found During Testing below
-- [ ] Complete outbound SPIFFE token exchange test with real agent→tool request (weather-agent + weather-tool)
-- [ ] Make SPIFFE auth the default (flip `spiffe.operatorAuth.enabled: true` and `authBridge.clientAuthType: federated-jwt` in default values)
-- [ ] Remove `kagenti-agent-oauth-secret-job` and `keycloak-admin-secret` once defaults are switched
+- [x] Verify agent SPIFFE JWT-SVID → Keycloak token exchange works (Test 6) ✅
+- [ ] Skip creating credential Secrets for `federated-jwt` clients in the operator controller
 - [ ] Merge PR #2155 (stale docs cleanup)
-- [ ] Update install.md to reflect new defaults
+- [ ] Publish versioned spiffe-helper image tags to OCI (or document :latest-only constraint)
+- [ ] Integrate chart-from-source into `setup-kagenti.sh --enable-operator-spiffe-auth` once OCI chart is updated
+
+> **Deferred (requires team discussion):**
+> - Making SPIFFE auth the default (`spiffe.operatorAuth.enabled: true`, `authBridge.clientAuthType: federated-jwt`)
+> - Removing `kagenti-agent-oauth-secret-job` and `keycloak-admin-secret`
+> - Updating install.md defaults
 
 ---
 
