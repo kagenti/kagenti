@@ -1,0 +1,104 @@
+# Gate-only skill-attestation demo — weather agent on Kind.
+#
+# Faithful subset of the design PDF's init-container pipeline:
+#     snapshot-skills -> skill-integrity-gate -> (agent)
+# The sign / verify (cosign + Rekor) steps are intentionally omitted: they need
+# RHTAS/Sigstore, which Kagenti does not install. This demo proves the
+# tamper-evident core: a modified skill => digest mismatch => pod Init:Error =>
+# agent never starts. Restore => gate passes => agent starts.
+#
+# __SKILL_DIGEST__ is substituted by run.sh with the digest skill-hash computes
+# over the exact baked skill files (developer side == in-pod gate).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weather-service
+  namespace: team1
+  labels:
+    app: weather-service
+  annotations:
+    # Opt-in: remove these and the gate is a no-op (pipeline skips, exit 0).
+    kagenti.io/skill-root: "/skills"
+    kagenti.io/skill-paths: "README.md,Dockerfile,src/weather_service/"
+    kagenti.io/skill-collection-digest: "__SKILL_DIGEST__"
+    kagenti.io/skill-digest-timestamp: "2026-07-10T00:00:00Z"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: weather-service
+  template:
+    metadata:
+      labels:
+        app: weather-service
+      annotations:
+        kagenti.io/skill-root: "/skills"
+        kagenti.io/skill-paths: "README.md,Dockerfile,src/weather_service/"
+        kagenti.io/skill-collection-digest: "__SKILL_DIGEST__"
+    spec:
+      initContainers:
+
+        # 0 · snapshot-skills — copy the image's baked /app onto a shared
+        # emptyDir so the gate hashes the same tree the agent will read.
+        - name: snapshot-skills
+          image: localhost/weather-service:demo
+          command: ["/bin/sh", "-c", "cp -R /app/. /skills/ && ls -R /skills"]
+          volumeMounts:
+            - name: skills
+              mountPath: /skills
+
+        # 1 · skill-integrity-gate — recompute the digest and compare to the
+        # pinned annotation. match -> exit 0 + write manifest; mismatch -> exit 1
+        # (pod wedged in Init:Error, agent never starts).
+        - name: skill-integrity-gate
+          image: ghcr.io/webchang/skill-hash:0.1.0
+          workingDir: /skills
+          command: ["skill-hash", "verify"]
+          args:
+            - "--root-file"
+            - "/pod-meta/skill-root"
+            - "--paths-from-file"
+            - "/pod-meta/skill-paths"
+            - "--expected-digest-file"
+            - "/pod-meta/skill-collection-digest"
+            - "--output-manifest"
+            - "/skill-signatures/skill-manifest.sha256"
+          volumeMounts:
+            - name: pod-annotations
+              mountPath: /pod-meta
+              readOnly: true
+            - name: skills
+              mountPath: /skills
+              readOnly: true
+            - name: skill-signatures
+              mountPath: /skill-signatures
+
+      containers:
+        - name: agent
+          image: localhost/weather-service:demo
+          volumeMounts:
+            - name: skills
+              mountPath: /skills-verified
+              readOnly: true
+            - name: skill-signatures
+              mountPath: /skill-signatures
+              readOnly: true
+
+      volumes:
+        # Downward API — annotations surfaced as files for the gate.
+        - name: pod-annotations
+          downwardAPI:
+            items:
+              - path: "skill-root"
+                fieldRef:
+                  fieldPath: metadata.annotations['kagenti.io/skill-root']
+              - path: "skill-paths"
+                fieldRef:
+                  fieldPath: metadata.annotations['kagenti.io/skill-paths']
+              - path: "skill-collection-digest"
+                fieldRef:
+                  fieldPath: metadata.annotations['kagenti.io/skill-collection-digest']
+        - name: skills
+          emptyDir: {}
+        - name: skill-signatures
+          emptyDir: {}
