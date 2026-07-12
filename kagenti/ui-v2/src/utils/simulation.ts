@@ -100,3 +100,60 @@ export function simStateBadgeColor(state: SimState): 'green' | 'grey' | 'blue' |
       return 'red';
   }
 }
+
+/** Result of parsing a user-supplied db.json seed. */
+export type SeedParseResult =
+  | { ok: true; value: Record<string, unknown> }
+  | { ok: false; error: string };
+
+/**
+ * Validate that a seed string is a JSON object (mirrors the backend's
+ * synchronous 422 for malformed / non-object bodies). Schema validation is the
+ * harness's job; this only gates syntactic validity.
+ */
+export function parseSeedDatabase(text: string): SeedParseResult {
+  if (!text.trim()) {
+    return { ok: false, error: 'Enter a db.json document (a JSON object).' };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, error: 'Dataset is not valid JSON.' };
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, error: 'Dataset must be a JSON object.' };
+  }
+  return { ok: true, value: parsed as Record<string, unknown> };
+}
+
+/**
+ * Map a reseed failure (an ApiError-shaped value) to a user-facing message,
+ * surfacing the harness `json_path` on a 422. Duck-types the error so the helper
+ * stays import-free and unit-testable.
+ */
+export function extractReseedError(err: unknown): { message: string; jsonPath?: string } {
+  const e = err as { status?: number; message?: string; detail?: unknown } | null;
+  if (!e || typeof e !== 'object' || typeof e.status !== 'number') {
+    return { message: 'Unexpected error re-seeding the database.' };
+  }
+  switch (e.status) {
+    case 422: {
+      const detail = e.detail;
+      if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+        const d = detail as { message?: string; json_path?: string };
+        return {
+          message: d.message || 'Dataset does not validate against the tool schema',
+          jsonPath: d.json_path,
+        };
+      }
+      return { message: e.message || 'Dataset does not validate against the tool schema' };
+    }
+    case 409:
+      return { message: 'Tool calls are in flight — retry the re-seed shortly.' };
+    case 502:
+      return { message: 'Simulated tool is not reachable (it may be stopped).' };
+    default:
+      return { message: e.message || 'Failed to re-seed the database.' };
+  }
+}

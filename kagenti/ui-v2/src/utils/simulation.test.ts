@@ -9,6 +9,8 @@ import {
   deriveSimState,
   availableSimActions,
   simStateBadgeColor,
+  parseSeedDatabase,
+  extractReseedError,
 } from './simulation';
 
 describe('mapGenerationStatusToPhase', () => {
@@ -108,5 +110,63 @@ describe('simStateBadgeColor', () => {
     expect(simStateBadgeColor('Generating')).toBe('blue');
     expect(simStateBadgeColor('Failed')).toBe('red');
     expect(simStateBadgeColor('Error')).toBe('red');
+  });
+});
+
+describe('parseSeedDatabase', () => {
+  it('accepts a JSON object', () => {
+    expect(parseSeedDatabase('{"users": []}')).toEqual({ ok: true, value: { users: [] } });
+  });
+  it('rejects malformed JSON', () => {
+    const r = parseSeedDatabase('not json');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/valid JSON/i);
+  });
+  it('rejects a JSON array', () => {
+    const r = parseSeedDatabase('[]');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/object/i);
+  });
+  it('rejects a JSON scalar', () => {
+    expect(parseSeedDatabase('42').ok).toBe(false);
+    expect(parseSeedDatabase('"x"').ok).toBe(false);
+    expect(parseSeedDatabase('null').ok).toBe(false);
+  });
+  it('rejects empty/whitespace input', () => {
+    expect(parseSeedDatabase('   ').ok).toBe(false);
+  });
+});
+
+describe('extractReseedError', () => {
+  it('pulls json_path and message from a 422 object detail', () => {
+    const err = { status: 422, message: 'x', detail: { message: 'bad row', json_path: '$.users[0].id' } };
+    expect(extractReseedError(err)).toEqual({ message: 'bad row', jsonPath: '$.users[0].id' });
+  });
+  it('falls back to a schema message when the 422 object has no message', () => {
+    const err = { status: 422, message: 'x', detail: { json_path: '$.a' } };
+    expect(extractReseedError(err)).toEqual({
+      message: 'Dataset does not validate against the tool schema',
+      jsonPath: '$.a',
+    });
+  });
+  it('uses the error message for a 422 string detail (pre-flight malformed JSON)', () => {
+    const err = { status: 422, message: 'database is not valid JSON', detail: 'database is not valid JSON' };
+    expect(extractReseedError(err)).toEqual({ message: 'database is not valid JSON' });
+  });
+  it('maps 409 to an in-flight message', () => {
+    expect(extractReseedError({ status: 409, message: 'x' })).toEqual({
+      message: 'Tool calls are in flight — retry the re-seed shortly.',
+    });
+  });
+  it('maps 502 to an unreachable message', () => {
+    expect(extractReseedError({ status: 502, message: 'x' })).toEqual({
+      message: 'Simulated tool is not reachable (it may be stopped).',
+    });
+  });
+  it('falls back to the error message for other statuses', () => {
+    expect(extractReseedError({ status: 500, message: 'boom' })).toEqual({ message: 'boom' });
+  });
+  it('handles a non-ApiError value', () => {
+    expect(extractReseedError('weird')).toEqual({ message: 'Unexpected error re-seeding the database.' });
   });
 });
