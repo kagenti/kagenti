@@ -1220,7 +1220,9 @@ KAGENTI_FLAGS=(
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
   --set "kagenti-operator-chart.featureGates.injectTools=true"
   --set "kagenti-operator-chart.kuadrant.enable=${WITH_KUADRANT}"
+  --set "kagenti-operator-chart.spiffe.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
   --set "kagenti-operator-chart.spiffe.operatorAuth.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
+  --set "kagenti-operator-chart.keycloak.publicUrl=http://keycloak.${DOMAIN}:8080"
   --set "authBridge.clientAuthType=$($ENABLE_AGENT_SPIFFE_AUTH && echo federated-jwt || echo client-secret)"
 )
 
