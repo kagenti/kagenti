@@ -887,6 +887,37 @@ class KubernetesService:
         """Delete a PersistentVolumeClaim by name."""
         self.core_api.delete_namespaced_persistent_volume_claim(name=name, namespace=namespace)
 
+    def list_statefulset_pvcs(self, namespace: str, name: str) -> List[str]:
+        """Names of PVCs provisioned by a StatefulSet's volumeClaimTemplates.
+
+        Generic: matches existing PVCs by the Kubernetes naming convention
+        `{template}-{sts}-{ordinal}`. Catches ordinals left behind by a prior
+        scale-down (StatefulSet PVCs are never auto-deleted). Returns [] if the
+        StatefulSet or its templates are absent.
+        """
+        try:
+            sts = self.get_statefulset(namespace, name)
+        except ApiException as e:
+            if e.status == 404:
+                return []
+            raise
+        templates = (sts.get("spec") or {}).get("volume_claim_templates") or []
+        template_names = [
+            (t.get("metadata") or {}).get("name")
+            for t in templates
+            if (t.get("metadata") or {}).get("name")
+        ]
+        if not template_names:
+            return []
+        matched: List[str] = []
+        for pvc in self.list_persistent_volume_claims(namespace):
+            for t in template_names:
+                prefix = f"{t}-{name}-"
+                if pvc.startswith(prefix) and pvc[len(prefix) :].isdigit():
+                    matched.append(pvc)
+                    break
+        return matched
+
 
 @lru_cache
 def get_kubernetes_service() -> KubernetesService:
