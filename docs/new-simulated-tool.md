@@ -23,8 +23,9 @@ developing agents against a controlled, reproducible API before a real backend e
 
 ## Import via the UI
 Steps mirroring `docs/new-tool.md`: open **Import Tool**, choose the **Simulated
-(from OpenAPI spec)** method, select a namespace, paste/upload `openapi.json`
-(optionally set a custom name), and click **Create**. You land on the generation
+Tool** method (described as generating a tool from an OpenAPI spec), select a
+namespace, paste/upload `openapi.json` (optionally set a custom name), and click
+**Create**. You land on the generation
 progress page; the tool moves **Generating → Ready** and then appears in the catalog
 with a **SIMULATED** badge.
 

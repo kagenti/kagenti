@@ -378,9 +378,9 @@ class TestSimulatedToolFailurePath:
             )
         except httpx.ConnectError as e:
             pytest.skip(f"Backend not accessible at {base_url}: {e}")
-        assert resp.status_code == 202, resp.text
 
         try:
+            assert resp.status_code == 202, resp.text
             status = _poll_generation_status(
                 base_url,
                 headers,
