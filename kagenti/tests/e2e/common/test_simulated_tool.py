@@ -333,3 +333,66 @@ class TestSimulatedToolHappyPath:
                     _delete_tool(base_url, headers, self.verify, name)
                 except Exception:
                     pass
+
+
+@pytest.mark.requires_features(["simulatedTools"])
+class TestSimulatedToolFailurePath:
+    """A missing LLM secret surfaces an Error status with a reason."""
+
+    @pytest.fixture(autouse=True)
+    def _verify(self, is_openshift, openshift_ingress_ca):
+        import ssl
+
+        self.verify = (
+            ssl.create_default_context(cafile=openshift_ingress_ca)
+            if is_openshift
+            else True
+        )
+
+    def test_missing_llm_secret_surfaces_error(self, is_openshift, keycloak_token):
+        base_url = _backend_url(is_openshift)
+        headers = _auth_headers(keycloak_token)
+        spec_str = SPEC_PATH.read_text()
+        name = f"tasks-fail-{uuid.uuid4().hex[:8]}"
+        # Reference a Secret that does not exist -> pod cannot start.
+        env_vars = [
+            {
+                "name": "LLM_API_KEY",
+                "valueFrom": {
+                    "secretKeyRef": {
+                        "name": f"nonexistent-{uuid.uuid4().hex[:8]}",
+                        "key": "apiKey",
+                    }
+                },
+            }
+        ]
+
+        try:
+            resp = _create_tool(
+                base_url,
+                headers,
+                self.verify,
+                name=name,
+                spec_str=spec_str,
+                env_vars=env_vars,
+            )
+        except httpx.ConnectError as e:
+            pytest.skip(f"Backend not accessible at {base_url}: {e}")
+        assert resp.status_code == 202, resp.text
+
+        try:
+            status = _poll_generation_status(
+                base_url,
+                headers,
+                self.verify,
+                name,
+                terminal={"Error", "Failed"},
+                timeout_s=180,
+            )
+            assert status is not None, "no generation-status before timeout"
+            assert status["status"] in {"Error", "Failed"}, (
+                f"expected Error/Failed, got {status['status']}"
+            )
+            assert status.get("reason"), "Error/Failed status must carry a reason"
+        finally:
+            _delete_tool(base_url, headers, self.verify, name)
