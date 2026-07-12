@@ -87,3 +87,27 @@ async def test_post_simulation_raises_unreachable_on_timeout():
     with patch.object(hc.httpx, "AsyncClient", lambda **kw: fake):
         with pytest.raises(hc.HarnessUnreachable):
             await hc.post_simulation("http://sim", {}, "x")
+
+
+@pytest.mark.asyncio
+async def test_reset_simulation_returns_status_code():
+    fake = _FakeClient(resp=_FakeResp(200, {"message": "Session reset successfully"}))
+    with patch.object(hc.httpx, "AsyncClient", lambda **kw: fake):
+        code = await hc.reset_simulation("http://sim")
+    assert code == 200
+
+
+@pytest.mark.asyncio
+async def test_reset_simulation_passes_through_404():
+    fake = _FakeClient(resp=_FakeResp(404))
+    with patch.object(hc.httpx, "AsyncClient", lambda **kw: fake):
+        code = await hc.reset_simulation("http://sim")
+    assert code == 404
+
+
+@pytest.mark.asyncio
+async def test_reset_simulation_raises_unreachable_on_connect_error():
+    fake = _FakeClient(exc=httpx.ConnectError("refused"))
+    with patch.object(hc.httpx, "AsyncClient", lambda **kw: fake):
+        with pytest.raises(hc.HarnessUnreachable):
+            await hc.reset_simulation("http://sim")

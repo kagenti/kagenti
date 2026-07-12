@@ -72,3 +72,17 @@ async def post_simulation(base_url: str, spec: dict, name: str) -> int:
             # the pod's startup window instead of giving up on the first hiccup.
             raise HarnessUnreachable(str(e)) from e
         return resp.status_code
+
+
+async def reset_simulation(base_url: str) -> int:
+    """POST the harness reset endpoint. Returns the HTTP status code.
+
+    200 = session reset; 404 = no active simulation; 503 = exists but not ready.
+    Raises HarnessUnreachable on connect/timeout.
+    """
+    async with httpx.AsyncClient(timeout=_timeout()) as client:
+        try:
+            resp = await client.post(f"{base_url}/api/v1/simulation/reset")
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            raise HarnessUnreachable(str(e)) from e
+        return resp.status_code
