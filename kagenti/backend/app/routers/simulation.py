@@ -13,6 +13,7 @@ Lifecycle and database re-seed attach in later issues.
 """
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -38,6 +39,7 @@ from app.services.simulation_harness_client import (
     HarnessUnreachable,
     get_simulation,
     post_simulation,
+    put_database,
     reset_simulation,
 )
 from app.services.simulation_manifests import (
@@ -242,6 +244,21 @@ class SimulationDeleteResponse(BaseModel):
     name: str
     namespace: str
     deletedResources: List[str]
+    message: str
+
+
+class SimulationDatabaseRequest(BaseModel):
+    """Request to re-seed a simulated tool's database with a user dataset."""
+
+    database: str  # raw JSON text of the new db.json
+
+
+class SimulationDatabaseResponse(BaseModel):
+    """Response after a successful database re-seed."""
+
+    success: bool
+    name: str
+    namespace: str
     message: str
 
 
@@ -655,3 +672,70 @@ async def delete_simulated_tool(
         deletedResources=deleted,
         message=f"Simulated tool '{name}' deleted.",
     )
+
+
+@router.put(
+    "/tools/{namespace}/{name}/database",
+    response_model=SimulationDatabaseResponse,
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def reseed_simulated_tool_database(
+    namespace: str,
+    name: str,
+    request: SimulationDatabaseRequest,
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> SimulationDatabaseResponse:
+    """Re-seed a simulated tool's database with a user-provided dataset.
+
+    Parses the dataset (422 on malformed / non-object JSON, before any backend
+    call), guards that the tool is a simulated StatefulSet, then forwards to the
+    harness PUT /api/v1/simulation/database. The harness validates against the
+    skill's schema.json, atomically overwrites db.json on the PVC, and resets the
+    session; the re-seed therefore persists across restart via the same volume.
+    """
+    _validate_path_params(namespace, name)
+    try:
+        db = json.loads(request.database)
+    except (json.JSONDecodeError, TypeError):
+        raise HTTPException(status_code=422, detail="database is not valid JSON")
+    if not isinstance(db, dict):
+        raise HTTPException(status_code=422, detail="database must be a JSON object")
+
+    sts = _read_simulated_statefulset(kube, namespace, name)
+    base_url = _harness_base_url(sts.metadata.name, sts.metadata.namespace, DEFAULT_IN_CLUSTER_PORT)
+    try:
+        code, body = await put_database(base_url, db)
+    except HarnessUnreachable as e:
+        logger.warning(
+            "Harness unreachable re-seeding '%s': %s", sanitize_log(name), sanitize_log(str(e))
+        )
+        raise HTTPException(
+            status_code=502, detail="Simulated tool is not reachable (it may be stopped)"
+        )
+
+    if code == 200:
+        return SimulationDatabaseResponse(
+            success=True,
+            name=name,
+            namespace=namespace,
+            message=f"Simulated tool '{name}' database re-seeded.",
+        )
+    if code == 422:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": body.get("detail")
+                or "Dataset does not validate against the tool schema",
+                "json_path": body.get("json_path"),
+            },
+        )
+    if code == 409:
+        raise HTTPException(
+            status_code=409, detail="Tool calls are in flight; retry the re-seed shortly"
+        )
+    if code in (404, 503):
+        raise HTTPException(
+            status_code=409, detail="Simulated tool has no active, ready simulation to re-seed"
+        )
+    logger.warning("Unexpected harness database status %d for '%s'", code, sanitize_log(name))
+    raise HTTPException(status_code=502, detail="Failed to re-seed simulated-tool database")
