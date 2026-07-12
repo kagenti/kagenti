@@ -34,11 +34,12 @@ import {
   GridItem,
   Checkbox,
   Radio,
+  TextArea,
 } from '@patternfly/react-core';
 import { TrashIcon, PlusCircleIcon, UploadIcon } from '@patternfly/react-icons';
 import { useMutation } from '@tanstack/react-query';
 
-import { toolService, ShipwrightBuildConfig } from '@/services/api';
+import { toolService, simulationService, ShipwrightBuildConfig } from '@/services/api';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
 import { EnvImportModal, EnvVar } from '@/components/EnvImportModal';
 import { BuildStrategySelector } from '@/components/BuildStrategySelector';
@@ -77,7 +78,7 @@ const REGISTRY_OPTIONS = [
 const DEFAULT_REPO_URL = 'https://github.com/kagenti/agent-examples';
 const DEFAULT_BRANCH = 'main';
 
-type DeploymentMethod = 'source' | 'image';
+type DeploymentMethod = 'source' | 'image' | 'simulated';
 type EnvVarType = 'value' | 'secret' | 'configMap';
 
 interface ServicePort {
@@ -133,6 +134,9 @@ export const ImportToolPage: React.FC = () => {
   // Deploy from image state
   const [containerImage, setContainerImage] = useState('');
   const [imagePullSecret, setImagePullSecret] = useState('');
+
+  // Simulated tool state
+  const [openapiSpec, setOpenapiSpec] = useState('');
 
   // Pod configuration
   const [servicePorts, setServicePorts] = useState<ServicePort[]>([
@@ -195,6 +199,15 @@ export const ImportToolPage: React.FC = () => {
       } else {
         navigate(`/tools/${namespace}/${finalName}`);
       }
+    },
+  });
+
+  const createSimulationMutation = useMutation({
+    mutationFn: (data: Parameters<typeof simulationService.create>[0]) =>
+      simulationService.create(data),
+    onSuccess: (result) => {
+      // Use the backend-returned name (it may be derived from the spec).
+      navigate(`/tools/${namespace}/${result.name}/generate`);
     },
   });
 
@@ -373,10 +386,13 @@ export const ImportToolPage: React.FC = () => {
     let isValid = true;
 
     // Name validation
-    const finalName = name || getNameFromPath();
+    // Simulated tools may omit the name — the backend derives one from the spec.
+    const finalName = name || (deploymentMethod === 'simulated' ? '' : getNameFromPath());
     if (!finalName) {
-      newValidated.name = 'error';
-      isValid = false;
+      if (deploymentMethod !== 'simulated') {
+        newValidated.name = 'error';
+        isValid = false;
+      }
     } else if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(finalName)) {
       newValidated.name = 'error';
       isValid = false;
@@ -409,7 +425,7 @@ export const ImportToolPage: React.FC = () => {
       } else {
         newValidated.registryNamespace = 'success';
       }
-    } else {
+    } else if (deploymentMethod === 'image') {
       // Container image validation: must match [HOST[:PORT]/]NAMESPACE/REPOSITORY[/…]
       if (!containerImage || !isValidContainerImage(containerImage)) {
         newValidated.containerImage = 'error';
@@ -417,24 +433,46 @@ export const ImportToolPage: React.FC = () => {
       } else {
         newValidated.containerImage = 'success';
       }
+    } else if (deploymentMethod === 'simulated') {
+      // OpenAPI spec validation
+      if (!openapiSpec.trim()) {
+        newValidated.openapiSpec = 'error';
+        isValid = false;
+      } else {
+        newValidated.openapiSpec = 'success';
+      }
     }
 
-    // Image tag validation (shared by both deployment methods)
-    if (imageTag && !isValidImageTag(imageTag)) {
-      newValidated.imageTag = 'error';
-      isValid = false;
-    } else if (imageTag) {
-      newValidated.imageTag = 'success';
+    // Image tag validation (shared by the source/image deployment methods)
+    if (deploymentMethod !== 'simulated') {
+      if (imageTag && !isValidImageTag(imageTag)) {
+        newValidated.imageTag = 'error';
+        isValid = false;
+      } else if (imageTag) {
+        newValidated.imageTag = 'success';
+      }
     }
 
     setValidated(newValidated);
     return isValid;
   };
 
+  const isSubmitting = createMutation.isPending || createSimulationMutation.isPending;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!validateForm()) {
+      return;
+    }
+
+    if (deploymentMethod === 'simulated') {
+      createSimulationMutation.mutate({
+        namespace,
+        openapiSpec,
+        name: name || undefined,
+        envVars: envVars.filter((ev) => ev.name && (ev.value !== undefined || ev.valueFrom)),
+      });
       return;
     }
 
@@ -474,7 +512,7 @@ export const ImportToolPage: React.FC = () => {
         authBridgeEnabled,
         spireEnabled,
         authBridgeMode: authBridgeEnabled && useEnvoyMode ? 'envoy-sidecar' : undefined,
-        outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
+        outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id: _id, ...r }) => r) : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
         defaultOutboundPolicy: authBridgeEnabled && defaultOutboundPolicy ? defaultOutboundPolicy : undefined,
@@ -501,7 +539,7 @@ export const ImportToolPage: React.FC = () => {
         authBridgeEnabled,
         spireEnabled,
         authBridgeMode: authBridgeEnabled && useEnvoyMode ? 'envoy-sidecar' : undefined,
-        outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
+        outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id: _id, ...r }) => r) : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
         defaultOutboundPolicy: authBridgeEnabled && defaultOutboundPolicy ? defaultOutboundPolicy : undefined,
@@ -533,6 +571,19 @@ export const ImportToolPage: React.FC = () => {
               >
                 {createMutation.error instanceof Error
                   ? createMutation.error.message
+                  : 'An unexpected error occurred'}
+              </Alert>
+            )}
+
+            {createSimulationMutation.isError && (
+              <Alert
+                variant="danger"
+                title="Failed to create simulated tool"
+                isInline
+                style={{ marginBottom: '16px' }}
+              >
+                {createSimulationMutation.error instanceof Error
+                  ? createSimulationMutation.error.message
                   : 'An unexpected error occurred'}
               </Alert>
             )}
@@ -599,6 +650,17 @@ export const ImportToolPage: React.FC = () => {
                   id="deploymentMethod-image"
                   style={{ marginTop: features.builds ? '8px' : undefined }}
                 />
+                {features.simulatedTools && (
+                  <Radio
+                    name="deploymentMethod"
+                    label="Simulated Tool"
+                    description="Generate a simulated MCP tool from an OpenAPI spec (no source or image needed)"
+                    isChecked={deploymentMethod === 'simulated'}
+                    onChange={() => setDeploymentMethod('simulated')}
+                    id="deploymentMethod-simulated"
+                    style={{ marginTop: '8px' }}
+                  />
+                )}
               </FormGroup>
 
               <Divider style={{ margin: '24px 0' }} />
@@ -893,6 +955,49 @@ export const ImportToolPage: React.FC = () => {
                       <HelperText>
                         <HelperTextItem>
                           Kubernetes secret containing credentials for private registries
+                        </HelperTextItem>
+                      </HelperText>
+                    </FormHelperText>
+                  </FormGroup>
+                </>
+              )}
+
+              {/* Simulated Tool Configuration */}
+              {deploymentMethod === 'simulated' && (
+                <>
+                  <Title headingLevel="h3" size="md" style={{ marginBottom: '16px' }}>
+                    OpenAPI Specification
+                  </Title>
+
+                  <FormGroup label="OpenAPI spec" isRequired fieldId="openapiSpec">
+                    <TextArea
+                      id="openapiSpec"
+                      aria-label="OpenAPI spec"
+                      value={openapiSpec}
+                      onChange={(_e, value) => setOpenapiSpec(value)}
+                      rows={12}
+                      placeholder="Paste openapi.json here, or upload a file below"
+                      validated={validated.openapiSpec}
+                    />
+                    <input
+                      type="file"
+                      accept=".json,.yaml,.yml,application/json"
+                      aria-label="Upload OpenAPI spec file"
+                      style={{ marginTop: '8px' }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = () => setOpenapiSpec(String(reader.result ?? ''));
+                        reader.readAsText(file);
+                      }}
+                    />
+                    <FormHelperText>
+                      <HelperText>
+                        <HelperTextItem variant={validated.openapiSpec === 'error' ? 'error' : 'default'}>
+                          {validated.openapiSpec === 'error'
+                            ? 'OpenAPI spec is required'
+                            : 'Paste an OpenAPI spec (JSON or YAML), or upload a file'}
                         </HelperTextItem>
                       </HelperText>
                     </FormHelperText>
@@ -1358,16 +1463,20 @@ export const ImportToolPage: React.FC = () => {
                 <Button
                   variant="primary"
                   type="submit"
-                  isLoading={createMutation.isPending}
-                  isDisabled={createMutation.isPending}
+                  isLoading={isSubmitting}
+                  isDisabled={isSubmitting}
                 >
-                  {createMutation.isPending
-                    ? deploymentMethod === 'source'
-                      ? 'Starting Build...'
-                      : 'Deploying...'
-                    : deploymentMethod === 'source'
-                      ? 'Build & Deploy Tool'
-                      : 'Deploy Tool'}
+                  {deploymentMethod === 'simulated'
+                    ? createSimulationMutation.isPending
+                      ? 'Creating Simulated Tool...'
+                      : 'Create Simulated Tool'
+                    : createMutation.isPending
+                      ? deploymentMethod === 'source'
+                        ? 'Starting Build...'
+                        : 'Deploying...'
+                      : deploymentMethod === 'source'
+                        ? 'Build & Deploy Tool'
+                        : 'Deploy Tool'}
                 </Button>
                 <Button variant="link" onClick={() => navigate('/tools')}>
                   Cancel
