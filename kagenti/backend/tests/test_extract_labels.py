@@ -21,8 +21,6 @@ class TestExtractLabelsSimulated:
         assert result.simulated is False
 
     def test_existing_fields_still_extracted(self):
-        result = _extract_labels(
-            {"protocol.kagenti.io/mcp": "", "kagenti.io/framework": "python"}
-        )
+        result = _extract_labels({"protocol.kagenti.io/mcp": "", "kagenti.io/framework": "python"})
         assert result.protocol == ["mcp"]
         assert result.framework == "python"
