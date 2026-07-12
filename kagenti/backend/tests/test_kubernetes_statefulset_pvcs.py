@@ -22,11 +22,7 @@ def _svc(sts=None, sts_exc=None, pvcs=None):
 
 
 def _sts_dict(template_names=("data",)):
-    return {
-        "spec": {
-            "volume_claim_templates": [{"metadata": {"name": t}} for t in template_names]
-        }
-    }
+    return {"spec": {"volume_claim_templates": [{"metadata": {"name": t}} for t in template_names]}}
 
 
 def test_matches_template_ordinal_pvcs():
