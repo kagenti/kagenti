@@ -45,6 +45,9 @@ test = [
     # A2A protocol client
     "a2a-sdk>=0.2.5",
 
+    # MCP client for simulated-tool E2E (issue #2167)
+    "mcp>=1.2.0",
+
     # Keycloak client
     "python-keycloak>=3.7.0",
 
