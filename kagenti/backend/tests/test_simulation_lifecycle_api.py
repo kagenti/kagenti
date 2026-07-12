@@ -96,3 +96,47 @@ def test_stop_invalid_name_returns_404_without_backend_calls():
     r = _post(_client(kube), "stop", name="Bad_Name")
     assert r.status_code == 404
     kube.apps_api.read_namespaced_stateful_set.assert_not_called()
+
+
+# ---- reset ----
+
+
+def test_reset_success_returns_200():
+    kube = _kube()
+    with patch("app.routers.simulation.reset_simulation", new=AsyncMock(return_value=200)):
+        r = _post(_client(kube), "reset")
+    assert r.status_code == 200
+    assert r.json()["success"] is True
+
+
+def test_reset_harness_404_returns_409():
+    kube = _kube()
+    with patch("app.routers.simulation.reset_simulation", new=AsyncMock(return_value=404)):
+        r = _post(_client(kube), "reset")
+    assert r.status_code == 409
+
+
+def test_reset_harness_503_returns_409():
+    kube = _kube()
+    with patch("app.routers.simulation.reset_simulation", new=AsyncMock(return_value=503)):
+        r = _post(_client(kube), "reset")
+    assert r.status_code == 409
+
+
+def test_reset_unreachable_returns_502():
+    kube = _kube()
+    with patch(
+        "app.routers.simulation.reset_simulation",
+        new=AsyncMock(side_effect=sim_router.HarnessUnreachable("down")),
+    ):
+        r = _post(_client(kube), "reset")
+    assert r.status_code == 502
+
+
+def test_reset_non_simulated_returns_404():
+    kube = _kube(sts=_sts(simulated=False))
+    reset = AsyncMock()
+    with patch("app.routers.simulation.reset_simulation", new=reset):
+        r = _post(_client(kube), "reset")
+    assert r.status_code == 404
+    reset.assert_not_called()

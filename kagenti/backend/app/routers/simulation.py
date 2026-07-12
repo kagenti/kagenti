@@ -550,3 +550,42 @@ async def start_simulated_tool(
 ) -> SimulationLifecycleResponse:
     """Scale a simulated tool's StatefulSet back to 1 (harness autostarts from bundle)."""
     return _scale_simulated_tool(kube, namespace, name, replicas=1, status_label="Starting")
+
+
+@router.post(
+    "/tools/{namespace}/{name}/reset",
+    response_model=SimulationResetResponse,
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def reset_simulated_tool(
+    namespace: str,
+    name: str,
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> SimulationResetResponse:
+    """Reset a simulated tool's session (fresh session, same bundle; no teardown)."""
+    _validate_path_params(namespace, name)
+    sts = _read_simulated_statefulset(kube, namespace, name)
+    base_url = _harness_base_url(sts.metadata.name, sts.metadata.namespace, DEFAULT_IN_CLUSTER_PORT)
+    try:
+        code = await reset_simulation(base_url)
+    except HarnessUnreachable as e:
+        logger.warning(
+            "Harness unreachable resetting '%s': %s", sanitize_log(name), sanitize_log(str(e))
+        )
+        raise HTTPException(
+            status_code=502, detail="Simulated tool is not reachable (it may be stopped)"
+        )
+    if code == 200:
+        return SimulationResetResponse(
+            success=True,
+            name=name,
+            namespace=namespace,
+            message=f"Simulated tool '{name}' session reset.",
+        )
+    if code in (404, 503):
+        raise HTTPException(
+            status_code=409,
+            detail="Simulated tool has no active, ready simulation to reset",
+        )
+    logger.warning("Unexpected harness reset status %d for '%s'", code, sanitize_log(name))
+    raise HTTPException(status_code=502, detail="Failed to reset simulated-tool session")
