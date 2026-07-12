@@ -38,6 +38,10 @@ SPEC_PATH = REPO_ROOT / "kagenti/examples/simulated-tools/tasks-api/openapi.json
 NAMESPACE = os.environ.get("KAGENTI_SIM_NAMESPACE", "team1")
 LLM_SECRET_NAME = os.environ.get("KAGENTI_LLM_SECRET_NAME", "llm-api-key")
 LLM_SECRET_KEY = os.environ.get("KAGENTI_LLM_SECRET_KEY", "apiKey")
+# Optional: point the harness at a non-OpenAI (e.g. LiteLLM proxy) endpoint.
+# The harness defaults to the OpenAI cloud endpoint; set this when the LLM key
+# in the secret targets a different OpenAI-compatible base URL.
+LLM_API_BASE = os.environ.get("KAGENTI_SIM_LLM_API_BASE")
 
 GENERATION_TIMEOUT_S = int(os.environ.get("KAGENTI_SIM_GEN_TIMEOUT", "600"))
 POLL_INTERVAL_S = 5
@@ -69,9 +73,9 @@ def _backend_url(is_openshift: bool) -> str:
     return "http://localhost:8002"
 
 
-def _auth_headers(keycloak_token: dict) -> dict:
+def _auth_headers(token: str) -> dict:
     return {
-        "Authorization": f"Bearer {keycloak_token['access_token']}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
 
@@ -236,14 +240,18 @@ class TestSimulatedToolHappyPath:
             else True
         )
 
-    def test_create_ready_crud_delete(self, is_openshift, k8s_client, keycloak_token):
+    def test_create_ready_crud_delete(
+        self, is_openshift, k8s_client, keycloak_agent_token
+    ):
+        if not keycloak_agent_token:
+            pytest.skip("No kagenti-realm token available (keycloak_agent_token)")
         if not _llm_secret_present(k8s_client):
             pytest.skip(
                 f"LLM secret '{LLM_SECRET_NAME}' (key '{LLM_SECRET_KEY}') absent in "
                 f"namespace '{NAMESPACE}'; generation needs a real LLM key."
             )
         base_url = _backend_url(is_openshift)
-        headers = _auth_headers(keycloak_token)
+        headers = _auth_headers(keycloak_agent_token)
         spec_str = SPEC_PATH.read_text()
         name = f"tasks-{uuid.uuid4().hex[:8]}"
         env_vars = [
@@ -254,6 +262,8 @@ class TestSimulatedToolHappyPath:
                 },
             }
         ]
+        if LLM_API_BASE:
+            env_vars.append({"name": "LLM_API_BASE", "value": LLM_API_BASE})
 
         try:
             resp = _create_tool(
@@ -349,9 +359,13 @@ class TestSimulatedToolFailurePath:
             else True
         )
 
-    def test_missing_llm_secret_surfaces_error(self, is_openshift, keycloak_token):
+    def test_missing_llm_secret_surfaces_error(
+        self, is_openshift, keycloak_agent_token
+    ):
+        if not keycloak_agent_token:
+            pytest.skip("No kagenti-realm token available (keycloak_agent_token)")
         base_url = _backend_url(is_openshift)
-        headers = _auth_headers(keycloak_token)
+        headers = _auth_headers(keycloak_agent_token)
         spec_str = SPEC_PATH.read_text()
         name = f"tasks-fail-{uuid.uuid4().hex[:8]}"
         # Reference a Secret that does not exist -> pod cannot start.
