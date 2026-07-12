@@ -186,3 +186,30 @@ def test_delete_non_simulated_returns_404():
     r = _delete(_client(kube))
     assert r.status_code == 404
     kube.delete_statefulset.assert_not_called()
+
+
+def test_delete_removes_multiple_pvcs_in_order():
+    # Two PVCs prove per-iteration closure binding (a late-binding bug would
+    # target the last name twice).
+    from unittest.mock import call
+
+    kube = _kube(pvcs=["data-petstore-0", "data-petstore-1"])
+    r = _delete(_client(kube))
+    assert r.status_code == 200
+    body = r.json()
+    assert "PersistentVolumeClaim/data-petstore-0" in body["deletedResources"]
+    assert "PersistentVolumeClaim/data-petstore-1" in body["deletedResources"]
+    assert kube.delete_persistent_volume_claim.call_args_list == [
+        call("team1", "data-petstore-0"),
+        call("team1", "data-petstore-1"),
+    ]
+
+
+def test_delete_all_404_still_returns_200():
+    kube = _kube(pvcs=["data-petstore-0"])
+    kube.delete_statefulset.side_effect = ApiException(status=404)
+    kube.delete_service.side_effect = ApiException(status=404)
+    kube.delete_persistent_volume_claim.side_effect = ApiException(status=404)
+    r = _delete(_client(kube))
+    assert r.status_code == 200
+    assert r.json()["deletedResources"] == []
