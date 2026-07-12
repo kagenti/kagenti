@@ -65,10 +65,14 @@ export function setTokenForceRefresher(refresher: () => Promise<string | null>):
  */
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Parsed FastAPI `detail` payload (string | array | object), preserved verbatim
+   *  so callers can read structured details such as the reseed 422 `json_path`. */
+  detail?: unknown;
+  constructor(message: string, status: number, detail?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -147,7 +151,8 @@ async function apiFetch<T>(
     const errorData = await response.json().catch(() => ({}));
     throw new ApiError(
       extractErrorMessage(errorData, `API error: ${response.status} ${response.statusText}`),
-      response.status
+      response.status,
+      (errorData as Record<string, unknown>).detail
     );
   }
 
@@ -1619,6 +1624,36 @@ export interface GenerationStatusResponse {
   mcpUrl?: string;
 }
 
+export interface SimulationLifecycleResponse {
+  success: boolean;
+  name: string;
+  namespace: string;
+  status: string;
+  message: string;
+}
+
+export interface SimulationResetResponse {
+  success: boolean;
+  name: string;
+  namespace: string;
+  message: string;
+}
+
+export interface SimulationDeleteResponse {
+  success: boolean;
+  name: string;
+  namespace: string;
+  deletedResources: string[];
+  message: string;
+}
+
+export interface SimulationDatabaseResponse {
+  success: boolean;
+  name: string;
+  namespace: string;
+  message: string;
+}
+
 export const simulationService = {
   async create(data: SimulationCreateRequest): Promise<SimulationCreateResponse> {
     return apiFetch<SimulationCreateResponse>('/simulation/tools', {
@@ -1633,6 +1668,45 @@ export const simulationService = {
   ): Promise<GenerationStatusResponse> {
     return apiFetch<GenerationStatusResponse>(
       `/simulation/tools/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/generation-status`
+    );
+  },
+
+  async stop(namespace: string, name: string): Promise<SimulationLifecycleResponse> {
+    return apiFetch<SimulationLifecycleResponse>(
+      `/simulation/tools/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/stop`,
+      { method: 'POST' }
+    );
+  },
+
+  async start(namespace: string, name: string): Promise<SimulationLifecycleResponse> {
+    return apiFetch<SimulationLifecycleResponse>(
+      `/simulation/tools/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/start`,
+      { method: 'POST' }
+    );
+  },
+
+  async reset(namespace: string, name: string): Promise<SimulationResetResponse> {
+    return apiFetch<SimulationResetResponse>(
+      `/simulation/tools/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/reset`,
+      { method: 'POST' }
+    );
+  },
+
+  async delete(namespace: string, name: string): Promise<SimulationDeleteResponse> {
+    return apiFetch<SimulationDeleteResponse>(
+      `/simulation/tools/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+      { method: 'DELETE' }
+    );
+  },
+
+  async reseedDatabase(
+    namespace: string,
+    name: string,
+    database: string
+  ): Promise<SimulationDatabaseResponse> {
+    return apiFetch<SimulationDatabaseResponse>(
+      `/simulation/tools/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/database`,
+      { method: 'PUT', body: JSON.stringify({ database }) }
     );
   },
 };
