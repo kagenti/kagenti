@@ -23,7 +23,7 @@ KC_USER="$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.
 KC_PASS="$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' | base64 -d)"
 TOKEN="$(curl -sf "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
   -d grant_type=password -d client_id=admin-cli \
-  -d "username=${KC_USER}" -d "password=${KC_PASS}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')"
+  --data-urlencode "username=${KC_USER}" --data-urlencode "password=${KC_PASS}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')"
 
 echo "Creating simulated tool '${TOOL_NAME}' in namespace '${NAMESPACE}'..."
 SPEC_JSON="$(python3 -c 'import json,sys;print(json.dumps(open(sys.argv[1]).read()))' "${SPEC_FILE}")"
