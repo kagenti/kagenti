@@ -86,3 +86,25 @@ async def reset_simulation(base_url: str) -> int:
         except httpx.TransportError as e:
             raise HarnessUnreachable(str(e)) from e
         return resp.status_code
+
+
+async def put_database(base_url: str, db: dict) -> tuple[int, dict]:
+    """PUT a new db.json to the harness. Returns (status_code, parsed_body).
+
+    200 = replaced + session reset; 404 = no simulation; 409 = tool calls in
+    flight; 422 = body failed schema validation (body carries json_path);
+    503 = simulation exists but not ready. Raises HarnessUnreachable on
+    connect/timeout. Body is {} when the response has no JSON object.
+    """
+    async with httpx.AsyncClient(timeout=_timeout()) as client:
+        try:
+            resp = await client.put(f"{base_url}/api/v1/simulation/database", json=db)
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            raise HarnessUnreachable(str(e)) from e
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        return resp.status_code, body

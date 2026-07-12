@@ -47,6 +47,12 @@ class _FakeClient:
         self.posted = json
         return self._resp
 
+    async def put(self, url, json=None):
+        if self._exc:
+            raise self._exc
+        self.posted = json
+        return self._resp
+
 
 @pytest.mark.asyncio
 async def test_get_simulation_returns_parsed_body():
@@ -111,3 +117,48 @@ async def test_reset_simulation_raises_unreachable_on_connect_error():
     with patch.object(hc.httpx, "AsyncClient", lambda **kw: fake):
         with pytest.raises(hc.HarnessUnreachable):
             await hc.reset_simulation("http://sim")
+
+
+@pytest.mark.asyncio
+async def test_put_database_sends_body_and_returns_code_and_json():
+    fake = _FakeClient(resp=_FakeResp(200, {"message": "Database replaced; simulation reset"}))
+    with patch.object(hc.httpx, "AsyncClient", lambda **kw: fake):
+        code, body = await hc.put_database("http://sim", {"pets": []})
+    assert code == 200
+    assert body["message"] == "Database replaced; simulation reset"
+    assert fake.posted == {"pets": []}
+
+
+@pytest.mark.asyncio
+async def test_put_database_returns_json_path_on_422():
+    fake = _FakeClient(resp=_FakeResp(422, {"detail": "bad", "json_path": "$.pets[0].id"}))
+    with patch.object(hc.httpx, "AsyncClient", lambda **kw: fake):
+        code, body = await hc.put_database("http://sim", {"pets": [{}]})
+    assert code == 422
+    assert body["json_path"] == "$.pets[0].id"
+
+
+@pytest.mark.asyncio
+async def test_put_database_returns_empty_body_when_no_json():
+    fake = _FakeClient(resp=_FakeResp(409, json_data=None))
+    # _FakeResp.json() returns None here; put_database must coerce falsy/non-dict to {}.
+    with patch.object(hc.httpx, "AsyncClient", lambda **kw: fake):
+        code, body = await hc.put_database("http://sim", {})
+    assert code == 409
+    assert body == {}
+
+
+@pytest.mark.asyncio
+async def test_put_database_raises_unreachable_on_connect_error():
+    fake = _FakeClient(exc=httpx.ConnectError("refused"))
+    with patch.object(hc.httpx, "AsyncClient", lambda **kw: fake):
+        with pytest.raises(hc.HarnessUnreachable):
+            await hc.put_database("http://sim", {})
+
+
+@pytest.mark.asyncio
+async def test_put_database_raises_unreachable_on_timeout():
+    fake = _FakeClient(exc=httpx.TimeoutException("slow"))
+    with patch.object(hc.httpx, "AsyncClient", lambda **kw: fake):
+        with pytest.raises(hc.HarnessUnreachable):
+            await hc.put_database("http://sim", {})
