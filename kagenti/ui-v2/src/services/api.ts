@@ -1587,3 +1587,53 @@ export const authBridgeService = {
   },
 };
 
+// --- Simulated tools (#2165) ---
+
+export type GenerationStatus = 'Generating' | 'Ready' | 'Failed' | 'Error';
+
+export interface SimulationCreateRequest {
+  namespace: string;
+  openapiSpec: string;
+  name?: string;
+  envVars?: Array<{
+    name: string;
+    value?: string;
+    valueFrom?: {
+      secretKeyRef?: { name: string; key: string };
+      configMapKeyRef?: { name: string; key: string };
+    };
+  }>;
+}
+
+export interface SimulationCreateResponse {
+  success: boolean;
+  name: string;
+  namespace: string;
+  status: string;
+  message: string;
+}
+
+export interface GenerationStatusResponse {
+  status: GenerationStatus;
+  reason?: string;
+  mcpUrl?: string;
+}
+
+export const simulationService = {
+  async create(data: SimulationCreateRequest): Promise<SimulationCreateResponse> {
+    return apiFetch<SimulationCreateResponse>('/simulation/tools', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getGenerationStatus(
+    namespace: string,
+    name: string
+  ): Promise<GenerationStatusResponse> {
+    return apiFetch<GenerationStatusResponse>(
+      `/simulation/tools/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/generation-status`
+    );
+  },
+};
+
