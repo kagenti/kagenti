@@ -29,6 +29,7 @@ from app.core.config import settings
 from app.core.constants import (
     APP_KUBERNETES_IO_NAME,
     DEFAULT_IN_CLUSTER_PORT,
+    KAGENTI_SIMULATED_LABEL,
     TOOL_SERVICE_SUFFIX,
 )
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
@@ -37,6 +38,7 @@ from app.services.simulation_harness_client import (
     HarnessUnreachable,
     get_simulation,
     post_simulation,
+    reset_simulation,
 )
 from app.services.simulation_manifests import (
     MAX_SIMULATION_NAME_LEN,
@@ -214,6 +216,35 @@ class GenerationStatusResponse(BaseModel):
     mcpUrl: Optional[str] = None
 
 
+class SimulationLifecycleResponse(BaseModel):
+    """Response after a start/stop action on a simulated tool."""
+
+    success: bool
+    name: str
+    namespace: str
+    status: str
+    message: str
+
+
+class SimulationResetResponse(BaseModel):
+    """Response after resetting a simulated tool's session."""
+
+    success: bool
+    name: str
+    namespace: str
+    message: str
+
+
+class SimulationDeleteResponse(BaseModel):
+    """Response after deleting a simulated tool and its backing resources."""
+
+    success: bool
+    name: str
+    namespace: str
+    deletedResources: List[str]
+    message: str
+
+
 # Container waiting reasons that indicate a runtime/pod-level Error (not a
 # harness generation failure): missing LLM secret, bad image, crash loop.
 POD_ERROR_REASONS = {
@@ -268,6 +299,46 @@ def map_generation_status(
     if elapsed_seconds > timeout_seconds:
         return GenerationStatusResponse(status="Failed", reason="generation_stalled", mcpUrl=None)
     return GenerationStatusResponse(status="Generating", reason=None, mcpUrl=None)
+
+
+def _read_simulated_statefulset(kube: KubernetesService, namespace: str, name: str):
+    """Read a simulated tool's StatefulSet, or raise HTTPException.
+
+    404 if the StatefulSet is absent or does not carry kagenti.io/simulated=true
+    (these lifecycle endpoints act only on simulated tools). 502 on any other
+    read failure.
+    """
+    try:
+        sts = kube.apps_api.read_namespaced_stateful_set(name=name, namespace=namespace)
+    except ApiException as e:
+        if e.status == 404:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Simulated tool '{name}' not found in namespace '{namespace}'",
+            )
+        logger.error(
+            "Failed to read simulated tool '%s' in '%s': %s",
+            sanitize_log(name),
+            sanitize_log(namespace),
+            sanitize_log(str(e)),
+        )
+        raise HTTPException(status_code=502, detail="Failed to read simulated-tool workload")
+    labels = sts.metadata.labels or {}
+    if labels.get(KAGENTI_SIMULATED_LABEL) != "true":
+        raise HTTPException(
+            status_code=404,
+            detail=f"Simulated tool '{name}' not found in namespace '{namespace}'",
+        )
+    return sts
+
+
+def _validate_path_params(namespace: str, name: str) -> None:
+    """Reject path params that cannot name a real tool (SSRF guard, CWE-918)."""
+    try:
+        validate_namespace(namespace)
+        validate_custom_name(name)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Simulated tool not found")
 
 
 @router.get("/health", response_model=SimulationHealthResponse)
@@ -427,3 +498,55 @@ async def generation_status(
         elapsed_seconds=elapsed,
         timeout_seconds=settings.simulation_generation_timeout,
     )
+
+
+def _scale_simulated_tool(
+    kube: KubernetesService, namespace: str, name: str, replicas: int, status_label: str
+) -> SimulationLifecycleResponse:
+    _validate_path_params(namespace, name)
+    _read_simulated_statefulset(kube, namespace, name)
+    try:
+        kube.patch_statefulset(namespace, name, {"spec": {"replicas": replicas}})
+    except ApiException as e:
+        logger.error(
+            "Failed to scale simulated tool '%s' to %d: %s",
+            sanitize_log(name),
+            replicas,
+            sanitize_log(str(e)),
+        )
+        raise HTTPException(status_code=502, detail="Failed to scale simulated-tool workload")
+    return SimulationLifecycleResponse(
+        success=True,
+        name=name,
+        namespace=namespace,
+        status=status_label,
+        message=f"Simulated tool '{name}' {status_label.lower()}.",
+    )
+
+
+@router.post(
+    "/tools/{namespace}/{name}/stop",
+    response_model=SimulationLifecycleResponse,
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def stop_simulated_tool(
+    namespace: str,
+    name: str,
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> SimulationLifecycleResponse:
+    """Scale a simulated tool's StatefulSet to 0 (bundle retained on the PVC)."""
+    return _scale_simulated_tool(kube, namespace, name, replicas=0, status_label="Stopped")
+
+
+@router.post(
+    "/tools/{namespace}/{name}/start",
+    response_model=SimulationLifecycleResponse,
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def start_simulated_tool(
+    namespace: str,
+    name: str,
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> SimulationLifecycleResponse:
+    """Scale a simulated tool's StatefulSet back to 1 (harness autostarts from bundle)."""
+    return _scale_simulated_tool(kube, namespace, name, replicas=1, status_label="Starting")
