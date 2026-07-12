@@ -628,7 +628,7 @@ async def delete_simulated_tool(
             if e.status != 404:
                 logger.warning(
                     "Failed to delete %s for '%s': %s",
-                    resource_label,
+                    sanitize_log(resource_label),
                     sanitize_log(name),
                     sanitize_log(str(e)),
                 )
