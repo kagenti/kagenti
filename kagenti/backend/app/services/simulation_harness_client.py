@@ -99,7 +99,7 @@ async def put_database(base_url: str, db: dict) -> tuple[int, dict]:
     async with httpx.AsyncClient(timeout=_timeout()) as client:
         try:
             resp = await client.put(f"{base_url}/api/v1/simulation/database", json=db)
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
+        except httpx.TransportError as e:
             raise HarnessUnreachable(str(e)) from e
         try:
             body = resp.json()
