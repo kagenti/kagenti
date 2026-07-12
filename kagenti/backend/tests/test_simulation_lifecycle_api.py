@@ -140,3 +140,49 @@ def test_reset_non_simulated_returns_404():
         r = _post(_client(kube), "reset")
     assert r.status_code == 404
     reset.assert_not_called()
+
+
+# ---- delete ----
+
+
+def _delete(app, ns="team1", name="petstore"):
+    with patch("app.core.auth.settings") as auth:
+        auth.enable_auth = False
+        return TestClient(app).delete(f"/simulation/tools/{ns}/{name}")
+
+
+def test_delete_removes_statefulset_service_and_pvcs():
+    kube = _kube(pvcs=["data-petstore-0"])
+    r = _delete(_client(kube))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["success"] is True
+    assert "StatefulSet/petstore" in body["deletedResources"]
+    assert "Service/petstore-mcp" in body["deletedResources"]
+    assert "PersistentVolumeClaim/data-petstore-0" in body["deletedResources"]
+    kube.delete_statefulset.assert_called_once_with("team1", "petstore")
+    kube.delete_service.assert_called_once_with("team1", "petstore-mcp")
+    kube.delete_persistent_volume_claim.assert_called_once_with("team1", "data-petstore-0")
+
+
+def test_delete_is_idempotent_on_missing_service_and_pvc():
+    kube = _kube(pvcs=["data-petstore-0"])
+    kube.delete_service.side_effect = ApiException(status=404)
+    kube.delete_persistent_volume_claim.side_effect = ApiException(status=404)
+    r = _delete(_client(kube))
+    assert r.status_code == 200
+    assert "StatefulSet/petstore" in r.json()["deletedResources"]
+
+
+def test_delete_missing_statefulset_returns_404():
+    kube = _kube(sts_exc=ApiException(status=404))
+    r = _delete(_client(kube))
+    assert r.status_code == 404
+    kube.delete_statefulset.assert_not_called()
+
+
+def test_delete_non_simulated_returns_404():
+    kube = _kube(sts=_sts(simulated=False))
+    r = _delete(_client(kube))
+    assert r.status_code == 404
+    kube.delete_statefulset.assert_not_called()

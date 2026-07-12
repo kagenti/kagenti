@@ -589,3 +589,58 @@ async def reset_simulated_tool(
         )
     logger.warning("Unexpected harness reset status %d for '%s'", code, sanitize_log(name))
     raise HTTPException(status_code=502, detail="Failed to reset simulated-tool session")
+
+
+@router.delete(
+    "/tools/{namespace}/{name}",
+    response_model=SimulationDeleteResponse,
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def delete_simulated_tool(
+    namespace: str,
+    name: str,
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> SimulationDeleteResponse:
+    """Delete a simulated tool: StatefulSet + Service + PVC(s), no leaked resources."""
+    _validate_path_params(namespace, name)
+    _read_simulated_statefulset(kube, namespace, name)
+
+    # Capture PVC names before deleting the StatefulSet (needs its templates).
+    pvc_names = kube.list_statefulset_pvcs(namespace, name)
+    deleted: List[str] = []
+
+    def _try(delete_call, resource_label: str) -> None:
+        try:
+            delete_call()
+            deleted.append(resource_label)
+        except ApiException as e:
+            if e.status != 404:
+                logger.warning(
+                    "Failed to delete %s for '%s': %s",
+                    resource_label,
+                    sanitize_log(name),
+                    sanitize_log(str(e)),
+                )
+
+    _try(lambda: kube.delete_statefulset(namespace, name), f"StatefulSet/{name}")
+    service_name = f"{name}{TOOL_SERVICE_SUFFIX}"
+    _try(lambda: kube.delete_service(namespace, service_name), f"Service/{service_name}")
+    for pvc in pvc_names:
+        _try(
+            lambda pvc=pvc: kube.delete_persistent_volume_claim(namespace, pvc),
+            f"PersistentVolumeClaim/{pvc}",
+        )
+
+    logger.info(
+        "Deleted simulated tool '%s' in '%s' (%d resources)",
+        sanitize_log(name),
+        sanitize_log(namespace),
+        len(deleted),
+    )
+    return SimulationDeleteResponse(
+        success=True,
+        name=name,
+        namespace=namespace,
+        deletedResources=deleted,
+        message=f"Simulated tool '{name}' deleted.",
+    )
