@@ -213,3 +213,11 @@ def test_delete_all_404_still_returns_200():
     r = _delete(_client(kube))
     assert r.status_code == 200
     assert r.json()["deletedResources"] == []
+
+
+def test_delete_pvc_list_error_returns_502():
+    kube = _kube(pvcs=["data-petstore-0"])
+    kube.list_statefulset_pvcs.side_effect = ApiException(status=403)
+    r = _delete(_client(kube))
+    assert r.status_code == 502
+    kube.delete_statefulset.assert_not_called()

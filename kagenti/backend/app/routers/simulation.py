@@ -605,8 +605,19 @@ async def delete_simulated_tool(
     _validate_path_params(namespace, name)
     _read_simulated_statefulset(kube, namespace, name)
 
-    # Capture PVC names before deleting the StatefulSet (needs its templates).
-    pvc_names = kube.list_statefulset_pvcs(namespace, name)
+    # Enumerate the tool's PVCs before deleting the StatefulSet (its
+    # volumeClaimTemplates are needed to find them). Fail cleanly if we cannot
+    # enumerate, rather than deleting the workload and leaking the volume.
+    try:
+        pvc_names = kube.list_statefulset_pvcs(namespace, name)
+    except ApiException as e:
+        logger.error(
+            "Failed to list PVCs for simulated tool '%s' in '%s': %s",
+            sanitize_log(name),
+            sanitize_log(namespace),
+            sanitize_log(str(e)),
+        )
+        raise HTTPException(status_code=502, detail="Failed to enumerate simulated-tool volumes")
     deleted: List[str] = []
 
     def _try(delete_call, resource_label: str) -> None:

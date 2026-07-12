@@ -942,7 +942,7 @@ async def delete_tool(
     Deletes in order:
     1. Shipwright BuildRuns (if any)
     2. Shipwright Build (if any)
-    3. Deployment or StatefulSet
+    3. Deployment or StatefulSet (and, for a StatefulSet, its PersistentVolumeClaims)
     4. Service
     5. HTTPRoute or OpenShift Route (whichever exists)
     6. AgentRuntime CR (if exists)
