@@ -137,6 +137,13 @@ export const ToolCatalogPage: React.FC = () => {
         </Label>
       );
     }
+    if (tool.labels.simulated) {
+      labels.push(
+        <Label key="simulated" color="purple" isCompact>
+          SIMULATED
+        </Label>
+      );
+    }
     return <LabelGroup>{labels}</LabelGroup>;
   };
 

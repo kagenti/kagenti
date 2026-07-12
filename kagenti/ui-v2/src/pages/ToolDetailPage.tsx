@@ -70,6 +70,7 @@ import yaml from 'js-yaml';
 
 import { toolService, configService, toolShipwrightService, ToolShipwrightBuildInfo } from '@/services/api';
 import { initialInvokeArgs, buildInvokeArgs } from '@/utils/toolInvoke';
+import { isSimulatedLabels } from '@/utils/simulation';
 
 interface StatusCondition {
   type: string;
@@ -357,6 +358,11 @@ export const ToolDetailPage: React.FC = () => {
                   <Label color="grey">
                     {tool.workloadType === 'statefulset' ? 'StatefulSet' : 'Deployment'}
                   </Label>
+                </FlexItem>
+              )}
+              {isSimulatedLabels(labels) && (
+                <FlexItem>
+                  <Label color="purple">SIMULATED</Label>
                 </FlexItem>
               )}
               <FlexItem>
