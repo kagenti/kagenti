@@ -157,6 +157,12 @@ def enabled_features(kagenti_config):
         if isinstance(component_config, dict) and "enabled" in component_config:
             features[component_name] = component_config["enabled"]
 
+    # ===== Feature flags (charts.kagenti.values.featureFlags.*) =====
+    feature_flags = kagenti_chart.get("values", {}).get("featureFlags", {})
+    for flag_name, flag_value in feature_flags.items():
+        if isinstance(flag_value, bool):
+            features[flag_name] = features.get(flag_name, False) or flag_value
+
     return features
 
 
@@ -425,6 +431,12 @@ def pytest_collection_modifyitems(config, items):
             enabled[component_name] = (
                 enabled.get(component_name, False) or component_config["enabled"]
             )
+
+    # feature flags (charts.kagenti.values.featureFlags.*)
+    feature_flags = kagenti_chart.get("values", {}).get("featureFlags", {})
+    for flag_name, flag_value in feature_flags.items():
+        if isinstance(flag_value, bool):
+            enabled[flag_name] = enabled.get(flag_name, False) or flag_value
 
     # Detect OpenShift from config
     is_openshift = _detect_openshift_from_config(kagenti_config)
