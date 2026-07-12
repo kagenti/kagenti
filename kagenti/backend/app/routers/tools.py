@@ -36,6 +36,7 @@ from app.core.constants import (
     APP_KUBERNETES_IO_NAME,
     APP_KUBERNETES_IO_MANAGED_BY,
     KAGENTI_UI_CREATOR_LABEL,
+    KAGENTI_SIMULATED_LABEL,
     RESOURCE_TYPE_TOOL,
     VALUE_PROTOCOL_MCP,
     VALUE_TRANSPORT_STREAMABLE_HTTP,
@@ -590,6 +591,7 @@ def _extract_labels(labels: dict) -> ResourceLabels:
         protocol=protocols or None,
         framework=labels.get("kagenti.io/framework"),
         type=labels.get("kagenti.io/type"),
+        simulated=labels.get(KAGENTI_SIMULATED_LABEL) == "true",
     )
 
 
