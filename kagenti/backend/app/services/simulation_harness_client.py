@@ -83,6 +83,6 @@ async def reset_simulation(base_url: str) -> int:
     async with httpx.AsyncClient(timeout=_timeout()) as client:
         try:
             resp = await client.post(f"{base_url}/api/v1/simulation/reset")
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
+        except httpx.TransportError as e:
             raise HarnessUnreachable(str(e)) from e
         return resp.status_code
