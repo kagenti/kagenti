@@ -164,6 +164,8 @@ spec:
               value: "{{ .Values.featureFlags.admin }}"
             - name: KAGENTI_FEATURE_FLAG_TRACE_ANALYSIS
               value: "{{ .Values.featureFlags.traceAnalysis }}"
+            - name: KAGENTI_FEATURE_FLAG_SIMULATED_TOOLS
+              value: "{{ .Values.featureFlags.simulatedTools }}"
             - name: KEYCLOAK_URL
               value: {{ .Values.keycloak.url | quote }}
             - name: KEYCLOAK_PUBLIC_URL

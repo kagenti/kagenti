@@ -36,6 +36,8 @@ featureFlags:
   # Trace-analysis Observability card. Links to the standalone trace-analysis
   # component (separate repo) which must be deployed for the card to work.
   traceAnalysis: false
+  # Simulated MCP tools generated from OpenAPI specs (epic #2151).
+  simulatedTools: false
 
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
