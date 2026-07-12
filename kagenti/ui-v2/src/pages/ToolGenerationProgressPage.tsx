@@ -54,6 +54,9 @@ export const ToolGenerationProgressPage: React.FC = () => {
     }
     const id = setInterval(() => setElapsed((s) => s + 1), 1000);
     return () => clearInterval(id);
+    // This effect only reads data.status (to decide whether to keep ticking); keying on the
+    // whole `data` object would tear down and recreate the interval on every 5s poll response,
+    // even when the status hasn't changed, so the narrower dependency here is intentional.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.status]);
 

@@ -137,6 +137,7 @@ export const ImportToolPage: React.FC = () => {
 
   // Simulated tool state
   const [openapiSpec, setOpenapiSpec] = useState('');
+  const [openapiSpecFileError, setOpenapiSpecFileError] = useState('');
 
   // Pod configuration
   const [servicePorts, setServicePorts] = useState<ServicePort[]>([
@@ -986,18 +987,28 @@ export const ImportToolPage: React.FC = () => {
                       style={{ marginTop: '8px' }}
                       onChange={(e) => {
                         const file = e.target.files?.[0];
+                        // Reset so re-selecting the same file re-fires onChange.
+                        e.target.value = '';
                         if (!file) return;
                         const reader = new FileReader();
-                        reader.onload = () => setOpenapiSpec(String(reader.result ?? ''));
+                        reader.onload = () => {
+                          setOpenapiSpecFileError('');
+                          setOpenapiSpec(String(reader.result ?? ''));
+                        };
+                        reader.onerror = () => {
+                          setOpenapiSpecFileError('Failed to read the selected file. Please try again or paste the spec directly.');
+                        };
                         reader.readAsText(file);
                       }}
                     />
                     <FormHelperText>
                       <HelperText>
-                        <HelperTextItem variant={validated.openapiSpec === 'error' ? 'error' : 'default'}>
-                          {validated.openapiSpec === 'error'
-                            ? 'OpenAPI spec is required'
-                            : 'Paste an OpenAPI spec (JSON or YAML), or upload a file'}
+                        <HelperTextItem variant={openapiSpecFileError || validated.openapiSpec === 'error' ? 'error' : 'default'}>
+                          {openapiSpecFileError
+                            ? openapiSpecFileError
+                            : validated.openapiSpec === 'error'
+                              ? 'OpenAPI spec is required'
+                              : 'Paste an OpenAPI spec (JSON or YAML), or upload a file'}
                         </HelperTextItem>
                       </HelperText>
                     </FormHelperText>
@@ -1005,49 +1016,53 @@ export const ImportToolPage: React.FC = () => {
                 </>
               )}
 
-              <Divider style={{ margin: '24px 0' }} />
+              {/* Workload Type — out of scope for simulated tools (not sent in the simulation payload) */}
+              {deploymentMethod !== 'simulated' && (
+                <>
+                  <Divider style={{ margin: '24px 0' }} />
 
-              {/* Workload Type */}
-              <Title headingLevel="h3" size="md" style={{ marginBottom: '16px' }}>
-                Workload Type
-              </Title>
+                  <Title headingLevel="h3" size="md" style={{ marginBottom: '16px' }}>
+                    Workload Type
+                  </Title>
 
-              <FormGroup role="radiogroup" fieldId="workloadType">
-                <Radio
-                  name="workloadType"
-                  label="Deployment"
-                  description="Standard Kubernetes Deployment (default, stateless workload)"
-                  isChecked={workloadType === 'deployment'}
-                  onChange={() => setWorkloadType('deployment')}
-                  id="workloadType-deployment"
-                />
-                <Radio
-                  name="workloadType"
-                  label="StatefulSet"
-                  description="Kubernetes StatefulSet with persistent storage (for tools that need data persistence)"
-                  isChecked={workloadType === 'statefulset'}
-                  onChange={() => setWorkloadType('statefulset')}
-                  id="workloadType-statefulset"
-                  style={{ marginTop: '8px' }}
-                />
-              </FormGroup>
+                  <FormGroup role="radiogroup" fieldId="workloadType">
+                    <Radio
+                      name="workloadType"
+                      label="Deployment"
+                      description="Standard Kubernetes Deployment (default, stateless workload)"
+                      isChecked={workloadType === 'deployment'}
+                      onChange={() => setWorkloadType('deployment')}
+                      id="workloadType-deployment"
+                    />
+                    <Radio
+                      name="workloadType"
+                      label="StatefulSet"
+                      description="Kubernetes StatefulSet with persistent storage (for tools that need data persistence)"
+                      isChecked={workloadType === 'statefulset'}
+                      onChange={() => setWorkloadType('statefulset')}
+                      id="workloadType-statefulset"
+                      style={{ marginTop: '8px' }}
+                    />
+                  </FormGroup>
 
-              {workloadType === 'statefulset' && (
-                <FormGroup label="Persistent Volume Size" fieldId="persistentStorageSize">
-                  <TextInput
-                    id="persistentStorageSize"
-                    value={persistentStorageSize}
-                    onChange={(_e, value) => setPersistentStorageSize(value)}
-                    placeholder="1Gi"
-                  />
-                  <FormHelperText>
-                    <HelperText>
-                      <HelperTextItem>
-                        Size of the persistent volume claim (e.g., 1Gi, 5Gi, 10Gi)
-                      </HelperTextItem>
-                    </HelperText>
-                  </FormHelperText>
-                </FormGroup>
+                  {workloadType === 'statefulset' && (
+                    <FormGroup label="Persistent Volume Size" fieldId="persistentStorageSize">
+                      <TextInput
+                        id="persistentStorageSize"
+                        value={persistentStorageSize}
+                        onChange={(_e, value) => setPersistentStorageSize(value)}
+                        placeholder="1Gi"
+                      />
+                      <FormHelperText>
+                        <HelperText>
+                          <HelperTextItem>
+                            Size of the persistent volume claim (e.g., 1Gi, 5Gi, 10Gi)
+                          </HelperTextItem>
+                        </HelperText>
+                      </FormHelperText>
+                    </FormGroup>
+                  )}
+                </>
               )}
 
               <Divider style={{ margin: '24px 0' }} />
@@ -1082,250 +1097,253 @@ export const ImportToolPage: React.FC = () => {
                 />
               </FormGroup>
 
-              {/* AuthBridge Sidecar Injection */}
-              <FormGroup fieldId="authBridgeEnabled">
-                <Checkbox
-                  id="authBridgeEnabled"
-                  label="Enable AuthBridge sidecar injection"
-                  isChecked={authBridgeEnabled}
-                  onChange={(_e, checked) => {
-                    setAuthBridgeEnabled(checked);
-                    if (!checked) {
-                      setUseEnvoyMode(false);
-                    }
-                  }}
-                  description="When enabled, the operator injects a combined AuthBridge sidecar for inbound JWT validation and outbound token exchange. Defaults to proxy-sidecar mode (HTTP_PROXY)."
-                />
-              </FormGroup>
+              {/* AuthBridge Sidecar Injection, SPIRE, and Pod Configuration — out of scope for
+                  simulated tools (not sent in the simulation payload). */}
+              {deploymentMethod !== 'simulated' && (
+                <>
+                  <FormGroup fieldId="authBridgeEnabled">
+                    <Checkbox
+                      id="authBridgeEnabled"
+                      label="Enable AuthBridge sidecar injection"
+                      isChecked={authBridgeEnabled}
+                      onChange={(_e, checked) => {
+                        setAuthBridgeEnabled(checked);
+                        if (!checked) {
+                          setUseEnvoyMode(false);
+                        }
+                      }}
+                      description="When enabled, the operator injects a combined AuthBridge sidecar for inbound JWT validation and outbound token exchange. Defaults to proxy-sidecar mode (HTTP_PROXY)."
+                    />
+                  </FormGroup>
 
-              {authBridgeEnabled && (
-                <FormGroup fieldId="useEnvoyMode" style={{ marginLeft: '24px' }}>
-                  <Checkbox
-                    id="useEnvoyMode"
-                    label="Use envoy-sidecar mode"
-                    isChecked={useEnvoyMode}
-                    onChange={(_e, checked) => setUseEnvoyMode(checked)}
-                    description="Switch from proxy-sidecar (default) to envoy-sidecar mode (Envoy + ext_proc + iptables interception)."
-                  />
-                </FormGroup>
-              )}
-
-              {/* SPIRE Identity */}
-              <FormGroup fieldId="spireEnabled">
-                <Checkbox
-                  id="spireEnabled"
-                  label="Enable SPIRE identity (JWT-SVID via spiffe-helper)"
-                  isChecked={spireEnabled}
-                  onChange={(_e, checked) => setSpireEnabled(checked)}
-                />
-              </FormGroup>
-
-
-              {authBridgeEnabled && (
-              <ExpandableSection
-                toggleText={`Outbound Routing Rules (${outboundRoutes.length} route${outboundRoutes.length !== 1 ? 's' : ''})`}
-                isExpanded={showOutboundRouting}
-                onToggle={(_event, expanded) => setShowOutboundRouting(expanded)}
-              >
-                <Text component="p" style={{ marginBottom: '8px' }}>
-                  Configure token exchange rules for outbound HTTP requests. Each route matches a service host and specifies the target audience and OAuth scopes for the exchanged token.
-                </Text>
-                {outboundRoutes.map((route, index) => (
-                  <Grid hasGutter key={route.id} style={{ marginBottom: '8px' }}>
-                    <GridItem span={3}>
-                      <TextInput
-                        aria-label="Host pattern"
-                        value={route.host}
-                        onChange={(_e, v) => updateRoute(index, 'host', v)}
-                        placeholder="e.g. github-tool-mcp"
+                  {authBridgeEnabled && (
+                    <FormGroup fieldId="useEnvoyMode" style={{ marginLeft: '24px' }}>
+                      <Checkbox
+                        id="useEnvoyMode"
+                        label="Use envoy-sidecar mode"
+                        isChecked={useEnvoyMode}
+                        onChange={(_e, checked) => setUseEnvoyMode(checked)}
+                        description="Switch from proxy-sidecar (default) to envoy-sidecar mode (Envoy + ext_proc + iptables interception)."
                       />
-                    </GridItem>
-                    <GridItem span={3}>
-                      <TextInput
-                        aria-label="Target audience"
-                        value={route.target_audience}
-                        onChange={(_e, v) => updateRoute(index, 'target_audience', v)}
-                        placeholder="e.g. github-tool"
-                      />
-                    </GridItem>
-                    <GridItem span={4}>
-                      <TextInput
-                        aria-label="Token scopes"
-                        value={route.token_scopes}
-                        onChange={(_e, v) => updateRoute(index, 'token_scopes', v)}
-                        placeholder="openid scope1 scope2"
-                      />
-                    </GridItem>
-                    <GridItem span={2}>
-                      <Button variant="plain" onClick={() => removeRoute(index)}>
-                        Remove
-                      </Button>
-                    </GridItem>
-                  </Grid>
-                ))}
-                <Button variant="link" onClick={addRoute}>
-                  Add Route
-                </Button>
-              </ExpandableSection>
-              )}
+                    </FormGroup>
+                  )}
 
+                  {/* SPIRE Identity */}
+                  <FormGroup fieldId="spireEnabled">
+                    <Checkbox
+                      id="spireEnabled"
+                      label="Enable SPIRE identity (JWT-SVID via spiffe-helper)"
+                      isChecked={spireEnabled}
+                      onChange={(_e, checked) => setSpireEnabled(checked)}
+                    />
+                  </FormGroup>
 
-              {authBridgeEnabled && (
-              <ExpandableSection
-                toggleText="AuthBridge Advanced Configuration"
-              >
-                <FormGroup label="Outbound Ports to Exclude" fieldId="outboundPortsExclude">
-                  <TextInput
-                    id="outboundPortsExclude"
-                    value={outboundPortsExclude}
-                    onChange={(_e, v) => setOutboundPortsExclude(v)}
-                    placeholder="e.g. 11434,443"
-                  />
-                  <FormHelperText>
-                    <HelperText>
-                      <HelperTextItem>Comma-separated ports to bypass outbound proxy interception.</HelperTextItem>
-                    </HelperText>
-                  </FormHelperText>
-                </FormGroup>
-                <FormGroup label="Inbound Ports to Exclude" fieldId="inboundPortsExclude">
-                  <TextInput
-                    id="inboundPortsExclude"
-                    value={inboundPortsExclude}
-                    onChange={(_e, v) => setInboundPortsExclude(v)}
-                    placeholder="e.g. 9090"
-                  />
-                  <FormHelperText>
-                    <HelperText>
-                      <HelperTextItem>Comma-separated ports to bypass inbound proxy interception.</HelperTextItem>
-                    </HelperText>
-                  </FormHelperText>
-                </FormGroup>
-                <FormGroup label="Default Outbound Policy" fieldId="defaultOutboundPolicy">
-                  <FormSelect
-                    id="defaultOutboundPolicy"
-                    value={defaultOutboundPolicy}
-                    onChange={(_e, v) => setDefaultOutboundPolicy(v)}
-                    aria-label="Default outbound policy"
+                  {authBridgeEnabled && (
+                  <ExpandableSection
+                    toggleText={`Outbound Routing Rules (${outboundRoutes.length} route${outboundRoutes.length !== 1 ? 's' : ''})`}
+                    isExpanded={showOutboundRouting}
+                    onToggle={(_event, expanded) => setShowOutboundRouting(expanded)}
                   >
-                    <FormSelectOption key="passthrough" value="passthrough" label="passthrough — pass traffic through unchanged (default)" />
-                    <FormSelectOption key="exchange" value="exchange" label="exchange — require token exchange for all outbound traffic" />
-                  </FormSelect>
-                </FormGroup>
-              </ExpandableSection>
-              )}
-
-              {/* Pod Configuration */}
-              <ExpandableSection
-                toggleText={`Pod Configuration (${servicePorts.length} port${servicePorts.length !== 1 ? 's' : ''})`}
-                isExpanded={showPodConfig}
-                onToggle={() => setShowPodConfig(!showPodConfig)}
-              >
-                <Card isFlat style={{ marginTop: '8px' }}>
-                  <CardBody>
-                    <Text component="p" style={{ marginBottom: '16px' }}>
-                      Configure service ports for the tool pod.
+                    <Text component="p" style={{ marginBottom: '8px' }}>
+                      Configure token exchange rules for outbound HTTP requests. Each route matches a service host and specifies the target audience and OAuth scopes for the exchanged token.
                     </Text>
-
-                    {servicePorts.map((port, index) => (
-                      <Grid hasGutter key={index} style={{ marginBottom: '8px' }}>
+                    {outboundRoutes.map((route, index) => (
+                      <Grid hasGutter key={route.id} style={{ marginBottom: '8px' }}>
                         <GridItem span={3}>
                           <TextInput
-                            aria-label="Port name"
-                            value={port.name}
-                            onChange={(_e, value) => updateServicePort(index, 'name', value)}
-                            placeholder="http"
+                            aria-label="Host pattern"
+                            value={route.host}
+                            onChange={(_e, v) => updateRoute(index, 'host', v)}
+                            placeholder="e.g. github-tool-mcp"
                           />
-                          {index === 0 && (
-                            <FormHelperText>
-                              <HelperText>
-                                <HelperTextItem>Port Name</HelperTextItem>
-                              </HelperText>
-                            </FormHelperText>
-                          )}
+                        </GridItem>
+                        <GridItem span={3}>
+                          <TextInput
+                            aria-label="Target audience"
+                            value={route.target_audience}
+                            onChange={(_e, v) => updateRoute(index, 'target_audience', v)}
+                            placeholder="e.g. github-tool"
+                          />
+                        </GridItem>
+                        <GridItem span={4}>
+                          <TextInput
+                            aria-label="Token scopes"
+                            value={route.token_scopes}
+                            onChange={(_e, v) => updateRoute(index, 'token_scopes', v)}
+                            placeholder="openid scope1 scope2"
+                          />
                         </GridItem>
                         <GridItem span={2}>
-                          <NumberInput
-                            value={port.port}
-                            min={1}
-                            max={65535}
-                            onMinus={() => updateServicePort(index, 'port', port.port - 1)}
-                            onPlus={() => updateServicePort(index, 'port', port.port + 1)}
-                            onChange={(event) => {
-                              const target = event.target as HTMLInputElement;
-                              updateServicePort(index, 'port', parseInt(target.value, 10) || 8000);
-                            }}
-                            inputAriaLabel="Service port"
-                          />
-                          {index === 0 && (
-                            <FormHelperText>
-                              <HelperText>
-                                <HelperTextItem>Service Port</HelperTextItem>
-                              </HelperText>
-                            </FormHelperText>
-                          )}
-                        </GridItem>
-                        <GridItem span={2}>
-                          <NumberInput
-                            value={port.targetPort}
-                            min={1}
-                            max={65535}
-                            onMinus={() => updateServicePort(index, 'targetPort', port.targetPort - 1)}
-                            onPlus={() => updateServicePort(index, 'targetPort', port.targetPort + 1)}
-                            onChange={(event) => {
-                              const target = event.target as HTMLInputElement;
-                              updateServicePort(index, 'targetPort', parseInt(target.value, 10) || 8000);
-                            }}
-                            inputAriaLabel="Target port"
-                          />
-                          {index === 0 && (
-                            <FormHelperText>
-                              <HelperText>
-                                <HelperTextItem>Target Port</HelperTextItem>
-                              </HelperText>
-                            </FormHelperText>
-                          )}
-                        </GridItem>
-                        <GridItem span={2}>
-                          <FormSelect
-                            value={port.protocol}
-                            onChange={(_e, value) => updateServicePort(index, 'protocol', value)}
-                            aria-label="Protocol"
-                          >
-                            <FormSelectOption value="TCP" label="TCP" />
-                            <FormSelectOption value="UDP" label="UDP" />
-                          </FormSelect>
-                          {index === 0 && (
-                            <FormHelperText>
-                              <HelperText>
-                                <HelperTextItem>Protocol</HelperTextItem>
-                              </HelperText>
-                            </FormHelperText>
-                          )}
-                        </GridItem>
-                        <GridItem span={1}>
-                          <Button
-                            variant="plain"
-                            onClick={() => removeServicePort(index)}
-                            aria-label="Remove port"
-                            isDisabled={servicePorts.length <= 1}
-                            style={{ color: 'var(--pf-v5-global--danger-color--100)' }}
-                          >
-                            <TrashIcon />
+                          <Button variant="plain" onClick={() => removeRoute(index)}>
+                            Remove
                           </Button>
                         </GridItem>
                       </Grid>
                     ))}
-
-                    <Button
-                      variant="link"
-                      icon={<PlusCircleIcon />}
-                      onClick={addServicePort}
-                    >
-                      Add Service Port
+                    <Button variant="link" onClick={addRoute}>
+                      Add Route
                     </Button>
-                  </CardBody>
-                </Card>
-              </ExpandableSection>
+                  </ExpandableSection>
+                  )}
+
+                  {authBridgeEnabled && (
+                  <ExpandableSection
+                    toggleText="AuthBridge Advanced Configuration"
+                  >
+                    <FormGroup label="Outbound Ports to Exclude" fieldId="outboundPortsExclude">
+                      <TextInput
+                        id="outboundPortsExclude"
+                        value={outboundPortsExclude}
+                        onChange={(_e, v) => setOutboundPortsExclude(v)}
+                        placeholder="e.g. 11434,443"
+                      />
+                      <FormHelperText>
+                        <HelperText>
+                          <HelperTextItem>Comma-separated ports to bypass outbound proxy interception.</HelperTextItem>
+                        </HelperText>
+                      </FormHelperText>
+                    </FormGroup>
+                    <FormGroup label="Inbound Ports to Exclude" fieldId="inboundPortsExclude">
+                      <TextInput
+                        id="inboundPortsExclude"
+                        value={inboundPortsExclude}
+                        onChange={(_e, v) => setInboundPortsExclude(v)}
+                        placeholder="e.g. 9090"
+                      />
+                      <FormHelperText>
+                        <HelperText>
+                          <HelperTextItem>Comma-separated ports to bypass inbound proxy interception.</HelperTextItem>
+                        </HelperText>
+                      </FormHelperText>
+                    </FormGroup>
+                    <FormGroup label="Default Outbound Policy" fieldId="defaultOutboundPolicy">
+                      <FormSelect
+                        id="defaultOutboundPolicy"
+                        value={defaultOutboundPolicy}
+                        onChange={(_e, v) => setDefaultOutboundPolicy(v)}
+                        aria-label="Default outbound policy"
+                      >
+                        <FormSelectOption key="passthrough" value="passthrough" label="passthrough — pass traffic through unchanged (default)" />
+                        <FormSelectOption key="exchange" value="exchange" label="exchange — require token exchange for all outbound traffic" />
+                      </FormSelect>
+                    </FormGroup>
+                  </ExpandableSection>
+                  )}
+
+                  {/* Pod Configuration */}
+                  <ExpandableSection
+                    toggleText={`Pod Configuration (${servicePorts.length} port${servicePorts.length !== 1 ? 's' : ''})`}
+                    isExpanded={showPodConfig}
+                    onToggle={() => setShowPodConfig(!showPodConfig)}
+                  >
+                    <Card isFlat style={{ marginTop: '8px' }}>
+                      <CardBody>
+                        <Text component="p" style={{ marginBottom: '16px' }}>
+                          Configure service ports for the tool pod.
+                        </Text>
+
+                        {servicePorts.map((port, index) => (
+                          <Grid hasGutter key={index} style={{ marginBottom: '8px' }}>
+                            <GridItem span={3}>
+                              <TextInput
+                                aria-label="Port name"
+                                value={port.name}
+                                onChange={(_e, value) => updateServicePort(index, 'name', value)}
+                                placeholder="http"
+                              />
+                              {index === 0 && (
+                                <FormHelperText>
+                                  <HelperText>
+                                    <HelperTextItem>Port Name</HelperTextItem>
+                                  </HelperText>
+                                </FormHelperText>
+                              )}
+                            </GridItem>
+                            <GridItem span={2}>
+                              <NumberInput
+                                value={port.port}
+                                min={1}
+                                max={65535}
+                                onMinus={() => updateServicePort(index, 'port', port.port - 1)}
+                                onPlus={() => updateServicePort(index, 'port', port.port + 1)}
+                                onChange={(event) => {
+                                  const target = event.target as HTMLInputElement;
+                                  updateServicePort(index, 'port', parseInt(target.value, 10) || 8000);
+                                }}
+                                inputAriaLabel="Service port"
+                              />
+                              {index === 0 && (
+                                <FormHelperText>
+                                  <HelperText>
+                                    <HelperTextItem>Service Port</HelperTextItem>
+                                  </HelperText>
+                                </FormHelperText>
+                              )}
+                            </GridItem>
+                            <GridItem span={2}>
+                              <NumberInput
+                                value={port.targetPort}
+                                min={1}
+                                max={65535}
+                                onMinus={() => updateServicePort(index, 'targetPort', port.targetPort - 1)}
+                                onPlus={() => updateServicePort(index, 'targetPort', port.targetPort + 1)}
+                                onChange={(event) => {
+                                  const target = event.target as HTMLInputElement;
+                                  updateServicePort(index, 'targetPort', parseInt(target.value, 10) || 8000);
+                                }}
+                                inputAriaLabel="Target port"
+                              />
+                              {index === 0 && (
+                                <FormHelperText>
+                                  <HelperText>
+                                    <HelperTextItem>Target Port</HelperTextItem>
+                                  </HelperText>
+                                </FormHelperText>
+                              )}
+                            </GridItem>
+                            <GridItem span={2}>
+                              <FormSelect
+                                value={port.protocol}
+                                onChange={(_e, value) => updateServicePort(index, 'protocol', value)}
+                                aria-label="Protocol"
+                              >
+                                <FormSelectOption value="TCP" label="TCP" />
+                                <FormSelectOption value="UDP" label="UDP" />
+                              </FormSelect>
+                              {index === 0 && (
+                                <FormHelperText>
+                                  <HelperText>
+                                    <HelperTextItem>Protocol</HelperTextItem>
+                                  </HelperText>
+                                </FormHelperText>
+                              )}
+                            </GridItem>
+                            <GridItem span={1}>
+                              <Button
+                                variant="plain"
+                                onClick={() => removeServicePort(index)}
+                                aria-label="Remove port"
+                                isDisabled={servicePorts.length <= 1}
+                                style={{ color: 'var(--pf-v5-global--danger-color--100)' }}
+                              >
+                                <TrashIcon />
+                              </Button>
+                            </GridItem>
+                          </Grid>
+                        ))}
+
+                        <Button
+                          variant="link"
+                          icon={<PlusCircleIcon />}
+                          onClick={addServicePort}
+                        >
+                          Add Service Port
+                        </Button>
+                      </CardBody>
+                    </Card>
+                  </ExpandableSection>
+                </>
+              )}
 
               {/* Environment Variables */}
               <ExpandableSection
