@@ -141,6 +141,10 @@ def build_simulation_env_vars(
     env_vars.append({"name": "HARNESS_SKILLS_FOLDER", "value": skills_folder})
     env_vars.append({"name": "HARNESS_SERVER_PORT", "value": str(port)})
     env_vars.append({"name": "HARNESS_SERVER_HOST", "value": "0.0.0.0"})
+    # Serve MCP over streamable-http to match the KAGENTI_TRANSPORT_LABEL the
+    # StatefulSet/pod advertise (and the MCP gateway/clients expect). Without
+    # this the harness falls back to its bundled SSE config default.
+    env_vars.append({"name": "HARNESS_MCP_TRANSPORT", "value": "streamable_http"})
 
     for ev in env_var_list or []:
         if ev.value is not None:
@@ -180,6 +184,7 @@ def build_simulation_statefulset(
     auth_bridge_enabled: bool = False,
     auth_bridge_mode: Optional[str] = None,
     image_pull_secret: Optional[str] = None,
+    image_pull_policy: str = "Always",
 ) -> dict:
     """Build a StatefulSet manifest for a simulated tool (replicas 1, HPA off)."""
     service_name = f"{name}{TOOL_SERVICE_SUFFIX}"
@@ -236,12 +241,17 @@ def build_simulation_statefulset(
                     "securityContext": {
                         "runAsNonRoot": True,
                         "seccompProfile": {"type": "RuntimeDefault"},
+                        # Make the RWO PVC (mounted at skills_folder) group-writable
+                        # by the harness runtime UID. The image runs as uid 1000 and
+                        # its entrypoint no longer chowns when already non-root, so
+                        # without fsGroup the uid-1000 process cannot write the PVC.
+                        "fsGroup": 1000,
                     },
                     "containers": [
                         {
                             "name": "harness",
                             "image": image,
-                            "imagePullPolicy": "Always",
+                            "imagePullPolicy": image_pull_policy,
                             "securityContext": {
                                 "allowPrivilegeEscalation": False,
                                 "capabilities": {"drop": ["ALL"]},

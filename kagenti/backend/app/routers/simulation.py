@@ -127,6 +127,7 @@ async def create_simulated_tool(
         auth_bridge_enabled=request.authBridgeEnabled,
         auth_bridge_mode=request.authBridgeMode,
         image_pull_secret=settings.simulation_image_pull_secret or None,
+        image_pull_policy=settings.simulation_image_pull_policy,
     )
     service = build_simulation_service(name, request.namespace, port=port)
 

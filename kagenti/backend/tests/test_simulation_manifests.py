@@ -238,7 +238,12 @@ def test_parity_simulation_matches_tool_identity_surface():
         assert sl.get(k) == tl.get(k), f"identity label drift on {k}"
     tpc = tool["spec"]["template"]["spec"]
     spc = sim["spec"]["template"]["spec"]
-    assert spc["securityContext"] == tpc["securityContext"]
+    # Simulated tools add fsGroup so the uid-1000 harness can write its PVC;
+    # apart from that PVC-driven divergence the pod securityContext must match
+    # the regular tool identity surface.
+    sim_sec = {k: v for k, v in spc["securityContext"].items() if k != "fsGroup"}
+    assert sim_sec == tpc["securityContext"]
+    assert spc["securityContext"].get("fsGroup") == 1000
     assert spc["containers"][0]["securityContext"] == tpc["containers"][0]["securityContext"]
 
 

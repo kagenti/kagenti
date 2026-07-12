@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     # epic #2151). References the Helm-created per-namespace `ghcr-secret`. Set empty
     # to disable — once the image is public, anonymous pull works and this is unneeded.
     simulation_image_pull_secret: str = "ghcr-secret"
+    # Image pull policy for the harness container. Defaults to Always (production
+    # pulls :latest from the registry); set IfNotPresent/Never for local dev when
+    # the image is side-loaded into the cluster (e.g. `kind load`).
+    simulation_image_pull_policy: str = "Always"
     # Auto-inject MCP_URL / LLM env vars on agent import (TUI parity; weather demo defaults)
     kagenti_feature_flag_agent_import_defaults: bool = False
     skill_autosync_interval: int = (
