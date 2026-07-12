@@ -173,7 +173,7 @@ export const ToolDetailPage: React.FC = () => {
   const { data: genStatus } = useQuery({
     queryKey: ['simGenerationStatus', namespace, name],
     queryFn: () => simulationService.getGenerationStatus(namespace!, name!),
-    enabled: !!namespace && !!name && simulatedTool && (specReplicas ?? 0) > 0,
+    enabled: !!namespace && !!name && features.simulatedTools && simulatedTool && (specReplicas ?? 0) > 0,
     refetchInterval: (query) => (query.state.data?.status === 'Generating' ? 5000 : false),
   });
 

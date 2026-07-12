@@ -91,6 +91,7 @@ const SeedDatabaseModal: React.FC<SeedDatabaseModalProps> = ({
             value={text}
             onChange={(_e, value) => {
               setText(value);
+              setFileError('');
               setServerError(null);
             }}
             rows={14}
