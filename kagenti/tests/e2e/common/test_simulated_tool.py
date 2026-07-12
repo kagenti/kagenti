@@ -18,7 +18,6 @@ Environment variables:
 """
 
 import asyncio
-import json
 import os
 import pathlib
 import socket
@@ -28,7 +27,6 @@ import uuid
 
 import httpx
 import pytest
-from kubernetes import client as k8s
 from kubernetes.client.rest import ApiException
 
 from mcp import ClientSession
@@ -93,6 +91,38 @@ def _free_port() -> int:
     port = s.getsockname()[1]
     s.close()
     return port
+
+
+def _read_service_with_retry(k8s_client, name, tries=10, delay=2):
+    """Read a namespaced Service, tolerating the create endpoint's async (202)
+    response: the Service may not exist yet by the time we look for it. Retries
+    on a 404 ApiException up to `tries` times, `delay` seconds apart.
+    """
+    last_exc = None
+    for attempt in range(tries):
+        try:
+            return k8s_client.read_namespaced_service(name, NAMESPACE)
+        except ApiException as e:
+            if e.status != 404:
+                raise
+            last_exc = e
+            if attempt < tries - 1:
+                time.sleep(delay)
+    raise AssertionError(
+        f"Service '{name}' not found in namespace '{NAMESPACE}' after "
+        f"{tries} attempts ({(tries - 1) * delay}s); last error: {last_exc}"
+    )
+
+
+def _wait_for_port_ready(port, tries=15, delay=1.0):
+    """Poll a local TCP port until it accepts connections, rather than assuming
+    the port-forward has established after a fixed sleep."""
+    for _ in range(tries):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1):
+                return
+        except OSError:
+            time.sleep(delay)
 
 
 def _create_tool(base_url, headers, verify, *, name, spec_str, env_vars):
@@ -236,12 +266,18 @@ class TestSimulatedToolHappyPath:
             )
         except httpx.ConnectError as e:
             pytest.skip(f"Backend not accessible at {base_url}: {e}")
-        assert resp.status_code == 202, resp.text
-        assert resp.json()["status"] == "Generating"
 
+        # From here on, a 202 may already have created cluster resources, so every
+        # assert and the CRUD flow run inside this try/finally to guarantee the
+        # tool gets deleted even if an assertion fails partway through.
+        deleted = False
         try:
-            # Assert the simulated marker label on the Service.
-            svc = k8s_client.read_namespaced_service(f"{name}-mcp", NAMESPACE)
+            assert resp.status_code == 202, resp.text
+            assert resp.json()["status"] == "Generating"
+
+            # Assert the simulated marker label on the Service. The create
+            # endpoint is async (202), so tolerate the Service not existing yet.
+            svc = _read_service_with_retry(k8s_client, f"{name}-mcp")
             assert svc.metadata.labels.get("kagenti.io/simulated") == "true"
             assert "protocol.kagenti.io/mcp" in (svc.metadata.labels or {})
 
@@ -274,16 +310,26 @@ class TestSimulatedToolHappyPath:
                 stderr=subprocess.DEVNULL,
             )
             try:
-                time.sleep(3)  # let the forward establish
+                _wait_for_port_ready(local_port)
                 asyncio.run(_mcp_crud_flow(local_port))
             finally:
                 pf.terminate()
-        finally:
+
+            # Normal path: hard-assert the delete succeeded and cleaned up.
             d = _delete_tool(base_url, headers, self.verify, name)
             assert d.status_code == 200, d.text
-            deleted = d.json()["deletedResources"]
-            assert any("StatefulSet" in r for r in deleted), deleted
-            assert any("Service" in r for r in deleted), deleted
-            assert any("PersistentVolumeClaim" in r or "PVC" in r for r in deleted), (
-                deleted
-            )
+            deleted_resources = d.json()["deletedResources"]
+            assert any("StatefulSet" in r for r in deleted_resources), deleted_resources
+            assert any("Service" in r for r in deleted_resources), deleted_resources
+            assert any(
+                "PersistentVolumeClaim" in r or "PVC" in r for r in deleted_resources
+            ), deleted_resources
+            deleted = True
+        finally:
+            if not deleted:
+                # An exception is propagating; clean up best-effort without
+                # masking the original failure.
+                try:
+                    _delete_tool(base_url, headers, self.verify, name)
+                except Exception:
+                    pass
