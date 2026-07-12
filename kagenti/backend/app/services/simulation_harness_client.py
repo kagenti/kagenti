@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 
 class HarnessUnreachable(Exception):  # noqa: N818
-    """The harness could not be contacted (connect error or timeout)."""
+    """The harness could not be contacted (any transport-level error: connect,
+    read, write, timeout, or protocol — typically while the pod is starting)."""
 
 
 class HarnessNotFound(Exception):  # noqa: N818
@@ -38,7 +39,12 @@ async def get_simulation(base_url: str) -> dict:
     async with httpx.AsyncClient(timeout=_timeout()) as client:
         try:
             resp = await client.get(f"{base_url}/api/v1/simulation")
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
+        except httpx.TransportError as e:
+            # Base class for connect/read/write/timeout/protocol errors. A
+            # starting harness often accepts the TCP connection then resets it
+            # mid-read (ReadError) before uvicorn is serving — treat every
+            # transport-level failure as "unreachable" so callers retry through
+            # the pod's startup window instead of giving up on the first hiccup.
             raise HarnessUnreachable(str(e)) from e
         if resp.status_code == 404:
             raise HarnessNotFound("harness reports no active simulation")
@@ -58,6 +64,11 @@ async def post_simulation(base_url: str, spec: dict, name: str) -> int:
                 f"{base_url}/api/v1/simulation",
                 json={"openapi_spec": spec, "name": name},
             )
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
+        except httpx.TransportError as e:
+            # Base class for connect/read/write/timeout/protocol errors. A
+            # starting harness often accepts the TCP connection then resets it
+            # mid-read (ReadError) before uvicorn is serving — treat every
+            # transport-level failure as "unreachable" so callers retry through
+            # the pod's startup window instead of giving up on the first hiccup.
             raise HarnessUnreachable(str(e)) from e
         return resp.status_code
