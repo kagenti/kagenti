@@ -136,13 +136,12 @@ Keycloak generates an internal client secret for all clients regardless of auth 
 
 ## Remaining Work (Issue #2174)
 
-- [ ] Skip creating credential Secrets for `federated-jwt` clients in the operator controller
 - [x] E2E test with both operator and agent SPIFFE auth enabled simultaneously — see Issues Found During Testing below
 - [x] Verify agent SPIFFE JWT-SVID → Keycloak token exchange works (Test 6) ✅
-- [ ] Skip creating credential Secrets for `federated-jwt` clients in the operator controller
+- [ ] Skip creating credential Secrets for `federated-jwt` clients — `fix/skip-credential-secret-federated-jwt` branch in kagenti-operator (see Issue 3)
+- [ ] Publish OCI chart version with spiffe-helper sidecar so `setup-kagenti.sh --enable-spiffe-auth` works end-to-end (see Issue 4)
 - [ ] Merge PR #2155 (stale docs cleanup)
-- [ ] Publish versioned spiffe-helper image tags to OCI (or document :latest-only constraint)
-- [ ] Integrate chart-from-source into `setup-kagenti.sh --enable-operator-spiffe-auth` once OCI chart is updated
+- [ ] Confirm spiffe-helper versioned tag publication process in kagenti-extensions (see Issue 1)
 
 > **Deferred (requires team discussion):**
 > - Making SPIFFE auth the default (`spiffe.operatorAuth.enabled: true`, `authBridge.clientAuthType: federated-jwt`)
@@ -157,7 +156,7 @@ Issues discovered during E2E testing on 2026-07-10 with branch `feat/spiffe-auth
 
 ### Issue 1: `spiffe-helper` image tag `v0.6.0-alpha.4` does not exist
 
-**Status:** ❌ Open
+**Status:** ✅ Fixed — updated to `v0.5.0-rc.3` on `feat/spiffe-auth` branch
 
 **Symptom:** Operator pod stuck in `ImagePullBackOff` for the spiffe-helper container.
 
@@ -165,13 +164,11 @@ Issues discovered during E2E testing on 2026-07-10 with branch `feat/spiffe-auth
 Failed to pull image "ghcr.io/kagenti/kagenti-extensions/spiffe-helper:v0.6.0-alpha.4": manifest unknown
 ```
 
-**Root cause:** The operator chart's `values.yaml` default was set to `v0.6.0-alpha.4` based on the kagenti-extensions release tag, but spiffe-helper images are only published as `:latest` — versioned tags are not available in the container registry even when the GitHub release exists.
+**Root cause:** The tag `v0.6.0-alpha.4` exists as a GitHub release in kagenti-extensions but the corresponding container image was **never published** to ghcr.io. Not all kagenti-extensions GitHub release tags produce container images. `v0.5.0-rc.3` is the latest versioned tag confirmed to exist in the registry (same digest as `:latest`).
 
-**Workaround used:** Pull `:latest`, load into Kind, set `spiffe.operatorAuth.spiffeHelper.image.tag=latest` in helm values.
+**Fix:** Updated `feat/spiffe-auth` operator chart to use `v0.5.0-rc.3`. Added comment warning that release tag existence does not guarantee image publication.
 
-**Fix required:** Update `feat/spiffe-auth` in the operator repo to default `spiffeHelper.image.tag` to `latest` (consistent with how `authbridge`, `authbridge-envoy`, and `proxy-init` images are handled in the operator chart defaults).
-
-**Files to update:** `kagenti-operator/charts/kagenti-operator/values.yaml`
+> **Note for future bumps:** Before updating this tag, verify the image exists: `docker pull ghcr.io/kagenti/kagenti-extensions/spiffe-helper:<tag>`
 
 ---
 
@@ -191,29 +188,9 @@ via an AgentRuntime CR. Create an AgentRuntime targeting this workload instead o
 
 **Resolution:** Create a Deployment without the label, then create an `AgentRuntime` CR targeting it. The operator then applies the label via its reconciliation loop.
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: my-agent
-  namespace: team1
-  # No kagenti.io/type label here
-spec: ...
----
-apiVersion: agent.kagenti.dev/v1alpha1
-kind: AgentRuntime
-metadata:
-  name: my-agent
-  namespace: team1
-spec:
-  type: agent
-  targetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: my-agent
-```
+**Where `AgentRuntime` is used:** In normal Kagenti usage, the Kagenti UI creates `AgentRuntime` objects when a user deploys an agent — end users don't write this YAML manually. The `AgentRuntime` pattern appears in this test document only because manual `kubectl` testing requires it as a workaround for the admission policy. In production, the UI handles this transparently.
 
-**Impact on test plan:** Test 1 in this document must use the `AgentRuntime` pattern, not direct label setting. Updated in the test plan below.
+**Impact on test plan:** Test 1 in this document uses the `AgentRuntime` pattern instead of direct label setting. Updated in the test plan below.
 
 ---
 
@@ -241,18 +218,17 @@ The `default_policy` is managed by the operator and resets on every reconcile, s
 
 ### Issue 4: `setup-kagenti.sh` uses OCI operator chart (missing spiffe-helper template)
 
-**Status:** ❌ Open — requires design decision
+**Status:** ❌ Open — blocked on OCI chart publication
 
 **Symptom:** Running `setup-kagenti.sh --enable-spiffe-auth` installs the operator from the OCI-published chart (version 0.3.0-alpha.6) which does not contain the spiffe-helper sidecar template. The operator pod starts with only 1 container instead of 2.
 
-**Root cause:** `setup-kagenti.sh` runs `helm install kagenti charts/kagenti/` which downloads the operator subchart from OCI. The operator chart changes from PR #473 (spiffe-helper sidecar) are merged to kagenti-operator but a new chart version with these changes has not been published to the OCI registry.
+**Root cause:** `setup-kagenti.sh` runs `helm install kagenti charts/kagenti/` which downloads the operator subchart from OCI. PR #473 merged the spiffe-helper chart changes to kagenti-operator, but a new chart version has not been published to the OCI registry.
 
-**Workaround used:** Manually package the chart from the local kagenti-operator `feat/spiffe-auth` source and replace the OCI download before helm install.
+**Why overriding the image is not sufficient:** The problem is not the image — it is the Helm template. The OCI chart (v0.3.0-alpha.6) has no `{{- if .Values.spiffe.operatorAuth.enabled }}` block at all. Helm values can only configure what the template exposes. Adding `--set spiffe.operatorAuth.spiffeHelper.image.tag=...` has no effect when the template code does not exist in the chart.
 
-**Fix required (options):**
-1. Publish a new tagged version of `kagenti-operator-chart` to OCI that includes the spiffe-helper sidecar
-2. Add chart-from-source packaging logic to `setup-kagenti.sh --enable-operator-spiffe-auth` (similar to the gist approach), requiring a local `KAGENTI_OPERATOR_REPO` checkout
-3. Update `charts/kagenti/Chart.yaml` to reference the new published chart version once option 1 is done
+**Workaround used for testing:** Manually package the chart from the local kagenti-operator `feat/spiffe-auth` source and place it in `charts/kagenti/charts/` before running helm install.
+
+**Fix required:** Publish a new tagged version of `kagenti-operator-chart` to OCI that includes the spiffe-helper sidecar, then update `charts/kagenti/Chart.yaml` to reference it.
 
 **This blocks `setup-kagenti.sh --enable-spiffe-auth` from working end-to-end until resolved.**
 
