@@ -103,7 +103,16 @@ func newTestServer(t *testing.T) (*httptest.Server, *CLIContext) {
 
 	mux.HandleFunc("/api/v1/chat/", func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if strings.HasSuffix(path, "/stream") {
+		if strings.HasSuffix(path, "/agent-card") {
+			// Default: claim streaming so existing TestChatStreaming keeps its
+			// current path. Tests that need streaming=false use a bespoke mux.
+			json.NewEncoder(w).Encode(api.AgentCardResponse{
+				Name:      "test-agent",
+				Version:   "1.0.0",
+				URL:       "http://agent",
+				Streaming: true,
+			})
+		} else if strings.HasSuffix(path, "/stream") {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(200)
 			flusher, _ := w.(http.Flusher)
@@ -294,6 +303,128 @@ func TestChatStreaming(t *testing.T) {
 		t.Errorf("expected stdout to contain 'hello world', got: %s", stdout)
 	}
 	if !strings.Contains(stderr, "session-id: sess-123") {
+		t.Errorf("expected stderr to contain session ID, got: %s", stderr)
+	}
+}
+
+// TestChatNonStreamingAgentFallsBackToSend verifies that when the agent card
+// declares streaming=false, the CLI uses the non-streaming /send endpoint
+// instead of /stream (which the agent would reject).
+func TestChatNonStreamingAgentFallsBackToSend(t *testing.T) {
+	var streamCalled, sendCalled bool
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/chat/", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		switch {
+		case strings.HasSuffix(path, "/agent-card"):
+			json.NewEncoder(w).Encode(api.AgentCardResponse{
+				Name:      "no-stream-agent",
+				Version:   "1.0.0",
+				URL:       "http://agent",
+				Streaming: false,
+			})
+		case strings.HasSuffix(path, "/stream"):
+			streamCalled = true
+			http.Error(w, "streaming not supported", http.StatusBadRequest)
+		case strings.HasSuffix(path, "/send"):
+			sendCalled = true
+			json.NewEncoder(w).Encode(api.ChatResponse{
+				Content: "non-stream reply", SessionID: "sess-send-1", IsComplete: true,
+			})
+		}
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL, "test-token", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+
+	cmd := newChatCmd(ctx)
+	cmd.SetArgs([]string{"no-stream-agent", "-m", "hi"})
+	cmd.Flags().String("namespace", "team1", "")
+
+	stdout, stderr := captureOutput(t, func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("chat command failed: %v", err)
+		}
+	})
+
+	if streamCalled {
+		t.Errorf("expected /stream NOT to be called for non-streaming agent")
+	}
+	if !sendCalled {
+		t.Errorf("expected /send to be called for non-streaming agent")
+	}
+	if !strings.Contains(stdout, "non-stream reply") {
+		t.Errorf("expected stdout to contain 'non-stream reply', got: %s", stdout)
+	}
+	if !strings.Contains(stderr, "session-id: sess-send-1") {
+		t.Errorf("expected stderr to contain session ID, got: %s", stderr)
+	}
+}
+
+// TestChatStreamingAgentUsesStream verifies that when the agent card declares
+// streaming=true, the CLI uses the /stream endpoint (not /send).
+func TestChatStreamingAgentUsesStream(t *testing.T) {
+	var streamCalled, sendCalled bool
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/chat/", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		switch {
+		case strings.HasSuffix(path, "/agent-card"):
+			json.NewEncoder(w).Encode(api.AgentCardResponse{
+				Name:      "stream-agent",
+				Version:   "1.0.0",
+				URL:       "http://agent",
+				Streaming: true,
+			})
+		case strings.HasSuffix(path, "/stream"):
+			streamCalled = true
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(200)
+			flusher, _ := w.(http.Flusher)
+			data, _ := json.Marshal(api.ChatStreamEvent{Content: "stream reply", SessionID: "sess-stream-1"})
+			w.Write([]byte("data: " + string(data) + "\n\n"))
+			if flusher != nil {
+				flusher.Flush()
+			}
+			w.Write([]byte("data: [DONE]\n\n"))
+			if flusher != nil {
+				flusher.Flush()
+			}
+		case strings.HasSuffix(path, "/send"):
+			sendCalled = true
+			http.Error(w, "should not be called", http.StatusInternalServerError)
+		}
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL, "test-token", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+
+	cmd := newChatCmd(ctx)
+	cmd.SetArgs([]string{"stream-agent", "-m", "hi"})
+	cmd.Flags().String("namespace", "team1", "")
+
+	stdout, stderr := captureOutput(t, func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("chat command failed: %v", err)
+		}
+	})
+
+	if !streamCalled {
+		t.Errorf("expected /stream to be called for streaming agent")
+	}
+	if sendCalled {
+		t.Errorf("expected /send NOT to be called for streaming agent")
+	}
+	if !strings.Contains(stdout, "stream reply") {
+		t.Errorf("expected stdout to contain 'stream reply', got: %s", stdout)
+	}
+	if !strings.Contains(stderr, "session-id: sess-stream-1") {
 		t.Errorf("expected stderr to contain session ID, got: %s", stderr)
 	}
 }

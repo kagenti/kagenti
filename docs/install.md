@@ -350,11 +350,8 @@ echo "https://$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.st
 
 If using self-signed certificates, accept the certificate in your browser.
 
-For MCP Inspector, also accept the proxy certificate:
-
-```bash
-echo "https://$(kubectl get route mcp-proxy -n kagenti-system -o jsonpath='{.status.ingress[0].host}')"
-```
+The MCP Inspector and its proxy are served on a single host, so accepting the
+Inspector's certificate also covers its proxy — no separate step is needed.
 
 ### Default Credentials
 
