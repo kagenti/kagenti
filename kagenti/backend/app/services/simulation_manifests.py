@@ -145,6 +145,13 @@ def build_simulation_env_vars(
     # StatefulSet/pod advertise (and the MCP gateway/clients expect). Without
     # this the harness falls back to its bundled SSE config default.
     env_vars.append({"name": "HARNESS_MCP_TRANSPORT", "value": "streamable_http"})
+    # The harness defaults startup.autostart_enabled=false (boots idle, ignores
+    # the skill baked on the PVC). Kagenti bakes exactly one skill per StatefulSet
+    # and relies on the harness resuming it on every (re)start — Stop->Start
+    # (scale 0->1) and involuntary pod restarts both depend on boot-time
+    # autostart. Opt back in; autostart_simulation is left unset so the harness's
+    # "1 complete skill -> start it, 0 -> idle" discovery stays graceful.
+    env_vars.append({"name": "HARNESS_AUTOSTART_ENABLED", "value": "true"})
 
     for ev in env_var_list or []:
         if ev.value is not None:

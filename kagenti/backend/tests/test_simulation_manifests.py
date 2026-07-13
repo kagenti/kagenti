@@ -37,6 +37,9 @@ def test_env_vars_include_harness_and_platform_defaults():
     assert by_name["HARNESS_SKILLS_FOLDER"]["value"] == "/app/skills-store"
     assert by_name["HARNESS_SERVER_PORT"]["value"] == "8000"
     assert by_name["HARNESS_SERVER_HOST"]["value"] == "0.0.0.0"
+    # Opt back into boot-time autostart: the harness defaults it off, but Kagenti
+    # relies on it to resume the baked skill on Stop->Start and pod restarts.
+    assert by_name["HARNESS_AUTOSTART_ENABLED"]["value"] == "true"
     # platform default preserved
     assert by_name["OTEL_EXPORTER_OTLP_ENDPOINT"]["value"].startswith("http://otel-collector")
 
