@@ -12,6 +12,7 @@ Skills for configuring Istio service mesh in Ambient mode.
 | Skill | Description |
 |-------|-------------|
 | `istio:ambient-waypoint` | L7 AuthorizationPolicy with waypoint proxies |
+| `istio:mesh-selfheal` | Detect/recover the Ambient expired-cert 503 outage on long-running dev clusters |
 
 ## Ambient Mode Basics
 
