@@ -300,13 +300,17 @@ if $WITH_ALL; then
 fi
 
 # ── Flag dependencies ──────────────────────────────────────────────────────
+# Resolve dependencies top-down so transitive ones cascade: skills → UI → backend.
+# Skills requires UI (and transitively backend). This MUST run before the UI→backend
+# rule below, otherwise --with-skills enables the UI flag but leaves the backend off
+# (and the subsequent helm upgrade removes a running backend, silently disabling the
+# skill auto-sync loop that runs inside it).
+if $WITH_SKILLS && ! $WITH_UI; then
+  WITH_UI=true
+fi
 # UI requires backend API
 if $WITH_UI && ! $WITH_BACKEND; then
   WITH_BACKEND=true
-fi
-# Skills requires UI (and transitively backend)
-if $WITH_SKILLS && ! $WITH_UI; then
-  WITH_UI=true
 fi
 # Kiali requires full ambient mesh for service mesh telemetry
 if $WITH_KIALI && ! $WITH_ISTIO; then
