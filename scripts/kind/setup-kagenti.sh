@@ -677,7 +677,8 @@ if $WITH_SPIRE; then
     --set tornjak-frontend.service.port=3000
 
   log_info "Waiting for SPIRE pods in zero-trust-workload-identity-manager..."
-  kubectl wait --for=condition=Ready pod --all -n zero-trust-workload-identity-manager --timeout=300s
+  kubectl wait --for=condition=Ready pod -l app.kubernetes.io/instance=spire \
+    -n zero-trust-workload-identity-manager --timeout=300s
 
   log_success "SPIRE installed"
 else
@@ -1279,7 +1280,7 @@ run_cmd helm upgrade --install kagenti "$REPO_ROOT/charts/kagenti/" \
   "${KAGENTI_FLAGS[@]}"
 
 log_info "Waiting for kagenti pods..."
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=kagenti-operator \
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=kagenti-operator-chart \
   -n kagenti-system --timeout=300s
 
 log_success "kagenti installed"
