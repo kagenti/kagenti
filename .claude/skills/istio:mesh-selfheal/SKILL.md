@@ -43,7 +43,7 @@ scripts/k8s/mesh-recover.sh --fix
 scripts/k8s/mesh-recover.sh --fix --include-spire
 ```
 
-Exit codes: `0` healthy · `2` degraded (or fix attempted) · `1` usage/precondition error.
+Exit codes: `0` healthy · `2` degraded (or fix attempted) · `3` inconclusive (unreachable / not Ambient) · `1` usage/precondition error.
 Useful flags: `--probe-host <host>`, `--gateway-url <url>` (default `http://127.0.0.1:8080`),
 `--json` (machine-readable). The script **discovers** the ztunnel namespace (Kind installs put it
 in `istio-system`; the chart uses `istio-ztunnel`) rather than hardcoding it.

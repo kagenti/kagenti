@@ -56,9 +56,9 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --break)     MODE=break; shift ;;
-    --restore)   MODE=restore; shift ;;
-    --self-test) MODE=selftest; shift ;;
+    --break)     MODE='break'; shift ;;
+    --restore)   MODE='restore'; shift ;;
+    --self-test) MODE='selftest'; shift ;;
     --force)     FORCE=true; shift ;;
     -h|--help)   usage; exit 0 ;;
     *) log_error "unknown argument: $1"; usage; exit 1 ;;

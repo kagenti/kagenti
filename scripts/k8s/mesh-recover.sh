@@ -218,7 +218,7 @@ check_spire_agent() {
 # Recovery
 # ---------------------------------------------------------------------------
 recover_mesh() {
-  local ns wp gw
+  local ns gw
   ns=$(discover_ztunnel_ns)
   echo
   log_info "Recovery — restart the Ambient data plane so it re-fetches fresh certs:"
