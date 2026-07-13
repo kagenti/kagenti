@@ -37,7 +37,22 @@ STATE_FILE="${STATE_DIR}/istiod-replicas"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RECOVER="${HERE}/mesh-recover.sh"
 
-usage() { grep '^#' "$0" | sed 's/^# \{0,1\}//; 1d'; }
+usage() {
+  cat <<'EOF'
+induce-mesh-outage.sh — repeatable test harness for mesh-recover.sh. DEV/KIND ONLY, DESTRUCTIVE.
+
+Reproduces the #1899 symptom (CA down + ztunnel restarted → data plane has no valid cert →
+mesh-wide 503) and verifies the detect → --fix → re-probe loop.
+
+Usage: induce-mesh-outage.sh (--break | --restore | --self-test) [--force] [-h]
+
+  --break      Induce the outage and leave it broken (to test manually).
+  --restore    Undo (scale istiod back, restart ztunnel).
+  --self-test  break → assert detect(exit 2) → restore CA → --fix → assert green.
+  --force      Allow running outside a kind-* context (dev only).
+  -h, --help   This help.
+EOF
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

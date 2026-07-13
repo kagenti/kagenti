@@ -62,7 +62,7 @@ Usage: mesh-recover.sh [--fix] [--include-spire] [--probe-host HOST]
   --json           Emit a machine-readable JSON summary (for the CronJob remediator).
   -h, --help       This help.
 
-Exit: 0 healthy · 2 degraded (or fix attempted) · 1 usage/precondition error.
+Exit: 0 healthy · 2 degraded (recoverable) · 3 inconclusive (unreachable / not Ambient) · 1 usage error.
 EOF
 }
 
@@ -92,10 +92,18 @@ HAVE_ISTIOCTL=false
 command -v istioctl >/dev/null 2>&1 && HAVE_ISTIOCTL=true
 
 # Findings accumulate here for the summary / JSON output.
-DEGRADED=false
+DEGRADED=false       # a recoverable mesh outage (503 / expired certs) → exit 2, restart helps
+INCONCLUSIVE=false   # can't confirm health (gateway unreachable, no ztunnel) → exit 3, restart won't help
 declare -a CHECKS=()   # "name|status|detail"
 declare -a ACTIONS=()  # recovery commands that were (or would be) run
-record() { CHECKS+=("$1|$2|$3"); [[ "$2" == "DEGRADED" ]] && DEGRADED=true; return 0; }
+record() {
+  CHECKS+=("$1|$2|$3")
+  case "$2" in
+    DEGRADED)     DEGRADED=true ;;
+    INCONCLUSIVE) INCONCLUSIVE=true ;;
+  esac
+  return 0
+}
 
 # ---------------------------------------------------------------------------
 # Discovery
@@ -146,8 +154,7 @@ check_mesh_reachability() {
     fi
   elif [[ "$code" == "000" ]]; then
     record "mesh-reachability" "INCONCLUSIVE" "could not connect to ${GATEWAY_URL} — is the Kind port-map / port-forward up?"
-    log_warn "Gateway ${GATEWAY_URL} unreachable (curl 000). Not a 503; check the port-map. Treating as needs-attention."
-    DEGRADED=true
+    log_warn "Gateway ${GATEWAY_URL} unreachable (curl 000) — that's a port-map/port-forward issue, not a mesh cert outage; a restart won't help."
   else
     record "mesh-reachability" "OK" "HTTP ${code} for ${host}"
     log_success "Gateway reachable — HTTP ${code} for ${host} (not 503)"
@@ -248,7 +255,7 @@ recover_mesh() {
     [[ -n "$ns" ]] && kubectl rollout status daemonset/ztunnel -n "$ns" --timeout=120s || true
     kubectl rollout status deploy/"$gw" -n "$GW_NS" --timeout=120s || true
     log_info "Re-probing to verify recovery ..."
-    DEGRADED=false; CHECKS=()
+    DEGRADED=false; INCONCLUSIVE=false; CHECKS=()
     check_mesh_reachability
   fi
 }
@@ -258,7 +265,7 @@ recover_mesh() {
 # ---------------------------------------------------------------------------
 emit_json() {
   local first=true
-  printf '{"degraded":%s,"fixed":%s,"checks":[' "$DEGRADED" "$FIX"
+  printf '{"degraded":%s,"inconclusive":%s,"fixed":%s,"checks":[' "$DEGRADED" "$INCONCLUSIVE" "$FIX"
   for c in "${CHECKS[@]}"; do
     IFS='|' read -r n s d <<<"$c"
     $first || printf ','; first=false
@@ -296,9 +303,11 @@ else
     log_info "Root cause is upstream (istio/ztunnel#1679); this restart is the dev-cluster mitigation for #1899."
   elif $DEGRADED && $FIX; then
     log_success "Recovery applied — see re-probe result above."
+  elif $INCONCLUSIVE; then
+    log_warn "Could not confirm mesh health (gateway unreachable, or no ztunnel found). Check the gateway port-map and that this is an Ambient cluster — no restart attempted."
   else
     log_success "Mesh healthy — no action needed."
   fi
 fi
 
-$DEGRADED && exit 2 || exit 0
+if $DEGRADED; then exit 2; elif $INCONCLUSIVE; then exit 3; else exit 0; fi
