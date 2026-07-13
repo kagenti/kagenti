@@ -18,6 +18,7 @@ Environment variables:
 """
 
 import asyncio
+import json
 import os
 import pathlib
 import socket
@@ -196,8 +197,15 @@ async def _mcp_crud_flow(local_port: int) -> None:
                 assert op in tool_names, f"MCP tool {op} missing; got {tool_names}"
 
             title = f"e2e-{uuid.uuid4().hex[:6]}"
-            created = await session.call_tool("createTask", {"body": {"title": title}})
+            # The harness folds the resolved request body and the path {id}
+            # parameter to top-level tool args, so pass fields directly (no
+            # "body" wrapper). The created task's id drives the read/update/
+            # delete steps below.
+            created = await session.call_tool("createTask", {"title": title})
             assert not created.isError, f"createTask errored: {created.content}"
+            created_task = json.loads(_content_text(created))
+            task_id = created_task.get("id")
+            assert task_id, f"createTask returned no id: {created.content}"
 
             listed_after = await session.call_tool("listTasks", {})
             assert not listed_after.isError, (
@@ -208,14 +216,19 @@ async def _mcp_crud_flow(local_port: int) -> None:
                 f"created task '{title}' not visible in list: {text_after_create}"
             )
 
-            # Read back and update the created task if an id is discoverable.
+            # Read back, update, then delete the task we just created. The path
+            # {id} is a top-level tool arg (folded in from the path-item-level
+            # parameter); update body fields (title/completed) stay top-level.
+            got = await session.call_tool("getTask", {"id": task_id})
+            assert not got.isError, f"getTask errored: {got.content}"
+
             update = await session.call_tool(
                 "updateTask",
-                {"id": "task-1", "body": {"title": title, "completed": True}},
+                {"id": task_id, "title": title, "completed": True},
             )
             assert not update.isError, f"updateTask errored: {update.content}"
 
-            deleted = await session.call_tool("deleteTask", {"id": "task-1"})
+            deleted = await session.call_tool("deleteTask", {"id": task_id})
             assert not deleted.isError, f"deleteTask errored: {deleted.content}"
 
 
