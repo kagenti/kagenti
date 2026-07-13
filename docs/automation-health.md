@@ -1,6 +1,6 @@
 # Automation Health Dashboard
 
-> Last updated: 2026-07-12 13:01 ET | Programs: 3 active
+> Last updated: 2026-07-13 13:00 ET | Programs: 3 active
 
 ## Executive Summary
 
@@ -10,7 +10,7 @@
 | Total issues auto-resolved | 33 |
 | Total PRs auto-opened | 0 |
 | Estimated hours saved | 8.2 hrs (at 15 min/resolved issue) |
-| PRs reviewed by clawgenti | 56 |
+| PRs reviewed by clawgenti | 58 |
 | Programs active | 3 |
 | Last successful scan | 2026-07-10 |
 
@@ -84,7 +84,7 @@ Headline impact — median time-to-merge before vs. after the bot became active 
 |--------|-------|------|
 | Median TTM — before activation | 10.4h | per repo, PRs opened before its first bot review |
 | Median TTM — after activation | 12.9h | per repo, PRs opened on/after its first bot review |
-| PRs reviewed (cumulative) | 56 | failed: 0 |
+| PRs reviewed (cumulative) | 58 | failed: 0 |
 | Currently queued for review | 0 | |
 
 > Per-repo activation: kagenti/kagenti since 2026-06-12; kagenti/kagenti-extensions since 2026-06-13; kagenti/automation since 2026-06-16; kagenti/agent-skills since 2026-06-16
@@ -102,6 +102,8 @@ Reviewed vs. unreviewed (secondary — interpret with care):
 
 | Date (UTC) | Reviewed | Processed | Failed |
 |------------|----------|-----------|--------|
+| 2026-07-13 15:53 | 1 | 1 | 0 |
+| 2026-07-13 15:07 | 1 | 1 | 0 |
 | 2026-07-12 15:37 | 1 | 1 | 0 |
 | 2026-07-12 14:07 | 1 | 1 | 0 |
 | 2026-07-09 17:22 | 1 | 1 | 0 |
@@ -110,8 +112,6 @@ Reviewed vs. unreviewed (secondary — interpret with care):
 | 2026-07-09 13:07 | 1 | 1 | 0 |
 | 2026-07-09 08:37 | 2 | 2 | 0 |
 | 2026-07-09 06:51 | 2 | 2 | 0 |
-| 2026-07-09 05:52 | 1 | 1 | 0 |
-| 2026-07-09 05:22 | 1 | 1 | 0 |
 
 ## Cross-Program Coverage
 
