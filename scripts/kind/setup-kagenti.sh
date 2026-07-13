@@ -61,6 +61,7 @@ DRY_RUN=false
 SECRETS_FILE_ARG=""
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
 ENABLE_OPERATOR_SPIFFE_AUTH=false
+ENABLE_AGENT_SPIFFE_AUTH=false
 
 # Versions
 CERT_MANAGER_VERSION="v1.17.2"
@@ -230,6 +231,8 @@ while [[ $# -gt 0 ]]; do
     --kagenti-deps-values) KAGENTI_DEPS_VALUES_FILES+=("--values" "$2"); shift 2 ;;
     --with-examples)    INSTALL_EXAMPLES=true; shift ;;
     --enable-operator-spiffe-auth) ENABLE_OPERATOR_SPIFFE_AUTH=true; shift ;;
+    --enable-agent-spiffe-auth)   ENABLE_AGENT_SPIFFE_AUTH=true; shift ;;
+    --enable-spiffe-auth)         ENABLE_OPERATOR_SPIFFE_AUTH=true; ENABLE_AGENT_SPIFFE_AUTH=true; shift ;;
     --dry-run)          DRY_RUN=true; shift ;;
     -h|--help)
       echo "Usage: $0 [OPTIONS]"
@@ -280,7 +283,15 @@ while [[ $# -gt 0 ]]; do
       echo "                      Helm override file to apply to Kagenti-deps chart"
       echo "  --with-examples     Install weather agent and weather tool examples"
       echo "  --enable-operator-spiffe-auth"
-      echo "                      Enable SPIFFE authentication for operator (requires SPIRE)"
+      echo "                      Operator authenticates to Keycloak using JWT-SVID instead"
+      echo "                      of admin credentials. Requires --with-spire."
+      echo "  --enable-agent-spiffe-auth"
+      echo "                      Agent/tool workloads authenticate to Keycloak using"
+      echo "                      JWT-SVID (federated-jwt) instead of client secrets."
+      echo "                      Requires --with-spire."
+      echo "  --enable-spiffe-auth"
+      echo "                      Shorthand for both --enable-operator-spiffe-auth and"
+      echo "                      --enable-agent-spiffe-auth. Requires --with-spire."
       echo "  --dry-run           Show commands without executing"
       echo "  -h, --help          Show this help"
       exit 0 ;;
@@ -364,6 +375,16 @@ echo "    Examples:      $INSTALL_EXAMPLES"
 echo "    Kagenti helm --values overrides: ${KAGENTI_VALUES_FILES[*]:-}"
 echo "    Kagenti-deps helm --values overrides: ${KAGENTI_DEPS_VALUES_FILES[*]:-}"
 echo ""
+
+# Validate flag combinations
+if $ENABLE_OPERATOR_SPIFFE_AUTH && ! $WITH_SPIRE; then
+  log_error "--enable-operator-spiffe-auth requires --with-spire (SPIRE must be installed for SPIFFE identities)"
+  exit 1
+fi
+if $ENABLE_AGENT_SPIFFE_AUTH && ! $WITH_SPIRE; then
+  log_error "--enable-agent-spiffe-auth requires --with-spire (SPIRE must be installed for SPIFFE identities)"
+  exit 1
+fi
 
 for cmd in helm kubectl; do
   if ! command -v "$cmd" &>/dev/null; then
@@ -1203,7 +1224,11 @@ KAGENTI_FLAGS=(
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
   --set "kagenti-operator-chart.featureGates.injectTools=true"
   --set "kagenti-operator-chart.kuadrant.enable=${WITH_KUADRANT}"
+  --set "kagenti-operator-chart.spiffe.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
   --set "kagenti-operator-chart.spiffe.operatorAuth.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
+  --set "kagenti-operator-chart.keycloak.publicUrl=http://keycloak.${DOMAIN}:8080"
+  --set "authBridge.clientAuthType=$($ENABLE_AGENT_SPIFFE_AUTH && echo federated-jwt || echo client-secret)"
+  --set "spire.enabled=${WITH_SPIRE}"
 )
 
 # Allow-list hosts/IPs/CIDRs past the registry-URL SSRF block (for LAN / in-cluster
