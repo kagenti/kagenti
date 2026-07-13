@@ -1224,6 +1224,7 @@ KAGENTI_FLAGS=(
   --set "kagenti-operator-chart.spiffe.operatorAuth.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
   --set "kagenti-operator-chart.keycloak.publicUrl=http://keycloak.${DOMAIN}:8080"
   --set "authBridge.clientAuthType=$($ENABLE_AGENT_SPIFFE_AUTH && echo federated-jwt || echo client-secret)"
+  --set "spire.enabled=${WITH_SPIRE}"
 )
 
 # Allow-list hosts/IPs/CIDRs past the registry-URL SSRF block (for LAN / in-cluster
