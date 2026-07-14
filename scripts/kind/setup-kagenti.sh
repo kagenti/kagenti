@@ -680,7 +680,7 @@ if $WITH_SPIRE; then
   deadline=$((SECONDS + 120))
   until kubectl get pod --no-headers -l app.kubernetes.io/instance=spire \
     -n zero-trust-workload-identity-manager 2>/dev/null | grep -q .; do
-    (( SECONDS >= deadline )) && { log_error "Timed out waiting for SPIRE pods"; exit 1; }
+    if (( SECONDS >= deadline )); then log_error "Timed out waiting for SPIRE pods"; exit 1; fi
     sleep 2
   done
   kubectl wait --for=condition=Ready pod -l app.kubernetes.io/instance=spire \
@@ -1289,7 +1289,7 @@ log_info "Waiting for kagenti pods..."
 deadline=$((SECONDS + 120))
 until kubectl get pod --no-headers -l app.kubernetes.io/name=kagenti-operator-chart \
   -n kagenti-system 2>/dev/null | grep -q .; do
-  (( SECONDS >= deadline )) && { log_error "Timed out waiting for kagenti-operator pods"; exit 1; }
+  if (( SECONDS >= deadline )); then log_error "Timed out waiting for kagenti-operator pods"; exit 1; fi
   sleep 2
 done
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=kagenti-operator-chart \
