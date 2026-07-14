@@ -1,8 +1,21 @@
 # AuthBridge Demos
 
-Progressive walkthrough of AuthBridge on the weather agent. Deploy via the
-[weather demo UI guide](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/weather-agent/demo-ui.md),
-then use the checks below to confirm each step.
+**What AuthBridge does:** it's a sidecar proxy injected next to each agent that gives
+the agent a verifiable [SPIFFE](https://spiffe.io) identity and enforces *who may call
+it* — all without the agent writing a single line of auth code. Inbound requests are
+validated against a JWT; outbound calls to tools can be re-minted with a scoped,
+delegated token. The agent stays oblivious; the sidecar does the zero-trust work.
+
+**How it works (the 10-second version):**
+
+1. The operator registers the agent as an OAuth client in Keycloak and issues it a SPIFFE ID.
+2. The **inbound** side of the sidecar rejects any request without a valid JWT whose audience matches the agent's identity.
+3. The **outbound** side can exchange the caller's token for a new one scoped to a downstream tool ([RFC 8693](https://tools.ietf.org/html/rfc8693)), so each hop carries only the authority it needs.
+
+This walkthrough proves each of those, one layer at a time. Deploy the agent with the
+[weather demo UI guide](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/weather-agent/demo-ui.md)
+— that guide *is* how you learn to deploy; the checks below confirm what AuthBridge is
+doing at each step.
 
 ## Prerequisites
 
@@ -17,7 +30,7 @@ scripts/kind/setup-kagenti.sh --with-istio --with-spire --with-ui --with-backend
 (`ghcr.io/kagenti/agent-examples/weather_service:latest`) instead of
 build-from-source to avoid Shipwright `Insufficient cpu` / `ExceededNodeResources`.
 
-Advanced demo: [demo-ui-advanced.md](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/weather-agent/demo-ui-advanced.md).
+Advanced demo: [demo-ui-advanced.md](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/weather-agent/demo-ui-advanced.md) — adds **token exchange** and per-tool JWTs, so you can watch the sidecar mint delegated tokens (Layer 2+).
 
 ## Credentials and tokens
 
@@ -33,8 +46,6 @@ If missing: `kubectl wait --for=condition=complete job/kagenti-agent-oauth-secre
 | `kagenti` | UI only (PKCE) — password grant → `unauthorized_client` |
 | `admin-cli` | Password grant OK but usually **no agent `aud`** → 401 |
 | `kagenti-e2e-tests` | **CLI agent calls** — use `client_id` + `client_secret` from `kagenti-test-user` |
-
-Run `87-setup-test-credentials.sh` **after** `weather-service` is registered in Keycloak (pass `KEYCLOAK_URL=http://keycloak.localtest.me:8080` on a Kind install — see below).
 
 ### Gotchas
 
@@ -81,6 +92,10 @@ kubectl wait --for=condition=ready pod/test-client -n team1 --timeout=60s
 
 ## Layer 1: See It Work
 
+*The sidecar — not the agent — enforces identity. The same endpoint answers a public
+probe, rejects an anonymous call, and rejects a forged token. The agent code is unaware
+any of this happened.*
+
 ### Get a token
 
 ```bash
@@ -102,6 +117,9 @@ python3 -c "import os,base64,json; p=os.environ['KAGENTI_TOKEN'].split('.')[1]; 
 ```
 
 ### Inbound checks (from test-client)
+
+Three requests, one lesson — AuthBridge lets the public agent card through but blocks
+everything else:
 
 ```bash
 # Public agent card — no token (bypass paths)
@@ -138,6 +156,9 @@ Beginner demo: outbound **passthrough** to the MCP tool. Full CLI variants:
 
 ## Layer 2: Watch the Token Flow
 
+*Here the sidecar mints a **new** token scoped to the downstream tool: the agent's
+identity is delegated per-hop, never shared wholesale.*
+
 Requires [demo-ui-advanced](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/weather-agent/demo-ui-advanced.md) or `authproxy-routes` with exchange policy.
 
 ```bash
@@ -149,15 +170,24 @@ kubectl logs -f deploy/weather-service-advanced -n team1 -c envoy-proxy
 
 ## Layer 3: Access Denied
 
+*Remove a route and the sidecar refuses the outbound call — authorization is enforced
+by policy, not by the agent remembering to check.*
+
 Exchange routing only. Remove the weather-tool route from the agent AuthBridge
 ConfigMap, `kubectl rollout restart deployment/weather-service -n team1`, retry the
 Layer 1 curl — expect blocked-host / 403 from the proxy.
 
 ## Layer 4: Agent-to-Agent Delegation
 
+*Each hop carries its own scoped token with an `act` claim, so a downstream service
+knows both who originated the call and who is acting on their behalf.*
+
 [token-exchange routes](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/token-exchange-routes/README.md) (single- and multi-target exchange) — watch `act` claims and per-hop exchange in sidecar logs.
 
 ## Layer 5: MCP Tool Access Control
+
+*The sidecar can inspect MCP `tools/call` traffic, so tool-level access control happens
+at the proxy — the agent doesn't gate its own tools.*
 
 Add `mcp-parser` to inbound plugins on the agent ConfigMap; `tools/call` shows in AuthBridge logs.
 
