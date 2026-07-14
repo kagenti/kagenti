@@ -1840,7 +1840,11 @@ async def create_tool(
         # Non-API failure (e.g. platform detection in route creation) after some
         # resources were already created — roll back before surfacing a 500.
         rollback_workload_resources(kube, request.namespace, created)
-        logger.error(f"Unexpected error creating tool '{request.name}': {e}")
+        logger.error(
+            "Unexpected error creating tool '%s': %s",
+            sanitize_log(request.name),
+            sanitize_log(str(e)),
+        )
         raise HTTPException(status_code=500, detail=f"Failed to create tool: {e}")
 
 
