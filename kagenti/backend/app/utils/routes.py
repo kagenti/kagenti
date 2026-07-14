@@ -6,12 +6,19 @@ Utility functions for creating HTTPRoutes (Kubernetes) and Routes (OpenShift).
 """
 
 import logging
+from typing import List, Optional, Tuple
 
 from kubernetes.client import ApiException
 
 from app.services.kubernetes import KubernetesService
 from app.core.config import settings
-from app.core.constants import DEFAULT_IN_CLUSTER_PORT, DEFAULT_OFF_CLUSTER_PORT
+from app.core.constants import (
+    AGENTRUNTIMES_PLURAL,
+    CRD_GROUP,
+    CRD_VERSION,
+    DEFAULT_IN_CLUSTER_PORT,
+    DEFAULT_OFF_CLUSTER_PORT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -334,10 +341,57 @@ def lookup_service_port(
     return default_port
 
 
+def _lookup_sandbox_port(
+    name: str,
+    namespace: str,
+    kube: KubernetesService,
+) -> Optional[int]:
+    """Return the container port advertised by a Sandbox's pod template, or None.
+
+    Sandbox controllers create a headless Service with no ports
+    (kubernetes-sigs/agent-sandbox#154), so callers must discover the port from
+    the workload itself. Prefer containerPort, fall back to the PORT env var.
+    """
+    try:
+        sandbox = kube.get_sandbox(namespace=namespace, name=name)
+    except ApiException:
+        return None
+    containers = (
+        sandbox.get("spec", {}).get("podTemplate", {}).get("spec", {}).get("containers", [])
+    )
+    if not containers:
+        return None
+    ports = containers[0].get("ports") or []
+    if ports and isinstance(ports[0].get("containerPort"), int):
+        return ports[0]["containerPort"]
+    for env in containers[0].get("env", []) or []:
+        if env.get("name") == "PORT":
+            try:
+                return int(env.get("value"))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
 def resolve_agent_url(name: str, namespace: str, kube: KubernetesService) -> str:
-    """Resolve agent URL by looking up actual Service port."""
-    port = lookup_service_port(name, namespace, kube, DEFAULT_OFF_CLUSTER_PORT)
-    return get_agent_url(name, namespace, port)
+    """Resolve the URL for an agent by discovering its port.
+
+    1. If the Service exposes ports (Deployment/StatefulSet/Job path), use the
+       first port.
+    2. Else, if a Sandbox owns this name, read the port from its pod template
+       (Sandbox-created Services are headless with no ports).
+    3. Otherwise fall back to DEFAULT_OFF_CLUSTER_PORT, which matches both the
+       default external port and the default the sandbox builder writes.
+    """
+    port = lookup_service_port(name, namespace, kube, default_port=0)
+    if port:
+        return get_agent_url(name, namespace, port)
+
+    sandbox_port = _lookup_sandbox_port(name, namespace, kube)
+    if sandbox_port is not None:
+        return get_agent_url(name, namespace, sandbox_port)
+
+    return get_agent_url(name, namespace, DEFAULT_OFF_CLUSTER_PORT)
 
 
 def get_agent_url(name: str, namespace: str, port: int = DEFAULT_OFF_CLUSTER_PORT) -> str:
@@ -354,3 +408,83 @@ def get_agent_url(name: str, namespace: str, port: int = DEFAULT_OFF_CLUSTER_POR
     else:
         domain = settings.domain_name
         return f"http://{name}.{namespace}.{domain}:{port}"
+
+
+def rollback_workload_resources(
+    kube: KubernetesService,
+    namespace: str,
+    created: List[Tuple[str, str]],
+) -> None:
+    """Best-effort delete of resources created earlier in the same create call.
+
+    Shared by the image-deployment paths of create_agent and create_tool to avoid
+    leaking persistent resources when a later creation step fails. ``created`` is a
+    list of ``(kind, name)`` tuples in creation order; this deletes them in reverse
+    and swallows every error (including 404) so a rollback failure never masks the
+    original exception.
+
+    Only workload / Service / route / AgentRuntime resources created by the call are
+    tracked — shared or idempotent resources (ServiceAccount, AuthBridge ConfigMaps,
+    SCC RoleBinding, skill-fetcher ConfigMap) are intentionally left in place.
+
+    Supported ``kind`` values: ``Deployment``, ``StatefulSet``, ``Job``, ``Sandbox``
+    (whose PVCs are also removed), ``Service``, ``AgentRuntime``, ``HTTPRoute``,
+    ``Route``.
+    """
+    for kind, res_name in reversed(created):
+        try:
+            if kind == "Deployment":
+                kube.delete_deployment(namespace=namespace, name=res_name)
+            elif kind == "StatefulSet":
+                kube.delete_statefulset(namespace=namespace, name=res_name)
+            elif kind == "Job":
+                kube.delete_job(namespace=namespace, name=res_name)
+            elif kind == "Sandbox":
+                kube.delete_sandbox(namespace=namespace, name=res_name)
+                # The Sandbox's PVCs are the highest-cost orphan; delete them too
+                # (mirrors delete_agent's label-selector cleanup).
+                for pvc_name in kube.list_persistent_volume_claims(
+                    namespace=namespace,
+                    label_selector=f"app.kubernetes.io/name={res_name}",
+                ):
+                    kube.delete_persistent_volume_claim(namespace=namespace, name=pvc_name)
+            elif kind == "Service":
+                kube.delete_service(namespace=namespace, name=res_name)
+            elif kind == "AgentRuntime":
+                kube.delete_custom_resource(
+                    group=CRD_GROUP,
+                    version=CRD_VERSION,
+                    namespace=namespace,
+                    plural=AGENTRUNTIMES_PLURAL,
+                    name=res_name,
+                )
+            elif kind == "HTTPRoute":
+                kube.delete_custom_resource(
+                    group="gateway.networking.k8s.io",
+                    version="v1",
+                    namespace=namespace,
+                    plural="httproutes",
+                    name=res_name,
+                )
+            elif kind == "Route":
+                kube.delete_custom_resource(
+                    group="route.openshift.io",
+                    version="v1",
+                    namespace=namespace,
+                    plural="routes",
+                    name=res_name,
+                )
+            logger.info(
+                "Rolled back %s '%s' in namespace '%s' after failed creation",
+                kind,
+                sanitize_log(res_name),
+                sanitize_log(namespace),
+            )
+        except Exception as rollback_err:  # noqa: BLE001 - rollback must not raise
+            logger.warning(
+                "Rollback of %s '%s' in namespace '%s' failed: %s",
+                kind,
+                sanitize_log(res_name),
+                sanitize_log(namespace),
+                rollback_err,
+            )

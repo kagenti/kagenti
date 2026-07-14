@@ -34,14 +34,9 @@ import { useQuery } from '@tanstack/react-query';
 import { configService } from '@/services/api';
 
 export const MCPGatewayPage: React.FC = () => {
-  // Placeholder query - will be replaced with actual API call
-  const { isLoading } = useQuery({
+  const { data: gatewayStatus, isLoading, isError } = useQuery({
     queryKey: ['mcp-gateway-status'],
-    queryFn: async () => {
-      // Placeholder - return mock data for now
-      return { status: 'running', tools: 12, uptime: '5d 12h' };
-    },
-    enabled: false, // Disabled until API is ready
+    queryFn: () => configService.getMCPGatewayStatus(),
   });
 
   // Fetch dashboard config for MCP Inspector URL
@@ -57,7 +52,14 @@ export const MCPGatewayPage: React.FC = () => {
   // Build MCP Inspector URL using config from backend
   const getMcpInspectorUrl = () => {
     if (!dashboardConfig?.mcpInspector) return null;
-    return `${dashboardConfig.mcpInspector}?serverUrl=${encodedServerUrl}&transport=streamable-http`;
+    let url = `${dashboardConfig.mcpInspector}?serverUrl=${encodedServerUrl}&transport=streamable-http`;
+    // Pass the external proxy address so the Inspector's "Proxy Address" field is
+    // pre-populated. Required on OpenShift, where the proxy is behind a Route and
+    // the Inspector's localhost default is unreachable from the browser (#2085).
+    if (dashboardConfig.mcpProxy) {
+      url += `&MCP_PROXY_FULL_ADDRESS=${encodeURIComponent(dashboardConfig.mcpProxy)}`;
+    }
+    return url;
   };
   const mcpInspectorUrl = getMcpInspectorUrl();
 
@@ -103,7 +105,16 @@ export const MCPGatewayPage: React.FC = () => {
                     <DescriptionListGroup>
                       <DescriptionListTerm>Status</DescriptionListTerm>
                       <DescriptionListDescription>
-                        <Label color="green">Running</Label>
+                        {isError && <Label color="red">Status unknown</Label>}
+                        {gatewayStatus?.status === 'Ready' && (
+                          <Label color="green">Running</Label>
+                        )}
+                        {gatewayStatus?.status === 'Degraded' && (
+                          <Label color="orange">Degraded</Label>
+                        )}
+                        {gatewayStatus?.status === 'Missing' && (
+                          <Label color="grey">Not Installed</Label>
+                        )}
                       </DescriptionListDescription>
                     </DescriptionListGroup>
                     <DescriptionListGroup>
@@ -192,7 +203,7 @@ export const MCPGatewayPage: React.FC = () => {
                   iconPosition="end"
                   isDisabled={isConfigLoading || !mcpInspectorUrl}
                 >
-                  Open MCP Inspector
+                  {mcpInspectorUrl ? 'Open MCP Inspector' : 'MCP Inspector not installed'}
                 </Button>
               </CardFooter>
             </Card>

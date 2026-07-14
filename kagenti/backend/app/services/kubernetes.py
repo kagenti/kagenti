@@ -16,7 +16,13 @@ import kubernetes.config
 from kubernetes.client import ApiException
 from kubernetes.config import ConfigException
 
-from app.core.constants import ENABLED_NAMESPACE_LABEL_KEY, ENABLED_NAMESPACE_LABEL_VALUE
+from app.core.constants import (
+    AGENT_SANDBOX_CRD_GROUP,
+    AGENT_SANDBOX_CRD_VERSION,
+    AGENT_SANDBOX_PLURAL,
+    ENABLED_NAMESPACE_LABEL_KEY,
+    ENABLED_NAMESPACE_LABEL_VALUE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +47,7 @@ class KubernetesService:
         self._batch_api: Optional[kubernetes.client.BatchV1Api] = None
         self._rbac_api: Optional[kubernetes.client.RbacAuthorizationV1Api] = None
         self._apis_api: Optional[kubernetes.client.ApisApi] = None
+        self._discovery_v1_api: Optional[kubernetes.client.DiscoveryV1Api] = None
 
     def _load_config(self) -> kubernetes.client.ApiClient:
         """Load Kubernetes configuration (in-cluster or kubeconfig)."""
@@ -99,6 +106,13 @@ class KubernetesService:
         if self._apis_api is None:
             self._apis_api = kubernetes.client.ApisApi(self.api_client)
         return self._apis_api
+
+    @property
+    def discovery_v1_api(self) -> kubernetes.client.DiscoveryV1Api:
+        """Get DiscoveryV1Api client for EndpointSlices"""
+        if self._discovery_v1_api is None:
+            self._discovery_v1_api = kubernetes.client.DiscoveryV1Api(self.api_client)
+        return self._discovery_v1_api
 
     def is_running_in_cluster(self) -> bool:
         """Check if running inside a Kubernetes cluster."""
@@ -163,6 +177,7 @@ class KubernetesService:
         version: str,
         plural: str,
         label_selector: Optional[str] = None,
+        log_api_error: bool = True,
     ) -> dict:
         """List cluster-scoped custom resources (e.g., ClusterBuildStrategies)."""
         try:
@@ -173,7 +188,8 @@ class KubernetesService:
                 label_selector=label_selector,
             )
         except ApiException as e:
-            logger.error(f"Error listing cluster-scoped {plural}: {e}")
+            if log_api_error:
+                logger.error(f"Error listing cluster-scoped {plural}: {e}")
             raise
 
     def get_custom_resource(
@@ -237,6 +253,29 @@ class KubernetesService:
             )
         except ApiException as e:
             logger.error(f"Error creating {plural} in {namespace}: {e}")
+            raise
+
+    def patch_custom_resource(
+        self,
+        group: str,
+        version: str,
+        namespace: str,
+        plural: str,
+        name: str,
+        body: dict,
+    ) -> dict:
+        """Patch a custom resource."""
+        try:
+            return self.custom_api.patch_namespaced_custom_object(
+                group=group,
+                version=version,
+                namespace=namespace,
+                plural=plural,
+                name=name,
+                body=body,
+            )
+        except ApiException as e:
+            logger.error(f"Error patching {plural}/{name} in {namespace}: {e}")
             raise
 
     # -------------------------------------------------------------------------
@@ -462,6 +501,21 @@ class KubernetesService:
             logger.error(f"Error getting Service {name} in {namespace}: {e}")
             raise
 
+    def get_endpoint_slices(self, namespace: str, name: str) -> dict:
+        """Get a EndpointSlices for a named Service."""
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
+        try:
+            result = self.discovery_v1_api.list_namespaced_endpoint_slice(
+                namespace=namespace, label_selector=f"kubernetes.io/service-name={name}"
+            )
+            return result.to_dict()
+        except ApiException:
+            logger.error(
+                "Error getting EndpointSlices for Service %s/%s", namespace, name, exc_info=True
+            )
+            raise
+
     def list_services(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
         """List Services in a namespace with optional label selector."""
         try:
@@ -680,6 +734,74 @@ class KubernetesService:
         except ApiException as e:
             logger.error(f"Error deleting Job {name} in {namespace}: {e}")
             raise
+
+    # -------------------------------------------------------------------------
+    # Sandbox Operations
+    # -------------------------------------------------------------------------
+
+    def create_sandbox(self, namespace: str, body: dict) -> dict:
+        """Create a Sandbox custom resource in the specified namespace."""
+        return self.create_custom_resource(
+            AGENT_SANDBOX_CRD_GROUP,
+            AGENT_SANDBOX_CRD_VERSION,
+            namespace,
+            AGENT_SANDBOX_PLURAL,
+            body,
+        )
+
+    def get_sandbox(self, namespace: str, name: str) -> dict:
+        """Get a Sandbox custom resource by name."""
+        return self.get_custom_resource(
+            AGENT_SANDBOX_CRD_GROUP,
+            AGENT_SANDBOX_CRD_VERSION,
+            namespace,
+            AGENT_SANDBOX_PLURAL,
+            name,
+        )
+
+    def list_sandboxes(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
+        """List Sandbox custom resources in a namespace."""
+        return self.list_custom_resources(
+            AGENT_SANDBOX_CRD_GROUP,
+            AGENT_SANDBOX_CRD_VERSION,
+            namespace,
+            AGENT_SANDBOX_PLURAL,
+            label_selector,
+        )
+
+    def delete_sandbox(self, namespace: str, name: str) -> None:
+        """Delete a Sandbox custom resource by name."""
+        self.delete_custom_resource(
+            AGENT_SANDBOX_CRD_GROUP,
+            AGENT_SANDBOX_CRD_VERSION,
+            namespace,
+            AGENT_SANDBOX_PLURAL,
+            name,
+        )
+
+    def patch_sandbox(self, namespace: str, name: str, body: dict) -> dict:
+        """Patch a Sandbox custom resource."""
+        return self.patch_custom_resource(
+            AGENT_SANDBOX_CRD_GROUP,
+            AGENT_SANDBOX_CRD_VERSION,
+            namespace,
+            AGENT_SANDBOX_PLURAL,
+            name,
+            body,
+        )
+
+    def list_persistent_volume_claims(
+        self, namespace: str, label_selector: Optional[str] = None
+    ) -> List[str]:
+        """List PVC names in a namespace, optionally filtered by label."""
+        result = self.core_api.list_namespaced_persistent_volume_claim(
+            namespace=namespace, label_selector=label_selector or ""
+        )
+        return [pvc.metadata.name for pvc in result.items]
+
+    def delete_persistent_volume_claim(self, namespace: str, name: str) -> None:
+        """Delete a PersistentVolumeClaim by name."""
+        self.core_api.delete_namespaced_persistent_volume_claim(name=name, namespace=namespace)
 
 
 @lru_cache

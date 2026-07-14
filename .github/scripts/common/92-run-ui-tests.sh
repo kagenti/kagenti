@@ -51,14 +51,19 @@ if [ -z "${KAGENTI_UI_URL:-}" ]; then
 fi
 export KAGENTI_UI_URL
 
-# Auto-detect Keycloak credentials from cluster secret
+# Auto-detect Keycloak credentials from kagenti-test-user secret (kagenti realm).
+# Falls back to keycloak-initial-admin (master realm) for backwards compatibility.
 if [ -z "${KEYCLOAK_USER:-}" ]; then
-    KC_USER=$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
+    KC_USER=$(kubectl get secret kagenti-test-user -n keycloak -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null \
+        || kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null \
+        || echo "admin")
     export KEYCLOAK_USER="$KC_USER"
     log_info "Keycloak user: $KC_USER"
 fi
 if [ -z "${KEYCLOAK_PASSWORD:-}" ]; then
-    KC_PASS=$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
+    KC_PASS=$(kubectl get secret kagenti-test-user -n keycloak -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null \
+        || kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null \
+        || echo "admin")
     export KEYCLOAK_PASSWORD="$KC_PASS"
     log_info "Keycloak password: ${KC_PASS:0:4}..."
 fi

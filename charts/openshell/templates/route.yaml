@@ -1,0 +1,22 @@
+{{- if eq .Values.ingress.type "route" }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: openshell
+  namespace: {{ .Values.tenant }}
+  labels:
+    {{- include "openshell.labels" . | nindent 4 }}
+  annotations:
+    haproxy.router.openshift.io/timeout: {{ .Values.ingress.timeout }}
+spec:
+  {{- if .Values.ingress.host }}
+  host: {{ .Values.ingress.host }}
+  {{- end }}
+  port:
+    targetPort: grpc
+  tls:
+    termination: passthrough
+  to:
+    kind: Service
+    name: openshell-server
+{{- end }}

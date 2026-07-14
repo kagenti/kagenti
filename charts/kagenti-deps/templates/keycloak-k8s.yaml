@@ -56,7 +56,7 @@ spec:
       containers:
         - name: keycloak
           image: {{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag }}
-          args: [{{ if .Values.keycloak.database.enabled }}"start"{{ else }}"start-dev"{{ end }}]
+          args: [{{ if .Values.keycloak.database.enabled }}"start"{{ else }}"start-dev"{{ end }}, "--import-realm"]
           env:
             {{- include "kagenti.mergeEnvVars" (dict "defaults" (include "kagenti.keycloak.defaultEnv" . | fromYamlArray) "overrides" .Values.keycloak.extraEnvVars) | nindent 12 }}
           ports:
@@ -88,6 +88,14 @@ spec:
             requests:
               cpu: 100m
               memory: 512Mi
+          volumeMounts:
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+      volumes:
+        - name: realm-import
+          configMap:
+            name: keycloak-realm-import
 {{- if .Values.keycloak.database.enabled }}
 ---
 # This is deployment of PostgreSQL with an ephemeral storage for testing: Once the Pod stops, the data is lost.
@@ -219,7 +227,10 @@ extraEnvVars with the same name override these defaults.
 */}}
 {{- define "kagenti.keycloak.defaultEnv" -}}
 - name: KC_FEATURES
-  value: "client-auth-federated:v1,spiffe:v1"
+  # token-exchange + admin-fine-grained-authz are required by the token-exchange
+  # E2E suite (realm/FGAP setup). Enabling them on the platform Keycloak lets the
+  # suite reuse it instead of standing up a second, colliding Keycloak on Kind.
+  value: "client-auth-federated:v1,spiffe:v1,token-exchange,admin-fine-grained-authz:v1"
 - name: KC_BOOTSTRAP_ADMIN_USERNAME
   value: "admin"
 - name: KC_BOOTSTRAP_ADMIN_PASSWORD
@@ -231,7 +242,9 @@ extraEnvVars with the same name override these defaults.
 - name: KC_HOSTNAME_STRICT
   value: "false"
 - name: KC_HOSTNAME
-  value: {{ printf "http://keycloak.%s:8080/" .Values.domain | quote }}
+  value: {{ .Values.keycloak.publicUrl | default (printf "http://keycloak.%s:8080/" .Values.domain) | quote }}
+- name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
+  value: "true"
 - name: KC_HEALTH_ENABLED
   value: "true"
 - name: KC_CACHE

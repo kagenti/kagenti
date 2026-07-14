@@ -1,0 +1,140 @@
+# Weather agent with OpenShell supervisor as entrypoint
+# The supervisor applies Landlock + seccomp before exec'ing the weather app
+#
+# ConfigMap is created separately by the fulltest script from:
+#   policy-data.yaml (sandbox config)
+#   sandbox-policy.rego (OPA rules from upstream OpenShell)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weather-agent-supervised
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: weather-agent-supervised
+    app.kubernetes.io/managed-by: openshell
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: weather-agent-supervised
+  template:
+    metadata:
+      labels:
+        kagenti.io/inject: disabled
+        app.kubernetes.io/name: weather-agent-supervised
+    spec:
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: openshell-supervisor
+      containers:
+      - name: agent
+        image: weather-agent-supervised:latest
+        imagePullPolicy: IfNotPresent
+        command: ["/usr/local/bin/openshell-sandbox"]
+        args:
+        - "--policy-rules"
+        - "/etc/openshell/sandbox-policy.rego"
+        - "--policy-data"
+        - "/etc/openshell/policy.yaml"
+        - "--log-level"
+        - "info"
+        - "--"
+        - "/bin/bash"
+        - "-c"
+        - "exec /app/.venv/bin/python3 -c 'from weather_service.agent import run; run()'"
+        securityContext:
+          privileged: true
+        env:
+        - name: AGENT_NAME
+          value: "weather-agent-supervised"
+        - name: PORT
+          value: "8080"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: UV_CACHE_DIR
+          value: "/tmp/uv-cache"
+        - name: HOME
+          value: "/tmp/home"
+        volumeMounts:
+        - name: policy
+          mountPath: /etc/openshell
+          readOnly: true
+        - name: cache
+          mountPath: /.cache
+        - name: tmp
+          mountPath: /tmp
+      # Bridges traffic from the pod network (default netns) into the
+      # supervisor's isolated network namespace where the agent listens.
+      - name: port-bridge
+        image: python:3.12-slim
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        command: ["python3", "-c"]
+        args:
+        - |
+          import socket, threading
+          def forward(src, dst):
+              try:
+                  while d := src.recv(4096):
+                      dst.sendall(d)
+              except: pass
+              finally: src.close(); dst.close()
+          srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+          srv.bind(('0.0.0.0', 8080)); srv.listen(32)
+          while True:
+              c, _ = srv.accept()
+              u = socket.socket(); u.connect(('10.200.0.2', 8080))
+              threading.Thread(target=forward, args=(c, u), daemon=True).start()
+              threading.Thread(target=forward, args=(u, c), daemon=True).start()
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: policy
+        configMap:
+          name: weather-agent-supervised-policy
+      - name: cache
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: weather-agent-supervised
+  namespace: team1
+spec:
+  selector:
+    app.kubernetes.io/name: weather-agent-supervised
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: weather-agent-supervised
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: weather-agent-supervised
+    app.kubernetes.io/managed-by: openshell
+spec:
+  type: agent
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: weather-agent-supervised

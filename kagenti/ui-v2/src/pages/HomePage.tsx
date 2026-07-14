@@ -3,6 +3,7 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import {
   PageSection,
   Title,
@@ -33,7 +34,7 @@ import {
 } from '@patternfly/react-icons';
 import { useQuery } from '@tanstack/react-query';
 
-import { agentService, toolService, namespaceService } from '@/services/api';
+import { agentService, toolService, skillService, namespaceService } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface QuickLinkCardProps {
@@ -171,6 +172,16 @@ export const HomePage: React.FC = () => {
     enabled: namespaces.length > 0,
   });
 
+  // Get feature flags
+  const features = useFeatureFlags();
+
+  // Fetch skills from first namespace (only if skills feature is enabled)
+  const { data: skills = [], isLoading: skillsLoading } = useQuery({
+    queryKey: ['skills', defaultNamespace],
+    queryFn: () => skillService.list(defaultNamespace),
+    enabled: namespaces.length > 0 && features.skills,
+  });
+
   const readyAgents = agents.filter((a) => a.status === 'Ready').length;
   const readyTools = tools.filter((t) => t.status === 'Ready').length;
 
@@ -262,6 +273,19 @@ export const HomePage: React.FC = () => {
               isLoading={toolsLoading}
             />
           </GridItem>
+          {features.skills && (
+            <GridItem md={6} lg={3}>
+              <QuickLinkCard
+                title="Skill Catalog"
+                description="Browse and manage reusable skills for your agents."
+                icon={<CogIcon />}
+                path="/skills"
+                buttonText="View Skills"
+                count={skills.length}
+                isLoading={skillsLoading}
+              />
+            </GridItem>
+          )}
           <GridItem md={6} lg={3}>
             <QuickLinkCard
               title="Observability"
@@ -302,6 +326,17 @@ export const HomePage: React.FC = () => {
               Import New Tool
             </Button>
           </FlexItem>
+          {features.skills && (
+            <FlexItem>
+              <Button
+                variant="primary"
+                icon={<PlusCircleIcon />}
+                onClick={() => navigate('/skills/import')}
+              >
+                Import New Skill
+              </Button>
+            </FlexItem>
+          )}
         </Flex>
 
         <Alert

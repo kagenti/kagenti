@@ -109,7 +109,7 @@ oc login https://api.management-cluster.example.com:6443 ...
 # Output: .env.kagenti-hypershift-custom (contains scoped credentials)
 ```
 
-### Step 4: Install hcp CLI and Ansible
+### Step 4: Install hcp CLI
 
 ```bash
 ./.github/scripts/hypershift/local-setup.sh
@@ -377,7 +377,7 @@ oc get events -A --sort-by='.lastTimestamp' | tail -30
 | `create-cluster.sh [suffix]` | Create HyperShift cluster (~10-15 min) |
 | `destroy-cluster.sh [suffix]` | Destroy HyperShift cluster (~10 min) |
 | `setup-hypershift-ci-credentials.sh` | One-time AWS/OCP credential setup |
-| `local-setup.sh` | Install hcp CLI and ansible collections |
+| `local-setup.sh` | Install hcp CLI |
 | `preflight-check.sh` | Verify prerequisites |
 | `check-quotas.sh` | Check AWS service quotas |
 | `setup-autoscaling.sh` | Configure autoscaling |

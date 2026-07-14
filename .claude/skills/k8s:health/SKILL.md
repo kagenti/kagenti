@@ -242,6 +242,10 @@ kubectl get virtualservice -A
 kubectl get destinationrule -A
 ```
 
+> **All `*.localtest.me` routes returning HTTP 503 while pods look healthy?** That's the Ambient
+> expired-cert outage on long-running/suspended dev clusters — use **`istio:mesh-selfheal`**
+> (`scripts/k8s/mesh-recover.sh`) to detect and recover.
+
 #### SPIRE (Workload Identity)
 
 ```bash

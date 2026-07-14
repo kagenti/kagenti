@@ -12,3 +12,4 @@ export {
   formatDuration,
   getProgressInfo,
 } from './BuildProgressView';
+export { SkillFileTree } from './SkillFileTree';

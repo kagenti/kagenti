@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sandbox-quota
+  namespace: {{ .Values.tenant }}
+  labels:
+    {{- include "openshell.labels" . | nindent 4 }}
+spec:
+  hard:
+    pods: {{ .Values.quota.pods | quote }}
+    requests.cpu: {{ .Values.quota.requestsCpu | quote }}
+    requests.memory: {{ .Values.quota.requestsMemory | quote }}
+    persistentvolumeclaims: {{ .Values.quota.pvcs | quote }}

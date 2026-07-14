@@ -291,20 +291,33 @@ cleanup_orphaned_aws_resources() {
                 if [ -n "$RTS" ] && [ "$RTS" != "None" ]; then
                     echo "    Found non-main: $RTS"
                     for rt in $RTS; do
-                        echo "    Deleting route table: $rt"
-                        # Show any remaining associations for debugging
+                        echo "    Cleaning route table: $rt"
+                        # Delete non-local routes first (e.g., 0.0.0.0/0 -> NAT gateway)
+                        # AWS refuses to delete a route table with active routes
+                        RT_ROUTES=$(aws ec2 describe-route-tables --region "$AWS_REGION" \
+                            --route-table-ids "$rt" \
+                            --query 'RouteTables[0].Routes[?GatewayId!=`local` && DestinationCidrBlock!=null].DestinationCidrBlock' \
+                            --output text 2>/dev/null || echo "")
+                        if [ -n "$RT_ROUTES" ] && [ "$RT_ROUTES" != "None" ]; then
+                            for cidr in $RT_ROUTES; do
+                                echo "      Deleting route $cidr from $rt"
+                                aws ec2 delete-route --region "$AWS_REGION" \
+                                    --route-table-id "$rt" --destination-cidr-block "$cidr" 2>/dev/null || true
+                            done
+                        fi
+                        # Disassociate any remaining associations
                         REMAINING_ASSOCS=$(aws ec2 describe-route-tables --region "$AWS_REGION" \
                             --route-table-ids "$rt" \
-                            --query 'RouteTables[0].Associations[*].RouteTableAssociationId' \
+                            --query 'RouteTables[0].Associations[?Main!=`true`].RouteTableAssociationId' \
                             --output text 2>/dev/null || echo "")
                         if [ -n "$REMAINING_ASSOCS" ] && [ "$REMAINING_ASSOCS" != "None" ]; then
-                            echo "      Warning: Still has associations: $REMAINING_ASSOCS"
-                            # Try to disassociate any non-main associations
                             for assoc in $REMAINING_ASSOCS; do
+                                echo "      Disassociating $assoc from $rt"
                                 aws ec2 disassociate-route-table --region "$AWS_REGION" \
                                     --association-id "$assoc" 2>/dev/null || true
                             done
                         fi
+                        echo "    Deleting route table: $rt"
                         aws ec2 delete-route-table --region "$AWS_REGION" \
                             --route-table-id "$rt" 2>&1 || true
                     done
@@ -313,7 +326,7 @@ cleanup_orphaned_aws_resources() {
                 fi
 
                 echo "  - Attempting manual VPC delete:"
-                VPC_DELETE_OUTPUT=$(aws ec2 delete-vpc --region "$AWS_REGION" --vpc-id "$vpc" 2>&1)
+                VPC_DELETE_OUTPUT=$(aws ec2 delete-vpc --region "$AWS_REGION" --vpc-id "$vpc" 2>&1) || true
                 VPC_DELETE_EXIT=$?
 
                 if [ $VPC_DELETE_EXIT -eq 0 ]; then
@@ -558,7 +571,10 @@ if [ "$HC_EXISTS" = "true" ] || [ "$NS_EXISTS" = "true" ]; then
 
     # Verify HostedCluster cleanup completed
     if oc get hostedcluster "$CLUSTER_NAME" -n clusters &>/dev/null; then
-        echo "::warning::HostedCluster still exists after cleanup"
+        echo "::warning::HostedCluster still exists after cleanup — force-deleting"
+        oc patch hostedcluster "$CLUSTER_NAME" -n clusters -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+        oc delete hostedcluster "$CLUSTER_NAME" -n clusters --wait=false 2>/dev/null || true
+        sleep 10
     fi
 
     if oc get ns "$CONTROL_PLANE_NS" &>/dev/null; then

@@ -57,10 +57,17 @@ kc_api() {
 # Get admin token (master realm)
 # ============================================================================
 
-ADMIN_TOKEN=$(curl -sk -X POST \
-    "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
-    -d "grant_type=password&client_id=admin-cli&username=$ADMIN_USER&password=$ADMIN_PASS" \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || echo "")
+# Factored out so the scope-existence poll below can refresh the admin
+# token. The master-realm admin access token lives ~60s; a 5-minute wait
+# loop would otherwise fire API calls with an expired bearer.
+refresh_admin_token() {
+    ADMIN_TOKEN=$(curl -sk -X POST \
+        "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+        -d "grant_type=password&client_id=admin-cli&username=$ADMIN_USER&password=$ADMIN_PASS" \
+        | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || echo "")
+}
+
+refresh_admin_token
 
 if [ -z "$ADMIN_TOKEN" ]; then
     log_error "Failed to get Keycloak admin token"
@@ -216,6 +223,173 @@ E2E_CLIENT_SECRET=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/clients/$CLIEN
 log_success "Service account client ready (client_id=$E2E_CLIENT_ID)"
 
 # ============================================================================
+# 4b. Attach agent audience scopes to the E2E test client
+#     Client-registration creates agent-*-aud scopes as realm defaults, but
+#     realm defaults don't retroactively apply to existing clients. We need
+#     to explicitly add them so the E2E test token contains the aud claim
+#     that AuthBridge requires for inbound JWT validation.
+# ============================================================================
+
+# On scope-gate timeout, dump the state of every input the operator's
+# ClientRegistrationReconciler depends on. Printed to the CI log so the
+# next failed run is self-diagnostic — no need to re-run with extra
+# debugging to figure out why the reconciler didn't create the scope.
+dump_scope_timeout_diagnostics() {
+    echo
+    echo "=========================================================================="
+    echo " DIAGNOSTICS: scope-gate timeout on ClientRegistrationReconciler"
+    echo "=========================================================================="
+
+    echo
+    echo "--- Agent deployments in team1 (pod template labels + annotations) ---"
+    kubectl get deployment -n team1 -l kagenti.io/type=agent \
+        -o 'custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,AVAILABLE:.status.availableReplicas,AGE:.metadata.creationTimestamp' \
+        2>&1 || echo "  (failed to list)"
+    for dep in $(kubectl get deployment -n team1 -l kagenti.io/type=agent -o name 2>/dev/null); do
+        echo
+        echo "  Deployment: $dep"
+        echo "  Pod-template labels:"
+        kubectl get "$dep" -n team1 -o jsonpath='{.spec.template.metadata.labels}' 2>&1 | python3 -m json.tool 2>/dev/null | sed 's/^/    /' || echo "    (failed)"
+        echo "  Pod-template annotations (looking for kagenti.io/keycloak-client-credentials-secret-name):"
+        kubectl get "$dep" -n team1 -o jsonpath='{.spec.template.metadata.annotations}' 2>&1 | python3 -m json.tool 2>/dev/null | sed 's/^/    /' || echo "    (failed)"
+    done
+
+    echo
+    echo "--- team1 authbridge-config ConfigMap (what the reconciler reads) ---"
+    kubectl get configmap -n team1 authbridge-config -o yaml 2>&1 | \
+        grep -E '^  [A-Z_]+:|^data:' | head -30 || echo "  (not found — reconciler will requeue forever on 'waiting for KEYCLOAK_URL/KEYCLOAK_REALM')"
+
+    echo
+    echo "--- keycloak-admin-secret (now in kagenti-system, not team1) ---"
+    kubectl get secret -n kagenti-system keycloak-admin-secret \
+        -o jsonpath='{"  keys: "}{.data}{"\n"}' 2>&1 | python3 -c "
+import sys, json, re
+s = sys.stdin.read().strip()
+m = re.match(r'^\s*keys:\s*(\{.*\})\s*$', s, re.DOTALL)
+if m:
+    try:
+        d = json.loads(m.group(1).replace(\"'\", '\"'))
+        for k in d:
+            print(f'    - {k}')
+    except Exception:
+        print(s)
+else:
+    print(s)
+" 2>&1 || echo "  (not found — operator will be unable to register clients)"
+
+    echo
+    echo "--- kagenti-operator controller pod status ---"
+    kubectl get pods -n kagenti-system -l app.kubernetes.io/name=kagenti-operator \
+        -o 'custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[*].ready,RESTARTS:.status.containerStatuses[*].restartCount,PHASE:.status.phase,AGE:.metadata.creationTimestamp' \
+        2>&1 | head -5 || echo "  (failed to list)"
+
+    echo
+    echo "--- kagenti-operator recent logs (broader grep than 85-collect-failure-info.sh) ---"
+    kubectl logs -n kagenti-system deployment/kagenti-controller-manager --tail=200 2>/dev/null | \
+        grep -iE 'waiting for|cannot resolve|skip|reconcile|client.?regist|keycloak|credential|error|ERROR|audience' | \
+        tail -50 || echo "  (no operator logs matched — broaden the grep or increase --tail)"
+
+    echo
+    echo "--- Keycloak realm clients (is weather-service registered?) ---"
+    refresh_admin_token
+    kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/clients?clientId=team1/weather-service" 2>&1 | \
+        python3 -c "
+import sys, json
+try:
+    clients = json.load(sys.stdin)
+    if not clients:
+        print('  NO CLIENT — reconciler never reached Keycloak admin API')
+    else:
+        for c in clients:
+            print(f\"  clientId: {c.get('clientId')}, enabled: {c.get('enabled')}, defaultClientScopes: {c.get('defaultClientScopes', [])}\")
+except Exception as e:
+    print(f'  parse error: {e}')
+" 2>&1 || echo "  (API call failed)"
+
+    echo
+    echo "--- Keycloak realm default-default client scopes (what we were polling for) ---"
+    kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/default-default-client-scopes" 2>&1 | \
+        python3 -c "
+import sys, json
+try:
+    scopes = json.load(sys.stdin)
+    for s in scopes:
+        print(f\"  - {s['name']}\")
+except Exception as e:
+    print(f'  parse error: {e}')
+" 2>&1 | head -30 || echo "  (API call failed)"
+
+    echo "=========================================================================="
+    echo
+}
+
+# Gate: wait for at least one agent-*-aud scope to appear in the realm
+# before trying to attach them. These scopes are created asynchronously
+# by kagenti-operator's ClientRegistrationReconciler (default path) or
+# by the legacy client-registration sidecar (opt-in). If we query before
+# either path finishes, the test token is minted without an aud claim
+# and AuthBridge rejects every request with 401
+# "audience is required (prevents confused deputy attacks)".
+#
+# The wait is skipped when no agent deployments exist in team1 (dev runs
+# with no agent under test). SCOPE_WAIT_TIMEOUT overrides the default 5
+# minutes; in healthy runs the first iteration finds scopes immediately
+# so the happy path pays effectively nothing.
+AGENT_COUNT=$(kubectl get deployment -n team1 -l kagenti.io/type=agent \
+    -o name 2>/dev/null | wc -l | tr -d ' ')
+
+if [ "$AGENT_COUNT" -gt 0 ]; then
+    log_info "Waiting up to ${SCOPE_WAIT_TIMEOUT:-300}s for agent-*-aud scopes to appear in realm $REALM..."
+    MAX_WAIT="${SCOPE_WAIT_TIMEOUT:-300}"
+    SLEEP=5
+    ELAPSED=0
+    SCOPE_SEEN=false
+    while [ $ELAPSED -lt $MAX_WAIT ]; do
+        refresh_admin_token
+        SCOPES_JSON=$(kc_api GET \
+            "$KEYCLOAK_URL/admin/realms/$REALM/default-default-client-scopes")
+        if echo "$SCOPES_JSON" | python3 -c "
+import sys, json
+scopes = json.load(sys.stdin)
+if any(s['name'].startswith('agent-') and s['name'].endswith('-aud') for s in scopes):
+    sys.exit(0)
+sys.exit(1)
+" 2>/dev/null; then
+            log_info "  Agent audience scope(s) detected after ${ELAPSED}s"
+            SCOPE_SEEN=true
+            break
+        fi
+        sleep $SLEEP
+        ELAPSED=$((ELAPSED + SLEEP))
+    done
+    if [ "$SCOPE_SEEN" = "false" ]; then
+        log_warn "No agent-*-aud scopes appeared after ${MAX_WAIT}s; tests will likely fail with 401 (kagenti-operator ClientRegistrationReconciler may be stuck)"
+        log_warn "Dumping diagnostics so the next maintainer can debug the reconciler without a second CI run:"
+        dump_scope_timeout_diagnostics
+    fi
+fi
+
+log_info "Attaching agent audience scopes to $E2E_CLIENT_ID..."
+refresh_admin_token
+REALM_DEFAULT_SCOPES=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/default-default-client-scopes")
+AGENT_SCOPE_IDS=$(echo "$REALM_DEFAULT_SCOPES" | python3 -c "
+import sys, json
+scopes = json.load(sys.stdin)
+for s in scopes:
+    if s['name'].startswith('agent-') and s['name'].endswith('-aud'):
+        print(s['id'], s['name'])
+" 2>/dev/null || echo "")
+
+if [ -n "$AGENT_SCOPE_IDS" ]; then
+    while IFS=' ' read -r scope_id scope_name; do
+        kc_api PUT "$KEYCLOAK_URL/admin/realms/$REALM/clients/$CLIENT_INTERNAL_ID/default-client-scopes/$scope_id" >/dev/null
+        log_info "  Added scope '$scope_name' to $E2E_CLIENT_ID"
+    done <<< "$AGENT_SCOPE_IDS"
+else
+    log_info "  No agent audience scopes found (agents may not be deployed yet)"
+fi
+
+# ============================================================================
 # 5. Update kagenti-test-user secret with verified credentials
 # ============================================================================
 
@@ -225,6 +399,8 @@ kubectl create secret generic kagenti-test-user \
     --from-literal=username="$TEST_USER" \
     --from-literal=password="$TEST_PASS" \
     --from-literal=realm="$REALM" \
+    --from-literal=client_id="$E2E_CLIENT_ID" \
+    --from-literal=client_secret="$E2E_CLIENT_SECRET" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1
 
 # ============================================================================
@@ -248,3 +424,4 @@ fi
 log_success "Test credentials ready"
 log_info "  Test user: $TEST_USER (realm: $REALM)"
 log_info "  Service account: $E2E_CLIENT_ID"
+log_info "  Run ./.github/scripts/local-setup/show-services.sh to see login credentials"

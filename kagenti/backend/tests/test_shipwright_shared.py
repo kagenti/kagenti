@@ -316,6 +316,28 @@ class TestExtractResourceConfigFromBuild:
         assert config.framework == "LangGraph"
         assert config.createHttpRoute is True
 
+    def test_extract_agent_config_with_skills(self):
+        """Test extracting linked skills from Build annotations."""
+        build = {
+            "metadata": {
+                "annotations": {
+                    "kagenti.io/agent-config": json.dumps(
+                        {
+                            "protocol": "a2a",
+                            "framework": "LangGraph",
+                            "createHttpRoute": True,
+                            "skills": ["summarizer", "translator"],
+                        }
+                    )
+                }
+            }
+        }
+
+        config = extract_resource_config_from_build(build, ResourceType.AGENT)
+
+        assert config is not None
+        assert config.skills == ["summarizer", "translator"]
+
     def test_extract_tool_config(self):
         """Test extracting tool config from Build annotations."""
         build = {

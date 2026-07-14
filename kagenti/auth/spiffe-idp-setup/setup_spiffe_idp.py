@@ -23,6 +23,7 @@ Environment Variables:
     SPIFFE_TRUST_DOMAIN: SPIFFE trust domain (default: spiffe://localtest.me)
     SPIFFE_BUNDLE_ENDPOINT: JWKS URL (default: http://spire-spiffe-oidc-discovery-provider.spire-server.svc.cluster.local/keys)
     SPIFFE_IDP_ALIAS: Identity Provider alias (default: spire-spiffe)
+    SPIFFE_TLS_VERIFY: Enable TLS verification for SPIRE endpoint (default: true, set to "false" to disable)
     SPIRE_NAMESPACE: SPIRE server namespace for validation (default: spire-server)
 """
 
@@ -64,6 +65,7 @@ SPIFFE_IDP_ALIAS = os.getenv("SPIFFE_IDP_ALIAS", "spire-spiffe")
 SPIRE_NAMESPACE = os.getenv("SPIRE_NAMESPACE", "spire-server")
 # TLS verification - defaults to True (secure), set KEYCLOAK_TLS_VERIFY=false to disable
 KEYCLOAK_TLS_VERIFY = os.getenv("KEYCLOAK_TLS_VERIFY", "true").lower() != "false"
+SPIFFE_TLS_VERIFY = os.getenv("SPIFFE_TLS_VERIFY", "true").lower() != "false"
 
 
 def read_keycloak_credentials() -> Tuple[str, str]:
@@ -136,7 +138,9 @@ def wait_for_spire(max_attempts: int = 30, delay_seconds: int = 10) -> bool:
             logger.info(
                 f"Attempt {attempt}/{max_attempts}: Checking SPIRE availability..."
             )
-            response = requests.get(SPIFFE_BUNDLE_ENDPOINT, timeout=5)
+            response = requests.get(
+                SPIFFE_BUNDLE_ENDPOINT, timeout=5, verify=SPIFFE_TLS_VERIFY
+            )
 
             if response.status_code == 200:
                 jwks = response.json()

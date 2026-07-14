@@ -86,6 +86,7 @@ def mock_kube():
     kube.get_deployment.side_effect = _api_404()
     kube.get_statefulset.side_effect = _api_404()
     kube.get_job.side_effect = _api_404()
+    kube.get_sandbox.side_effect = _api_404()
     return kube
 
 
@@ -122,6 +123,25 @@ class TestWorkloadExists:
         mock_kube.get_job.return_value = {"metadata": {"name": "agent1"}}
 
         assert _workload_exists(mock_kube, "team1", "agent1") is True
+
+    @patch("app.services.reconciliation.settings")
+    def test_sandbox_exists(self, mock_settings, mock_kube):
+        from app.services.reconciliation import _workload_exists
+
+        mock_settings.kagenti_feature_flag_agent_sandbox = True
+        mock_kube.get_sandbox.side_effect = None
+        mock_kube.get_sandbox.return_value = {"metadata": {"name": "agent1"}}
+
+        assert _workload_exists(mock_kube, "team1", "agent1") is True
+
+    @patch("app.services.reconciliation.settings")
+    def test_sandbox_skipped_when_flag_disabled(self, mock_settings, mock_kube):
+        from app.services.reconciliation import _workload_exists
+
+        mock_settings.kagenti_feature_flag_agent_sandbox = False
+
+        assert _workload_exists(mock_kube, "team1", "agent1") is False
+        mock_kube.get_sandbox.assert_not_called()
 
     def test_no_workload_exists(self, mock_kube):
         from app.services.reconciliation import _workload_exists

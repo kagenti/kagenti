@@ -1,0 +1,192 @@
+# NemoClaw OpenClaw Agent — OpenShell PoC
+#
+# Default OpenClaw agent running inside an OpenShell sandbox.
+# Exposes its gateway API on port 18789.
+#
+# TODO(nemoclaw-images): Build a proper container image via Shipwright.
+#   The OpenClaw sandbox images are at ghcr.io/nvidia/nemoclaw/ (needs auth).
+#   Options:
+#     1. Mirror to our GHCR org (ghcr.io/kagenti/nemoclaw-openclaw:latest)
+#     2. Build from NemoClaw source (Dockerfile + Dockerfile.base at repo root)
+#     3. Use NemoClaw install.sh in a Shipwright pipeline
+#   Until then, this deployment uses the public OpenShell base image.
+#   The pod will CrashLoopBackOff if openclaw is not pre-installed.
+#
+# TODO(a2a-adapter): Wrap OpenClaw's gateway API with an A2A JSON-RPC adapter
+#   so it can participate in the standard A2A test suite. OpenClaw does not
+#   natively speak A2A — it uses its own gateway protocol on port 18789.
+#
+# Deploy:  kubectl apply -f deployments/openshell/agents/nemoclaw-openclaw/deployment.yaml
+# Destroy: kubectl delete -f deployments/openshell/agents/nemoclaw-openclaw/deployment.yaml
+---
+# 1. ConfigMap — OpenClaw agent configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nemoclaw-openclaw-config
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: nemoclaw-openclaw
+    app.kubernetes.io/component: config
+    app.kubernetes.io/managed-by: openshell
+data:
+  policy.yaml: |
+    version: 1
+    filesystem_policy:
+      include_workdir: true
+      read_only:
+        - /usr
+        - /lib
+        - /etc
+        - /app
+        - /sandbox/.openclaw
+      read_write:
+        - /sandbox/.openclaw-data
+        - /sandbox/workspace
+        - /tmp
+    process:
+      run_as_user: sandbox
+      run_as_group: sandbox
+    network_policies:
+      internal:
+        name: "Allow internal cluster services"
+        endpoints:
+          - host: "*.svc.cluster.local"
+            port: 4000
+          - host: "*.svc.cluster.local"
+            port: 8080
+          - host: "*.svc.cluster.local"
+            port: 443
+---
+# 2. Deployment — NemoClaw OpenClaw agent pod
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nemoclaw-openclaw
+  namespace: team1
+  labels:
+    kagenti.io/framework: NemoClaw
+    kagenti.io/workload-type: deployment
+    app.kubernetes.io/name: nemoclaw-openclaw
+    app.kubernetes.io/managed-by: openshell
+    app.kubernetes.io/component: agent
+  annotations:
+    kagenti.io/description: "OpenClaw agent via NemoClaw — gateway-based AI assistant"
+    openshell.kagenti.io/policy: nemoclaw-openclaw-config
+    kagenti.io/nemoclaw-image-todo: >
+      Replace base image with proper NemoClaw openclaw image. Build from
+      NemoClaw source (Dockerfile + Dockerfile.base) or mirror GHCR images.
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      # kagenti.io/type label was removed due to VAP introduction.
+      # Existing deployments must be deleted and re-applied.
+      app.kubernetes.io/name: nemoclaw-openclaw
+  template:
+    metadata:
+      labels:
+        kagenti.io/inject: disabled
+        kagenti.io/framework: NemoClaw
+        app.kubernetes.io/name: nemoclaw-openclaw
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: agent
+        # Built from NemoClaw v0.0.28 / OpenClaw v2026.4.9
+        # Source: deployments/openshell/agents/nemoclaw-openclaw/Dockerfile
+        image: nemoclaw-openclaw:latest
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        env:
+        - name: AGENT_NAME
+          value: "nemoclaw-openclaw"
+        - name: LLM_MODEL
+          value: "gpt-4o-mini"
+        - name: OPENAI_API_BASE
+          value: "http://litellm-model-proxy.team1.svc:4000/v1"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: litellm-virtual-keys
+              key: api-key
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 12
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 2Gi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nemoclaw
+          readOnly: true
+        - name: home
+          mountPath: /home/node
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: config
+        configMap:
+          name: nemoclaw-openclaw-config
+          defaultMode: 0755
+      - name: home
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+---
+# 3. Service — ClusterIP on port 8080 (socat bridge to OpenClaw gateway)
+apiVersion: v1
+kind: Service
+metadata:
+  name: nemoclaw-openclaw
+  namespace: team1
+  labels:
+    kagenti.io/type: agent
+    app.kubernetes.io/name: nemoclaw-openclaw
+    app.kubernetes.io/managed-by: openshell
+spec:
+  type: ClusterIP
+  selector:
+    kagenti.io/type: agent
+    app.kubernetes.io/name: nemoclaw-openclaw
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+---
+# 4. AgentRuntime CR
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: nemoclaw-openclaw
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: nemoclaw-openclaw
+    app.kubernetes.io/managed-by: openshell
+spec:
+  type: agent
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nemoclaw-openclaw

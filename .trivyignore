@@ -35,3 +35,61 @@ AVD-KSV-0125
 
 # Internal agent base image uses :latest (built on-cluster, no external tag)
 AVD-DS-0001
+
+# --- OpenShell PoC agents (remove when MVP Helm chart replaces kustomize) ---
+
+# OpenShell agent-sandbox-controller (upstream NVIDIA component)
+# KSV-0014 and KSV-0118 are fixed via kustomize patch
+# (deployments/openshell/agent-sandbox-security-patch.yaml)
+
+# OpenShell RBAC (gateway + agent-sandbox-controller)
+# Both components need broad permissions by design:
+# - Gateway: pods/exec (sandbox session), services, network policies (isolation)
+# - Controller: services, endpoints, network policies (sandbox enforcement)
+# Scope is limited to the sandbox namespace (team1) and openshell-system.
+
+# AVD-KSV-0042: pods/log access — gateway needs to stream sandbox logs
+AVD-KSV-0042
+
+# AVD-KSV-0053: pods/exec — gateway creates shell sessions in sandboxes
+AVD-KSV-0053
+
+# AVD-KSV-0056: Broad network resource access — sandbox network isolation
+AVD-KSV-0056
+
+# AVD-KSV-0113: Secrets management — gateway injects credentials into sandboxes
+AVD-KSV-0113
+
+# AVD-KSV-0013: Locally-built agent images use :latest (no external registry tag)
+AVD-KSV-0013
+
+# OpenShell supervised agents require privileged mode for namespace creation.
+# The supervisor creates network namespaces, applies Landlock filesystem
+# restrictions, and sets up seccomp filters — all requiring root + CAP_SYS_ADMIN.
+# After setup, the supervisor drops to the sandbox user.
+
+# AVD-KSV-0001: allowPrivilegeEscalation — supervisor agent containers
+AVD-KSV-0001
+
+# AVD-KSV-0012: runAsNonRoot — supervised agents must start as root for
+# namespace creation, then drop to sandbox user. Non-supervised agents set this.
+AVD-KSV-0012
+
+# AVD-KSV-0017: privileged mode — supervisor needs root for namespace setup
+AVD-KSV-0017
+
+# AVD-KSV-0014: readOnlyRootFilesystem — supervised agent containers need
+# writable root for namespace/cgroup setup during sandbox initialization.
+# Non-supervised agents and gateway have readOnlyRootFilesystem: true.
+AVD-KSV-0014
+
+# AVD-KSV-0104: seccomp profile — supervised agents use privileged mode which
+# is incompatible with seccomp (Landlock provides equivalent sandboxing).
+# Non-supervised agents and gateway have seccomp RuntimeDefault set.
+AVD-KSV-0104
+
+# AVD-KSV-0118: default security context — supervised agents run privileged,
+# non-supervised agents have full security context set. This catches the
+# supervised agents where securityContext.privileged=true is set but not the
+# full pod-level context Trivy expects.
+AVD-KSV-0118

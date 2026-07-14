@@ -6,7 +6,7 @@
  */
 
 // Workload types for agent deployment
-export type WorkloadType = 'deployment' | 'statefulset' | 'job';
+export type WorkloadType = 'deployment' | 'statefulset' | 'job' | 'sandbox';
 
 // Agent types
 export interface AgentLabels {
@@ -20,7 +20,7 @@ export interface Agent {
   name: string;
   namespace: string;
   description: string;
-  status: 'Ready' | 'Not Ready' | 'Progressing';
+  status: 'Ready' | 'Not Ready' | 'Progressing' | 'Building' | 'Build Failed';
   labels: AgentLabels;
   workloadType?: WorkloadType;
   createdAt?: string;
@@ -401,4 +401,153 @@ export interface MountInfo {
 export interface PodStorageStats {
   mounts: MountInfo[];
   total_mounts: number;
+}
+
+// Skill types
+export interface SkillLabels {
+  category?: string;
+  type?: string;
+  autoSync?: string;
+}
+
+export interface ExternalSkillInfo {
+  registryType: string;
+  registryUrl: string;
+  registrySkillName: string;
+  registrySkillVersion: string;
+}
+
+export interface Skill {
+  name: string;
+  namespace: string;
+  resourceName: string;
+  description: string;
+  status: string;
+  labels: SkillLabels;
+  createdAt?: string;
+  origin?: string;
+  usageCount: number;
+  source?: 'local' | 'external';
+  externalInfo?: ExternalSkillInfo;
+}
+
+export interface SkillFile {
+  name: string;
+  path: string;
+  content: string;
+  size: number;
+}
+
+export interface SkillDetail extends Skill {
+  dataKeys: string[];
+  annotations: Record<string, string>;
+  files: SkillFile[];
+}
+
+export interface CreateSkillRequest {
+  name: string;
+  namespace: string;
+  description?: string;
+  category?: string;
+  url?: string;
+  files?: Record<string, string>;
+}
+
+export interface CreateSkillResponse {
+  success: boolean;
+  name: string;
+  namespace: string;
+  message: string;
+}
+
+export interface CreateExternalSkillRequest {
+  name: string;
+  namespace: string;
+  description?: string;
+  category?: string;
+  registryType: string;
+  registryUrl: string;
+  registrySkillName: string;
+  registrySkillVersion?: string;
+  origin?: string;
+}
+
+export interface SkillAutoSyncConfig {
+  registryType: string;
+  registryUrl: string;
+  syncInterval: number;
+  allowedTags: string[];
+}
+
+export interface SkillAutoSyncStatus {
+  enabled: boolean;
+  registryType?: string;
+  registryUrl?: string;
+  /** Browser-facing store UI URL (via gateway); registryUrl is server-side only. */
+  storeUiUrl?: string;
+  syncInterval?: number;
+  lastSyncedAt?: string;
+  skillCount?: number;
+  allowedTags?: string[];
+}
+
+// AuthBridge types
+export type AuthBridgeMode = 'proxy-sidecar' | 'envoy-sidecar' | 'lite' | 'waypoint';
+
+// mTLS posture for AuthBridge sidecars (proxy-sidecar / lite paths only;
+// envoy-sidecar mTLS is not currently configured in the kagenti envoy-config).
+// Maps 1:1 to AgentRuntime.Spec.MTLSMode in the operator.
+export type MtlsMode = 'disabled' | 'permissive' | 'strict';
+
+export interface AuthBridgeConfig {
+  AuthBridge: boolean | null;
+  mode: AuthBridgeMode | null;
+  pipeline: PipelineConfig | null;
+  /** Outbound TLS bridge config from the sidecar; present + mode "enabled" when active. */
+  tls_bridge?: { mode?: string } | null;
+}
+
+export interface PipelineConfig {
+  inbound: PipelineStageConfig | null;
+  outbound: PipelineStageConfig | null;
+}
+
+export interface PipelineStageConfig {
+  plugins: PluginConfig[];
+}
+
+export interface PluginConfig {
+  name: string;
+  config: Record<string, unknown>;
+}
+
+export interface JwtValidationPluginConfig {
+  issuer: string;
+  keycloak_url: string;
+  keycloak_realm: string;
+}
+
+export interface TokenExchangePluginConfig {
+  keycloak_url: string;
+  keycloak_realm: string;
+  default_policy: string;
+  identity: IdentityConfig;
+}
+
+export interface IdentityConfig {
+  type: string; // "spiffe" | "client-secret"
+  // jwt_audience is required when type === "spiffe": authbridge mints
+  // a JWT-SVID with this audience and sends it as the OAuth client_assertion
+  // to Keycloak. Must match Keycloak's SPIFFE IdP expected audience
+  // (typically the realm issuer URL). Omitted when type === "client-secret".
+  jwt_audience?: string;
+}
+
+export interface AuthBridgeStats {
+  AuthBridge: boolean | null;
+  inbound_approvals: Record<string, number> | null;
+  inbound_denials: Record<string, number> | null;
+  outbound_approvals: Record<string, number> | null;
+  outbound_denials: Record<string, number> | null;
+  outbound_replace_tokens: Record<string, number> | null;
 }

@@ -95,12 +95,12 @@ Co-authored-by: Claude <noreply@anthropic.com>
 ## Summary
 
 This PR refactors the mcp-gateway deployment from a subchart dependency
-of the kagenti chart to a standalone chart installed separately via Ansible.
+of the kagenti chart to a standalone chart installed separately via Helm.
 
 Key changes:
 
 - Removed mcp-gateway as a subchart dependency from the kagenti Helm chart
-- Added Ansible task to install mcp-gateway as a separate Helm release
+- Added installer step to deploy mcp-gateway as a separate Helm release
 - Updated istio version from 1.26.0 to 1.28.0 in default values
 
 ## Related issue(s)

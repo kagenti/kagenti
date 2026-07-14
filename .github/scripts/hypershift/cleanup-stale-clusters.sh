@@ -8,11 +8,12 @@
 #   ./cleanup-stale-clusters.sh [OPTIONS]
 #
 # OPTIONS:
-#   --dry-run           Show what would be deleted (default behavior)
-#   --apply             Actually delete stale clusters (USE WITH CAUTION)
-#   --pattern PATTERN   Only process clusters matching pattern (e.g., "*-pr-*")
-#   --verbose           Show all clusters, not just stale ones
-#   --help              Show this help message
+#   --dry-run                   Show what would be deleted (default behavior)
+#   --apply                     Actually delete stale clusters (USE WITH CAUTION)
+#   --pattern PATTERN           Only process clusters matching pattern (e.g., "*-pr-*")
+#   --verbose                   Show all clusters, not just stale ones
+#   --remove-stuck-finalizers   Force remove finalizers from stuck clusters (USE WITH CAUTION)
+#   --help                      Show this help message
 #
 # DETECTION CRITERIA:
 #   1. Has label: kagenti.io/auto-cleanup=enabled
@@ -46,6 +47,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 DRY_RUN=true
 PATTERN_FILTER=""
 VERBOSE=false
+REMOVE_STUCK_FINALIZERS=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -63,6 +65,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --verbose)
             VERBOSE=true
+            shift
+            ;;
+        --remove-stuck-finalizers)
+            REMOVE_STUCK_FINALIZERS=true
             shift
             ;;
         --help)
@@ -156,6 +162,8 @@ NOW_EPOCH=$(date +%s)
 STALE_COUNT=0
 PROTECTED_COUNT=0
 OK_COUNT=0
+DELETED_COUNT=0
+FAILED_COUNT=0
 
 for CLUSTER_NAME in $CLUSTERS; do
     # Pattern filtering
@@ -229,12 +237,14 @@ for CLUSTER_NAME in $CLUSTERS; do
             echo "       Would delete (use --apply to execute)"
         else
             echo "       Deleting cluster..."
-            # Extract cluster suffix from full name
-            CLUSTER_SUFFIX="${CLUSTER_NAME##*-}"
-            "$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
-                --include-cluster-destroy "$CLUSTER_SUFFIX" 2>&1 | tee "/tmp/cleanup-${CLUSTER_NAME}.log" || {
-                    log_error "Failed to delete $CLUSTER_NAME (see /tmp/cleanup-${CLUSTER_NAME}.log)"
-                }
+            # Use destroy-cluster.sh which handles ansible cleanup and stuck finalizers
+            if "$SCRIPT_DIR/destroy-cluster.sh" "$CLUSTER_NAME" 2>&1 | tee "/tmp/cleanup-${CLUSTER_NAME}.log"; then
+                log_success "Successfully deleted $CLUSTER_NAME"
+                DELETED_COUNT=$((DELETED_COUNT + 1))
+            else
+                log_error "Failed to delete $CLUSTER_NAME (see /tmp/cleanup-${CLUSTER_NAME}.log)"
+                FAILED_COUNT=$((FAILED_COUNT + 1))
+            fi
         fi
         echo ""
         STALE_COUNT=$((STALE_COUNT + 1))
@@ -265,8 +275,115 @@ if [ "$DRY_RUN" = "true" ] && [ "$STALE_COUNT" -gt 0 ]; then
     echo "This was a DRY-RUN. No clusters were deleted."
     echo "To actually delete stale clusters, run with --apply flag."
     echo ""
-elif [ "$STALE_COUNT" -gt 0 ]; then
-    log_success "Deleted $STALE_COUNT stale cluster(s)"
+elif [ "$DRY_RUN" = "false" ]; then
+    if [ "$DELETED_COUNT" -gt 0 ]; then
+        log_success "Successfully deleted $DELETED_COUNT cluster(s)"
+    fi
+    if [ "$FAILED_COUNT" -gt 0 ]; then
+        log_error "Failed to delete $FAILED_COUNT cluster(s)"
+    fi
+    if [ "$STALE_COUNT" -eq 0 ]; then
+        log_success "No stale clusters found"
+    fi
 else
     log_success "No stale clusters found"
+fi
+
+# ============================================================================
+# Remove stuck finalizers (if requested)
+# ============================================================================
+
+if [ "$REMOVE_STUCK_FINALIZERS" = "true" ]; then
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    log_info "Checking for stuck clusters with finalizers..."
+    echo ""
+
+    # Find clusters with deletionTimestamp (stuck in deletion)
+    STUCK_CLUSTERS=$(oc get hostedclusters -n clusters \
+        -o json 2>/dev/null | \
+        jq -r '.items[] | select(.metadata.deletionTimestamp != null) | .metadata.name' || echo "")
+
+    if [ -z "$STUCK_CLUSTERS" ]; then
+        log_success "No stuck clusters found"
+        exit 0
+    fi
+
+    STUCK_COUNT=$(echo "$STUCK_CLUSTERS" | wc -w | tr -d ' ')
+    log_info "Found $STUCK_COUNT stuck cluster(s) with deletionTimestamp"
+    echo ""
+
+    FINALIZERS_REMOVED=0
+    FINALIZERS_SKIPPED=0
+    FINALIZERS_FAILED=0
+
+    for CLUSTER_NAME in $STUCK_CLUSTERS; do
+        # Pattern filtering
+        if [ -n "$PATTERN_FILTER" ]; then
+            if ! [[ "$CLUSTER_NAME" == $PATTERN_FILTER ]]; then
+                continue
+            fi
+        fi
+
+        log_info "Checking $CLUSTER_NAME..."
+
+        # Check if AWS resources are cleaned up
+        if "$SCRIPT_DIR/debug-aws-hypershift.sh" --check "$CLUSTER_NAME" &>/dev/null; then
+            log_success "  AWS resources cleaned - removing finalizers"
+
+            if [ "$DRY_RUN" = "true" ]; then
+                log_info "  Would remove finalizers (DRY-RUN)"
+                FINALIZERS_REMOVED=$((FINALIZERS_REMOVED + 1))
+            else
+                # Force remove finalizers
+                if oc patch hostedcluster -n clusters "$CLUSTER_NAME" \
+                    -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null; then
+
+                    # Wait briefly and verify deletion
+                    sleep 2
+                    if ! oc get hostedcluster -n clusters "$CLUSTER_NAME" &>/dev/null 2>&1; then
+                        log_success "  ✓ Cluster deleted successfully"
+                        FINALIZERS_REMOVED=$((FINALIZERS_REMOVED + 1))
+                    else
+                        log_warn "  Finalizer removed but cluster still exists"
+                        FINALIZERS_REMOVED=$((FINALIZERS_REMOVED + 1))
+                    fi
+                else
+                    log_error "  Failed to remove finalizer"
+                    FINALIZERS_FAILED=$((FINALIZERS_FAILED + 1))
+                fi
+            fi
+        else
+            log_warn "  AWS resources still exist - skipping finalizer removal"
+            log_info "  Run: ./.github/scripts/hypershift/debug-aws-hypershift.sh $CLUSTER_NAME"
+            FINALIZERS_SKIPPED=$((FINALIZERS_SKIPPED + 1))
+        fi
+        echo ""
+    done
+
+    # Summary
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "Finalizer Removal Summary:"
+    echo "  Total stuck clusters: $STUCK_COUNT"
+    echo "  Finalizers removed: $FINALIZERS_REMOVED"
+    echo "  Skipped (AWS resources exist): $FINALIZERS_SKIPPED"
+    if [ "$FINALIZERS_FAILED" -gt 0 ]; then
+        echo "  Failed: $FINALIZERS_FAILED"
+    fi
+    echo ""
+
+    if [ "$DRY_RUN" = "true" ] && [ "$FINALIZERS_REMOVED" -gt 0 ]; then
+        echo "This was a DRY-RUN. No finalizers were removed."
+        echo "To actually remove finalizers, run with --apply flag."
+        echo ""
+    elif [ "$FINALIZERS_REMOVED" -gt 0 ]; then
+        log_success "Successfully processed $FINALIZERS_REMOVED stuck cluster(s)"
+    fi
+
+    if [ "$FINALIZERS_SKIPPED" -gt 0 ]; then
+        log_warn "Skipped $FINALIZERS_SKIPPED cluster(s) - AWS resources still exist"
+        log_info "Manually clean AWS resources first, or run destroy-cluster.sh"
+    fi
 fi

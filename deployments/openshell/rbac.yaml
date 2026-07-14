@@ -1,0 +1,86 @@
+# OpenShell Gateway RBAC
+#
+# Security model:
+# - ClusterRole for cluster-scoped resources (Sandbox CRDs, namespaces)
+# - Namespace-scoped Role+RoleBinding for sensitive resources (pods, secrets)
+#   scoped to team1 and openshell-system only
+#
+# TODO (production): Replace --disable-gateway-auth with mTLS.
+# TODO (production): Add NetworkPolicy restricting gateway access.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openshell-gateway
+  namespace: openshell-system
+  labels:
+    app.kubernetes.io/name: openshell-gateway
+    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/component: openshell
+---
+# ClusterRole: only for cluster-scoped resources (CRDs, namespaces)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: openshell-gateway
+rules:
+# Sandbox CRD management (cluster-scoped)
+- apiGroups: [agents.x-k8s.io]
+  resources: [sandboxes, sandboxes/status]
+  verbs: [get, list, watch, create, update, patch, delete]
+# Namespaces (read-only, for sandbox namespace discovery)
+- apiGroups: [""]
+  resources: [namespaces]
+  verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: openshell-gateway
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: openshell-gateway
+subjects:
+- kind: ServiceAccount
+  name: openshell-gateway
+  namespace: openshell-system
+---
+# Namespace-scoped Role: pods, secrets, configmaps, services, events
+# Scoped to team1 only (add more RoleBindings for additional namespaces)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openshell-gateway
+  namespace: team1
+rules:
+- apiGroups: [""]
+  resources: [pods, pods/log, pods/exec]
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: [""]
+  resources: [secrets]
+  resourceNames: [openshell-ssh-handshake, litellm-virtual-keys, litemaas-api-keys]
+  verbs: [get, watch]
+- apiGroups: [""]
+  resources: [configmaps]
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: [""]
+  resources: [services]
+  verbs: [get, list, watch, create, update, delete]
+- apiGroups: [""]
+  resources: [events]
+  verbs: [get, list, watch, create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openshell-gateway
+  namespace: team1
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openshell-gateway
+subjects:
+- kind: ServiceAccount
+  name: openshell-gateway
+  namespace: openshell-system

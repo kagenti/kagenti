@@ -119,9 +119,15 @@ fi
 
 log_info "Port-forwarding MLflow service -> localhost:5000"
 
-# Check if MLflow is deployed
+# Check if MLflow is deployed (kagenti-system for Kind, redhat-ods-applications for RHOAI)
+MLFLOW_NS=""
 if kubectl get svc -n kagenti-system mlflow >/dev/null 2>&1; then
-    kubectl port-forward -n kagenti-system svc/mlflow 5000:5000 > /tmp/port-forward-mlflow.log 2>&1 &
+    MLFLOW_NS="kagenti-system"
+elif kubectl get svc -n redhat-ods-applications mlflow >/dev/null 2>&1; then
+    MLFLOW_NS="redhat-ods-applications"
+fi
+if [ -n "$MLFLOW_NS" ]; then
+    kubectl port-forward -n "$MLFLOW_NS" svc/mlflow 5000:5000 > /tmp/port-forward-mlflow.log 2>&1 &
     MLFLOW_PORT_FORWARD_PID=$!
 
     if [ "$IS_CI" = true ]; then

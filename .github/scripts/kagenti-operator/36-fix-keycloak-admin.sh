@@ -6,9 +6,9 @@
 # password. This script:
 #   1. Reads the operator-generated credentials from the secret
 #   2. Logs in with those credentials
-#   3. Creates a permanent admin/admin user (if not exists)
+#   3. Creates a permanent admin user with generated password (if not exists)
 #   4. Creates the demo realm (if not exists)
-#   5. Updates the keycloak-initial-admin secret to admin/admin
+#   5. Updates the keycloak-initial-admin secret to generated credentials
 #
 # Idempotent — safe to run multiple times.
 #
@@ -113,5 +113,17 @@ if [ "$CURRENT_USER" != "$DESIRED_USER" ] || [ "$CURRENT_PASS" != "$DESIRED_PASS
 else
     log_info "Secret already has correct credentials"
 fi
+
+# ── Step 7: Sync keycloak-admin-secret to operator namespace ─────────────────
+# The operator's ClientRegistrationReconciler may read admin credentials from
+# keycloak-admin-secret in kagenti-system.  Ensure it exists with the same
+# credentials as keycloak-initial-admin.
+OPERATOR_NS="${KAGENTI_NAMESPACE:-kagenti-system}"
+log_info "Syncing keycloak-admin-secret to $OPERATOR_NS..."
+kubectl create secret generic keycloak-admin-secret -n "$OPERATOR_NS" \
+    --from-literal=KEYCLOAK_ADMIN_USERNAME="$DESIRED_USER" \
+    --from-literal=KEYCLOAK_ADMIN_PASSWORD="$DESIRED_PASS" \
+    --dry-run=client -o yaml | kubectl apply -f -
+log_success "keycloak-admin-secret synced to $OPERATOR_NS"
 
 log_success "Keycloak admin fix complete"

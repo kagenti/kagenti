@@ -19,8 +19,6 @@ This guide covers installation on both local Kind clusters and OpenShift environ
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Python | ≥3.9 | Running the installer |
-| [uv](https://docs.astral.sh/uv/getting-started/installation) | Latest | Python package manager |
 | kubectl | ≥1.32.1 | Kubernetes CLI |
 | [Helm](https://helm.sh/docs/intro/install/) | ≥3.18.0, <4 | Package manager for Kubernetes |
 | git | ≥2.48.0 | Cloning repositories |
@@ -34,7 +32,7 @@ If you're setting up a brand-new Mac, install all prerequisites at once with [Ho
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 # Install required tools
-brew install git kind kubectl helm@3 ansible uv python
+brew install git kind kubectl helm@3
 
 # Verify Helm version meets the ≥3.18.0 requirement above
 helm version
@@ -43,29 +41,19 @@ helm version
 brew install podman    # recommended for macOS
 # or: brew install --cask docker   # Docker Desktop
 
-# If using Podman, create and start a machine with sufficient resources:
-podman machine init --memory 18432 --cpus 4
+# If using Podman, create and start a machine with sufficient resources.
+# Use --rootful: Kind's rootless provider requires the systemd property
+# Delegate=yes, which a fresh podman machine does not configure, so cluster
+# creation fails without it.
+podman machine init --rootful --memory 18432 --cpus 6
 podman machine start
 ```
-
-Then set up a Python virtual environment for the installer:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-> **Tip:** After configuring your secrets (see [Quick Start](#quick-start) below), you can
-> run the full installation in one command:
-> ```bash
-> deployments/ansible/run-install.sh --env dev --preload --extra-vars '{"container_engine": "podman"}'
-> ```
 
 ### Kind-Specific Requirements
 
 | Tool | Purpose |
 |------|---------|
-| Docker Desktop / Rancher Desktop / Podman | Container runtime (16GB RAM, 4 cores recommended) |
+| Docker Desktop / Rancher Desktop / Podman | Container runtime (18GB RAM, 6 cores recommended) |
 | [Kind](https://kind.sigs.k8s.io) | Local Kubernetes cluster |
 | [Ollama](https://ollama.com/download) | Local LLM inference |
 | [GitHub Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic) | **(Optional)** Only needed to deploy agents/tools from private GitHub repos or pull from private registries. Recommended scopes: `repo` for private repositories and `read:packages` for private registries (e.g., GHCR). |
@@ -89,139 +77,186 @@ git clone https://github.com/kagenti/kagenti.git
 cd kagenti
 ```
 
-#### Ansible-based Installer (Recommended)
+#### Bash Installer (Recommended)
 
-Run the newer, Helm-based Ansible installer:
+The bash installer (`scripts/kind/setup-kagenti.sh`) is a composable, single-file
+script that creates a Kind cluster and deploys Kagenti. Core components are always
+installed; optional layers are enabled with `--with-*` flags.
 
-Setup the environment:
+**Core (always installed):** cert-manager, Gateway API CRDs, Istio Gateway controller (istio-base + istiod), Keycloak, kagenti-operator, kagenti-webhook
 
-```bash
-# From repository root
-cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
-# component-specific secrets
-charts:
-  kagenti:
-    values:
-      secrets:
-        githubUser: <(Optional) Your GitHub username — only needed for private repos/registries>
-        githubToken: <(Optional) Your GitHub token — only needed for private repos/registries (scopes: repo for private repos, read:packages for GHCR)>
-        openaiApiKey: <(Optional) Your OpenAI API key>
-        slackBotToken: <(Optional) Token for Slack Bot>
-        adminSlackBotToken: <(Optional) Admin Token for Slack Bot>
-        quayUser: <(Optional) Your Quay user for build-from-source>
-        quayToken: <(Optional) Your Quay token for building and pushing images (build-from-source)>
-```
-
-Run the Ansible install script:
+**Install everything:**
 
 ```bash
-deployments/ansible/run-install.sh --env dev
+scripts/kind/setup-kagenti.sh --with-all
 ```
 
-> **Tip:** Add `--preload` to pre-pull and load container images into Kind before deploying. This avoids slow in-cluster registry pulls and can significantly speed up deployment:
-> ```bash
-> deployments/ansible/run-install.sh --env dev --preload
-> ```
-
-#### Podman Users
-
-If you use **Podman** (or have `docker` aliased to `podman`, which is common on macOS), set `container_engine` to `podman` so the installer pulls images sequentially and avoids SSH connection failures through the Podman VM:
+**Install only what you need:**
 
 ```bash
-deployments/ansible/run-install.sh --env dev --preload --extra-vars '{"container_engine": "podman"}'
+# Core + Istio ambient + UI
+scripts/kind/setup-kagenti.sh --with-istio --with-ui
+
+# Core + full service mesh + builds
+scripts/kind/setup-kagenti.sh --with-istio --with-spire --with-builds
 ```
 
-Alternatively, edit your environment values file (`deployments/envs/dev_values.yaml`) and change:
+**Available `--with-*` flags:**
 
-```yaml
-container_engine: podman
+| Flag | Components |
+|------|------------|
+| `--with-istio` | Full Istio ambient mesh (mTLS, waypoints); Gateway API controller always installed as core |
+| `--with-spire` | SPIRE + SPIFFE IdP setup |
+| `--with-backend` | Kagenti backend API |
+| `--with-ui` | Kagenti UI (auto-enables backend) |
+| `--with-mcp-gateway` | MCP Gateway |
+| `--with-kuadrant` | Kuadrant operator (auto-enables MCP Gateway) |
+| `--with-otel` | OpenTelemetry collector |
+| `--with-mlflow` | MLflow trace backend (auto-enables OTel + Istio ambient) |
+| `--with-builds` | Tekton + Shipwright (build agents from source) |
+| `--with-kiali` | Kiali + Prometheus (auto-enables Istio ambient) |
+| `--with-all` | All of the above |
+| `--with-examples` | Weather agent and tool sample |
+
+**Other options:**
+
+| Flag | Description |
+|------|-------------|
+| `--skip-cluster` | Reuse an existing Kind cluster |
+| `--build-images` | Build platform images from source and load into Kind (backend, ui-v2, agent-oauth-secret, mlflow-oauth-secret) |
+| `--preload-images` | Pre-pull third-party images on the host and load them into the Kind node for faster pod startup (see [Preloading Images](#preloading-images)) |
+| `--secrets-file FILE` | YAML file with secrets (see below) |
+| `--cluster-name NAME` | Kind cluster name (default: `kagenti`) |
+| `--domain DOMAIN` | Domain for services (default: `localtest.me`) |
+| `--kagenti-values FILE` | Helm override file applied to the `kagenti` chart |
+| `--kagenti-deps-values FILE` | Helm override file applied to the `kagenti-deps` chart |
+| `--dry-run` | Show commands without executing |
+
+#### Preloading Images
+
+The `--preload-images` flag pulls third-party container images onto the host
+ahead of time and side-loads them into the Kind control-plane node. This avoids
+Docker Hub anonymous-pull rate limits (which can stall a fresh install when
+Istio, Phoenix, OTel collector, and other images are pulled in parallel) and
+shortens overall startup time on slow links by reusing the host's image cache.
+
+> **Why this exists:** the original motivation is shared-NAT environments such
+> as office buildings, conference Wi-Fi, or VPNs, where many users appear to
+> Docker Hub as a single IP and quickly trip the anonymous pull-rate limit.
+> A fresh install pulls dozens of `docker.io/*` images in parallel and is
+> especially likely to hit the cap. Preloading from the host's authenticated
+> daemon cache sidesteps the limit entirely.
+
+The list of images lives in
+[`scripts/kind/preload-images.txt`](../scripts/kind/preload-images.txt) — one
+image per line, comments with `#`. The file is intentionally focused on
+`docker.io/*` images; `ghcr.io` and `quay.io` are not rate-limited and pull
+fine on demand.
+
+```bash
+# Use during a full install
+scripts/kind/setup-kagenti.sh --with-all --preload-images
 ```
 
-The Ansible-based installer will create a Kind cluster (when appropriate) and deploy platform components.
+How it works:
+
+1. Pulls every image in `preload-images.txt` to the host (in parallel for
+   Docker, sequential for Podman).
+2. Bundles them into a single tar via `docker save` / `podman save`.
+3. Copies the tar into the Kind control-plane container and imports it with
+   `ctr --namespace=k8s.io images import`. The load runs in the background so
+   it overlaps with the rest of the install.
+
+Failures during pull are non-fatal — the installer logs a warning and lets
+pods fall back to pulling on demand.
+
+When updating image versions, keep `preload-images.txt` in sync with the
+versions referenced in `scripts/kind/setup-kagenti.sh` and the
+`charts/kagenti-deps/templates/` manifests, otherwise pods will still pull
+the un-preloaded versions at runtime.
+
+#### Providing Secrets
+
+Create a secrets file from the template:
+
+```bash
+cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
+# Edit .secrets.yaml with your values
+```
+
+Pass it to the installer:
+
+```bash
+scripts/kind/setup-kagenti.sh --with-all --secrets-file charts/kagenti/.secrets.yaml
+```
+
+If `--secrets-file` is not specified, the installer automatically uses
+`charts/kagenti/.secrets.yaml` when it exists.
+
+#### Cleanup
+
+To uninstall Kagenti from a Kind cluster:
+
+```bash
+# Uninstall platform, keep cluster
+scripts/kind/cleanup-kagenti.sh
+
+# Uninstall platform and destroy cluster
+scripts/kind/cleanup-kagenti.sh --destroy-cluster
+```
 
 ### Using an Existing Kubernetes Cluster
 
-If you have an existing cluster and want to install Kagenti there,
-use the Ansible-based installer:
+If you have an existing Kind cluster:
 
 ```bash
-# Copy and configure secrets
-cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
-# Edit .secret_values.yaml with your values
-
-# Run installer
-deployments/ansible/run-install.sh --env dev
+scripts/kind/setup-kagenti.sh --skip-cluster --with-all
 ```
 
-See [Ansible README](../deployments/ansible/README.md) for details and [override files](../deployments/ansible/README.md#using-override-files).
-
-For Rancher Desktop on macOS, follow [these setup steps](../deployments/ansible/README.md#installation-using-rancher-desktop-on-macos).
-
-**Advanced users:** you may invoke the Ansible playbook directly instead of using the `run-install.sh` wrapper. This can be useful if you prefer to run `ansible-playbook` from a specific Python environment or CI runner. Example:
-
-```bash
-ansible-playbook -i localhost, -c local deployments/ansible/installer-playbook.yml \
-  -e '{"global_value_files":["../envs/dev_values.yaml"], "secret_values_file": "../envs/.secret_values.yaml"}'
-```
-
-Note: The wrapper provides convenience features (path resolution for env/secret files, a `uv`-based venv runner, and a Helm v4 compatibility check). When running Ansible directly, ensure `helm` is v3.x since Helm v4 is incompatible with the Ansible Helm integration used by the playbook.
+For non-Kind clusters, see the [OpenShift installation](#openshift-installation) instructions.
 
 ---
 
 ## OpenShift Installation
 
-> **Note**: OpenShift support is work in progress. Current limitations:
-> - Only [quay.io](https://quay.io) registry tested for build-from-source
->
-> Both Ollama (local models) and OpenAI are supported as LLM backends. See the [Local Models Guide](local-models.md) for setup details.
+Both Ollama (local models) and OpenAI are supported as LLM backends. See the [Local Models Guide](local-models.md) for setup details.
 
-### Pre-Installation Steps
+### Option A: Bash Installer (Recommended)
 
-#### 1. Remove Cert Manager (if installed)
+The `scripts/ocp/setup-kagenti.sh` script is the recommended way to install Kagenti on OpenShift.
+It installs SPIRE, cert-manager, Keycloak, the operator, MCP Gateway, and the UI/backend in a
+single command. Run it from the repository root after logging in with `oc`.
 
-Kagenti installs its own Cert Manager. Remove any existing installation:
-
-```bash
-# Check if cert-manager exists
-kubectl get all -n cert-manager-operator
-kubectl get all -n cert-manager
-```
-
-If present, uninstall via OpenShift Console:
-1. Go to **Operators > Installed Operators**
-2. Find **cert-manager Operator for Red Hat OpenShift**
-3. Click **⋮** → **Uninstall Operator**
-
-Then clean up:
+> **Note**: If your cluster already has a cert-manager installation (e.g. installed via the
+> Red Hat OpenShift cert-manager Operator), remove it before running the script, as Kagenti
+> installs its own.
 
 ```bash
-kubectl delete deploy cert-manager cert-manager-cainjector cert-manager-webhook -n cert-manager
-kubectl delete service cert-manager cert-manager-cainjector cert-manager-webhook -n cert-manager
-kubectl delete ns cert-manager-operator cert-manager
+# Clone repository
+git clone https://github.com/kagenti/kagenti.git
+cd kagenti
+
+# Log in to your cluster
+oc login https://api.your-cluster.example.com:6443 -u kubeadmin -p <password>
+
+# Install Kagenti platform
+./scripts/ocp/setup-kagenti.sh
 ```
 
-#### 2. Configure OVN for Istio Ambient Mode
+Common options:
 
-Check your network type:
+| Flag | Description |
+|------|-------------|
+| `--kagenti-repo PATH\|URL` | Local path or GitHub URL to the repo (default: clones `main` to `~/.cache/kagenti`) |
+| `--realm REALM` | Keycloak realm (default: `kagenti`) |
+| `--skip-ovn-patch` | Skip OVN gateway routing patch (operator logs a warning at startup if not applied) |
+| `--skip-mcp-gateway` | Skip MCP Gateway installation |
+| `--skip-ui` | Skip Kagenti UI and backend installation |
+| `--skip-mlflow` | Skip MLflow integration |
+| `--operator-image IMG:TAG` | Custom operator image (e.g. `quay.io/user/kagenti-operator:dev`) |
+| `--dry-run` | Show commands without executing |
 
-```bash
-kubectl describe network.config/cluster
-```
-
-If using `OVNKubernetes`, enable local gateway mode:
-
-```bash
-kubectl patch network.operator.openshift.io cluster --type=merge \
-  -p '{"spec":{"defaultNetwork":{"ovnKubernetesConfig":{"gatewayConfig":{"routingViaHost":true}}}}}'
-```
-
-#### 3. Set Trust Domain
-
-```bash
-export DOMAIN=apps.$(kubectl get dns cluster -o jsonpath='{ .spec.baseDomain }')
-```
-
-### Option A: Install from OCI Charts (Recommended)
+### Option B: Install from OCI Charts
 
 ```bash
 # Get latest version
@@ -252,7 +287,7 @@ helm upgrade --install --create-namespace -n kagenti-system \
   --set agentOAuthSecret.useServiceAccountCA=false
 ```
 
-### Option B: Install from Repository
+### Option C: Install from Repository
 
 ```bash
 # Clone repository
@@ -289,17 +324,6 @@ helm upgrade --install kagenti ./charts/kagenti/ \
   --set agentOAuthSecret.useServiceAccountCA=false
 ```
 
-### Option C: Ansible-Based Installer
-
-```bash
-# Configure secrets
-cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
-# Edit .secret_values.yaml
-
-# Run installer for OpenShift
-deployments/ansible/run-install.sh --env ocp
-```
-
 ### Verify SPIRE Daemonsets
 
 ```bash
@@ -326,20 +350,18 @@ echo "https://$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.st
 
 If using self-signed certificates, accept the certificate in your browser.
 
-For MCP Inspector, also accept the proxy certificate:
-
-```bash
-echo "https://$(kubectl get route mcp-proxy -n kagenti-system -o jsonpath='{.status.ingress[0].host}')"
-```
+The MCP Inspector and its proxy are served on a single host, so accepting the
+Inspector's certificate also covers its proxy — no separate step is needed.
 
 ### Default Credentials
 
-```
-Username: admin
-Password: admin
+Run the following script to display all service URLs and credentials:
+
+```bash
+./.github/scripts/local-setup/show-services.sh
 ```
 
-Keycloak admin credentials (OpenShift):
+For OpenShift, Keycloak admin credentials can also be retrieved directly:
 
 ```bash
 kubectl get secret keycloak-initial-admin -n keycloak \
@@ -360,17 +382,14 @@ The installer automatically creates `keycloak-admin-secret` in every agent names
 
 If your Keycloak admin credentials differ from the defaults, override them using a values file (preferred over `--set` to avoid exposing passwords in shell history and process listings):
 
-**Ansible installer** (via `.secret_values.yaml`):
+**Secrets file** (via `.secrets.yaml`):
 
-Add to your `deployments/envs/.secret_values.yaml`:
+Add to your `charts/kagenti/.secrets.yaml`:
 
 ```yaml
-charts:
-  kagenti:
-    values:
-      keycloak:
-        adminUsername: myadmin
-        adminPassword: mypassword
+keycloak:
+  adminUsername: myadmin
+  adminPassword: mypassword
 ```
 
 **Helm install** (via values file):
@@ -419,11 +438,6 @@ kubectl get secret keycloak-admin-secret -n team1
 ```bash
 # SPIRE OIDC (Kind)
 curl http://spire-oidc.localtest.me:8080/keys
-curl http://spire.localtest.me:8080/.well-known/openid-configuration
-
-# Tornjak API
-curl http://spire-tornjak-api.localtest.me:8080/
-# Expected: "Welcome to the Tornjak Backend!"
 
 # Tornjak UI
 open http://spire-tornjak-ui.localtest.me:8080/
@@ -433,7 +447,7 @@ open http://spire-tornjak-ui.localtest.me:8080/
 
 ```bash
 open http://keycloak.localtest.me:8080/
-# Login: admin / admin
+# Login: see .github/scripts/local-setup/show-services.sh output for credentials
 ```
 
 ### UI Functionality

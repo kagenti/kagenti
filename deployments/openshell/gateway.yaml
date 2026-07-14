@@ -1,0 +1,105 @@
+# OpenShell Gateway
+# Runs the openshell-gateway binary which includes the K8s Compute Driver
+# in-process (merged upstream in PR #839).
+#
+# PoC mode: --disable-tls --disable-gateway-auth
+# Production: remove those flags and mount TLS certs from tls-secrets.yaml
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: openshell-gateway
+  namespace: openshell-system
+  labels:
+    app.kubernetes.io/name: openshell-gateway
+    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/component: openshell
+spec:
+  serviceName: openshell-gateway
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openshell-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openshell-gateway
+        app.kubernetes.io/part-of: kagenti
+        app.kubernetes.io/component: openshell
+    spec:
+      serviceAccountName: openshell-gateway
+      enableServiceLinks: false
+      securityContext:
+        # Use a numeric UID (OCP requires numeric for runAsNonRoot verification)
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: gateway
+        image: ghcr.io/nvidia/openshell/gateway:latest
+        args:
+        - --db-url
+        - sqlite:///var/openshell/openshell.db
+        - --sandbox-namespace
+        - team1
+        - --disable-tls
+        - --disable-gateway-auth
+        - --ssh-handshake-secret
+        - openshell-ssh-handshake
+        ports:
+        - name: grpc-http
+          containerPort: 8080
+          protocol: TCP
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "256Mi"
+          limits:
+            cpu: "1"
+            memory: "512Mi"
+        volumeMounts:
+        - name: data
+          mountPath: /var/openshell
+        - name: tmp
+          mountPath: /tmp
+        livenessProbe:
+          tcpSocket:
+            port: grpc-http
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe:
+          tcpSocket:
+            port: grpc-http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: data
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openshell
+  namespace: openshell-system
+  labels:
+    app.kubernetes.io/name: openshell-gateway
+    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/component: openshell
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: openshell-gateway
+  ports:
+  - name: grpc-http
+    port: 8080
+    targetPort: grpc-http
+    protocol: TCP

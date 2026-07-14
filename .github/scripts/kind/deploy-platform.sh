@@ -36,7 +36,7 @@ bash .github/scripts/common/20-create-secrets.sh
 echo ""
 
 # Step 2: Run installer (wave 30)
-echo -e "${BLUE}[2/11] Running Ansible installer...${NC}"
+echo -e "${BLUE}[2/11] Running platform installer...${NC}"
 bash .github/scripts/kagenti-operator/30-run-installer.sh
 echo ""
 

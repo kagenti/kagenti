@@ -10,7 +10,7 @@
   1. A self-signed root CA
   2. An intermediate CA Certificate for each istiod namespace
 
-  Ansible (05_install_rhoai.yaml) transforms these into Istio cacerts format
+  The installer transforms these into Istio cacerts format
   and restarts both istiods to pick up the shared CA.
 */}}
 ---

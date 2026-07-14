@@ -40,8 +40,12 @@ echo ""
 
 # Get Keycloak status and credentials
 KEYCLOAK_STATUS=$(kubectl get pods -n keycloak -l app.kubernetes.io/name=keycloak -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
-KEYCLOAK_USER=$(kubectl get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d || echo "N/A")
-KEYCLOAK_PASS=$(kubectl get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "N/A")
+KEYCLOAK_USER=$(kubectl get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
+KEYCLOAK_PASS=$(kubectl get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
+
+# Kagenti realm credentials for UI login (falls back to master realm)
+UI_USER=$(kubectl get secret -n keycloak kagenti-test-user -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "$KEYCLOAK_USER")
+UI_PASS=$(kubectl get secret -n keycloak kagenti-test-user -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "$KEYCLOAK_PASS")
 
 DOMAIN_NAME="${DOMAIN_NAME:-localtest.me}"
 
@@ -57,7 +61,7 @@ echo ""
 UI_STATUS=$(kubectl get pods -n kagenti-system -l app=kagenti-ui -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Kagenti UI:${NC}"
 echo "  Status:   $UI_STATUS"
-echo -e "  Login:    ${GREEN}Use Keycloak credentials above (admin/admin)${NC}"
+echo -e "  Login:    ${GREEN}${UI_USER} / ${UI_PASS}${NC}  (kagenti realm)"
 echo "  URL:      http://kagenti-ui.${DOMAIN_NAME}:8080"
 echo "  Port-forward: kubectl port-forward -n kagenti-system svc/http-istio 8080:80"
 echo ""
@@ -122,7 +126,7 @@ echo ""
 echo "Access Kagenti UI:"
 echo "  1. Ensure port-forward is running (see above)"
 echo "  2. Visit: http://kagenti-ui.${DOMAIN_NAME}:8080"
-echo -e "  3. Login with: ${GREEN}admin / admin${NC}"
+echo -e "  3. Login with: ${GREEN}${UI_USER} / ${UI_PASS}${NC}"
 echo ""
 echo "Troubleshooting 'Restart login cookie not found' error:"
 echo "  - Make sure port-forward is running on port 8080"

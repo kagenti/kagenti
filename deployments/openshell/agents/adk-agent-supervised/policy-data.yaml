@@ -1,0 +1,45 @@
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+    - /lib
+    - /lib64
+    - /etc
+    - /home
+    - /bin
+    - /sbin
+  read_write:
+    - /tmp
+    - /app
+    - /root
+    - /var/log
+process:
+  run_as_user: ""
+  run_as_group: ""
+network_policies:
+  litellm:
+    name: "Allow LiteLLM model proxy"
+    endpoints:
+      - host: "litellm-model-proxy.team1.svc.cluster.local"
+        port: 4000
+    binaries:
+      - path: /**
+  otel:
+    name: "Allow OpenTelemetry collector"
+    endpoints:
+      - host: "otel-collector.kagenti-system.svc.cluster.local"
+        port: 4318
+      - host: "otel-collector.kagenti-system.svc.cluster.local"
+        port: 4317
+    binaries:
+      - path: /**
+  litemaas:
+    name: "Allow LiteMaaS LLM endpoint"
+    endpoints:
+      - host: "*.redhatworkshops.io"
+        port: 443
+      - host: "*.rh-aiservices-bu.com"
+        port: 443
+    binaries:
+      - path: /**

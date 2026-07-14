@@ -34,6 +34,12 @@
 #   Other options:
 #     --clean-kagenti    Uninstall Kagenti before installing (fresh install)
 #     --env ENV          Environment for Kagenti installer (default: ocp)
+#     --with-all         Enable all optional components (Kiali, Builds, Kuadrant, MCP Gateway, Agent Sandbox)
+#     --with-kiali       Enable Kiali + Prometheus
+#     --with-builds      Enable Tekton + Shipwright
+#     --with-kuadrant    Enable Kuadrant operator
+#     --with-mcp-gateway Enable MCP Gateway
+#     --with-agent-sandbox Enable agent-sandbox controller
 #     --pytest-filter, -k FILTER  Filter tests with pytest -k expression
 #     --pytest-args ARGS Additional pytest arguments (e.g., "-x" to stop on first failure)
 #     --dry-run          Check state only, suggest next command (default if no phase flags)
@@ -81,7 +87,7 @@ MODES:
 
 PHASES:
     cluster-create    Create HyperShift cluster (~15 min)
-    kagenti-install   Install Kagenti platform via Ansible
+    kagenti-install   Install Kagenti platform
     agents            Build and deploy test agents (weather-tool, weather-agent)
     test              Run backend E2E tests (pytest)
     ui-tests          Run UI E2E tests (Playwright)
@@ -114,6 +120,12 @@ OPTIONS:
     Other options:
         --clean-kagenti              Uninstall Kagenti before installing
         --env ENV                    Environment for installer (default: ocp)
+        --with-all                   Enable all optional components (Kiali, Builds, Kuadrant, MCP Gateway, Agent Sandbox)
+        --with-kiali                 Enable Kiali + Prometheus
+        --with-builds                Enable Tekton + Shipwright
+        --with-kuadrant              Enable Kuadrant operator
+        --with-mcp-gateway           Enable MCP Gateway
+        --with-agent-sandbox         Enable agent-sandbox controller
         --rhoai-profile <profile>    Set RHOAI profile (minimal|full). Default: from env values.
         --no-rhoai                   Disable RHOAI installation.
         -h, --help                   Show this help message
@@ -194,6 +206,14 @@ FULL_RUN=false
 HAS_PHASE_FLAGS=false  # Track if any phase flags were provided
 RHOAI_PROFILE="${RHOAI_PROFILE:-}"
 NO_RHOAI="${NO_RHOAI:-false}"
+
+# Component flags (passed to setup-kagenti.sh)
+WITH_ALL=false
+WITH_KIALI=false
+WITH_BUILDS=false
+WITH_KUADRANT=false
+WITH_MCP_GATEWAY=false
+WITH_AGENT_SANDBOX=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -316,6 +336,30 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-rhoai)
             NO_RHOAI=true
+            shift
+            ;;
+        --with-all)
+            WITH_ALL=true
+            shift
+            ;;
+        --with-kiali)
+            WITH_KIALI=true
+            shift
+            ;;
+        --with-builds)
+            WITH_BUILDS=true
+            shift
+            ;;
+        --with-kuadrant)
+            WITH_KUADRANT=true
+            shift
+            ;;
+        --with-mcp-gateway)
+            WITH_MCP_GATEWAY=true
+            shift
+            ;;
+        --with-agent-sandbox)
+            WITH_AGENT_SANDBOX=true
             shift
             ;;
         *)
@@ -953,17 +997,31 @@ if [ "$RUN_INSTALL" = "true" ]; then
 
     if [ "$CLEAN_KAGENTI" = "true" ]; then
         log_step "Uninstalling Kagenti (--clean-kagenti)..."
-        ./deployments/ansible/cleanup-install.sh || true
+        ./scripts/ocp/cleanup-kagenti.sh --yes || true
     fi
 
     log_step "Installing Kagenti platform..."
-    INSTALLER_ARGS=(--env "$KAGENTI_ENV")
-    if [ "$NO_RHOAI" = "true" ]; then
-        INSTALLER_ARGS+=(--extra-vars '{"rhoai": {"enabled": false}}')
-    elif [ -n "$RHOAI_PROFILE" ]; then
-        INSTALLER_ARGS+=(--extra-vars "{\"rhoai\": {\"enabled\": true, \"profile\": \"$RHOAI_PROFILE\"}}")
+    SETUP_ARGS=(--kagenti-repo "$REPO_ROOT")
+
+    # Pass component flags to OCP installer
+    if [ "$WITH_ALL" = "true" ]; then
+        SETUP_ARGS+=(--with-all)
+    else
+        [ "$WITH_KIALI" = "true" ] && SETUP_ARGS+=(--with-kiali)
+        [ "$WITH_BUILDS" = "true" ] && SETUP_ARGS+=(--with-builds)
+        [ "$WITH_KUADRANT" = "true" ] && SETUP_ARGS+=(--with-kuadrant)
+        [ "$WITH_MCP_GATEWAY" = "true" ] && SETUP_ARGS+=(--with-mcp-gateway)
+        [ "$WITH_AGENT_SANDBOX" = "true" ] && SETUP_ARGS+=(--with-agent-sandbox)
     fi
-    ./.github/scripts/kagenti-operator/30-run-installer.sh "${INSTALLER_ARGS[@]}"
+
+    # MLflow integration (operator config, requires RHOAI on cluster)
+    if [ "$NO_RHOAI" = "true" ]; then
+        # --skip-mlflow disables kagenti-operator MLflow integration (--enable-mlflow flag + RBAC).
+        # RHOAI MLflow CR creation and OTEL endpoint setup still auto-detect via CRD presence.
+        SETUP_ARGS+=(--skip-mlflow)
+    fi
+
+    ./scripts/ocp/setup-kagenti.sh "${SETUP_ARGS[@]}"
 
     log_step "Waiting for CRDs..."
     ./.github/scripts/kagenti-operator/41-wait-crds.sh
@@ -987,6 +1045,11 @@ if [ "$RUN_AGENTS" = "true" ]; then
 
     log_step "Deploying weather-agent..."
     ./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+
+    # ── Wait for pods and verify connectivity ──
+    log_step "Waiting for agent pods to be ready..."
+    kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=weather-tool -n team1 --timeout=120s 2>/dev/null || true
+    kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=weather-service -n team1 --timeout=120s 2>/dev/null || true
 else
     log_phase "PHASE 3: Skipping Agent Deployment"
 fi
@@ -1095,8 +1158,8 @@ fi
 
 if [ "$RUN_KAGENTI_UNINSTALL" = "true" ]; then
     log_phase "PHASE 5: Uninstall Kagenti Platform"
-    log_step "Running cleanup-install.sh..."
-    ./deployments/ansible/cleanup-install.sh || {
+    log_step "Running cleanup-kagenti.sh..."
+    ./scripts/ocp/cleanup-kagenti.sh --yes || {
         log_error "Kagenti uninstall failed (non-fatal)"
     }
 else

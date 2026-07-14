@@ -248,7 +248,9 @@ export const IntegrationDetailPage: React.FC = () => {
             <DescriptionListGroup>
               <DescriptionListTerm>Webhook URL</DescriptionListTerm>
               <DescriptionListDescription>
-                <code>{integration.webhookUrl}</code>
+                <a href={integration.webhookUrl} target="_blank" rel="noopener noreferrer">
+                  {integration.webhookUrl}
+                </a>
               </DescriptionListDescription>
             </DescriptionListGroup>
           )}

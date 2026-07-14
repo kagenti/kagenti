@@ -1,7 +1,7 @@
 name: Cleanup Stale HyperShift Clusters
 
 on:
-  # Scheduled cleanup every 3 hours (dry-run only for safety)
+  # Scheduled cleanup every 3 hours (applies TTL cleanup and removes stuck finalizers)
   schedule:
     - cron: '0 */3 * * *'
 
@@ -23,6 +23,11 @@ on:
         required: false
         type: boolean
         default: false
+      remove_stuck_finalizers:
+        description: 'Remove finalizers from stuck clusters (clusters with deletionTimestamp)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -35,7 +40,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Install OpenShift CLI
         run: |
@@ -68,12 +73,12 @@ jobs:
           echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> $GITHUB_ENV
           echo "AWS_REGION=${AWS_REGION}" >> $GITHUB_ENV
 
-      - name: Run cleanup script (Dry-run - Scheduled)
+      - name: Run cleanup script (Scheduled - Apply)
         if: github.event_name == 'schedule'
         env:
           KUBECONFIG: /home/runner/.kube/config
         run: |
-          bash ./.github/scripts/hypershift/cleanup-stale-clusters.sh --dry-run --verbose
+          bash ./.github/scripts/hypershift/cleanup-stale-clusters.sh --apply --verbose --remove-stuck-finalizers
 
       - name: Run cleanup script (Manual - Dry-run)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
@@ -81,6 +86,7 @@ jobs:
           KUBECONFIG: /home/runner/.kube/config
           INPUT_VERBOSE: ${{ github.event.inputs.verbose }}
           INPUT_PATTERN: ${{ github.event.inputs.pattern }}
+          INPUT_REMOVE_STUCK_FINALIZERS: ${{ github.event.inputs.remove_stuck_finalizers }}
         run: |
           ARGS="--dry-run"
           if [ "$INPUT_VERBOSE" = "true" ]; then
@@ -88,6 +94,9 @@ jobs:
           fi
           if [ -n "$INPUT_PATTERN" ]; then
             ARGS="$ARGS --pattern $INPUT_PATTERN"
+          fi
+          if [ "$INPUT_REMOVE_STUCK_FINALIZERS" = "true" ]; then
+            ARGS="$ARGS --remove-stuck-finalizers"
           fi
           bash ./.github/scripts/hypershift/cleanup-stale-clusters.sh $ARGS
 
@@ -97,6 +106,7 @@ jobs:
           KUBECONFIG: /home/runner/.kube/config
           INPUT_VERBOSE: ${{ github.event.inputs.verbose }}
           INPUT_PATTERN: ${{ github.event.inputs.pattern }}
+          INPUT_REMOVE_STUCK_FINALIZERS: ${{ github.event.inputs.remove_stuck_finalizers }}
         run: |
           ARGS="--apply"
           if [ "$INPUT_VERBOSE" = "true" ]; then
@@ -105,11 +115,14 @@ jobs:
           if [ -n "$INPUT_PATTERN" ]; then
             ARGS="$ARGS --pattern $INPUT_PATTERN"
           fi
+          if [ "$INPUT_REMOVE_STUCK_FINALIZERS" = "true" ]; then
+            ARGS="$ARGS --remove-stuck-finalizers"
+          fi
           bash ./.github/scripts/hypershift/cleanup-stale-clusters.sh $ARGS | tee /tmp/cleanup-output.log
 
       - name: Upload deletion logs
         if: github.event.inputs.dry_run == 'false' && always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: cleanup-logs-${{ github.run_id }}
           path: /tmp/cleanup-*.log
@@ -117,7 +130,7 @@ jobs:
 
       - name: Create audit issue for deletions
         if: github.event.inputs.dry_run == 'false' && success()
-        uses: actions/github-script@v9.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             const fs = require('fs');

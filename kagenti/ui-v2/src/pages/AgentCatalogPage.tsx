@@ -3,6 +3,7 @@
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { workloadTypeColor } from '@/utils/workloadType';
 import {
   PageSection,
   Title,
@@ -121,13 +122,7 @@ export const AgentCatalogPage: React.FC = () => {
   const renderWorkloadType = (workloadType: string | undefined) => {
     const type = workloadType || 'deployment';
     const label = type.charAt(0).toUpperCase() + type.slice(1);
-    let color: 'grey' | 'orange' | 'gold' = 'grey';
-    if (type === 'job') {
-      color = 'orange';
-    } else if (type === 'statefulset') {
-      color = 'gold';
-    }
-    return <Label color={color} isCompact>{label}</Label>;
+    return <Label color={workloadTypeColor(type)} isCompact>{label}</Label>;
   };
 
   const renderStatusBadge = (status: string) => {
@@ -143,7 +138,7 @@ export const AgentCatalogPage: React.FC = () => {
   };
 
   const renderLabels = (agent: Agent) => {
-    const labels = [];
+    const labels: React.ReactNode[] = [];
     if (agent.labels.protocol) {
       agent.labels.protocol.forEach((p) => {
         labels.push(
@@ -152,13 +147,6 @@ export const AgentCatalogPage: React.FC = () => {
           </Label>
         );
       });
-    }
-    if (agent.labels.framework) {
-      labels.push(
-        <Label key="framework" color="purple" isCompact>
-          {agent.labels.framework}
-        </Label>
-      );
     }
     return <LabelGroup>{labels}</LabelGroup>;
   };

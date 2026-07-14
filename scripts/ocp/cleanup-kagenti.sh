@@ -12,11 +12,13 @@
 #   ./scripts/ocp/cleanup-kagenti.sh --yes      # Skip confirmation prompt
 #
 # This script:
-#   1. Uninstalls Helm releases (parallel): kagenti, mcp-gateway, kagenti-deps
+#   1. Uninstalls Helm releases (parallel): kagenti, mcp-gateway, kuadrant-operator, kagenti-deps
 #   2. Deletes namespaces (parallel, waits for clean deletion)
 #   3. Force-deletes operator namespaces (openshift-builds, ZTWIM, mcp-system)
-#   4. Deletes shared trust ClusterIssuers and Certificates
-#   5. Removes cert-manager OLM operator + namespace (must be last)
+#   4. Removes agent-sandbox controller + namespace
+#   5. Removes MLflow resources (CR, OAuth proxy, RoleBindings)
+#   6. Deletes shared trust ClusterIssuers, Certificates, and cacerts secrets
+#   7. Removes cert-manager OLM operator + namespace (must be last)
 # ============================================================================
 
 set -euo pipefail
@@ -80,13 +82,16 @@ echo "  Kagenti Platform Cleanup"
 echo "============================================"
 echo ""
 echo "This will remove:"
-echo "  - Helm releases: kagenti, mcp-gateway, kagenti-deps"
+echo "  - Helm releases: kagenti, mcp-gateway, kuadrant-operator, kagenti-deps"
 echo "  - Namespaces: kagenti-system, mcp-system, gateway-system, keycloak, istio-cni,"
 echo "    istio-system, istio-ztunnel, openshift-builds,"
 echo "    zero-trust-workload-identity-manager, cert-manager-operator, cert-manager,"
-echo "    team1, team2"
+echo "    kuadrant-system, agent-sandbox-system, team1, team2"
+echo "  - agent-sandbox controller manifests (if present)"
+echo "  - MLflow CR, OAuth proxy, and RoleBindings (if present)"
 echo "  - ClusterIssuers: istio-mesh-root-selfsigned, istio-mesh-ca"
-echo "  - Certificates: istio-mesh-root-ca, istio-cacerts-openshift-gateway"
+echo "  - Certificates: istio-mesh-root-ca, istio-cacerts-default, istio-cacerts-openshift-gateway"
+echo "  - Secrets: cacerts in istio-system and openshift-ingress"
 echo ""
 
 if ! $AUTO_YES; then
@@ -156,9 +161,10 @@ _uninstall_release() {
 # ---------------------------------------------------------------------------
 log_info "Step 1: Uninstalling Helm releases..."
 
-_uninstall_release kagenti     kagenti-system &
-_uninstall_release mcp-gateway mcp-system     &
-_uninstall_release kagenti-deps kagenti-system &
+_uninstall_release kagenti          kagenti-system  &
+_uninstall_release mcp-gateway      mcp-system      &
+_uninstall_release kuadrant-operator kuadrant-system &
+_uninstall_release kagenti-deps     kagenti-system  &
 wait
 echo ""
 
@@ -193,19 +199,77 @@ PID_MS=$!
 _force_delete_ns gateway-system &
 PID_GS=$!
 
+_force_delete_ns kuadrant-system &
+PID_KS=$!
+
 _force_delete_ns team1 &
 PID_T1=$!
 
 _force_delete_ns team2 &
 PID_T2=$!
 
-wait $PID_OB $PID_ZT $PID_MS $PID_GS $PID_T1 $PID_T2
+wait $PID_OB $PID_ZT $PID_MS $PID_GS $PID_KS $PID_T1 $PID_T2
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 4: Delete shared trust ClusterIssuers + Certificates
+# Step 4: Remove agent-sandbox (if present)
 # ---------------------------------------------------------------------------
-log_info "Step 4: Deleting shared trust resources..."
+log_info "Step 4: Removing agent-sandbox..."
+
+if $KUBECTL get crd sandboxes.agents.x-k8s.io &>/dev/null; then
+  log_info "  agent-sandbox CRD found — removing controller resources"
+  $KUBECTL delete crd sandboxes.agents.x-k8s.io --timeout=30s 2>/dev/null && \
+    log_success "  CRD sandboxes.agents.x-k8s.io deleted" || \
+    log_warn "  Failed to delete agent-sandbox CRD"
+  _force_delete_ns agent-sandbox-system
+else
+  log_info "  agent-sandbox not installed — skipping"
+fi
+echo ""
+
+# ---------------------------------------------------------------------------
+# Step 5: Remove MLflow resources (if present)
+# ---------------------------------------------------------------------------
+log_info "Step 5: Removing MLflow resources..."
+
+MLFLOW_NAMESPACE="redhat-ods-applications"
+MLFLOW_INSTANCE_NAME="mlflow"
+
+if $KUBECTL get mlflow "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" &>/dev/null; then
+  $KUBECTL delete mlflow "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" --timeout=60s 2>/dev/null && \
+    log_success "  MLflow CR deleted" || \
+    log_warn "  Failed to delete MLflow CR"
+else
+  log_info "  MLflow CR not found — skipping"
+fi
+
+if $KUBECTL get deployment mlflow-oauth-proxy -n "$MLFLOW_NAMESPACE" &>/dev/null; then
+  log_info "  Removing MLflow OAuth proxy resources..."
+  $KUBECTL delete deployment mlflow-oauth-proxy -n "$MLFLOW_NAMESPACE" --timeout=30s 2>/dev/null || true
+  $KUBECTL delete service mlflow-oauth-proxy -n "$MLFLOW_NAMESPACE" --timeout=30s 2>/dev/null || true
+  $KUBECTL delete serviceaccount mlflow-oauth-proxy -n "$MLFLOW_NAMESPACE" --timeout=30s 2>/dev/null || true
+  $KUBECTL delete secret mlflow-oauth-proxy-cookie -n "$MLFLOW_NAMESPACE" --timeout=30s 2>/dev/null || true
+  $KUBECTL delete secret mlflow-oauth-proxy-tls -n "$MLFLOW_NAMESPACE" --timeout=30s 2>/dev/null || true
+  $KUBECTL delete route mlflow -n "$MLFLOW_NAMESPACE" --timeout=30s 2>/dev/null || true
+  log_success "  MLflow OAuth proxy resources deleted"
+else
+  log_info "  MLflow OAuth proxy not found — skipping"
+fi
+
+# Clean up otel-collector-mlflow RoleBindings in MLflow and agent namespaces
+for ns in "$MLFLOW_NAMESPACE" team1 team2; do
+  if $KUBECTL get rolebinding otel-collector-mlflow -n "$ns" &>/dev/null; then
+    $KUBECTL delete rolebinding otel-collector-mlflow -n "$ns" --timeout=10s 2>/dev/null && \
+      log_success "  RoleBinding otel-collector-mlflow deleted in $ns" || \
+      log_warn "  Failed to delete RoleBinding in $ns"
+  fi
+done
+echo ""
+
+# ---------------------------------------------------------------------------
+# Step 6: Delete shared trust ClusterIssuers + Certificates + Secrets
+# ---------------------------------------------------------------------------
+log_info "Step 6: Deleting shared trust resources..."
 
 for ci in istio-mesh-root-selfsigned istio-mesh-ca; do
   if $KUBECTL get clusterissuer "$ci" &>/dev/null; then
@@ -217,7 +281,7 @@ for ci in istio-mesh-root-selfsigned istio-mesh-ca; do
   fi
 done
 
-for cert_ns in "istio-mesh-root-ca:cert-manager" "istio-cacerts-openshift-gateway:openshift-ingress"; do
+for cert_ns in "istio-mesh-root-ca:cert-manager" "istio-cacerts-default:istio-system" "istio-cacerts-openshift-gateway:openshift-ingress"; do
   cert="${cert_ns%%:*}"
   ns="${cert_ns##*:}"
   if $KUBECTL get certificate "$cert" -n "$ns" &>/dev/null; then
@@ -228,12 +292,21 @@ for cert_ns in "istio-mesh-root-ca:cert-manager" "istio-cacerts-openshift-gatewa
     log_info "  Certificate $ns/$cert — not found, skipping"
   fi
 done
+
+# Remove cacerts secrets created by shared trust setup in non-deleted namespaces
+for ns in istio-system openshift-ingress; do
+  if $KUBECTL get secret cacerts -n "$ns" &>/dev/null; then
+    $KUBECTL delete secret cacerts -n "$ns" 2>/dev/null && \
+      log_success "  Secret $ns/cacerts deleted" || \
+      log_warn "  Failed to delete Secret $ns/cacerts"
+  fi
+done
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 5: Remove cert-manager OLM operator + namespaces (must be last)
+# Step 7: Remove cert-manager OLM operator + namespaces (must be last)
 # ---------------------------------------------------------------------------
-log_info "Step 5: Removing cert-manager operator..."
+log_info "Step 7: Removing cert-manager operator..."
 
 $KUBECTL delete subscription --all -n cert-manager-operator --timeout=30s 2>/dev/null && \
   log_success "  cert-manager Subscription deleted" || \

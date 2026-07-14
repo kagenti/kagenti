@@ -32,27 +32,19 @@ fi
 
 echo "Deploying Kagenti to cluster..."
 
-# Set Python interpreter for Ansible (required in CI where .venv doesn't exist)
-ANSIBLE_PYTHON_INTERPRETER=$(which python3)
-export ANSIBLE_PYTHON_INTERPRETER
-
-# Create minimal secrets file for CI with auto-generated values
+# Create secrets file for setup-kagenti.sh (helm -f charts/kagenti/.secrets.yaml)
 # Use MAIN_REPO_ROOT so secrets are shared across worktrees
-SECRETS_FILE="$MAIN_REPO_ROOT/deployments/envs/.secret_values.yaml"
+SECRETS_FILE="$MAIN_REPO_ROOT/charts/kagenti/.secrets.yaml"
 if [ ! -f "$SECRETS_FILE" ]; then
     # Use real OPENAI_API_KEY from env if available (passed from GitHub secrets)
     OPENAI_KEY="${OPENAI_API_KEY:-ci-test-openai-key}"
     echo "Creating secrets file for CI..."
     cat > "$SECRETS_FILE" <<EOF
 # Auto-generated secrets for CI
-global: {}
-charts:
-  kagenti:
-    values:
-      secrets:
-        githubUser: "ci-user"
-        githubToken: "ci-token-placeholder"
-        openaiApiKey: "${OPENAI_KEY}"
+secrets:
+  githubUser: "ci-user"
+  githubToken: "ci-token-placeholder"
+  openaiApiKey: "${OPENAI_KEY}"
 EOF
 fi
 
@@ -63,7 +55,7 @@ cd "$REPO_ROOT"
 # Wait for nodes - increased timeout for autoscaling scenarios
 # Autoscaling can take 5-10 minutes to provision new nodes
 echo "Waiting for cluster nodes to be ready..."
-MAX_RETRIES=60
+MAX_RETRIES=90
 RETRY_DELAY=10
 for i in $(seq 1 $MAX_RETRIES); do
     # Count nodes that are NOT in Ready status
@@ -92,8 +84,10 @@ done
 # This is required for installing OpenShift operators via Subscriptions
 echo "Waiting for OLM to be available..."
 for i in $(seq 1 $MAX_RETRIES); do
-    if kubectl api-resources | grep -q "subscriptions.*operators.coreos.com" 2>/dev/null; then
-        echo "OLM Subscription API is available"
+    if kubectl get crd subscriptions.operators.coreos.com &>/dev/null && \
+       kubectl get clusteroperator operator-lifecycle-manager \
+           -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null | grep -q "True"; then
+        echo "OLM Subscription CRD and ClusterOperator are available"
         break
     fi
     echo "[$i/$MAX_RETRIES] Waiting for OLM..."
@@ -114,7 +108,7 @@ done
 #   a5607f9               — commit SHA (7-40 hex chars)
 #
 # ── NO HARDCODED OVERRIDES ──
-# Chart deps are up-to-date (kagenti-webhook-chart v0.4.0-alpha.9 via PR #1051).
+# Chart deps track the pinned kagenti-operator-chart version in Chart.yaml.
 # Use /run-e2e --build org/repo=ref to override ad-hoc.
 # ──────────────────────────────────────────────────────────────────────────────
 

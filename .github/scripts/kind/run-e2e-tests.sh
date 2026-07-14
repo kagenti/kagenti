@@ -4,6 +4,8 @@
 # Usage:
 #   ./.github/scripts/kind/run-e2e-tests.sh
 #   KAGENTI_CONFIG_FILE=deployments/envs/dev_values.yaml ./.github/scripts/kind/run-e2e-tests.sh
+#   RUN_AUTHBRIDGE_WEATHER_E2E=1 ./.github/scripts/kind/run-e2e-tests.sh
+#   RUN_AUTHBRIDGE_WEATHER_E2E=1 KAGENTI_EXTENSIONS_ROOT=../kagenti-extensions ./.github/scripts/kind/run-e2e-tests.sh
 
 set -euo pipefail
 
@@ -47,27 +49,52 @@ echo ""
 
 cd "$REPO_ROOT"
 
+# Optional: AuthBridge Weather (advanced) E2E from kagenti-extensions (wave 91).
+# Set RUN_AUTHBRIDGE_WEATHER_E2E=1 to run after pytest. Requires network (git clone)
+# unless KAGENTI_EXTENSIONS_ROOT points at a local clone.
+RUN_AUTHBRIDGE_WEATHER_E2E="${RUN_AUTHBRIDGE_WEATHER_E2E:-0}"
+
 # ============================================================================
 # TEST PREPARATION (mirrors CI workflow order)
 # ============================================================================
 
+if [[ "$RUN_AUTHBRIDGE_WEATHER_E2E" == "1" ]]; then
+    TOTAL_STEPS=4
+else
+    TOTAL_STEPS=3
+fi
+
 # Step 1: Install test dependencies (wave 80)
-echo -e "${BLUE}[1/3] Installing test dependencies...${NC}"
+echo -e "${BLUE}[1/${TOTAL_STEPS}] Installing test dependencies...${NC}"
 bash .github/scripts/common/80-install-test-deps.sh
 echo ""
 
 # Step 2: Start port-forward (wave 85)
-echo -e "${BLUE}[2/3] Starting port-forward...${NC}"
+echo -e "${BLUE}[2/${TOTAL_STEPS}] Starting port-forward...${NC}"
 bash .github/scripts/common/85-start-port-forward.sh
 echo ""
 
 # Step 3: Run E2E tests (wave 90)
-echo -e "${BLUE}[3/3] Running E2E tests...${NC}"
+echo -e "${BLUE}[3/${TOTAL_STEPS}] Running E2E tests (pytest)...${NC}"
 echo ""
 
 bash .github/scripts/kagenti-operator/90-run-e2e-tests.sh
 
 TEST_RESULT=$?
+
+# Step 4: AuthBridge Weather (advanced) — kagenti-extensions deploy + verify
+if [[ "$RUN_AUTHBRIDGE_WEATHER_E2E" == "1" ]]; then
+    if [[ $TEST_RESULT -ne 0 ]]; then
+        echo -e "${RED}Skipping AuthBridge E2E (pytest failed)${NC}"
+    else
+        echo ""
+        echo -e "${BLUE}[4/4] Running AuthBridge Weather (advanced) E2E...${NC}"
+        echo ""
+        if ! bash .github/scripts/kind/91-run-authbridge-weather-e2e.sh; then
+            TEST_RESULT=1
+        fi
+    fi
+fi
 
 # ============================================================================
 # CLEANUP AND RESULTS

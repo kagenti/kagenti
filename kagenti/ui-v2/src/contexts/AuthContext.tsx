@@ -47,6 +47,7 @@ export interface AuthContextType {
   login: () => void;
   logout: () => void;
   getToken: () => Promise<string | null>;
+  forceRefreshToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -394,8 +395,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       login,
       logout,
       getToken,
+      forceRefreshToken,
     }),
-    [isAuthenticated, isLoading, isEnabled, user, token, error, login, logout, getToken]
+    [isAuthenticated, isLoading, isEnabled, user, token, error, login, logout, getToken, forceRefreshToken]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

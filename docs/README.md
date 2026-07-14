@@ -40,6 +40,6 @@ This repo provides a UI to interface with the operator and deployed agents and t
 
 ## Community
 
-For additional queries, join [our Discord](https://discord.gg/aJ92dNDzqB). 
+For additional queries, join us on [Slack](https://ibm.biz/kagenti-slack). 
 
 If you would like to contribute, feel free to submit a pull request! Please see our [CONTRIBUTING guidelines](../CONTRIBUTING.md). 

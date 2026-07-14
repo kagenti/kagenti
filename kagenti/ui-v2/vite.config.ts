@@ -26,5 +26,11 @@ export default defineConfig({
   test: {
     globals: false,
     environment: 'node',
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/e2e/**',
+      '**/.{idea,git,cache,output,temp}/**',
+    ],
   },
 });

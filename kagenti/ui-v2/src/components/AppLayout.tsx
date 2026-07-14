@@ -48,6 +48,7 @@ import {
 import { useAuth, useTheme } from '@/contexts';
 import type { ThemeMode } from '@/contexts';
 import type { FeatureFlags } from '@/hooks/useFeatureFlags';
+import packageJson from '../../package.json';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -236,6 +237,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, features }) => {
           </svg>
           Kagenti
         </MastheadBrand>
+        <span className="kagenti-brand-version">
+          {packageJson.version}
+        </span>
       </MastheadMain>
       <MastheadContent>
         <Toolbar isFullHeight isStatic>
@@ -336,6 +340,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, features }) => {
                   >
                     Tools
                   </NavItem>
+                  {features?.skills && (
+                    <NavItem
+                      itemId="skills"
+                      isActive={isNavItemActive('/skills')}
+                      onClick={() => handleNavSelect('/skills')}
+                    >
+                      Skills
+                    </NavItem>
+                  )}
                   {features?.sandbox && (
                     <>
                       <NavItem

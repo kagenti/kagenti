@@ -8,7 +8,8 @@ metadata:
   name: {{ .Values.ui.configmap }}
   namespace: "{{ .Values.ui.namespace }}"
   labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
+    app.kubernetes.io/name: kagenti-ui
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 data:
   DOMAIN_NAME: "{{ .Values.ui.domainName }}"
   API_URL: "http://{{ .Values.ui.api.hostname }}:8080"
@@ -24,7 +25,9 @@ data:
   {{- end }}
   NETWORK_TRAFFIC_DASHBOARD_URL: "http://kiali.{{ .Values.ui.domainName }}:8080"
   MCP_INSPECTOR_URL: "http://mcp-inspector.{{ .Values.ui.domainName }}:8080"
-  MCP_PROXY_FULL_ADDRESS: "http://mcp-proxy.{{ .Values.ui.domainName }}:8080"
+  # Proxy served on the inspector host under /mcp-proxy by the nginx sidecar
+  # (single origin).
+  MCP_PROXY_FULL_ADDRESS: "http://mcp-inspector.{{ .Values.ui.domainName }}:8080/mcp-proxy"
   KEYCLOAK_CONSOLE_URL: "http://keycloak.{{ .Values.ui.domainName }}:8080/admin/{{ .Values.keycloak.realm }}/console/"
 ---
 {{- end }}
@@ -36,7 +39,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-backend
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 ---
 # Backend Deployment
 apiVersion: apps/v1
@@ -48,7 +51,7 @@ metadata:
     app.kubernetes.io/name: kagenti-backend
     app.kubernetes.io/component: backend
     app.kubernetes.io/part-of: kagenti-ui
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
@@ -56,6 +59,12 @@ spec:
       app.kubernetes.io/name: kagenti-backend
   template:
     metadata:
+      annotations:
+        # Force pod restart whenever the in-chart ConfigMap or OAuth-secret inputs change.
+        # See https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments
+        checksum/config: {{ printf "%s|%s|%s|%s|%s|%t|%t" .Values.ui.domainName .Values.ui.api.hostname .Values.ui.namespace .Values.ui.configmap .Values.keycloak.realm .Values.components.phoenix.enabled .Values.components.mlflow.enabled | sha256sum }}
+        checksum/oauth-config: {{ printf "%s|%s|%s|%s" .Values.keycloak.url .Values.keycloak.publicUrl .Values.keycloak.realm .Values.ui.namespace | sha256sum }}
+        checksum/authbridge-runtime-config: {{ include "kagenti.authbridge-runtime-config-yaml" . | sha256sum }}
       labels:
         app.kubernetes.io/name: kagenti-backend
         app.kubernetes.io/component: backend
@@ -123,6 +132,14 @@ spec:
             - name: DEFAULT_REGISTRY_URL
               value: {{ .Values.ui.backend.defaultRegistryUrl | quote }}
             {{- end }}
+            {{- if .Values.ui.backend.shipwrightDefaultStrategy }}
+            - name: SHIPWRIGHT_DEFAULT_STRATEGY
+              value: {{ .Values.ui.backend.shipwrightDefaultStrategy | quote }}
+            {{- end }}
+            {{- if .Values.ui.backend.skillRegistryAllowedHosts }}
+            - name: SKILL_REGISTRY_ALLOWED_HOSTS
+              value: {{ .Values.ui.backend.skillRegistryAllowedHosts | quote }}
+            {{- end }}
             # Feature flags
             - name: KAGENTI_FEATURE_FLAG_SANDBOX
               value: "{{ .Values.featureFlags.sandbox }}"
@@ -130,6 +147,16 @@ spec:
               value: "{{ .Values.featureFlags.integrations }}"
             - name: KAGENTI_FEATURE_FLAG_TRIGGERS
               value: "{{ .Values.featureFlags.triggers }}"
+            - name: KAGENTI_FEATURE_FLAG_AGENT_SANDBOX
+              value: "{{ .Values.featureFlags.agentSandbox }}"
+            - name: KAGENTI_FEATURE_FLAG_SKILLS
+              value: "{{ .Values.featureFlags.skills }}"
+            - name: KAGENTI_FEATURE_FLAG_EXTERNAL_SKILLS
+              value: "{{ .Values.featureFlags.externalSkills }}"
+            - name: KAGENTI_FEATURE_FLAG_AUTHBRIDGE_API
+              value: "{{ .Values.featureFlags.authbridgeAPI }}"
+            - name: KAGENTI_FEATURE_FLAG_ADMIN
+              value: "{{ .Values.featureFlags.admin }}"
             - name: KEYCLOAK_URL
               value: {{ .Values.keycloak.url | quote }}
             - name: KEYCLOAK_PUBLIC_URL
@@ -240,6 +267,9 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: authbridge-runtime-config
+              mountPath: /etc/kagenti/authbridge
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
@@ -249,6 +279,9 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: authbridge-runtime-config
+          configMap:
+            name: authbridge-runtime-config
 ---
 # Backend Service
 apiVersion: v1
@@ -258,7 +291,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-backend
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   type: ClusterIP
   ports:
@@ -269,6 +302,7 @@ spec:
   selector:
     app.kubernetes.io/name: kagenti-backend
 ---
+{{- if .Values.ui.frontend.enabled }}
 # Frontend Deployment
 apiVersion: apps/v1
 kind: Deployment
@@ -279,7 +313,7 @@ metadata:
     app.kubernetes.io/name: kagenti-ui
     app.kubernetes.io/component: frontend
     app.kubernetes.io/part-of: kagenti-ui
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
@@ -287,6 +321,11 @@ spec:
       app.kubernetes.io/name: kagenti-ui
   template:
     metadata:
+      annotations:
+        # Force pod restart whenever the in-chart ConfigMap or OAuth-secret inputs change.
+        # See https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments
+        checksum/config: {{ printf "%s|%s|%s|%s|%s|%t|%t" .Values.ui.domainName .Values.ui.api.hostname .Values.ui.namespace .Values.ui.configmap .Values.keycloak.realm .Values.components.phoenix.enabled .Values.components.mlflow.enabled | sha256sum }}
+        checksum/oauth-config: {{ printf "%s|%s|%s|%s" .Values.keycloak.url .Values.keycloak.publicUrl .Values.keycloak.realm .Values.ui.namespace | sha256sum }}
       labels:
         app.kubernetes.io/name: kagenti-ui
         app.kubernetes.io/component: frontend
@@ -338,7 +377,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-ui
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   type: ClusterIP
   ports:
@@ -348,6 +387,7 @@ spec:
       name: http
   selector:
     app.kubernetes.io/name: kagenti-ui
+{{- end }}
 ---
 # Backend RBAC
 apiVersion: rbac.authorization.k8s.io/v1
@@ -356,7 +396,7 @@ metadata:
   name: kagenti-backend
   labels:
     app.kubernetes.io/name: kagenti-backend
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: ["namespaces"]
@@ -379,13 +419,22 @@ rules:
     resources: ["pods"]
     verbs: ["get", "list"]
   # ConfigMaps: list/get for reads; create/update/patch for AuthBridge finalize
-  # (authbridge-config, envoy-config, spiffe-helper-config, authproxy-routes merge)
+  # (authbridge-config, envoy-config, spiffe-helper-config, authproxy-routes merge).
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list", "create", "update", "patch"]
+  {{- if .Values.featureFlags.skills }}
+  # Skills-specific: delete required for skill deletion via the Skills API.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["delete"]
+  {{- end }}
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["list"]
   {{- if .Values.featureFlags.sandbox }}
   # Sandbox-specific: create pods, exec, logs, and mutate configmaps/secrets/PVCs
   - apiGroups: [""]
@@ -434,6 +483,12 @@ rules:
   - apiGroups: ["route.openshift.io"]
     resources: ["routes"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- if .Values.featureFlags.agentSandbox }}
+  # agent-sandbox (kubernetes-sigs) — direct Sandbox management
+  - apiGroups: ["agents.x-k8s.io"]
+    resources: ["sandboxes"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  {{- end }}
   {{- if .Values.featureFlags.integrations }}
   # Integration CRDs for repository integrations
   - apiGroups: ["kagenti.io"]
@@ -447,7 +502,7 @@ metadata:
   name: kagenti-backend
   labels:
     app.kubernetes.io/name: kagenti-backend
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -458,6 +513,7 @@ subjects:
     namespace: "{{ .Values.ui.namespace }}"
 ---
 {{- if .Values.openshift }}
+{{- if .Values.ui.frontend.enabled }}
 # OpenShift Route for UI
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -465,9 +521,14 @@ metadata:
   name: kagenti-ui
   namespace: "{{ .Values.ui.namespace }}"
   labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
+    app.kubernetes.io/name: kagenti-ui
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
   annotations:
     openshift.io/host.generated: "true"
+    # Agent chat proxied through the UI involves a cold MCP session + multiple
+    # LLM round-trips that can exceed HAProxy's 30s default, surfacing as a 504
+    # on the first request even though the agent itself completes.
+    haproxy.router.openshift.io/timeout: "120s"
 spec:
   path: /
   port:
@@ -480,6 +541,7 @@ spec:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
 ---
+{{- end }}
 # OpenShift Route for Backend API (direct external access)
 apiVersion: route.openshift.io/v1
 kind: Route
@@ -487,9 +549,14 @@ metadata:
   name: kagenti-api
   namespace: "{{ .Values.ui.namespace }}"
   labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
+    app.kubernetes.io/name: kagenti-api
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
   annotations:
     openshift.io/host.generated: "true"
+    # Agent chat proxied through the backend API involves a cold MCP session +
+    # multiple LLM round-trips that can exceed HAProxy's 30s default, surfacing
+    # as a 504 on the first request even though the agent itself completes.
+    haproxy.router.openshift.io/timeout: "120s"
 spec:
   path: /
   port:
@@ -502,7 +569,8 @@ spec:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
 {{- else }}
-# HTTPRoute for Kubernetes Gateway API
+{{- if .Values.ui.frontend.enabled }}
+# HTTPRoute for Kubernetes Gateway API (frontend + backend on UI hostname)
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -510,7 +578,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-ui
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   parentRefs:
     - name: http
@@ -535,6 +603,7 @@ spec:
         - name: kagenti-ui
           port: 8080
 ---
+{{- end }}
 # HTTPRoute for Backend API (direct external access)
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -543,7 +612,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-api
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   parentRefs:
     - name: http

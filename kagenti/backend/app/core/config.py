@@ -73,9 +73,29 @@ class Settings(BaseSettings):
     kagenti_feature_flag_sandbox: bool = False
     kagenti_feature_flag_integrations: bool = False
     kagenti_feature_flag_triggers: bool = False
+    kagenti_feature_flag_agent_sandbox: bool = False
+    kagenti_feature_flag_authbridge_api: bool = False
+    kagenti_feature_flag_skills: bool = False
+    kagenti_feature_flag_admin: bool = False
     kagenti_feature_flag_sidecars: bool = (
         False  # sidecar agents (looper, hallucination, context guardian)
     )
+    kagenti_feature_flag_acp: bool = False  # ACP WebSocket protocol gateway
+    kagenti_feature_flag_external_skills: bool = False  # External skill registry references
+    # Auto-inject MCP_URL / LLM env vars on agent import (TUI parity; weather demo defaults)
+    kagenti_feature_flag_agent_import_defaults: bool = False
+    skill_autosync_interval: int = (
+        30  # seconds between registry sync checks (env: SKILL_AUTOSYNC_INTERVAL)
+    )
+    # Hosts/IPs/CIDRs allowed to bypass the registry-URL private-address SSRF block
+    # (env: SKILL_REGISTRY_ALLOWED_HOSTS, comma-separated). Empty by default — all
+    # private/internal addresses stay blocked. Entries match the URL hostname
+    # (case-insensitive) or the resolved IP (single IP or CIDR). Use for self-hosted
+    # or in-cluster skill registries (e.g. "192.168.50.16,10.0.0.0/8").
+    skill_registry_allowed_hosts: str = ""
+
+    # AuthBridge runtime config (mounted from Helm-managed ConfigMap)
+    authbridge_runtime_config_path: str = "/etc/kagenti/authbridge/config.yaml"
 
     # Label settings
     kagenti_label_prefix: str = "kagenti.io/"

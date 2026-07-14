@@ -36,34 +36,43 @@ if [ "$IS_OPENSHIFT" = "true" ]; then
         exit 1
     }
 
-    # Start a build
-    log_info "Starting OpenShift build..."
-    BUILD_NAME=$(oc start-build weather-tool -n team1 --follow=false -o name 2>/dev/null || echo "")
-    if [ -z "$BUILD_NAME" ]; then
-        log_error "Failed to start build"
-        exit 1
-    fi
-    log_info "Build started: $BUILD_NAME"
-
-    # Wait for build to complete
-    for _ in {1..120}; do
-        phase=$(kubectl get "$BUILD_NAME" -n team1 -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-        log_info "Build phase: $phase"
-        if [ "$phase" = "Complete" ]; then
-            log_success "OpenShift build completed successfully"
-            exit 0
-        elif [ "$phase" = "Failed" ] || [ "$phase" = "Error" ] || [ "$phase" = "Cancelled" ]; then
-            log_error "Build failed with phase: $phase"
-            kubectl describe "$BUILD_NAME" -n team1
-            kubectl logs "$BUILD_NAME" -n team1 || true
+    # Start a build with retry — ephemeral HyperShift clusters can have
+    # intermittent DNS failures when build pods pull base images.
+    for attempt in 1 2 3; do
+        log_info "Starting OpenShift build (attempt $attempt/3)..."
+        BUILD_NAME=$(oc start-build weather-tool -n team1 --follow=false -o name 2>/dev/null || echo "")
+        if [ -z "$BUILD_NAME" ]; then
+            log_error "Failed to start build"
             exit 1
         fi
-        sleep 5
+        log_info "Build started: $BUILD_NAME"
+
+        build_phase="Unknown"
+        for _ in {1..120}; do
+            build_phase=$(kubectl get "$BUILD_NAME" -n team1 -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+            if [ "$build_phase" = "Complete" ]; then
+                log_success "OpenShift build completed successfully"
+                exit 0
+            elif [ "$build_phase" = "Failed" ] || [ "$build_phase" = "Error" ] || [ "$build_phase" = "Cancelled" ]; then
+                break
+            fi
+            sleep 5
+        done
+
+        if [ "$build_phase" = "Complete" ]; then
+            break
+        elif [ "$attempt" -lt 3 ]; then
+            log_warn "Build failed (attempt $attempt, phase: $build_phase) — retrying..."
+            kubectl logs "$BUILD_NAME" -n team1 2>&1 | tail -5 || true
+        fi
     done
 
-    log_error "Build timeout after 600s"
-    kubectl describe "$BUILD_NAME" -n team1
-    exit 1
+    if [ "$build_phase" != "Complete" ]; then
+        log_error "Build failed after 3 attempts (last phase: $build_phase)"
+        kubectl describe "$BUILD_NAME" -n team1
+        kubectl logs "$BUILD_NAME" -n team1 || true
+        exit 1
+    fi
 else
     # Kind/vanilla Kubernetes: Use Shipwright Build + BuildRun
 
