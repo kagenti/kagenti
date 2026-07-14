@@ -677,8 +677,12 @@ if $WITH_SPIRE; then
     --set tornjak-frontend.service.port=3000
 
   log_info "Waiting for SPIRE pods in zero-trust-workload-identity-manager..."
-  until kubectl get pod -l app.kubernetes.io/instance=spire \
-    -n zero-trust-workload-identity-manager 2>/dev/null | grep -q .; do sleep 2; done
+  local deadline=$((SECONDS + 120))
+  until kubectl get pod --no-headers -l app.kubernetes.io/instance=spire \
+    -n zero-trust-workload-identity-manager 2>/dev/null | grep -q .; do
+    (( SECONDS >= deadline )) && { log_error "Timed out waiting for SPIRE pods"; exit 1; }
+    sleep 2
+  done
   kubectl wait --for=condition=Ready pod -l app.kubernetes.io/instance=spire \
     -n zero-trust-workload-identity-manager --timeout=300s
 
@@ -1282,8 +1286,12 @@ run_cmd helm upgrade --install kagenti "$REPO_ROOT/charts/kagenti/" \
   "${KAGENTI_FLAGS[@]}"
 
 log_info "Waiting for kagenti pods..."
-until kubectl get pod -l app.kubernetes.io/name=kagenti-operator-chart \
-  -n kagenti-system 2>/dev/null | grep -q .; do sleep 2; done
+deadline=$((SECONDS + 120))
+until kubectl get pod --no-headers -l app.kubernetes.io/name=kagenti-operator-chart \
+  -n kagenti-system 2>/dev/null | grep -q .; do
+  (( SECONDS >= deadline )) && { log_error "Timed out waiting for kagenti-operator pods"; exit 1; }
+  sleep 2
+done
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=kagenti-operator-chart \
   -n kagenti-system --timeout=300s
 
