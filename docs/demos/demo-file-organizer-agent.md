@@ -9,7 +9,7 @@ Once deployed, we will query the agent using a natural language prompt. The agen
 
 Here's a breakdown of the sections:
 
-- In [**Import New Agent**](#import-new-agent), you'll build and deploy the [`file_organizer_agent`](https://github.com/kagenti/agent-examples/tree/main/a2a/file_organizer_agent) agent.
+- In [**Import New Agent**](#import-new-agent), you'll build and deploy the [`file_organizer_agent`](https://github.com/kagenti/agent-examples/tree/main/a2a/file_organizer) agent.
 - In [**Import New Tool**](#import-new-tool), you'll build and deploy [`cloud_storage_tool`](https://github.com/kagenti/agent-examples/tree/main/mcp/cloud_storage_tool) tool.
 - In [**Validate the Deployment**](#validate-the-deployment), you'll verify that all components are running and operational.
 - In [**Chat with the Generic Agent**](#chat-with-the-generic-agent), you'll interact with the agent and confirm it correctly organizes files in the specified cloud storage bucket.
