@@ -85,9 +85,7 @@ class TestRollbackWorkloadResources:
         rollback_workload_resources(
             kube, "team1", [("HTTPRoute", "my-workload"), ("Route", "my-workload")]
         )
-        groups = {
-            c.kwargs["group"] for c in kube.delete_custom_resource.call_args_list
-        }
+        groups = {c.kwargs["group"] for c in kube.delete_custom_resource.call_args_list}
         assert groups == {"gateway.networking.k8s.io", "route.openshift.io"}
 
     def test_empty_created_is_noop(self):
