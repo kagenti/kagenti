@@ -84,3 +84,53 @@ def test_failed_message_with_trailing_colon_is_preserved():
     )
     assert out.status == "Failed"
     assert out.reason == "sidecar_start_failed: died: "
+
+
+def test_failed_folds_cause_type_into_reason():
+    # The harness records the underlying cause (e.g. a timed-out generation
+    # stage rewrapped as a generic RuntimeError) in error.details.cause_type.
+    # It must surface in the reason so the UI shows *why* it failed.
+    out = _map(
+        harness={
+            "status": "failed",
+            "error": {
+                "code": "skill_generation_failed",
+                "message": "Skill generation failed for 'tasks'",
+                "details": {"cause_type": "TimeoutError", "cause": ""},
+            },
+        }
+    )
+    assert out.status == "Failed"
+    assert (
+        out.reason == "skill_generation_failed (TimeoutError): Skill generation failed for 'tasks'"
+    )
+
+
+def test_failed_cause_type_with_empty_message_uses_code_and_cause():
+    out = _map(
+        harness={
+            "status": "failed",
+            "error": {
+                "code": "skill_generation_failed",
+                "message": "",
+                "details": {"cause_type": "TimeoutError"},
+            },
+        }
+    )
+    assert out.status == "Failed"
+    assert out.reason == "skill_generation_failed (TimeoutError)"
+
+
+def test_failed_details_without_cause_type_unchanged():
+    out = _map(
+        harness={
+            "status": "failed",
+            "error": {
+                "code": "instance_init_failed",
+                "message": "boom",
+                "details": {"exception": "RuntimeError"},
+            },
+        }
+    )
+    assert out.status == "Failed"
+    assert out.reason == "instance_init_failed: boom"

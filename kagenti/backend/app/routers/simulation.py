@@ -247,7 +247,13 @@ def map_generation_status(
             err = harness.get("error") or {}
             code = err.get("code") or "unknown"
             message = err.get("message") or ""
-            reason = f"{code}: {message}" if message else code
+            # The harness buries the underlying cause (e.g. a timed-out
+            # generation stage rewrapped as a generic RuntimeError) in
+            # error.details.cause_type. Fold it into the reason so the UI shows
+            # *why* it failed instead of just the coarse code.
+            cause_type = (err.get("details") or {}).get("cause_type")
+            label = f"{code} ({cause_type})" if cause_type else code
+            reason = f"{label}: {message}" if message else label
             return GenerationStatusResponse(status="Failed", reason=reason, mcpUrl=None)
         # pending / generating_skill / initializing / generated
         return GenerationStatusResponse(status="Generating", reason=None, mcpUrl=None)
