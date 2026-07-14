@@ -1,0 +1,17 @@
+# Rosso — Governed, Zero-Trust Autonomy for AI Agents
+
+Software is learning to act on its own. AI agents no longer just answer questions — they plan, call tools, spend money, move data, and delegate to other agents to finish work that unfolds over hours or days. The unit of computation is no longer a request that returns. It is an autonomous actor that reasons, remembers, and reaches into the world on someone's behalf.
+
+Our infrastructure was not built for this. The cloud-native stack assumes deterministic services with fixed identities, stable filesystems, and permissions granted in advance. Agents break every one of those assumptions — and, uniquely, they are autonomous, privileged, and steered by untrusted input all at once. Static roles are too blunt, stored secrets are one prompt injection from exfiltration, signed manifests prove who published an agent but not what it's doing now, and a restarted agent forgets everything.
+
+The industry is standardizing how agents *talk* — A2A between agents, MCP to tools. **Rosso builds the trust, memory, and governance fabric underneath them**: the platform primitives that decide who an agent is, what it may do, on whose behalf, with what it remembers, and how far it can reach. We organize them into three pillars.
+
+**The Identity Fabric — who an agent is, and what it's made of.** Every agent gets a cryptographic identity rooted in the running workload, not a shared secret — attested at runtime, not merely asserted in a signed card. We are binding that identity down to an agent's very skills, so a tampered capability changes the identity and its access falls away automatically. And when an agent acts for you, it carries just-in-time, narrowly-scoped authority that neither the agent nor the platform can hoard.
+
+**The Governance Plane — what an agent may do, decided from full context.** A single, auditable decision point renders every verdict from complete information — caller, callee, user, task, budget, and data lineage — heading toward policy expressed in human language that the platform derives and continuously audits. A human stays in the loop for what matters, from mobile approvals of high-risk actions today toward a personalized **surrogate agent** that learns your intent and safely approves on your behalf. Cost is a governed resource with hard limits, and the platform's own autonomous governors are held to the same guardrails and evaluation they enforce.
+
+**The Runtime Substrate — how an agent lives, remembers, and recovers.** Session state is externalized into a durable log, so agents survive eviction, recover with zero lost work, and scale to zero when idle. Beyond durability, we are building **Long-Term Memory as a platform layer** — and researching a brain-inspired, self-healing memory that adapts to shifting enterprise language without ever retraining the model. Every hop between agents is a signed, identity-carrying event; every credential lives only in an identity-aware egress broker, so the agent can *use* keys it can never *read*, all within isolated per-tenant sandboxes.
+
+**The design philosophy through all of it: the platform absorbs the hard problems so agents don't have to.** Governed autonomy as the default — not a library each developer must wire up correctly.
+
+Rosso is our contribution, built in the open on A2A, MCP, and SPIFFE: the platform primitives for governed, zero-trust agent autonomy.
