@@ -122,6 +122,14 @@ installed; optional layers are enabled with `--with-*` flags.
 
 **Core (always installed):** cert-manager, Gateway API CRDs, Istio Gateway controller (istio-base + istiod), Keycloak, kagenti-operator, kagenti-webhook
 
+> **Two Istio layers — don't confuse them.** The **Istio Gateway controller**
+> (`istio-base` + `istiod`) is core and always installed: it implements the
+> `gatewayClassName: istio` Gateway that fronts all `*.localtest.me:8080` ingress
+> (UI, Keycloak, agents), so it cannot be skipped. `--with-istio` is a *separate*
+> layer — the **ambient mesh** (mTLS + waypoints) — and is optional. You do **not**
+> need `--with-istio` for the AuthBridge weather demo, which enforces auth via its
+> own injected sidecar, not the mesh.
+
 **Install everything:**
 
 ```bash
