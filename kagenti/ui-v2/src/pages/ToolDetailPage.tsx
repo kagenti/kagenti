@@ -968,7 +968,7 @@ export const ToolDetailPage: React.FC = () => {
                       {propType === 'boolean' ? (
                         <Switch
                           id={`arg-${key}`}
-                          isChecked={toolArgs[key] as boolean}
+                          isChecked={toolArgs[key] === true}
                           onChange={(_e, checked) => updateArg(key, checked)}
                           label="true"
                           labelOff="false"
