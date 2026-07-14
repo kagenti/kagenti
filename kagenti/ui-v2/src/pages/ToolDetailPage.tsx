@@ -69,6 +69,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import yaml from 'js-yaml';
 
 import { toolService, configService, toolShipwrightService, ToolShipwrightBuildInfo } from '@/services/api';
+import { initialInvokeArgs, buildInvokeArgs } from '@/utils/toolInvoke';
 
 interface StatusCondition {
   type: string;
@@ -196,21 +197,9 @@ export const ToolDetailPage: React.FC = () => {
   const openInvokeModal = (mcpTool: MCPToolInfo) => {
     setSelectedTool(mcpTool);
     setInvokeResult(null);
-    // Initialize args with default values from schema
-    const initialArgs: Record<string, unknown> = {};
-    if (mcpTool.input_schema?.properties) {
-      Object.entries(mcpTool.input_schema.properties).forEach(([key, prop]) => {
-        if (prop.default !== undefined) {
-          initialArgs[key] = prop.default;
-        } else if (prop.type === 'boolean') {
-          initialArgs[key] = false;
-        } else if (prop.type === 'number' || prop.type === 'integer') {
-          initialArgs[key] = 0;
-        } else {
-          initialArgs[key] = '';
-        }
-      });
-    }
+    // Seed only explicit schema defaults; leave optional fields unset so they
+    // are omitted at submit time (see utils/toolInvoke).
+    const initialArgs = initialInvokeArgs(mcpTool.input_schema?.properties);
     setToolArgs(initialArgs);
     setInvokeModalOpen(true);
   };
@@ -226,7 +215,9 @@ export const ToolDetailPage: React.FC = () => {
   // Handle tool invocation
   const handleInvoke = () => {
     if (selectedTool) {
-      invokeMutation.mutate({ toolName: selectedTool.name, args: toolArgs });
+      const required = selectedTool.input_schema?.required ?? [];
+      const args = buildInvokeArgs(toolArgs, required);
+      invokeMutation.mutate({ toolName: selectedTool.name, args });
     }
   };
 
@@ -986,20 +977,22 @@ export const ToolDetailPage: React.FC = () => {
                         <TextInput
                           id={`arg-${key}`}
                           type="number"
-                          value={String(toolArgs[key] || '')}
-                          onChange={(_e, val) => updateArg(key, val ? Number(val) : 0)}
+                          value={String(toolArgs[key] ?? '')}
+                          onChange={(_e, val) =>
+                            updateArg(key, val === '' ? undefined : Number(val))
+                          }
                         />
                       ) : prop.enum ? (
                         <TextInput
                           id={`arg-${key}`}
-                          value={String(toolArgs[key] || '')}
+                          value={String(toolArgs[key] ?? '')}
                           onChange={(_e, val) => updateArg(key, val)}
                           placeholder={`Options: ${prop.enum.join(', ')}`}
                         />
                       ) : (
                         <TextInput
                           id={`arg-${key}`}
-                          value={String(toolArgs[key] || '')}
+                          value={String(toolArgs[key] ?? '')}
                           onChange={(_e, val) => updateArg(key, val)}
                         />
                       )}
