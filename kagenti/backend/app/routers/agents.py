@@ -12,7 +12,7 @@ import re
 import socket
 import ipaddress
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from urllib.parse import urlparse
 
 import httpx
@@ -107,6 +107,7 @@ from app.routers.skills import _sanitize_k8s_name
 from app.utils.routes import (
     create_route_for_agent_or_tool,
     detect_platform,
+    rollback_workload_resources,
     route_exists,
     sanitize_log,
     select_route_port,
@@ -3757,6 +3758,10 @@ async def create_agent(
 
     request = apply_agent_import_defaults(request, kube)
 
+    # Persistent resources created during this call, tracked so we can roll them
+    # back if a later creation step fails (avoids leaking a workload, Service,
+    # AgentRuntime, or route). Only used by the image-deployment path below.
+    created: List[Tuple[str, str]] = []
     try:
         if request.deploymentMethod == "image":
             # Deploy from existing container image
@@ -3829,6 +3834,7 @@ async def create_agent(
                     namespace=request.namespace,
                     body=workload_manifest,
                 )
+                created.append(("Deployment", request.name))
                 logger.info(
                     f"Created Deployment '{request.name}' in namespace '{request.namespace}'"
                 )
@@ -3846,6 +3852,7 @@ async def create_agent(
                     namespace=request.namespace,
                     body=workload_manifest,
                 )
+                created.append(("StatefulSet", request.name))
                 logger.info(
                     f"Created StatefulSet '{request.name}' in namespace '{request.namespace}'"
                 )
@@ -3863,6 +3870,7 @@ async def create_agent(
                     namespace=request.namespace,
                     body=workload_manifest,
                 )
+                created.append(("Job", request.name))
                 logger.info(f"Created Job '{request.name}' in namespace '{request.namespace}'")
             elif request.workloadType == WORKLOAD_TYPE_SANDBOX:
                 sandbox_manifest = _build_sandbox_manifest(
@@ -3878,6 +3886,7 @@ async def create_agent(
                     namespace=request.namespace,
                     body=sandbox_manifest,
                 )
+                created.append(("Sandbox", request.name))
                 logger.info(f"Created Sandbox '{request.name}' in namespace '{request.namespace}'")
 
             # Create Service (not needed for Jobs).
@@ -3890,6 +3899,7 @@ async def create_agent(
                     service_manifest,
                     request.workloadType,
                 )
+                created.append(("Service", request.name))
 
             # Create AgentRuntime CR so the per-agent AuthBridge config (mtls /
             # authBridgeMode / tlsBridgeMode) is applied. Sandbox is included
@@ -3905,6 +3915,7 @@ async def create_agent(
                     mtls_mode=request.mtlsMode,
                     tls_bridge_enabled=request.tlsBridgeEnabled,
                 )
+                created.append(("AgentRuntime", request.name))
 
             message = f"Agent '{request.name}' deployed as {request.workloadType} successfully."
 
@@ -3924,6 +3935,11 @@ async def create_agent(
                     service_name=request.name,
                     service_port=service_port,
                 )
+                # create_route_for_agent_or_tool makes an HTTPRoute or an OpenShift
+                # Route depending on platform; track both so rollback deletes the
+                # right one (the other 404s and is swallowed).
+                created.append(("HTTPRoute", request.name))
+                created.append(("Route", request.name))
                 message += " HTTPRoute/Route created for external access."
 
         else:
@@ -3992,6 +4008,10 @@ async def create_agent(
         )
 
     except ApiException as e:
+        # Roll back only what THIS call created (tracked in `created`); if the very
+        # first create 409'd, `created` is empty and rollback is a no-op, so a
+        # pre-existing agent is never deleted.
+        rollback_workload_resources(kube, request.namespace, created)
         if e.status == 409:
             raise HTTPException(
                 status_code=409,
@@ -4009,6 +4029,15 @@ async def create_agent(
             )
         logger.error(f"Failed to create agent: {e}")
         raise HTTPException(status_code=e.status, detail=str(e.reason))
+    except HTTPException:
+        # Validation errors (400) raised above — nothing created yet, re-raise as-is.
+        raise
+    except Exception as e:
+        # Non-API failure (e.g. platform detection in route creation) after some
+        # resources were already created — roll back before surfacing a 500.
+        rollback_workload_resources(kube, request.namespace, created)
+        logger.error(f"Unexpected error creating agent '{request.name}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create agent: {e}")
 
 
 class FinalizeShipwrightBuildRequest(BaseModel):
