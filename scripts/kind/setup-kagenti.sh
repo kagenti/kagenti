@@ -677,7 +677,7 @@ if $WITH_SPIRE; then
     --set tornjak-frontend.service.port=3000
 
   log_info "Waiting for SPIRE pods in zero-trust-workload-identity-manager..."
-  local deadline=$((SECONDS + 120))
+  deadline=$((SECONDS + 120))
   until kubectl get pod --no-headers -l app.kubernetes.io/instance=spire \
     -n zero-trust-workload-identity-manager 2>/dev/null | grep -q .; do
     (( SECONDS >= deadline )) && { log_error "Timed out waiting for SPIRE pods"; exit 1; }
