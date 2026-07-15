@@ -1,0 +1,150 @@
+{{- if .Values.featureFlags.traceAnalysis }}
+# Trace Analysis component — deployed when featureFlags.traceAnalysis is true.
+# Fetches and analyzes agent traces from MLflow and backs the "Trace Analysis"
+# card on the Observability page. The card's link target is the
+# TRACE_ANALYSIS_DASHBOARD_URL set in templates/ui.yaml; the HTTPRoute hostname
+# below MUST match it (trace-analysis.<domainName>).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trace-analysis
+  namespace: "{{ .Values.ui.namespace }}"
+  labels:
+    app: trace-analysis
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.traceAnalysis.replicaCount }}
+  selector:
+    matchLabels:
+      app: trace-analysis
+  template:
+    metadata:
+      labels:
+        app: trace-analysis
+    spec:
+      containers:
+        - name: trace-analysis
+          image: "{{ .Values.traceAnalysis.image.repository }}:{{ .Values.traceAnalysis.image.tag }}"
+          imagePullPolicy: {{ .Values.traceAnalysis.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: MLFLOW_TRACKING_URI
+              value: {{ .Values.traceAnalysis.mlflowTrackingUri | quote }}
+            - name: MAX_TRACES
+              value: {{ .Values.traceAnalysis.maxTraces | quote }}
+            {{- if .Values.traceAnalysis.auth.enabled }}
+            # Full auth: OAuth2 client-credentials for MLflow + Keycloak UI login.
+            # All credentials come from the same mlflow-oauth-secret.
+            - name: AUTH_ENABLED
+              value: "true"
+            - name: MLFLOW_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.traceAnalysis.auth.secretName | quote }}
+                  key: OIDC_CLIENT_ID
+                  optional: true
+            - name: MLFLOW_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.traceAnalysis.auth.secretName | quote }}
+                  key: OIDC_CLIENT_SECRET
+                  optional: true
+            - name: KEYCLOAK_TOKEN_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.traceAnalysis.auth.secretName | quote }}
+                  key: OIDC_TOKEN_URL
+                  optional: true
+            - name: KEYCLOAK_URL
+              value: {{ .Values.keycloak.url | quote }}
+            - name: KEYCLOAK_PUBLIC_URL
+              value: {{ .Values.keycloak.publicUrl | quote }}
+            - name: KEYCLOAK_REALM
+              value: {{ .Values.keycloak.realm | quote }}
+            - name: OIDC_REDIRECT_URI
+              value: "http://trace-analysis.{{ .Values.ui.domainName }}:8080/auth/callback"
+            - name: SESSION_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.traceAnalysis.auth.secretName | quote }}
+                  key: OIDC_CLIENT_SECRET
+                  optional: true
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.traceAnalysis.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trace-analysis
+  namespace: "{{ .Values.ui.namespace }}"
+  labels:
+    app: trace-analysis
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
+spec:
+  selector:
+    app: trace-analysis
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  type: ClusterIP
+---
+{{- if .Values.openshift }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: trace-analysis
+  namespace: "{{ .Values.ui.namespace }}"
+  labels:
+    app: trace-analysis
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
+  annotations:
+    openshift.io/host.generated: "true"
+spec:
+  path: /
+  port:
+    targetPort: http
+  to:
+    kind: Service
+    name: trace-analysis
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- else }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: trace-analysis
+  namespace: "{{ .Values.ui.namespace }}"
+  labels:
+    app: trace-analysis
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: http
+      namespace: "{{ .Values.ui.namespace }}"
+  hostnames:
+    - "trace-analysis.{{ .Values.ui.domainName }}"
+  rules:
+    - backendRefs:
+        - name: trace-analysis
+          port: 8080
+{{- end }}
+{{- end }}

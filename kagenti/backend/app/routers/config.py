@@ -40,6 +40,7 @@ class FeatureFlagsResponse(BaseModel):
     agentImportDefaults: bool = Field(
         description="Auto-inject MCP_URL and LLM env vars on agent import"
     )
+    traceAnalysis: bool = Field(description="Trace-analysis Observability card")
 
 
 class ComponentStatus(BaseModel):
@@ -91,6 +92,7 @@ async def get_feature_flags(
         authbridgeAPI=settings.kagenti_feature_flag_authbridge_api,
         admin=settings.kagenti_feature_flag_admin,
         agentImportDefaults=settings.kagenti_feature_flag_agent_import_defaults,
+        traceAnalysis=settings.kagenti_feature_flag_trace_analysis,
     )
 
 
@@ -113,6 +115,7 @@ async def get_dashboard_config() -> DashboardConfigResponse:
         traces=settings.traces_dashboard_url,
         network=settings.network_dashboard_url or f"http://kiali.{domain}:8080",
         mlflow=settings.mlflow_dashboard_url,
+        traceAnalysis=settings.trace_analysis_dashboard_url or None,
         mcpInspector=settings.mcp_inspector_url or None,
         mcpProxy=settings.mcp_proxy_full_address or None,
         keycloakConsole=(
