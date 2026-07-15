@@ -377,7 +377,7 @@ The operator automatically registers an OAuth2 client in Keycloak for each agent
 | Mode | How it works | When to use |
 |---|---|---|
 | **Client secrets** (default) | Operator uses admin credentials to register clients; per-agent OAuth2 secrets are provisioned and mounted into pods | Default install; no SPIRE required |
-| **SPIFFE auth** (recommended) | Operator and agents authenticate to Keycloak using their SPIFFE JWT-SVIDs; no credentials provisioned or stored | Requires SPIRE; see [SPIFFE authentication guide](./spiffe-keycloak-auth.md) |
+| **SPIFFE auth** (recommended) | Operator and agents authenticate to Keycloak using their SPIFFE JWT-SVIDs; no credentials provisioned or stored | Requires SPIRE; see [SPIFFE authentication guide](./authentication.md) |
 
 Two secrets are involved in the default (client secrets) mode:
 
@@ -419,7 +419,7 @@ kubectl create secret generic keycloak-admin-secret -n kagenti-system \
 
 Then re-run `helm upgrade` to trigger a new `kagenti-agent-oauth-secret-job` run and re-register OAuth clients.
 
-> **Production recommendation:** Enable SPIFFE-based authentication with `--enable-spiffe-auth` to eliminate all provisioned credentials. See the [SPIFFE authentication guide](./spiffe-keycloak-auth.md) for setup and the [Identity Guide](./identity-guide.md) for architecture details.
+> **Production recommendation:** Enable SPIFFE-based authentication with `--enable-spiffe-auth` to eliminate all provisioned credentials. See the [SPIFFE authentication guide](./authentication.md) for setup and the [Identity Guide](./identity-guide.md) for architecture details.
 
 ---
 
