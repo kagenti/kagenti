@@ -370,13 +370,20 @@ kubectl get secret keycloak-initial-admin -n keycloak \
 
 ---
 
-## Keycloak Admin Credentials for Agent Namespaces
+## Keycloak Client Registration
 
-The [AuthBridge](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge) stack needs Keycloak admin credentials for automatic OAuth2 client registration. Two distinct secrets are involved:
+The operator automatically registers an OAuth2 client in Keycloak for each agent and tool workload. There are two ways this authentication can work:
+
+| Mode | How it works | When to use |
+|---|---|---|
+| **Client secrets** (default) | Operator uses admin credentials to register clients; per-agent OAuth2 secrets are provisioned and mounted into pods | Default install; no SPIRE required |
+| **SPIFFE auth** (recommended) | Operator and agents authenticate to Keycloak using their SPIFFE JWT-SVIDs; no credentials provisioned or stored | Requires SPIRE; see [SPIFFE authentication guide](./spiffe-keycloak-auth.md) |
+
+Two secrets are involved in the default (client secrets) mode:
 
 | Secret | Namespace | Purpose |
 |--------|-----------|---------|
-| `keycloak-admin-secret` | `kagenti-system` | Admin credentials used by the operator's ClientRegistrationReconciler and the AuthBridge client-registration sidecar to register per-agent OAuth clients in Keycloak |
+| `keycloak-admin-secret` | `kagenti-system` | Admin credentials used by the operator's `ClientRegistrationReconciler` to register per-agent OAuth clients in Keycloak |
 | per-agent OAuth client secrets | agent namespaces (`team1`, `team2`, …) | Per-workload credentials created *by* client registration; consumed by the agent pods |
 
 See the [Identity Guide](./identity-guide.md) for a full description of the client-registration flow.
@@ -412,7 +419,7 @@ kubectl create secret generic keycloak-admin-secret -n kagenti-system \
 
 Then re-run `helm upgrade` to trigger a new `kagenti-agent-oauth-secret-job` run and re-register OAuth clients.
 
-> **Security note:** For production deployments, use a dedicated Keycloak service account with limited permissions instead of the admin account. See the [Identity Guide](./identity-guide.md) for details.
+> **Production recommendation:** Enable SPIFFE-based authentication with `--enable-spiffe-auth` to eliminate all provisioned credentials. See the [SPIFFE authentication guide](./spiffe-keycloak-auth.md) for setup and the [Identity Guide](./identity-guide.md) for architecture details.
 
 ---
 
