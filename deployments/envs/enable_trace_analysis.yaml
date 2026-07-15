@@ -1,0 +1,15 @@
+featureFlags:
+  traceAnalysis: true
+
+ui:
+  frontend:
+    image: ghcr.io/kagenti/kagenti-ui-v2
+    tag: latest
+  backend:
+    image: ghcr.io/kagenti/kagenti-backend
+    tag: latest
+
+traceAnalysis:
+  image:
+    repository: ghcr.io/kagenti/trace-analysis
+    tag: latest

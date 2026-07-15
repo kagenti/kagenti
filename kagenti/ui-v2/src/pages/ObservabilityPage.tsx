@@ -27,6 +27,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 
 import { configService } from '@/services/api';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 
 interface DashboardCardProps {
   title: string;
@@ -85,6 +86,7 @@ const DashboardCard: React.FC<DashboardCardProps> = ({
 };
 
 export const ObservabilityPage: React.FC = () => {
+  const features = useFeatureFlags();
   const { data: dashboards, isLoading, isError } = useQuery({
     queryKey: ['dashboards'],
     queryFn: () => configService.getDashboards(),
@@ -95,6 +97,7 @@ export const ObservabilityPage: React.FC = () => {
   const tracesUrl = dashboards?.traces || '';
   const networkUrl = dashboards?.network || '';
   const mlflowUrl = dashboards?.mlflow || '';
+  const traceAnalysisUrl = dashboards?.traceAnalysis || '';
 
   return (
     <>
@@ -155,6 +158,19 @@ export const ObservabilityPage: React.FC = () => {
                 icon={<CubesIcon />}
                 url={mlflowUrl}
                 buttonText="Open MLflow"
+                isLoading={isLoading}
+              />
+            </GridItem>
+          )}
+
+          {features.traceAnalysis && traceAnalysisUrl && (
+            <GridItem md={6} lg={4}>
+              <DashboardCard
+                title="Trace Analysis"
+                description="Analyze recent agent-invocation traces — view each trace's input, output, and the number of LLM and tool spans."
+                icon={<ChartLineIcon />}
+                url={traceAnalysisUrl}
+                buttonText="Open Trace Analysis"
                 isLoading={isLoading}
               />
             </GridItem>
