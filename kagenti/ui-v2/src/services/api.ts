@@ -719,6 +719,7 @@ export interface DashboardConfig {
   traces: string;
   network: string;
   mlflow: string;
+  traceAnalysis: string | null;
   mcpInspector: string | null;
   mcpProxy: string | null;
   keycloakConsole: string;

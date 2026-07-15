@@ -9,7 +9,7 @@ Tool API endpoints.
 import asyncio
 import logging
 import re
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from contextlib import AsyncExitStack
 from urllib.parse import urlparse
 
@@ -90,6 +90,7 @@ from app.services.shipwright import (
 from app.utils.routes import (
     create_route_for_agent_or_tool,
     lookup_service_port,
+    rollback_workload_resources,
     route_exists,
     sanitize_log,
     select_route_port,
@@ -1588,6 +1589,10 @@ async def create_tool(
     For source builds, creates a Shipwright Build + BuildRun and returns.
     The Deployment/StatefulSet is created later via the finalize-shipwright-build endpoint.
     """
+    # Persistent resources created during this call, tracked so we can roll them
+    # back if a later creation step fails (avoids leaking a workload, Service,
+    # AgentRuntime, or route). Only used by the image-deployment path below.
+    created: List[Tuple[str, str]] = []
     try:
         # Validate workload type
         if request.workloadType not in [WORKLOAD_TYPE_DEPLOYMENT, WORKLOAD_TYPE_STATEFULSET]:
@@ -1730,6 +1735,7 @@ async def create_tool(
                     auth_bridge_mode=request.authBridgeMode,
                 )
                 kube.create_statefulset(request.namespace, workload_manifest)
+                created.append(("StatefulSet", request.name))
                 logger.info(
                     f"Created StatefulSet '{request.name}' for tool in namespace '{request.namespace}'"
                 )
@@ -1752,6 +1758,7 @@ async def create_tool(
                     auth_bridge_mode=request.authBridgeMode,
                 )
                 kube.create_deployment(request.namespace, workload_manifest)
+                created.append(("Deployment", request.name))
                 logger.info(
                     f"Created Deployment '{request.name}' for tool in namespace '{request.namespace}'"
                 )
@@ -1764,6 +1771,7 @@ async def create_tool(
             )
             kube.create_service(request.namespace, service_manifest)
             service_name = _get_tool_service_name(request.name)
+            created.append(("Service", service_name))
             logger.info(
                 f"Created Service '{service_name}' for tool in namespace '{request.namespace}'"
             )
@@ -1776,6 +1784,7 @@ async def create_tool(
                 workload_type=request.workloadType,
                 auth_bridge_mode=request.authBridgeMode,
             )
+            created.append(("AgentRuntime", request.name))
 
             message = f"Tool '{request.name}' deployment started ({request.workloadType})."
 
@@ -1793,6 +1802,11 @@ async def create_tool(
                     service_name=service_name,
                     service_port=service_port,
                 )
+                # create_route_for_agent_or_tool makes an HTTPRoute or an OpenShift
+                # Route depending on platform; track both so rollback deletes the
+                # right one (the other 404s and is swallowed).
+                created.append(("HTTPRoute", request.name))
+                created.append(("Route", request.name))
                 message += " HTTPRoute/Route created for external access."
 
             return CreateToolResponse(
@@ -1803,6 +1817,10 @@ async def create_tool(
             )
 
     except ApiException as e:
+        # Roll back only what THIS call created (tracked in `created`); if the very
+        # first create 409'd, `created` is empty and rollback is a no-op, so a
+        # pre-existing tool is never deleted.
+        rollback_workload_resources(kube, request.namespace, created)
         if e.status == 409:
             raise HTTPException(
                 status_code=409,
@@ -1815,6 +1833,19 @@ async def create_tool(
             )
         logger.error(f"Failed to create tool: {e}")
         raise HTTPException(status_code=e.status, detail=str(e.reason))
+    except HTTPException:
+        # Validation errors (400) raised above — nothing created yet, re-raise as-is.
+        raise
+    except Exception as e:
+        # Non-API failure (e.g. platform detection in route creation) after some
+        # resources were already created — roll back before surfacing a 500.
+        rollback_workload_resources(kube, request.namespace, created)
+        logger.error(
+            "Unexpected error creating tool '%s': %s",
+            sanitize_log(request.name),
+            sanitize_log(str(e)),
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to create tool: {e}")
 
 
 # Shipwright Build Endpoints for Tools
