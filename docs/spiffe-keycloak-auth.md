@@ -94,9 +94,80 @@ Removes docs describing a credential provisioning mechanism that no longer exist
 
 ---
 
-## How Agent/Tool Authentication Works
+## How Operator SPIFFE Auth Works (End-to-End)
 
-### What the operator does per agent at registration time
+This flow runs **once at install time** to configure Keycloak, then **on every reconcile** when the operator needs to register agent clients.
+
+### Step 1: Bootstrap Job (install/upgrade)
+
+When `spiffe.operatorAuth.enabled=true`, a Helm post-install/upgrade Job runs automatically. The job (`operator-client-bootstrap`) uses admin credentials **one time** to configure Keycloak so the operator can authenticate without them afterwards:
+
+1. Creates a SPIFFE Identity Provider in Keycloak pointing at SPIRE's OIDC Discovery Provider (so Keycloak can validate JWT-SVIDs)
+2. Creates a Keycloak client for the operator with `clientAuthenticatorType: federated-jwt` and the operator's SPIFFE ID as the subject (`spiffe://localtest.me/ns/kagenti-system/sa/controller-manager`)
+3. Assigns the `manage-clients` role to that client (scoped — not full admin)
+
+After this job completes, the admin credentials are no longer needed for operator authentication.
+
+### Step 2: Operator authenticates to Keycloak (every reconcile)
+
+When the operator needs to register a new agent client:
+
+1. The **spiffe-helper sidecar** in the operator pod continuously fetches the operator's JWT-SVID from the SPIRE workload API socket and writes it to `/opt/jwt_svid.token`
+2. The operator reads the JWT-SVID from that file
+3. The operator sends a `client_credentials` grant to Keycloak with the JWT-SVID as a `client_assertion` (assertion type: `jwt-spiffe`)
+4. Keycloak validates the JWT-SVID signature against SPIRE's JWKS, confirms the `aud` claim matches the realm issuer URL, and returns an access token
+5. The operator uses that access token to call the Keycloak Admin API
+
+```
+Operator pod
+├─ spiffe-helper sidecar ──→ SPIRE workload API socket
+│   writes JWT-SVID to /opt/jwt_svid.token (auto-rotates)
+└─ manager binary
+    reads JWT-SVID
+    POST /realms/kagenti/protocol/openid-connect/token
+      client_assertion_type: jwt-spiffe
+      client_assertion: <JWT-SVID>
+    ──→ Keycloak validates via SPIFFE IdP JWKS
+    ←── access token (manage-clients scope)
+    uses token to call Admin API
+```
+
+---
+
+## How Agent/Tool SPIFFE Auth Works (End-to-End)
+
+### Step 1: Operator registers each agent (per-workload)
+
+When the operator detects a new agent/tool Deployment with `CLIENT_AUTH_TYPE=federated-jwt`:
+
+1. Calls Keycloak Admin API (using its own JWT-SVID token from above)
+2. Creates a Keycloak client for the workload with `clientAuthenticatorType: federated-jwt`
+3. Sets `jwt.credential.sub` to the workload's SPIFFE ID (e.g. `spiffe://localtest.me/ns/team1/sa/weather-service`)
+4. **Does not** create a Kubernetes credential Secret — AuthBridge doesn't need one
+
+### Step 2: AuthBridge exchanges tokens for each outbound request
+
+When an agent makes an outbound call that requires authentication:
+
+1. The **authbridge-proxy sidecar** in the agent pod fetches the workload's JWT-SVID from the SPIRE workload API socket (using the go-spiffe SDK — no separate binary needed)
+2. Sends a `client_credentials` grant to Keycloak with the JWT-SVID as a `client_assertion`
+3. Keycloak validates and returns an access token scoped to that workload's SPIFFE identity
+4. AuthBridge attaches the access token to the outbound request
+
+```
+Agent pod
+└─ authbridge-proxy sidecar
+    fetches JWT-SVID from SPIRE workload API socket (go-spiffe SDK)
+    POST /realms/kagenti/protocol/openid-connect/token
+      client_assertion_type: jwt-spiffe
+      client_assertion: <workload JWT-SVID>
+    ──→ Keycloak validates; returns access token
+    attaches token to outbound requests
+```
+
+---
+
+## How Agent/Tool Registration Works (Source Code Detail)
 
 When the operator detects a new agent/tool Deployment:
 
