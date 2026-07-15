@@ -14,9 +14,10 @@ Our infrastructure was not built for this. The cloud-native stack assumes determ
 
 Not every primitive is equally novel, and we think saying so is what makes the novel parts credible. Three honest tiers run through this document:
 
-- **Frontier — genuinely new.** Skill-bound identity (a tampered capability changes the agent's cryptographic identity, fail-closed), the adaptive memory manifold, and the surrogate approval agent. These are ideas we have not seen elsewhere; some are still designs on the bench.
-- **Novel composition — new arrangement of known parts.** A single policy decision point fed by data lineage and budget; a zero-trust credential plane where the agent uses keys it can never read; signed identity-carrying events. The pieces exist; wiring them into one enforceable path for agents is the contribution.
-- **Standards, hardened.** Runtime workload identity (SPIFFE/SPIRE), signed agent cards (A2A), and just-in-time token exchange (RFC 8693). We are strengthening and integrating these, not reinventing them — and the frontier work is what we layer on top.
+- **Frontier — genuinely new.** Skill-bound identity (a tampered capability changes the agent's cryptographic identity, fail-closed), provenance-gated context (a fragment's lineage decides whether the model may act on it), and the surrogate approval agent. These are ideas we have not seen elsewhere; some are still designs on the bench.
+- **Novel composition — new arrangement of known parts.** A single policy decision point fed by data lineage and budget; context assembly pushed out of the agent into a transparent governed stage; a zero-trust credential plane where the agent uses keys it can never read; a crash-recovery checkpoint that is also the agent's context-compaction artifact; signed identity-carrying events. The pieces exist; wiring them into one enforceable path for agents is the contribution.
+- **Standards, hardened.** Runtime workload identity (SPIFFE/SPIRE), signed agent cards (A2A), just-in-time token exchange (RFC 8693), and durable recovery via event-sourcing + snapshots (Temporal/Orleans/Akka lineage). We are strengthening and integrating these, not reinventing them — and the frontier work is what we layer on top.
+- **Open research bet.** The self-organizing, query-shaped memory layer (the "adaptive manifold") is an honest exploration, not a claim — adjacent to Drift-Adapter and memory-consolidation work, with a distinctive usage-driven angle we are still testing.
 
 ## The problem, stated plainly
 
@@ -108,7 +109,7 @@ We are redefining the human–agent relationship, shifting from active micro-man
 
 ## Pillar III — The Runtime Substrate
 
-*How an agent lives, remembers, recovers, and reaches the world.*
+*How an agent lives, remembers, recovers, is fed, and reaches the world.*
 
 ### State, Session & Resiliency — durable, recoverable, portable
 
@@ -116,13 +117,24 @@ We are redefining the human–agent relationship, shifting from active micro-man
 
 **Horizon:** A serverless model for agents — scale-to-zero when idle, fast cold-start regardless of how long the conversation has run, and session mobility and self-healing recovery as native platform capabilities rather than bespoke integrations each team rebuilds.
 
-**The innovation — composition:** durable logs and checkpointing are known techniques. The new arrangement is treating the *agent session itself* as the portable, replayable unit — so a conversation can scale to zero, cold-start in constant time regardless of its length, and be reconstituted on a different instance, making an agent as elastic and mobile as a stateless service without being stateless.
+**The innovation — composition, with two sharp edges.** Event-sourcing, snapshots, and workload mobility are textbook distributed-systems patterns (Temporal, Orleans, Akka), and we use them as such — we are not claiming to have invented durable recovery. Applying them to agents surfaces two ideas we *have not* seen elsewhere:
+
+- **The checkpoint is semantically meaningful to the agent, not an opaque blob.** The same artifact that *compacts an agent's context window* — a summarized conversation the model can actually reason over — is the artifact that *truncates the replay log*. Context compaction and crash-recovery snapshotting become the same operation, so cold-start is O(1) in turns and the recovered state is native to the agent rather than a serialized memory dump.
+- **A recovery-boundary failure taxonomy.** We classify agent failures by *where in the turn/inference/tool-call cycle the crash lands* — between turns, mid-inference, mid-tool-call, cross-component — because each boundary demands a different replay/idempotency guarantee. Fault taxonomies for agents exist; organizing them by recovery boundary to *derive the primitives a platform must provide* is the contribution.
 
 ### Long-Term Memory — the cognitive foundation
 
 We are building the cognitive foundation for next-generation AI by transforming how autonomous agents remember, marrying immediate software systems with long-term neural design. In the near term, we are establishing **Long-Term Memory (LTM) as a platform-managed middleware layer** to continuously hydrate stateless agents with vital operational context at runtime. But stateful hydration is just the first step: our long-term research introduces **brain-inspired representation plasticity** to this layer, treating stored document vectors as mutable coordinates that warp, drift, and split under the gravity of live query streams. By uniting robust context plumbing with this adaptive memory manifold, we are creating a self-healing retrieval system that organically tracks shifting enterprise language without ever needing to touch the underlying, frozen LLM weights.
 
-**The innovation — frontier, and a second flagship:** *a memory that reshapes itself.* Retrieval-augmented memory today is static — vectors are written once and queried against a frozen embedding space. The new idea is a memory substrate whose stored representations *drift and reorganize* under live query pressure, so the system adapts to how an enterprise's language actually shifts over time without retraining or touching the model's weights. Memory becomes a first-class, plastic platform layer rather than a bolt-on vector store.
+**The innovation — an exploratory research bet, stated honestly.** Two things here are already real elsewhere, and we build on them: hydrating an agent from an externalized memory layer (Mem0, Letta) and realigning a vector store without retraining the backbone model (Drift-Adapter, backward-compatible embeddings, query-drift compensation). What we are exploring beyond that prior art is the *driver*: memory that reorganizes **continuously and unsupervised, shaped by the live query distribution itself** — a usage-driven, Hebbian "what gets asked reshapes what is stored," rather than an offline drift-detection batch or an encoder upgrade. This is a research direction on the bench, not a shipped capability — but if it holds, memory becomes a self-organizing platform layer that tracks how an enterprise's language actually shifts, without ever touching the frozen model.
+
+### Context Engineering — governing what enters the window
+
+**Today:** An agent is only as good — and only as safe — as what lands in its context window: conversation history, tool outputs, retrieved documents, intermediate reasoning. Left to each agent, this is managed ad hoc, and an overstuffed or poisoned window degrades accuracy, inflates cost, and widens the injection surface. Rosso is building context assembly, compression, and pruning as a *transparent platform stage* wrapped around every model call — governed by policy with safety invariants, so the agent code never has to manage its own window.
+
+**Horizon:** Context that is not just shaped but *governed* — every fragment entering the window carries provenance (where it came from, through which agents and sessions it traveled), and that provenance becomes an input to the authorization decision, not merely a line in a trace.
+
+**The innovation — a composition with a frontier edge.** Pushing context assembly *out of the agent and into a transparent, governed request-path stage* is an architectural inversion of today's in-agent RAG and prompt frameworks — a novel placement, though each ingredient (retrieval middleware, redaction, prompt injection) exists in AI gateways. The genuinely new idea is **provenance-gated context**: feeding per-fragment lineage back into a runtime enforcement gate — filtering or denying a response because a context chunk's *source* lacks the caller's clearance. Observability tools capture context lineage for humans to read after the fact; closing that loop so lineage *drives the decision before the model acts* is, as far as we can find, not standard practice.
 
 ### Eventing & Governed Egress — communication and reach the agent can't abuse
 
@@ -152,7 +164,7 @@ We are building the cognitive foundation for next-generation AI by transforming 
 
 ## What the primitives compose into: governed autonomy
 
-Taken one at a time, some of these are features and some are frontier research. Taken together, they are something new: a platform on which an agent can be genuinely autonomous *and* genuinely governable at the same time. The innovation is not any single box — it is the insistence that identity, integrity, delegation, policy, cost, memory, and reach compose into *one enforceable path*, and the willingness to invent the missing pieces (skill-bound identity, plastic memory, the surrogate approver) rather than stop at what the standards already give us.
+Taken one at a time, some of these are features and some are frontier research. Taken together, they are something new: a platform on which an agent can be genuinely autonomous *and* genuinely governable at the same time. The innovation is not any single box — it is the insistence that identity, integrity, delegation, policy, cost, context, memory, and reach compose into *one enforceable path*, and the willingness to invent the missing pieces (skill-bound identity, provenance-gated context, the surrogate approver) rather than stop at what the standards already give us.
 
 Attested identity means you know what you're trusting, down to the skills it's made of. Delegation and consent mean the agent acts with borrowed, bounded, revocable authority — and a human, or eventually that human's trusted surrogate, in the loop where it counts. Policy decides every action from full context, within a budget, with data lineage in view. Durable state and long-term memory make the agent recoverable enough — and contextual enough — to trust with real work. Eventing and governed egress mean it can reach the world while every hop is authenticated and every credential stays out of its hands. And sandbox isolation means all of this runs contained by construction.
 
