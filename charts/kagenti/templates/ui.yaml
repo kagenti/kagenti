@@ -23,6 +23,11 @@ data:
   {{- else }}
   MLFLOW_DASHBOARD_URL: ""
   {{- end }}
+  {{- if .Values.featureFlags.traceAnalysis }}
+  TRACE_ANALYSIS_DASHBOARD_URL: "http://trace-analysis.{{ .Values.ui.domainName }}:8080"
+  {{- else }}
+  TRACE_ANALYSIS_DASHBOARD_URL: ""
+  {{- end }}
   NETWORK_TRAFFIC_DASHBOARD_URL: "http://kiali.{{ .Values.ui.domainName }}:8080"
   MCP_INSPECTOR_URL: "http://mcp-inspector.{{ .Values.ui.domainName }}:8080"
   # Proxy served on the inspector host under /mcp-proxy by the nginx sidecar
@@ -157,6 +162,8 @@ spec:
               value: "{{ .Values.featureFlags.authbridgeAPI }}"
             - name: KAGENTI_FEATURE_FLAG_ADMIN
               value: "{{ .Values.featureFlags.admin }}"
+            - name: KAGENTI_FEATURE_FLAG_TRACE_ANALYSIS
+              value: "{{ .Values.featureFlags.traceAnalysis }}"
             - name: KEYCLOAK_URL
               value: {{ .Values.keycloak.url | quote }}
             - name: KEYCLOAK_PUBLIC_URL
@@ -179,6 +186,12 @@ spec:
                 configMapKeyRef:
                   name: "{{ .Values.ui.configmap }}"
                   key: "MLFLOW_DASHBOARD_URL"
+                  optional: true
+            - name: TRACE_ANALYSIS_DASHBOARD_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: "{{ .Values.ui.configmap }}"
+                  key: "TRACE_ANALYSIS_DASHBOARD_URL"
                   optional: true
             - name: MCP_INSPECTOR_URL
               valueFrom:
@@ -471,8 +484,9 @@ rules:
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["rolebindings"]
     verbs: ["get", "create"]
-  {{- if .Values.featureFlags.sandbox }}
-  # PersistentVolumeClaims for agent workspace storage (sandbox)
+  {{- if or .Values.featureFlags.sandbox .Values.featureFlags.simulatedTools }}
+  # PersistentVolumeClaims — sandbox agent workspace storage, and simulated-tool
+  # StatefulSet volumes that the delete path enumerates and tears down (#2151).
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "create", "patch", "delete"]
