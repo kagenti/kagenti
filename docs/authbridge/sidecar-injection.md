@@ -19,15 +19,20 @@ kubectl get pods -n team1 -l app=weather-service \
 
 | Mode | Regular containers | Init containers | Notes |
 |---|---|---|---|
-| `proxy-sidecar` (default) | `<agent>` `authbridge-proxy` | — | spiffe-helper runs as a process **inside** `authbridge-proxy` when SPIRE is on |
+| `proxy-sidecar` (default) | `<agent>` `authbridge-proxy` | — | SPIRE integration is in-process inside `authbridge-proxy` when `SPIRE_ENABLED=true` |
 | `lite` | `<agent>` `authbridge-proxy` | — | Same shape as proxy-sidecar; uses `authbridge-lite` image (auth-only) |
-| `envoy-sidecar` | `<agent>` `envoy-proxy` | `proxy-init` | spiffe-helper runs as a process **inside** `envoy-proxy` when SPIRE is on; proxy-init is privileged |
+| `envoy-sidecar` | `<agent>` `envoy-proxy` | `proxy-init` | SPIRE integration is in-process inside `envoy-proxy` when `SPIRE_ENABLED=true`; proxy-init is privileged |
 | `waypoint` | — | — | Not injected as a sidecar; waypoint is a standalone deployment |
 
-> **spiffe-helper is not a separate container.** It is bundled inside both
-> `authbridge-proxy` (proxy-sidecar/lite) and `envoy-proxy` (envoy-sidecar) and
-> starts conditionally based on the `SPIRE_ENABLED` env var, which the operator
-> sets per workload based on the `kagenti.io/spiffe-helper-inject` label.
+> **There is no spiffe-helper container or process.** AuthBridge uses the
+> [go-spiffe](https://github.com/spiffe/go-spiffe) SDK directly to open a
+> `workloadapi.JWTSource` against the SPIRE workload API socket
+> (`/spiffe-workload-api/spire-agent.sock`) and fetch JWT-SVIDs in-process.
+> The files in `/opt` (`svid.pem`, `jwt_svid.token`, etc.) are written by a
+> goroutine inside AuthBridge itself for compatibility with external file readers
+> — not by a separate binary. SPIRE integration is enabled or disabled via the
+> `SPIRE_ENABLED` env var, which the operator sets per workload based on the
+> `kagenti.io/spiffe-helper-inject` label.
 
 ## Label vocabulary
 
