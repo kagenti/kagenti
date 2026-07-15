@@ -21,6 +21,8 @@ export interface FeatureFlags {
   externalSkills: boolean;
   /** Trace-analysis Observability card */
   traceAnalysis: boolean;
+  /** Simulated MCP tools generated from an OpenAPI spec */
+  simulatedTools: boolean;
 }
 
 const DEFAULT_FLAGS: FeatureFlags = {
@@ -34,6 +36,7 @@ const DEFAULT_FLAGS: FeatureFlags = {
   admin: false,
   externalSkills: false,
   traceAnalysis: false,
+  simulatedTools: false,
 };
 
 let cachedFlags: FeatureFlags | null = null;
@@ -58,6 +61,7 @@ export function useFeatureFlags(): FeatureFlags {
           admin: data.admin === true,
           externalSkills: data.externalSkills === true,
           traceAnalysis: data.traceAnalysis === true,
+          simulatedTools: data.simulatedTools === true,
           };
         cachedFlags = validated;
         setFlags(validated);
