@@ -34,6 +34,11 @@ APP_KUBERNETES_IO_COMPONENT = "app.kubernetes.io/component"
 KAGENTI_SPIRE_LABEL = "kagenti.io/spire"
 KAGENTI_SPIRE_ENABLED_VALUE = "enabled"
 
+# Simulated MCP tools (epic #2151)
+KAGENTI_SIMULATED_LABEL = "kagenti.io/simulated"  # safety marker; UI badge; list filter
+KAGENTI_AUTOSCALING_ANNOTATION = "kagenti.io/autoscaling"  # HPA-off marker (declarative opt-out)
+SIMULATION_HARNESS_SKILLS_MOUNT = "/app/skills-store"  # HARNESS_SKILLS_FOLDER mount path
+
 # Per-sidecar opt-out labels (envoy-proxy / spiffe-helper /
 # client-registration) are gone after kagenti-extensions#411 — they
 # referenced separate sidecars that no longer exist. The master enable

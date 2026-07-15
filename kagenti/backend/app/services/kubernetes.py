@@ -720,6 +720,46 @@ class KubernetesService:
             logger.error(f"Error patching StatefulSet {name} in {namespace}: {e}")
             raise
 
+    def get_workload_pod_status(self, namespace: str, label_selector: str) -> dict:
+        """Inspect pods matching a label selector for readiness and waiting state.
+
+        Returns {"ready": bool, "waiting_reason": str|None, "waiting_message": str|None}.
+        `ready` is True if any matching pod reports a Ready condition. The waiting
+        reason/message come from the first container found in a waiting state
+        (e.g. CrashLoopBackOff, ImagePullBackOff, CreateContainerConfigError) — the
+        signal used to derive a simulated tool's Error state (#2162).
+        """
+        namespace = _sanitize(namespace)
+        label_selector = _sanitize(label_selector)
+        try:
+            pods = self.core_api.list_namespaced_pod(
+                namespace=namespace, label_selector=label_selector
+            ).items
+        except ApiException as e:
+            # A real RBAC/connectivity failure here would otherwise silently
+            # look like "not ready" — surface it at warning level.
+            logger.warning("Error listing pods in %s (%s): %s", namespace, label_selector, e)
+            return {"ready": False, "waiting_reason": None, "waiting_message": None}
+
+        ready = False
+        waiting_reason = None
+        waiting_message = None
+        for pod in pods:
+            conditions = (pod.status and pod.status.conditions) or []
+            if any(c.type == "Ready" and c.status == "True" for c in conditions):
+                ready = True
+            container_statuses = (pod.status and pod.status.container_statuses) or []
+            for cs in container_statuses:
+                waiting = cs.state and cs.state.waiting
+                if waiting and waiting.reason and waiting_reason is None:
+                    waiting_reason = waiting.reason
+                    waiting_message = waiting.message
+        return {
+            "ready": ready,
+            "waiting_reason": waiting_reason,
+            "waiting_message": waiting_message,
+        }
+
     # -------------------------------------------------------------------------
     # Job Operations
     # -------------------------------------------------------------------------
@@ -846,6 +886,37 @@ class KubernetesService:
     def delete_persistent_volume_claim(self, namespace: str, name: str) -> None:
         """Delete a PersistentVolumeClaim by name."""
         self.core_api.delete_namespaced_persistent_volume_claim(name=name, namespace=namespace)
+
+    def list_statefulset_pvcs(self, namespace: str, name: str) -> List[str]:
+        """Names of PVCs provisioned by a StatefulSet's volumeClaimTemplates.
+
+        Generic: matches existing PVCs by the Kubernetes naming convention
+        `{template}-{sts}-{ordinal}`. Catches ordinals left behind by a prior
+        scale-down (StatefulSet PVCs are never auto-deleted). Returns [] if the
+        StatefulSet or its templates are absent.
+        """
+        try:
+            sts = self.get_statefulset(namespace, name)
+        except ApiException as e:
+            if e.status == 404:
+                return []
+            raise
+        templates = (sts.get("spec") or {}).get("volume_claim_templates") or []
+        template_names = [
+            (t.get("metadata") or {}).get("name")
+            for t in templates
+            if (t.get("metadata") or {}).get("name")
+        ]
+        if not template_names:
+            return []
+        matched: List[str] = []
+        for pvc in self.list_persistent_volume_claims(namespace):
+            for t in template_names:
+                prefix = f"{t}-{name}-"
+                if pvc.startswith(prefix) and pvc[len(prefix) :].isdigit():
+                    matched.append(pvc)
+                    break
+        return matched
 
 
 @lru_cache

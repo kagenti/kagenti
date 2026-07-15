@@ -15,6 +15,7 @@ class ResourceLabels(BaseModel):
     protocol: Optional[List[str]] = None
     framework: Optional[str] = None
     type: Optional[str] = None
+    simulated: Optional[bool] = None  # True when the kagenti.io/simulated marker is set (#2165)
 
 
 class AgentSummary(BaseModel):

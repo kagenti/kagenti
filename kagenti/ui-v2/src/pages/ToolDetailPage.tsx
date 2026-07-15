@@ -68,8 +68,16 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import yaml from 'js-yaml';
 
-import { toolService, configService, toolShipwrightService, ToolShipwrightBuildInfo } from '@/services/api';
+import { toolService, configService, toolShipwrightService, ToolShipwrightBuildInfo, simulationService } from '@/services/api';
 import { initialInvokeArgs, buildInvokeArgs } from '@/utils/toolInvoke';
+import {
+  isSimulatedLabels,
+  deriveSimState,
+  availableSimActions,
+  simStateBadgeColor,
+} from '@/utils/simulation';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
+import SeedDatabaseModal from '@/components/SeedDatabaseModal';
 
 interface StatusCondition {
   type: string;
@@ -107,14 +115,24 @@ export const ToolDetailPage: React.FC = () => {
   const { namespace, name } = useParams<{ namespace: string; name: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const features = useFeatureFlags();
   const [activeTab, setActiveTab] = React.useState<string | number>(0);
   const [expandedTools, setExpandedTools] = React.useState<Record<string, boolean>>({});
   const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = React.useState('');
   const [actionsMenuOpen, setActionsMenuOpen] = React.useState(false);
+  const [resetModalOpen, setResetModalOpen] = React.useState(false);
+  const [seedModalOpen, setSeedModalOpen] = React.useState(false);
 
   const deleteMutation = useMutation({
-    mutationFn: () => toolService.delete(namespace!, name!),
+    mutationFn: () => {
+      const cached = queryClient.getQueryData(['tool', namespace, name]) as
+        | { metadata?: { labels?: Record<string, string> } }
+        | undefined;
+      return isSimulatedLabels(cached?.metadata?.labels)
+        ? simulationService.delete(namespace!, name!)
+        : toolService.delete(namespace!, name!);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tools'] });
       navigate('/tools');
@@ -147,6 +165,16 @@ export const ToolDetailPage: React.FC = () => {
       const readyStatus = query.state.data?.readyStatus || '';
       return readyStatus === 'Ready' ? false : 5000;
     },
+  });
+
+  const simulatedTool = isSimulatedLabels(tool?.metadata?.labels);
+  const specReplicas = (tool?.spec as { replicas?: number } | undefined)?.replicas;
+
+  const { data: genStatus } = useQuery({
+    queryKey: ['simGenerationStatus', namespace, name],
+    queryFn: () => simulationService.getGenerationStatus(namespace!, name!),
+    enabled: !!namespace && !!name && features.simulatedTools && simulatedTool && (specReplicas ?? 0) > 0,
+    refetchInterval: (query) => (query.state.data?.status === 'Generating' ? 5000 : false),
   });
 
   const connectMutation = useMutation({
@@ -191,6 +219,31 @@ export const ToolDetailPage: React.FC = () => {
     queryKey: ['toolShipwrightBuildStatus', namespace, shipwrightBuildName],
     queryFn: () => toolShipwrightService.getBuildInfo(namespace!, shipwrightBuildName!),
     enabled: !!namespace && !!shipwrightBuildName && !!tool,
+  });
+
+  const lifecycleMutation = useMutation({
+    mutationFn: (action: 'stop' | 'start' | 'reset') => {
+      if (action === 'stop') return simulationService.stop(namespace!, name!);
+      if (action === 'start') return simulationService.start(namespace!, name!);
+      return simulationService.reset(namespace!, name!);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tool', namespace, name] });
+      queryClient.invalidateQueries({ queryKey: ['simGenerationStatus', namespace, name] });
+    },
+  });
+
+  // Retry an Error tool = restart (stop then start) so the recreated pod re-reads
+  // the (now-fixed) config/secret and autostarts from the on-disk bundle.
+  const retryMutation = useMutation({
+    mutationFn: async () => {
+      await simulationService.stop(namespace!, name!);
+      return simulationService.start(namespace!, name!);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tool', namespace, name] });
+      queryClient.invalidateQueries({ queryKey: ['simGenerationStatus', namespace, name] });
+    },
   });
 
   // Open invoke modal for a specific tool
@@ -272,6 +325,14 @@ export const ToolDetailPage: React.FC = () => {
   const readyStatus = tool.readyStatus || 'Not Ready';
   const isReady = readyStatus === 'Ready';
 
+  const derivedSimState = simulatedTool
+    ? deriveSimState({ specReplicas, generationStatus: genStatus?.status })
+    : undefined;
+  const simActions = derivedSimState ? availableSimActions(derivedSimState) : undefined;
+  const showSimUi = features.simulatedTools && simulatedTool;
+  const lifecycleBusy =
+    lifecycleMutation.isPending || retryMutation.isPending || deleteMutation.isPending;
+
   // If route check fails or is loading, default to false (in-cluster URL is safer default)
   const hasRoute = routeStatusData?.hasRoute ?? false;
 
@@ -326,14 +387,18 @@ export const ToolDetailPage: React.FC = () => {
             <Title headingLevel="h1">{name}</Title>
           </SplitItem>
           <SplitItem>
-            <Label color={
-              readyStatus === 'Ready' ? 'green'
-                : readyStatus === 'Progressing' ? 'blue'
-                : readyStatus === 'Failed' ? 'red'
-                : 'orange'
-            }>
-              {readyStatus}
-            </Label>
+            {showSimUi && derivedSimState ? (
+              <Label color={simStateBadgeColor(derivedSimState)}>{derivedSimState}</Label>
+            ) : (
+              <Label color={
+                readyStatus === 'Ready' ? 'green'
+                  : readyStatus === 'Progressing' ? 'blue'
+                    : readyStatus === 'Failed' ? 'red'
+                      : 'orange'
+              }>
+                {readyStatus}
+              </Label>
+            )}
           </SplitItem>
           <SplitItem isFilled />
           <SplitItem>
@@ -359,6 +424,11 @@ export const ToolDetailPage: React.FC = () => {
                   </Label>
                 </FlexItem>
               )}
+              {isSimulatedLabels(labels) && (
+                <FlexItem>
+                  <Label color="purple">SIMULATED</Label>
+                </FlexItem>
+              )}
               <FlexItem>
                 <Dropdown
                   isOpen={actionsMenuOpen}
@@ -376,6 +446,51 @@ export const ToolDetailPage: React.FC = () => {
                   popperProps={{ position: 'right' }}
                 >
                   <DropdownList>
+                    {showSimUi && simActions?.start && (
+                      <DropdownItem
+                        key="start"
+                        isDisabled={lifecycleBusy}
+                        onClick={() => { setActionsMenuOpen(false); lifecycleMutation.mutate('start'); }}
+                      >
+                        Start
+                      </DropdownItem>
+                    )}
+                    {showSimUi && simActions?.stop && (
+                      <DropdownItem
+                        key="stop"
+                        isDisabled={lifecycleBusy}
+                        onClick={() => { setActionsMenuOpen(false); lifecycleMutation.mutate('stop'); }}
+                      >
+                        Stop
+                      </DropdownItem>
+                    )}
+                    {showSimUi && simActions?.reset && (
+                      <DropdownItem
+                        key="reset"
+                        isDisabled={lifecycleBusy}
+                        onClick={() => { setActionsMenuOpen(false); setResetModalOpen(true); }}
+                      >
+                        Reset session
+                      </DropdownItem>
+                    )}
+                    {showSimUi && simActions?.seed && (
+                      <DropdownItem
+                        key="seed"
+                        isDisabled={lifecycleBusy}
+                        onClick={() => { setActionsMenuOpen(false); setSeedModalOpen(true); }}
+                      >
+                        Seed database…
+                      </DropdownItem>
+                    )}
+                    {showSimUi && simActions?.retry && (
+                      <DropdownItem
+                        key="retry"
+                        isDisabled={lifecycleBusy}
+                        onClick={() => { setActionsMenuOpen(false); retryMutation.mutate(); }}
+                      >
+                        Retry
+                      </DropdownItem>
+                    )}
                     <DropdownItem
                       key="delete"
                       onClick={() => {
@@ -393,6 +508,22 @@ export const ToolDetailPage: React.FC = () => {
           </SplitItem>
         </Split>
       </PageSection>
+
+      {showSimUi && (derivedSimState === 'Failed' || derivedSimState === 'Error') && (
+        <PageSection variant="light" style={{ paddingTop: 0 }}>
+          <Alert
+            variant="danger"
+            isInline
+            title={derivedSimState === 'Failed' ? 'Generation failed' : 'Runtime error'}
+          >
+            {genStatus?.reason || 'No reason was reported by the harness.'}
+            {derivedSimState === 'Failed' &&
+              ' Delete this tool and re-import a corrected OpenAPI spec.'}
+            {derivedSimState === 'Error' &&
+              ' Fix the underlying cause (for example a missing LLM_API_KEY Secret), then use Retry.'}
+          </Alert>
+        </PageSection>
+      )}
 
       <PageSection>
         <Tabs
@@ -1117,6 +1248,56 @@ export const ToolDetailPage: React.FC = () => {
           style={{ marginTop: '8px' }}
         />
       </Modal>
+
+      {/* Reset session confirm */}
+      <Modal
+        variant={ModalVariant.small}
+        title="Reset session?"
+        isOpen={resetModalOpen}
+        onClose={() => setResetModalOpen(false)}
+        actions={[
+          <Button
+            key="reset"
+            variant="primary"
+            isLoading={lifecycleMutation.isPending}
+            isDisabled={lifecycleMutation.isPending}
+            onClick={() => {
+              lifecycleMutation.mutate('reset', { onSuccess: () => setResetModalOpen(false) });
+            }}
+          >
+            Reset session
+          </Button>,
+          <Button
+            key="cancel"
+            variant="link"
+            onClick={() => setResetModalOpen(false)}
+            isDisabled={lifecycleMutation.isPending}
+          >
+            Cancel
+          </Button>,
+        ]}
+      >
+        <TextContent>
+          <Text>
+            Resetting clears the running session — call counters and the agent thread.
+            The seeded database and generated bundle are retained.
+          </Text>
+        </TextContent>
+      </Modal>
+
+      {/* Seed / edit database */}
+      {showSimUi && (
+        <SeedDatabaseModal
+          isOpen={seedModalOpen}
+          namespace={namespace!}
+          name={name!}
+          onClose={() => setSeedModalOpen(false)}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['tool', namespace, name] });
+            queryClient.invalidateQueries({ queryKey: ['simGenerationStatus', namespace, name] });
+          }}
+        />
+      )}
     </>
   );
 };

@@ -28,6 +28,9 @@ spec:
       - name: skillberry-store
         image: "{{ .Values.skillberryStore.image.repository }}:{{ .Values.skillberryStore.image.tag }}"
         imagePullPolicy: {{ .Values.skillberryStore.image.pullPolicy }}
+        {{- with .Values.skillberryStore.image.command }}
+        command: {{- toYaml . | nindent 10 }}
+        {{- end }}
         env:
         - name: SBS_BASE_DIR
           value: "{{ .Values.skillberryStore.baseDir }}"
@@ -39,6 +42,19 @@ spec:
           value: "{{ .Values.skillberryStore.uiPort }}"
         - name: ENABLE_UI
           value: "true"
+        # The store's skill-generation feature invokes the Claude Code CLI with
+        # --dangerously-skip-permissions, which the CLI refuses to run under
+        # root/sudo unless it believes it is sandboxed. The container runs as
+        # root, so declare the sandbox to allow the flag. The pod IS the sandbox.
+        - name: IS_SANDBOX
+          value: "1"
+        # The embedding model (all-MiniLM-L6-v2) is NOT bundled in the image and
+        # is downloaded from huggingface.co on first use. Point the HF cache at
+        # the persistent /data volume so the model is downloaded only once and
+        # survives pod restarts/redeploys. (The loosened liveness/startup probes
+        # absorb the transient HEAD-check stalls when DNS to HF is slow.)
+        - name: HF_HOME
+          value: "{{ .Values.skillberryStore.baseDir }}/.huggingface"
         # Allow the gateway hostname through the store's Vite dev server host
         # check. Defaults to the HTTPRoute host derived from .Values.domain.
         - name: VITE_ALLOWED_HOSTS
@@ -53,20 +69,37 @@ spec:
         - name: ui
           containerPort: {{ .Values.skillberryStore.uiPort }}
           protocol: TCP
+        # startupProbe gives the app plenty of time to come up on first start
+        # (e.g. downloading/loading the SentenceTransformer embedding model on CPU)
+        # without liveness/readiness counting against it. Up to 20 * 15s = 300s.
+        startupProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.skillberryStore.apiPort }}
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 20
+        # Liveness is intentionally loose: skill creation triggers synchronous,
+        # CPU-heavy embedding-model work that can block the event loop and stall
+        # /health for a while. Only restart if it's unresponsive for ~5 min
+        # (30s period * 10 failures), with a generous 10s per-probe timeout.
         livenessProbe:
           httpGet:
             path: /health
             port: {{ .Values.skillberryStore.apiPort }}
           initialDelaySeconds: 10
           periodSeconds: 30
-          failureThreshold: 3
+          timeoutSeconds: 10
+          failureThreshold: 10
         readinessProbe:
           httpGet:
             path: /health/ready
             port: {{ .Values.skillberryStore.apiPort }}
           initialDelaySeconds: 5
           periodSeconds: 10
-          failureThreshold: 3
+          timeoutSeconds: 5
+          failureThreshold: 6
         resources:
           {{- toYaml .Values.skillberryStore.resources | nindent 10 }}
         volumeMounts:
