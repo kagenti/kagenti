@@ -158,6 +158,7 @@ export interface ToolLabels {
   framework?: string;
   type?: string;
   transport?: string;
+  simulated?: boolean;
 }
 
 export interface Tool {

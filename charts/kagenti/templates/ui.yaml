@@ -484,8 +484,9 @@ rules:
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["rolebindings"]
     verbs: ["get", "create"]
-  {{- if .Values.featureFlags.sandbox }}
-  # PersistentVolumeClaims for agent workspace storage (sandbox)
+  {{- if or .Values.featureFlags.sandbox .Values.featureFlags.simulatedTools }}
+  # PersistentVolumeClaims — sandbox agent workspace storage, and simulated-tool
+  # StatefulSet volumes that the delete path enumerates and tears down (#2151).
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "create", "patch", "delete"]

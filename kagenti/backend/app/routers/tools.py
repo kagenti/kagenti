@@ -36,6 +36,7 @@ from app.core.constants import (
     APP_KUBERNETES_IO_NAME,
     APP_KUBERNETES_IO_MANAGED_BY,
     KAGENTI_UI_CREATOR_LABEL,
+    KAGENTI_SIMULATED_LABEL,
     RESOURCE_TYPE_TOOL,
     VALUE_PROTOCOL_MCP,
     VALUE_TRANSPORT_STREAMABLE_HTTP,
@@ -590,6 +591,7 @@ def _extract_labels(labels: dict) -> ResourceLabels:
         protocol=protocols or None,
         framework=labels.get("kagenti.io/framework"),
         type=labels.get("kagenti.io/type"),
+        simulated=labels.get(KAGENTI_SIMULATED_LABEL) == "true",
     )
 
 
@@ -942,7 +944,7 @@ async def delete_tool(
     Deletes in order:
     1. Shipwright BuildRuns (if any)
     2. Shipwright Build (if any)
-    3. Deployment or StatefulSet
+    3. Deployment or StatefulSet (and, for a StatefulSet, its PersistentVolumeClaims)
     4. Service
     5. HTTPRoute or OpenShift Route (whichever exists)
     6. AgentRuntime CR (if exists)
@@ -997,6 +999,13 @@ async def delete_tool(
         if e.status != 404:
             logger.warning(f"Failed to delete Deployment '{name}': {e}")
 
+    # Capture StatefulSet-owned PVCs before deleting the workload (generic:
+    # StatefulSet PVCs are never auto-deleted, so they leak without this).
+    try:
+        pvc_names = kube.list_statefulset_pvcs(namespace, name)
+    except ApiException:
+        pvc_names = []
+
     # Delete StatefulSet (if exists)
     try:
         kube.delete_statefulset(namespace, name)
@@ -1004,6 +1013,15 @@ async def delete_tool(
     except ApiException as e:
         if e.status != 404:
             logger.warning(f"Failed to delete StatefulSet '{name}': {e}")
+
+    # Delete PVCs the StatefulSet provisioned (404-tolerant, generic).
+    for pvc in pvc_names:
+        try:
+            kube.delete_persistent_volume_claim(namespace, pvc)
+            deleted_resources.append(f"PersistentVolumeClaim/{pvc}")
+        except ApiException as e:
+            if e.status != 404:
+                logger.warning(f"Failed to delete PVC '{pvc}': {e}")
 
     # Delete Service
     service_name = _get_tool_service_name(name)

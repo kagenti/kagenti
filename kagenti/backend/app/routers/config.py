@@ -41,6 +41,7 @@ class FeatureFlagsResponse(BaseModel):
         description="Auto-inject MCP_URL and LLM env vars on agent import"
     )
     traceAnalysis: bool = Field(description="Trace-analysis Observability card")
+    simulatedTools: bool = Field(description="Simulated MCP tools generated from an OpenAPI spec")
 
 
 class ComponentStatus(BaseModel):
@@ -93,6 +94,7 @@ async def get_feature_flags(
         admin=settings.kagenti_feature_flag_admin,
         agentImportDefaults=settings.kagenti_feature_flag_agent_import_defaults,
         traceAnalysis=settings.kagenti_feature_flag_trace_analysis,
+        simulatedTools=settings.kagenti_feature_flag_simulated_tools,
     )
 
 
