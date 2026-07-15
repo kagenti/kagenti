@@ -516,10 +516,10 @@ _wait_kagenti_deps_ready() {
   _wait_deployment_ready istiod istio-system Istio &
   local pid_istio=$!
 
-  # Keycloak chain — sequential (each step creates the next resource)
+  # RHBK operator is installed by kagenti-deps; wait for it here.
+  # postgres-kc and keycloak StatefulSets are created by the kagenti operator
+  # (KeycloakBootstrapRunnable), so they are waited on after `helm install kagenti`.
   _wait_deployment_ready rhbk-operator "$KC_NAMESPACE" "RHBK operator"
-  _wait_deployment_ready postgres-kc "$KC_NAMESPACE" "Keycloak PostgreSQL" statefulset
-  _wait_deployment_ready keycloak "$KC_NAMESPACE" Keycloak statefulset
 
   # Collect parallel results
   wait $pid_cm || log_warn "cert-manager readiness check failed"
@@ -655,8 +655,8 @@ EOF
     log_info "MLflow OTEL values: otel.mlflow.enabled=true, endpoint=${MLFLOW_TRACES_ENDPOINT}"
   fi
 
-  # Keycloak public URL is needed by the realm-init audience mapper.
-  # Construct from DOMAIN (known since Step 2) so it's correct on first install.
+  # Keycloak public URL — realm-init audience mapper is now handled by
+  # kagenti-operator, but the value is still passed for chart compatibility.
   KAGENTI_DEPS_KC_URL="https://keycloak-${KC_NAMESPACE}.${DOMAIN}"
 
   # Common helm --set flags shared across install, upgrade, and reconciliation
@@ -786,8 +786,10 @@ _ensure_rhoai_shared_trust_prerequisites() {
   log_success "cert-manager is ready"
 
   # --- Create shared trust resources (fallback if Helm lookup skipped them) ---
+  # Retry: cainjector may not have populated the webhook caBundle yet (x509 race)
   log_info "Creating shared trust cert-manager resources..."
-  $KUBECTL apply -f - <<'EOF'
+  tries=0
+  until $KUBECTL apply -f - <<'EOF'
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -813,6 +815,15 @@ spec:
     name: istio-mesh-root-selfsigned
     kind: ClusterIssuer
 EOF
+  do
+    tries=$((tries + 1))
+    if [ $tries -ge 6 ]; then
+      log_warn "Failed to create shared trust resources after $tries attempts"
+      return 1
+    fi
+    log_info "cert-manager webhook not ready yet, retrying in 10s... ($tries/6)"
+    sleep 10
+  done
 
   _adopt_for_helm clusterissuer istio-mesh-root-selfsigned
   _adopt_for_helm certificate istio-mesh-root-ca cert-manager
@@ -1361,6 +1372,16 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
 
 log_success "Kagenti installed"
+
+# Wait for operator-managed Keycloak resources (postgres-kc + keycloak StatefulSets).
+# These are created by the kagenti operator's KeycloakBootstrapRunnable, which is
+# deployed by the kagenti chart above.
+_wait_keycloak_ready() {
+  if $DRY_RUN; then return; fi
+  _wait_deployment_ready postgres-kc "$KC_NAMESPACE" "Keycloak PostgreSQL" statefulset
+  _wait_deployment_ready keycloak "$KC_NAMESPACE" Keycloak statefulset
+}
+_wait_keycloak_ready
 
 # OTEL RoleBindings and MLflow experiment creation are now managed by
 # kagenti-operator's controllers. Wire the OTEL collector endpoint and
