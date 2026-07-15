@@ -132,7 +132,7 @@ operator's namespace and take effect immediately (no restart needed).
 | `injectTools` | `false` | Whether `kagenti.io/type=tool` workloads receive injection (agents are always injected) |
 | `perWorkloadConfigResolution` | `false` | When `true`, webhook reads namespace ConfigMaps at admission time and injects literal env var values instead of `valueFrom` references |
 
-Source of truth: [`kagenti-operator/internal/webhook/config/feature_gates.go`](https://github.com/kagenti/kagenti-extensions/blob/main/kagenti-operator/internal/webhook/config/feature_gates.go)
+Source of truth: [`internal/webhook/config/feature_gates.go`](https://github.com/kagenti/kagenti-operator/blob/main/kagenti-operator/internal/webhook/config/feature_gates.go)
 
 ## Full injection decision flow
 
