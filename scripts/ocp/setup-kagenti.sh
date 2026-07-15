@@ -1313,23 +1313,9 @@ fi
 
 log_info "Keycloak: realm=$KC_REALM namespace=$KC_NAMESPACE"
 
-# Read the actual Keycloak admin credentials from the operator-managed secret.
-# The RHBK operator creates keycloak-initial-admin with a random password.
-# The kagenti chart creates keycloak-admin-secret in agent namespaces for the
-# client-registration sidecar — these must match, otherwise client-registration
-# can't authenticate to the master realm to register per-agent OAuth clients.
-KC_ADMIN_FLAGS=()
-_kc_admin_user=$($KUBECTL get secret keycloak-initial-admin -n "$KC_NAMESPACE" \
-  -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-_kc_admin_pass=$($KUBECTL get secret keycloak-initial-admin -n "$KC_NAMESPACE" \
-  -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-if [ -n "$_kc_admin_user" ] && [ -n "$_kc_admin_pass" ]; then
-  KC_ADMIN_FLAGS+=(--set "keycloak.adminUsername=${_kc_admin_user}")
-  KC_ADMIN_FLAGS+=(--set "keycloak.adminPassword=${_kc_admin_pass}")
-  log_success "Keycloak admin credentials read from keycloak-initial-admin"
-else
-  log_warn "Could not read keycloak-initial-admin — agent client-registration may fail"
-fi
+# Keycloak admin credentials are read at deploy time by the kagenti-agent-oauth-secret-job
+# Job, which reads keycloak-initial-admin directly from the keycloak namespace.
+# No Helm value overrides are needed — the Job always uses the live secret.
 
 # Build operator image override flags
 OPERATOR_IMAGE_FLAGS=()
@@ -1358,7 +1344,6 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   -f "$SECRETS_FILE" \
   ${KAGENTI_UI_FLAGS[@]+"${KAGENTI_UI_FLAGS[@]}"} \
   ${OPERATOR_IMAGE_FLAGS[@]+"${OPERATOR_IMAGE_FLAGS[@]}"} \
-  ${KC_ADMIN_FLAGS[@]+"${KC_ADMIN_FLAGS[@]}"} \
   ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} \
   --set "agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa" \
   --set uiOAuthSecret.useServiceAccountCA=false \

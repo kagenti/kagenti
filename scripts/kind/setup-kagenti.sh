@@ -61,6 +61,7 @@ DRY_RUN=false
 SECRETS_FILE_ARG=""
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
 ENABLE_OPERATOR_SPIFFE_AUTH=false
+ENABLE_AGENT_SPIFFE_AUTH=false
 
 # Versions
 CERT_MANAGER_VERSION="v1.17.2"
@@ -230,6 +231,8 @@ while [[ $# -gt 0 ]]; do
     --kagenti-deps-values) KAGENTI_DEPS_VALUES_FILES+=("--values" "$2"); shift 2 ;;
     --with-examples)    INSTALL_EXAMPLES=true; shift ;;
     --enable-operator-spiffe-auth) ENABLE_OPERATOR_SPIFFE_AUTH=true; shift ;;
+    --enable-agent-spiffe-auth)   ENABLE_AGENT_SPIFFE_AUTH=true; shift ;;
+    --enable-spiffe-auth)         ENABLE_OPERATOR_SPIFFE_AUTH=true; ENABLE_AGENT_SPIFFE_AUTH=true; shift ;;
     --dry-run)          DRY_RUN=true; shift ;;
     -h|--help)
       echo "Usage: $0 [OPTIONS]"
@@ -280,7 +283,15 @@ while [[ $# -gt 0 ]]; do
       echo "                      Helm override file to apply to Kagenti-deps chart"
       echo "  --with-examples     Install weather agent and weather tool examples"
       echo "  --enable-operator-spiffe-auth"
-      echo "                      Enable SPIFFE authentication for operator (requires SPIRE)"
+      echo "                      Operator authenticates to Keycloak using JWT-SVID instead"
+      echo "                      of admin credentials. Requires --with-spire."
+      echo "  --enable-agent-spiffe-auth"
+      echo "                      Agent/tool workloads authenticate to Keycloak using"
+      echo "                      JWT-SVID (federated-jwt) instead of client secrets."
+      echo "                      Requires --with-spire."
+      echo "  --enable-spiffe-auth"
+      echo "                      Shorthand for both --enable-operator-spiffe-auth and"
+      echo "                      --enable-agent-spiffe-auth. Requires --with-spire."
       echo "  --dry-run           Show commands without executing"
       echo "  -h, --help          Show this help"
       exit 0 ;;
@@ -360,6 +371,16 @@ echo "    Examples:      $INSTALL_EXAMPLES"
 echo "    Kagenti helm --values overrides: ${KAGENTI_VALUES_FILES[*]:-}"
 echo "    Kagenti-deps helm --values overrides: ${KAGENTI_DEPS_VALUES_FILES[*]:-}"
 echo ""
+
+# Validate flag combinations
+if $ENABLE_OPERATOR_SPIFFE_AUTH && ! $WITH_SPIRE; then
+  log_error "--enable-operator-spiffe-auth requires --with-spire (SPIRE must be installed for SPIFFE identities)"
+  exit 1
+fi
+if $ENABLE_AGENT_SPIFFE_AUTH && ! $WITH_SPIRE; then
+  log_error "--enable-agent-spiffe-auth requires --with-spire (SPIRE must be installed for SPIFFE identities)"
+  exit 1
+fi
 
 for cmd in helm kubectl; do
   if ! command -v "$cmd" &>/dev/null; then
@@ -536,11 +557,14 @@ log_info "Step 3: Istio Gateway Controller (core)"
 ISTIO_REPO="https://istio-release.storage.googleapis.com/charts/"
 
 log_info "Installing istio-base ${ISTIO_VERSION}..."
+# istiod owns the failurePolicy field on this webhook; delete it so Helm can recreate it cleanly on upgrades
+kubectl delete validatingwebhookconfiguration istiod-default-validator --ignore-not-found
 run_cmd helm upgrade --install istio-base base \
   --repo "$ISTIO_REPO" --version "$ISTIO_VERSION" \
   -n istio-system --create-namespace --wait
 
 log_info "Installing istiod ${ISTIO_VERSION}..."
+kubectl delete validatingwebhookconfiguration istio-validator-istio-system --ignore-not-found
 run_cmd helm upgrade --install istiod istiod \
   --repo "$ISTIO_REPO" --version "$ISTIO_VERSION" \
   -n istio-system --wait
@@ -619,9 +643,14 @@ if $WITH_SPIRE; then
     -n spire-mgmt --create-namespace --wait
 
   log_info "Installing SPIRE ${SPIRE_VERSION}..."
+  # No --wait: SPIRE deploys workloads into a separate namespace (zero-trust-workload-identity-manager),
+  # so Helm's --wait finds nothing in spire-mgmt and times out. We wait explicitly below.
+  # Step 7 patches the OIDC configmap with kubectl (client-side-apply), which conflicts on re-runs.
+  kubectl delete configmap spire-spiffe-oidc-discovery-provider \
+    -n zero-trust-workload-identity-manager --ignore-not-found
   run_cmd helm upgrade --install spire spire \
     --repo "$SPIRE_REPO" --version "$SPIRE_VERSION" \
-    -n spire-mgmt --create-namespace --wait --timeout=5m \
+    -n spire-mgmt --create-namespace \
     --set global.spire.recommendations.enabled=true \
     --set global.spire.namespaces.create=true \
     --set global.spire.namespaces.server.name=zero-trust-workload-identity-manager \
@@ -646,6 +675,16 @@ if $WITH_SPIRE; then
     --set "tornjak-frontend.apiServerURL=http://spire-tornjak-ui.${DOMAIN}:8080" \
     --set tornjak-frontend.service.type=ClusterIP \
     --set tornjak-frontend.service.port=3000
+
+  log_info "Waiting for SPIRE pods in zero-trust-workload-identity-manager..."
+  deadline=$((SECONDS + 120))
+  until kubectl get pod --no-headers -l app.kubernetes.io/instance=spire \
+    -n zero-trust-workload-identity-manager 2>/dev/null | grep -q .; do
+    if (( SECONDS >= deadline )); then log_error "Timed out waiting for SPIRE pods"; exit 1; fi
+    sleep 2
+  done
+  kubectl wait --for=condition=Ready pod -l app.kubernetes.io/instance=spire \
+    -n zero-trust-workload-identity-manager --timeout=300s
 
   log_success "SPIRE installed"
 else
@@ -1199,7 +1238,11 @@ KAGENTI_FLAGS=(
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
   --set "kagenti-operator-chart.featureGates.injectTools=true"
   --set "kagenti-operator-chart.kuadrant.enable=${WITH_KUADRANT}"
+  --set "kagenti-operator-chart.spiffe.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
   --set "kagenti-operator-chart.spiffe.operatorAuth.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
+  --set "kagenti-operator-chart.keycloak.publicUrl=http://keycloak.${DOMAIN}:8080"
+  --set "authBridge.clientAuthType=$($ENABLE_AGENT_SPIFFE_AUTH && echo federated-jwt || echo client-secret)"
+  --set "spire.enabled=${WITH_SPIRE}"
 )
 
 # Allow-list hosts/IPs/CIDRs past the registry-URL SSRF block (for LAN / in-cluster
@@ -1238,9 +1281,19 @@ fi
 
 log_info "Installing kagenti..."
 run_cmd helm upgrade --install kagenti "$REPO_ROOT/charts/kagenti/" \
-  -n kagenti-system --wait --timeout 20m \
+  -n kagenti-system \
   "${SECRETS_FLAGS[@]+"${SECRETS_FLAGS[@]}"}" \
   "${KAGENTI_FLAGS[@]}"
+
+log_info "Waiting for kagenti pods..."
+deadline=$((SECONDS + 120))
+until kubectl get pod --no-headers -l app.kubernetes.io/name=kagenti-operator-chart \
+  -n kagenti-system 2>/dev/null | grep -q .; do
+  if (( SECONDS >= deadline )); then log_error "Timed out waiting for kagenti-operator pods"; exit 1; fi
+  sleep 2
+done
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=kagenti-operator-chart \
+  -n kagenti-system --timeout=300s
 
 log_success "kagenti installed"
 echo ""

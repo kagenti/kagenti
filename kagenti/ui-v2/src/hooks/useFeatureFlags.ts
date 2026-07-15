@@ -19,6 +19,10 @@ export interface FeatureFlags {
   admin: boolean;
   /** External skill registry references */
   externalSkills: boolean;
+  /** Trace-analysis Observability card */
+  traceAnalysis: boolean;
+  /** Simulated MCP tools generated from an OpenAPI spec */
+  simulatedTools: boolean;
 }
 
 const DEFAULT_FLAGS: FeatureFlags = {
@@ -31,6 +35,8 @@ const DEFAULT_FLAGS: FeatureFlags = {
   authbridgeAPI: false,
   admin: false,
   externalSkills: false,
+  traceAnalysis: false,
+  simulatedTools: false,
 };
 
 let cachedFlags: FeatureFlags | null = null;
@@ -54,6 +60,8 @@ export function useFeatureFlags(): FeatureFlags {
           authbridgeAPI: data.authbridgeAPI === true,
           admin: data.admin === true,
           externalSkills: data.externalSkills === true,
+          traceAnalysis: data.traceAnalysis === true,
+          simulatedTools: data.simulatedTools === true,
           };
         cachedFlags = validated;
         setFlags(validated);
