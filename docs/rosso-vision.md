@@ -31,16 +31,19 @@ We organize that fabric into three pillars — an **Identity Fabric**, a **Gover
 ### Attested Identity — who an agent provably is
 
 **Today:** Every agent is given a cryptographic identity rooted in the workload itself, not in a secret handed to it. Rosso goes beyond signing an agent's published card: a runtime attester *observes the running workload* and cryptographically vouches for what it actually is — its image, its platform claims, its integrity — producing a runtime-attested identity a consumer can trust for access decisions.
+
 **Horizon:** Identity becomes continuous and compositional — issued, attested, and continuously true rather than asserted once and assumed forever, and eventually extending down to individual skills and tool calls so that trust is verifiable at every level of the stack.
 
 ### Skill & Supply-Chain Integrity — what the agent is made of
 
 **Today:** Agents are increasingly assembled from skills, prompts, and capabilities pulled from external registries — a supply chain with no integrity story. Rosso is building verification that ties an agent's *authority* to the integrity of its *components*.
+
 **Horizon:** We bind a signature-verified skill digest into the agent's attested identity, so that a tampered or unverifiable skill changes the identity and its access falls away automatically — fail-closed by construction. Supply-chain compromise stops being a detection problem and becomes an impossibility of the trust model.
 
 ### Delegation & Consent — acting for a user, with bounded authority
 
 **Today:** When an agent acts on your behalf, it should carry exactly the authority you granted, for exactly as long as it needs it. Rosso provides just-in-time, user-scoped delegation: an under-privileged agent obtains ephemeral, narrowly-scoped credentials at the moment it needs them, through a consent flow in which neither the agent nor the platform ever holds the user's credentials.
+
 **Horizon:** Delegation becomes contextual and revocable end-to-end — authority that is minted for a single intent, provably scoped to it, and dissolves the instant the task completes.
 
 ---
@@ -52,6 +55,7 @@ We organize that fabric into three pillars — an **Identity Fabric**, a **Gover
 ### Policy & Decision — one auditable verdict, from complete information
 
 **Today:** Correct authorization for an agent depends on the caller, the callee, the user, and the task — far too rich for group-level roles. Rosso is building a fine-grained, context-aware policy layer where a single, auditable policy decision point renders every allow/deny verdict from complete information, rather than fragmenting authority across components that each decide with a partial view.
+
 **Horizon:** Policy expressed in *human language*. The platform infers an agent's intended behavior and derives — then continuously audits — the fine-grained rules that match it, keeping intent and enforcement in sync as the agent fleet grows beyond what any security team could hand-author.
 
 ### Human-in-the-Loop — from micro-management to delegated trust
@@ -61,16 +65,19 @@ We are redefining the human–agent relationship, shifting from active micro-man
 ### Cost & Budget Governance — autonomy with a spending limit
 
 **Today:** An autonomous agent that calls models in a loop can consume unbounded cost. Rosso enforces token and budget quotas at the platform layer — per team, per user, per session — with pre-request hard limits and an infrastructure-level circuit breaker that halts a runaway session before the bill arrives, not after.
+
 **Horizon:** Budget becomes a first-class dimension of every authorization decision, enabling fair multi-tenant economics, FinOps chargeback, and cost as a governed resource rather than a surprise.
 
 ### Data Security & Governance — context on every decision
 
 **Today:** Data flows through an agent platform — in prompts, out through tool calls, across sessions and users — with no centralized governance. Rosso is building data-aware controls: classifying and tracing data lineage across agent trajectories, detecting breach and corruption risk, and feeding that context into policy decisions so an unsafe action can be blocked *before* it happens.
+
 **Horizon:** The platform understands not just *whether* an action is allowed but *what data* it would move and where that data came from — closing the confused-deputy and exfiltration gaps that static controls cannot see.
 
 ### Quality & Evaluation — trusting the governors themselves
 
 **Today:** As the platform's own governance components become autonomous — an agent that authors access policy, for instance — they need the same rigor we demand of the agents they govern. Rosso is building a quality framework of guardrails, adversarial testing, and evaluation (deterministic assertions alongside LLM- and agent-as-judge techniques) for its control-plane agents.
+
 **Horizon:** Governed autonomy that is itself continuously validated — a platform whose safety properties are measured and regression-tested, not merely asserted.
 
 ---
@@ -82,6 +89,7 @@ We are redefining the human–agent relationship, shifting from active micro-man
 ### State, Session & Resiliency — durable, recoverable, portable
 
 **Today:** Agents are stateful in ways cloud-native primitives never anticipated: they assume a stable filesystem, a single writer, an uninterrupted process. Production offers none of those. Rosso externalizes session state into a durable, append-only log so a session survives eviction, recovers after a crash with zero lost work, and can *move* between runtime instances.
+
 **Horizon:** A serverless model for agents — scale-to-zero when idle, fast cold-start regardless of how long the conversation has run, and session mobility and self-healing recovery as native platform capabilities rather than bespoke integrations each team rebuilds.
 
 ### Long-Term Memory — the cognitive foundation
@@ -91,16 +99,19 @@ We are building the cognitive foundation for next-generation AI by transforming 
 ### Eventing & Governed Egress — communication and reach the agent can't abuse
 
 **Today:** Agents talk to each other and reach out to the world, and both paths must be governed without rewriting the agent. Rosso treats inter-agent and tool traffic as signed, identity-carrying events, so no unauthorized party can impersonate an agent, tamper with a message, or publish where it shouldn't — enabling the long-running, asynchronous, approval-gated workflows synchronous calls can't support. On egress, a zero-trust credential plane keeps secrets only in an identity-aware broker that injects them at the network layer, keyed to the workload's identity.
+
 **Horizon:** No component influenced by model output — not the agent, not its sandbox, not its logs — ever holds a raw credential. The agent gets to *use* a credential it can never *read*, for any destination, through one unified mechanism.
 
 ### Multi-Tenant Sandbox Isolation — safe execution by construction
 
 **Today:** Autonomous code execution demands strong isolation. Rosso runs agents in isolated, per-tenant sandboxes with defense-in-depth — network, filesystem, and identity boundaries — and a one-namespace-per-user model, so a compromised or misbehaving agent is contained by construction rather than by trust.
+
 **Horizon:** Sandboxes that are disposable, instantly provisioned, and portable — a user's full working environment teleported into a governed remote runtime and torn down when done, with isolation strong enough that the platform can safely run untrusted agents from anywhere.
 
 ### Extensible Plugin Pipeline — a governed extensibility model
 
 **Today:** The controls above — identity, policy, guardrails, protocol handling — are not a monolith. Rosso exposes them as a versioned plugin pipeline with a stable contract, so guardrail, policy, and context-engineering capabilities from across the ecosystem compose into the agent's request path without each team building its own interception layer.
+
 **Horizon:** An open extensibility standard for agent governance — a single, runtime-agnostic contract that lets the community contribute policy engines, guardrails, and context tooling that any Rosso deployment can adopt.
 
 ---
