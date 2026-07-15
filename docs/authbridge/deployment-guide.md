@@ -260,5 +260,6 @@ injects defaults that can be overridden via Helm values.
 ## Further Reading
 
 - [Sidecar Injection](sidecar-injection.md) — expected containers per mode, label vocabulary, feature gates, how to switch modes
+- [Authentication Guide](../authentication.md) — how `CLIENT_AUTH_TYPE=federated-jwt` (SPIFFE auth) works, how to enable it, and how it compares to client-secret mode
 - [AuthBridge Binary README](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/cmd/README.md) — full YAML config reference, all listener modes
 - [AuthBridge Architecture](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/README.md) — sequence diagrams, protocol details
