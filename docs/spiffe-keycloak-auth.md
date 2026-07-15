@@ -19,81 +19,6 @@ Both are gated off by default and can be enabled independently.
 
 ---
 
-## Background: How JWT-SVID Authentication Works with Keycloak
-
-### Keycloak realms
-
-"Realm" is a Keycloak concept, not an OIDC concept. Each realm is an independent OIDC authorization server with its own issuer URL:
-
-```
-http://<keycloak-public-host>/realms/kagenti
-```
-
-### The JWT audience claim
-
-When the operator or an agent presents a JWT-SVID to Keycloak's token endpoint as a client assertion (RFC 7523), the JWT's `aud` claim must equal the realm's issuer URL. This is a **string equality check, not a network connection** — Keycloak compares the `aud` claim against its own configured issuer string.
-
-**Why the public/external URL:** Keycloak's issuer is always the external URL it was configured with (`keycloak.publicUrl`). Using the in-cluster service address (`keycloak-service.keycloak.svc`) causes a silent string mismatch.
-
-The audience is always `keycloak.publicUrl/realms/<realm>` and is derived automatically — no separate configuration needed.
-
----
-
-## Merged PRs
-
-### [kagenti/kagenti#1422](https://github.com/kagenti/kagenti/pull/1422) — Move Keycloak admin secret to `kagenti-system`
-**Merged:** 2026-05-12
-
-Moved `keycloak-admin-secret` from agent namespaces to the operator namespace. Before this, a compromised agent namespace had full Keycloak realm admin access. Closes [kagenti-operator#320](https://github.com/kagenti/kagenti-operator/issues/320).
-
----
-
-### [kagenti-operator#473](https://github.com/kagenti/kagenti-operator/pull/473) — Operator SPIFFE JWT-SVID authentication
-**Merged:** 2026-07-07 | **In:** `kagenti-operator-chart:0.3.0-alpha.7`
-
-Adds SPIFFE-based authentication for the operator → Keycloak Admin API path. When enabled, a spiffe-helper sidecar writes the operator's JWT-SVID to `/opt/jwt_svid.token`; the operator reads it and uses it as a RFC 7523 client assertion. Operator Keycloak client uses `manage-clients` role only (not full admin).
-
----
-
-### [kagenti/kagenti#2141](https://github.com/kagenti/kagenti/pull/2141) — Operator SPIFFE bootstrap job
-**Merged:** 2026-07-07
-
-Helm post-install/upgrade Job that configures Keycloak for operator SPIFFE auth:
-1. Creates the SPIFFE Identity Provider (`spire-spiffe` alias)
-2. Creates the operator's Keycloak client with `clientAuthenticatorType: federated-jwt`
-3. Assigns `manage-clients` role
-
----
-
-### [kagenti-operator#476](https://github.com/kagenti/kagenti-operator/pull/476) — SPIFFE auth follow-up fixes
-**Merged:** 2026-07-13 | **In:** `kagenti-operator-chart:0.3.0-alpha.7`
-
-- Remove `jwtAudience` Helm value — audience always derived from `keycloak.publicUrl/realms/<realm>`
-- Skip credential Secret creation in `federated-jwt` mode — AuthBridge uses JWT-SVIDs directly, no Secret needed
-- Skip pod template annotation in `federated-jwt` mode — was causing pods to wait for a Secret that doesn't exist
-- Fix webhook to skip credential annotation pre-population in `federated-jwt` mode
-
----
-
-### [kagenti-operator#479](https://github.com/kagenti/kagenti-operator/pull/479) — Remove legacy client-registration sidecar label
-**Merged:** 2026-07-14 | **In:** `kagenti-operator-chart:0.3.0-alpha.7`
-
-Removes `kagenti.io/client-registration-inject=true` opt-in label. The in-pod sidecar was removed in #1422; this cleans up the last code references. Closes [#1913](https://github.com/kagenti/kagenti/issues/1913).
-
----
-
-### [kagenti/kagenti#2188](https://github.com/kagenti/kagenti/pull/2188) — `--enable-spiffe-auth` flag *(open)*
-
-Adds `--enable-spiffe-auth`, `--enable-operator-spiffe-auth`, and `--enable-agent-spiffe-auth` flags to `setup-kagenti.sh`. Also bumps `kagenti-operator-chart` to `0.3.0-alpha.7`.
-
----
-
-### [kagenti/kagenti#2155](https://github.com/kagenti/kagenti/pull/2155) — Remove stale credential docs *(open)*
-
-Removes docs describing a credential provisioning mechanism that no longer exists. Closes [#1337](https://github.com/kagenti/kagenti/issues/1337).
-
----
-
 ## How Operator SPIFFE Auth Works (End-to-End)
 
 This flow runs **once at install time** to configure Keycloak, then **on every reconcile** when the operator needs to register agent clients.
@@ -187,11 +112,11 @@ In `federated-jwt` mode: AuthBridge uses `identity.type: spiffe` — reads a JWT
 
 ## Remaining Work (Issue #2174)
 
-- [x] Skip credential Secrets for `federated-jwt` clients — fixed in #476, in `0.3.0-alpha.7`
+- [x] Skip credential Secrets for `federated-jwt` clients — fixed in kagenti-operator#476, in `0.3.0-alpha.7`
 - [x] E2E test with both paths enabled simultaneously — **all tests pass** (see below)
-- [ ] Merge PR #2188 (kagenti) — `--enable-spiffe-auth` flag + chart bump to `0.3.0-alpha.7`
-- [ ] Merge PR #2155 (stale docs cleanup)
-- [ ] PR [kagenti-operator#478](https://github.com/kagenti/kagenti-operator/pull/478) — replace spiffe-helper sidecar with direct go-spiffe SDK call (removes dependency on standalone image that is no longer actively maintained)
+- [x] `--enable-spiffe-auth` flag + chart bump to `0.3.0-alpha.7` — merged in kagenti#2188
+- [ ] Merge kagenti#2155 (remove stale credential docs)
+- [ ] [kagenti-operator#478](https://github.com/kagenti/kagenti-operator/pull/478) — replace spiffe-helper sidecar with direct go-spiffe SDK call
 
 > **Deferred (requires team discussion):**
 > Making SPIFFE auth the default; removing `kagenti-agent-oauth-secret-job` and `keycloak-admin-secret`
@@ -204,9 +129,9 @@ In `federated-jwt` mode: AuthBridge uses `identity.type: spiffe` — reads a JWT
 
 - `kagenti-operator-chart:0.3.0-alpha.7` or later (released 2026-07-14)
 - SPIRE deployed (`--with-spire`)
-- `keycloak.publicUrl` set (e.g. `http://keycloak.localtest.me:8080`)
+- `keycloak.publicUrl` set to the URL Keycloak advertises as its issuer — the value from `keycloak.localtest.me/.well-known/openid-configuration`'s `issuer` field. This is required because the spiffe-helper needs to embed exactly that URL as the JWT-SVID audience claim. On a standard Kind install this is `http://keycloak.localtest.me:8080`.
 
-### Using setup-kagenti.sh (on PR #2188 branch)
+### Using setup-kagenti.sh
 
 ```bash
 # Operator SPIFFE auth only
