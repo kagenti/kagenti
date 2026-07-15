@@ -17,8 +17,8 @@ In this mode, the operator uses admin credentials to register Keycloak clients o
 
 ### How it works
 
-1. At install time, the `kagenti-agent-oauth-secret-job` Helm Job reads admin credentials from the `keycloak-initial-admin` Secret (managed by the RHBK operator) and creates `keycloak-admin-secret` in `kagenti-system`.
-2. When the operator's `ClientRegistrationReconciler` detects a new agent/tool Deployment, it uses those admin credentials to register an OAuth2 client in Keycloak.
+1. At install time, the `kagenti-agent-oauth-secret-job` Helm Job reads admin credentials from the `keycloak-initial-admin` Secret (managed by the RHBK operator) and creates a `kagenti-keycloak-client-secret` in each agent namespace with the per-workload OAuth2 client credentials.
+2. When the operator's `ClientRegistrationReconciler` detects a new agent/tool Deployment, it reads `keycloak-initial-admin` directly and uses those credentials to register an OAuth2 client in Keycloak.
 3. The operator stores the generated `client_id` and `client_secret` in a `kagenti-keycloak-client-credentials-*` Secret in the agent's namespace.
 4. AuthBridge reads the credential files from the mounted Secret and uses them for token exchange on outbound requests.
 
@@ -26,11 +26,11 @@ In this mode, the operator uses admin credentials to register Keycloak clients o
 
 No extra configuration needed — this mode works out of the box on any install.
 
-The `keycloak-admin-secret` is created automatically by the installer. The per-agent credential Secrets are created on-demand by the operator when each workload is deployed.
+The per-agent credential Secrets are created on-demand by the operator when each workload is deployed.
 
 ### Configuring the admin secret source
 
-By default the installer reads admin credentials from the `keycloak-initial-admin` Secret in the keycloak namespace. This is configurable:
+By default the operator reads admin credentials from the `keycloak-initial-admin` Secret in the keycloak namespace. This is configurable:
 
 ```yaml
 keycloak:
@@ -41,19 +41,19 @@ keycloak:
 
 ### Manual sync (break-glass)
 
-If `keycloak-admin-secret` goes out of sync after a credential rotation:
+If the operator is failing to authenticate to Keycloak after a credential rotation, restart it so it re-reads `keycloak-initial-admin`:
 
 ```bash
-KC_USER=$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.username}' | base64 -d)
-KC_PASS=$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' | base64 -d)
-
-kubectl create secret generic keycloak-admin-secret -n kagenti-system \
-  --from-literal=KEYCLOAK_ADMIN_USERNAME="$KC_USER" \
-  --from-literal=KEYCLOAK_ADMIN_PASSWORD="$KC_PASS" \
-  --dry-run=client -o yaml | kubectl apply -f -
+kubectl rollout restart deployment/kagenti-controller-manager -n kagenti-system
 ```
 
-Then re-run `helm upgrade` to trigger a new `kagenti-agent-oauth-secret-job` run.
+Verify the operator is authenticating successfully:
+
+```bash
+POD=$(kubectl get pod -n kagenti-system -l control-plane=controller-manager \
+  -o jsonpath='{.items[0].metadata.name}')
+kubectl logs -n kagenti-system $POD -c manager | grep -i "keycloak\|auth" | tail -5
+```
 
 ---
 
