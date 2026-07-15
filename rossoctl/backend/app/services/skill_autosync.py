@@ -11,6 +11,8 @@ references when a skill is removed from the registry.
 """
 
 import asyncio
+import hashlib
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -28,6 +30,7 @@ from app.core.constants import (
     SKILL_DESCRIPTION_ANNOTATION,
     SKILL_DISPLAY_NAME_ANNOTATION,
     SKILL_NS_TAG_PREFIX,
+    SKILL_REGISTRY_SKILL_HASH_ANNOTATION,
     SKILL_REGISTRY_SKILL_NAME_ANNOTATION,
     SKILL_REGISTRY_SKILL_VERSION_ANNOTATION,
     SKILL_REGISTRY_TYPE_LABEL,
@@ -43,6 +46,24 @@ from app.services.kubernetes import KubernetesService, get_kubernetes_service
 logger = logging.getLogger(__name__)
 
 _ROSSOCTL_SYSTEM = "rossoctl-system"
+
+
+def _skill_signature(skill: Dict[str, Any]) -> str:
+    """Stable content hash of a registry skill's synced fields.
+
+    Lets auto-sync detect content changes even when the version string is
+    unchanged (the store reports "latest" for every version).
+    """
+    payload = json.dumps(
+        {
+            "version": skill.get("version") or "latest",
+            "description": skill.get("description") or "",
+            "uuid": skill.get("uuid") or "",
+            "tags": sorted(skill.get("tags") or []),
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
 def _sanitize_k8s_name(name: str) -> str:
@@ -156,6 +177,7 @@ def _create_autosync_skill(
         SKILL_REGISTRY_URL_ANNOTATION: registry_url,
         SKILL_REGISTRY_SKILL_NAME_ANNOTATION: skill_name,
         SKILL_REGISTRY_SKILL_VERSION_ANNOTATION: version,
+        SKILL_REGISTRY_SKILL_HASH_ANNOTATION: _skill_signature(skill),
     }
     desc = skill.get("description") or ""
     if desc:
@@ -181,22 +203,26 @@ def _create_autosync_skill(
             )
 
 
-def _patch_skill_version(
-    kube: KubernetesService, namespace: str, resource_name: str, new_version: str
+def _patch_skill(
+    kube: KubernetesService, namespace: str, resource_name: str, skill: Dict[str, Any]
 ) -> None:
-    body = {"metadata": {"annotations": {SKILL_REGISTRY_SKILL_VERSION_ANNOTATION: new_version}}}
+    """Refresh the cached annotations (version, description, hash) of a synced skill.
+
+    Called when the registry skill's content signature changed, so the local
+    reference reflects the current registry content (not just the version).
+    """
+    annos = {
+        SKILL_REGISTRY_SKILL_VERSION_ANNOTATION: skill.get("version") or "latest",
+        SKILL_REGISTRY_SKILL_HASH_ANNOTATION: _skill_signature(skill),
+        SKILL_DESCRIPTION_ANNOTATION: skill.get("description") or "",
+    }
     try:
         kube.core_api.patch_namespaced_config_map(
-            name=resource_name, namespace=namespace, body=body
+            name=resource_name, namespace=namespace, body={"metadata": {"annotations": annos}}
         )
-        logger.info(
-            "Auto-sync: updated version for '%s' in '%s' → %s",
-            resource_name,
-            namespace,
-            new_version,
-        )
+        logger.info("Auto-sync: refreshed '%s' in '%s' (content changed)", resource_name, namespace)
     except ApiException as exc:
-        logger.warning("Auto-sync: failed to patch version for '%s': %s", resource_name, exc)
+        logger.warning("Auto-sync: failed to patch '%s': %s", resource_name, exc)
 
 
 def _delete_autosync_skill(kube: KubernetesService, namespace: str, resource_name: str) -> None:
@@ -241,10 +267,15 @@ def _apply_diff(
         if name in local_by_name:
             cm = local_by_name[name]
             annos = cm.metadata.annotations or {}
+            local_hash = annos.get(SKILL_REGISTRY_SKILL_HASH_ANNOTATION)
+            reg_hash = _skill_signature(skill)
             local_ver = annos.get(SKILL_REGISTRY_SKILL_VERSION_ANNOTATION, "latest")
             reg_ver = skill.get("version") or "latest"
-            if local_ver != reg_ver:
-                _patch_skill_version(kube, namespace, cm.metadata.name, reg_ver)
+            # Re-sync when the content signature changed (covers description/content
+            # updates even when the version string stays "latest"), or on any version
+            # bump. Missing hash (pre-upgrade references) is treated as "changed".
+            if local_hash != reg_hash or local_ver != reg_ver:
+                _patch_skill(kube, namespace, cm.metadata.name, skill)
 
     return len(target_by_name)
 

@@ -184,6 +184,10 @@ SKILL_REGISTRY_TYPE_LABEL = "rossoctl.io/registry-type"
 SKILL_REGISTRY_URL_ANNOTATION = "rossoctl.io/registry-url"
 SKILL_REGISTRY_SKILL_NAME_ANNOTATION = "rossoctl.io/registry-skill-name"
 SKILL_REGISTRY_SKILL_VERSION_ANNOTATION = "rossoctl.io/registry-skill-version"
+# Content signature of the synced registry skill, so auto-sync can detect
+# content changes even when the registry version string is unchanged (e.g.
+# always "latest"). Used to re-sync the cached description on updates.
+SKILL_REGISTRY_SKILL_HASH_ANNOTATION = "rossoctl.io/registry-skill-hash"
 SKILL_FETCHER_SCRIPTS_CM = "rossoctl-skill-fetcher-scripts"
 SKILL_FETCHER_IMAGE = "alpine:3.21.3"
 
