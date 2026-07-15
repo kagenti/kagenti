@@ -561,11 +561,14 @@ log_info "Step 3: Istio Gateway Controller (core)"
 ISTIO_REPO="https://istio-release.storage.googleapis.com/charts/"
 
 log_info "Installing istio-base ${ISTIO_VERSION}..."
+# istiod owns the failurePolicy field on this webhook; delete it so Helm can recreate it cleanly on upgrades
+kubectl delete validatingwebhookconfiguration istiod-default-validator --ignore-not-found
 run_cmd helm upgrade --install istio-base base \
   --repo "$ISTIO_REPO" --version "$ISTIO_VERSION" \
   -n istio-system --create-namespace --wait
 
 log_info "Installing istiod ${ISTIO_VERSION}..."
+kubectl delete validatingwebhookconfiguration istio-validator-istio-system --ignore-not-found
 run_cmd helm upgrade --install istiod istiod \
   --repo "$ISTIO_REPO" --version "$ISTIO_VERSION" \
   -n istio-system --wait
@@ -644,9 +647,14 @@ if $WITH_SPIRE; then
     -n spire-mgmt --create-namespace --wait
 
   log_info "Installing SPIRE ${SPIRE_VERSION}..."
+  # No --wait: SPIRE deploys workloads into a separate namespace (zero-trust-workload-identity-manager),
+  # so Helm's --wait finds nothing in spire-mgmt and times out. We wait explicitly below.
+  # Step 7 patches the OIDC configmap with kubectl (client-side-apply), which conflicts on re-runs.
+  kubectl delete configmap spire-spiffe-oidc-discovery-provider \
+    -n zero-trust-workload-identity-manager --ignore-not-found
   run_cmd helm upgrade --install spire spire \
     --repo "$SPIRE_REPO" --version "$SPIRE_VERSION" \
-    -n spire-mgmt --create-namespace --wait --timeout=5m \
+    -n spire-mgmt --create-namespace \
     --set global.spire.recommendations.enabled=true \
     --set global.spire.namespaces.create=true \
     --set global.spire.namespaces.server.name=zero-trust-workload-identity-manager \
@@ -671,6 +679,16 @@ if $WITH_SPIRE; then
     --set "tornjak-frontend.apiServerURL=http://spire-tornjak-ui.${DOMAIN}:8080" \
     --set tornjak-frontend.service.type=ClusterIP \
     --set tornjak-frontend.service.port=3000
+
+  log_info "Waiting for SPIRE pods in zero-trust-workload-identity-manager..."
+  deadline=$((SECONDS + 120))
+  until kubectl get pod --no-headers -l app.kubernetes.io/instance=spire \
+    -n zero-trust-workload-identity-manager 2>/dev/null | grep -q .; do
+    if (( SECONDS >= deadline )); then log_error "Timed out waiting for SPIRE pods"; exit 1; fi
+    sleep 2
+  done
+  kubectl wait --for=condition=Ready pod -l app.kubernetes.io/instance=spire \
+    -n zero-trust-workload-identity-manager --timeout=300s
 
   log_success "SPIRE installed"
 else
@@ -1267,9 +1285,19 @@ fi
 
 log_info "Installing kagenti..."
 run_cmd helm upgrade --install kagenti "$REPO_ROOT/charts/kagenti/" \
-  -n kagenti-system --wait --timeout 20m \
+  -n kagenti-system \
   "${SECRETS_FLAGS[@]+"${SECRETS_FLAGS[@]}"}" \
   "${KAGENTI_FLAGS[@]}"
+
+log_info "Waiting for kagenti pods..."
+deadline=$((SECONDS + 120))
+until kubectl get pod --no-headers -l app.kubernetes.io/name=kagenti-operator-chart \
+  -n kagenti-system 2>/dev/null | grep -q .; do
+  if (( SECONDS >= deadline )); then log_error "Timed out waiting for kagenti-operator pods"; exit 1; fi
+  sleep 2
+done
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=kagenti-operator-chart \
+  -n kagenti-system --timeout=300s
 
 log_success "kagenti installed"
 echo ""
