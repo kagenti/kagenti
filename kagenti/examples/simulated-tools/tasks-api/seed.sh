@@ -27,12 +27,25 @@ TOKEN_RESPONSE="$(curl -sf "${KEYCLOAK_URL}/realms/master/protocol/openid-connec
 TOKEN="$(printf '%s' "${TOKEN_RESPONSE}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')"
 
 echo "Creating simulated tool '${TOOL_NAME}' in namespace '${NAMESPACE}'..."
-SPEC_JSON="$(python3 -c 'import json,sys;print(json.dumps(open(sys.argv[1]).read()))' "${SPEC_FILE}")"
-BODY="$(cat <<EOF
-{"namespace":"${NAMESPACE}","name":"${TOOL_NAME}","openapiSpec":${SPEC_JSON},
- "envVars":[{"name":"LLM_API_KEY","valueFrom":{"secretKeyRef":{"name":"${LLM_SECRET_NAME}","key":"${LLM_SECRET_KEY}"}}}]}
-EOF
-)"
+# Build the request body in python so every value (namespace, name, spec text,
+# secret refs) is JSON-encoded rather than interpolated raw into the string.
+BODY="$(python3 -c '
+import json, sys
+namespace, name, spec_file, secret_name, secret_key = sys.argv[1:6]
+with open(spec_file) as f:
+    spec = f.read()
+print(json.dumps({
+    "namespace": namespace,
+    "name": name,
+    "openapiSpec": spec,
+    "envVars": [
+        {
+            "name": "LLM_API_KEY",
+            "valueFrom": {"secretKeyRef": {"name": secret_name, "key": secret_key}},
+        }
+    ],
+}))
+' "${NAMESPACE}" "${TOOL_NAME}" "${SPEC_FILE}" "${LLM_SECRET_NAME}" "${LLM_SECRET_KEY}")"
 curl -sf -X POST "${BACKEND_URL}/api/v1/simulation/tools" \
   -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   -d "${BODY}" > "${LOG}" 2>&1
