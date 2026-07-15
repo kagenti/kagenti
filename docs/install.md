@@ -53,10 +53,47 @@ podman machine start
 
 | Tool | Purpose |
 |------|---------|
-| Docker Desktop / Rancher Desktop / Podman | Container runtime (18GB RAM, 6 cores recommended) |
+| Docker Desktop / Rancher Desktop / Podman | Container runtime (18GB RAM, 6 cores recommended) — see [Local machine resources](#local-machine-resources) below |
 | [Kind](https://kind.sigs.k8s.io) | Local Kubernetes cluster |
 | [Ollama](https://ollama.com/download) | Local LLM inference |
 | [GitHub Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic) | **(Optional)** Only needed to deploy agents/tools from private GitHub repos or pull from private registries. Recommended scopes: `repo` for private repositories and `read:packages` for private registries (e.g., GHCR). |
+
+#### Local machine resources
+
+Kind runs the entire platform on **one control-plane node**. That node’s CPU and memory
+limits come from your container runtime (Podman machine, Docker Desktop, etc.) — not
+from the Kind config file alone.
+
+| Profile | RAM | CPUs | Typical install |
+|---------|-----|------|-----------------|
+| **Recommended** | 18 GiB | **6** | `--with-istio --with-spire --with-ui --with-backend` plus AuthBridge demos |
+| **Minimum (no builds)** | 16 GiB | **4** | Core + UI; deploy agents from prebuilt images only |
+| **Not recommended** | 16 GiB | **≤4** | Often installs, but Shipwright/Tekton build pods stay `Pending` with `Insufficient cpu` when building from source; see below |
+
+> The installer runs a resource pre-flight check (`scripts/kind/setup-kagenti.sh`) that
+> **warns** when the machine has less than 18 GiB RAM or 6 CPUs. It does not hard-fail, so
+> the numbers above are recommendations, not enforced minimums.
+
+**4 CPUs is usually not enough** for the common demo path (Istio, SPIRE, Keycloak,
+Kuadrant, UI, backend, and **build-from-source** agents via Shipwright). Platform pods
+alone can request ~3.5–4 cores before any agent build runs.
+
+If you must stay on 4 CPUs:
+
+- Skip optional components you do not need (`--with-mlflow`, `--with-kuadrant`, etc.)
+- Deploy agents with **Deploy from image** instead of **Build from source** in the UI
+- Or temporarily scale down non-essential deployments before triggering a Shipwright build
+
+To resize Podman after the machine already exists:
+
+```bash
+podman machine stop
+podman machine set --cpus 6
+podman machine start
+# Recreate the Kind cluster so the node sees the new CPU limit
+kind delete cluster --name kagenti
+scripts/kind/setup-kagenti.sh --with-istio --with-spire --with-ui --with-backend
+```
 
 ### OpenShift-Specific Requirements
 
@@ -84,6 +121,14 @@ script that creates a Kind cluster and deploys Kagenti. Core components are alwa
 installed; optional layers are enabled with `--with-*` flags.
 
 **Core (always installed):** cert-manager, Gateway API CRDs, Istio Gateway controller (istio-base + istiod), Keycloak, kagenti-operator, kagenti-webhook
+
+> **Two Istio layers — don't confuse them.** The **Istio Gateway controller**
+> (`istio-base` + `istiod`) is core and always installed: it implements the
+> `gatewayClassName: istio` Gateway that fronts all `*.localtest.me:8080` ingress
+> (UI, Keycloak, agents), so it cannot be skipped. `--with-istio` is a *separate*
+> layer — the **ambient mesh** (mTLS + waypoints) — and is optional. You do **not**
+> need `--with-istio` for the AuthBridge weather demo, which enforces auth via its
+> own injected sidecar, not the mesh.
 
 **Install everything:**
 
