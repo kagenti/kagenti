@@ -35,7 +35,7 @@ metadata:
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    resourceNames: ["otel-collector", "mlflow"]
+    resourceNames: ["otel-collector", "mlflow"{{ if .Values.featureFlags.traceAnalysis }}, "trace-analysis"{{ end }}]
     verbs: ["get", "patch"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
@@ -97,5 +97,12 @@ spec:
           kubectl rollout restart deployment/otel-collector -n {{ .Values.mlflow.namespace }}
           kubectl rollout status deployment/otel-collector -n {{ .Values.mlflow.namespace }} --timeout=120s
           echo "otel-collector restarted successfully"
+          {{- if .Values.featureFlags.traceAnalysis }}
+
+          echo "Restarting trace-analysis to pick up new OAuth credentials..."
+          kubectl rollout restart deployment/trace-analysis -n {{ .Values.ui.namespace }}
+          kubectl rollout status deployment/trace-analysis -n {{ .Values.ui.namespace }} --timeout=120s
+          echo "trace-analysis restarted successfully"
+          {{- end }}
   backoffLimit: 3
 {{- end }}

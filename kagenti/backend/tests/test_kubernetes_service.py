@@ -810,3 +810,102 @@ class TestCustomResourceOperations:
         )
 
         kubernetes_service._custom_api.delete_namespaced_custom_object.assert_called_once()
+
+
+class TestLogInjectionSanitization:
+    """Proof test for CWE-117: user-controlled values must not reach logs unsanitized."""
+
+    def test_create_statefulset_sanitizes_namespace_in_log(self, kubernetes_service, caplog):
+        """A namespace containing a newline must not inject a forged log line."""
+        kubernetes_service._apps_api.create_namespaced_stateful_set.side_effect = ApiException(
+            status=500, reason="Internal Server Error"
+        )
+
+        malicious_namespace = "team1\ninjected"
+
+        with caplog.at_level("ERROR"):
+            with pytest.raises(ApiException):
+                kubernetes_service.create_statefulset(malicious_namespace, {"metadata": {}})
+
+        # We assert >= 1 (not == 1) so a future extra log call on the error path
+        # doesn't break this test; the security invariant is the absence of the
+        # injected newline in the record below, not the exact record count.
+        assert len(caplog.records) >= 1
+        # Select the record that actually logged the namespace rather than assuming
+        # it is records[0]: a future debug line on the error path could land first,
+        # and records[0] would then check the wrong message. Matching on "team1"
+        # finds the security-relevant record whether or not it was sanitized.
+        namespace_records = [r.getMessage() for r in caplog.records if "team1" in r.getMessage()]
+        assert namespace_records, "expected a log record referencing the namespace"
+        message = namespace_records[0]
+        # The sanitized namespace must be glued together with no embedded newline,
+        # so the attacker-supplied "injected" segment cannot appear as its own log line.
+        assert "team1injected" in message
+        assert "team1\ninjected" not in message
+        assert not any(line == "injected" for line in message.splitlines())
+
+    @pytest.mark.parametrize(
+        "api_attr, api_method, invoke",
+        [
+            pytest.param(
+                "_custom_api",
+                "get_namespaced_custom_object",
+                lambda svc, ns: svc.get_custom_resource(
+                    group="agent.kagenti.dev",
+                    version="v1alpha1",
+                    namespace=ns,
+                    plural="agents",
+                    name="an-agent",
+                ),
+                id="get_custom_resource",
+            ),
+            pytest.param(
+                "_apps_api",
+                "read_namespaced_deployment",
+                lambda svc, ns: svc.get_deployment(ns, "a-deploy"),
+                id="get_deployment",
+            ),
+            pytest.param(
+                "_core_api",
+                "read_namespaced_service",
+                lambda svc, ns: svc.get_service(ns, "a-svc"),
+                id="get_service",
+            ),
+            pytest.param(
+                "_batch_api",
+                "read_namespaced_job",
+                lambda svc, ns: svc.get_job(ns, "a-job"),
+                id="get_job",
+            ),
+        ],
+    )
+    def test_read_methods_sanitize_namespace_in_log(
+        self, kubernetes_service, caplog, api_attr, api_method, invoke
+    ):
+        """One read method per resource group must sanitize the namespace before logging.
+
+        This guards against a future accidental removal of a ``_sanitize`` call on
+        any of the major resource groups (custom resources, Deployments, Services,
+        Jobs) going undetected — the CWE-117 invariant is enforced per group, not
+        just for ``create_statefulset``.
+        """
+        # The fixture does not mock ``_custom_api``; give any unmocked branch a mock
+        # so the property does not try to build a real client.
+        if getattr(kubernetes_service, api_attr, None) is None:
+            setattr(kubernetes_service, api_attr, MagicMock())
+        getattr(getattr(kubernetes_service, api_attr), api_method).side_effect = ApiException(
+            status=500, reason="Internal Server Error"
+        )
+
+        malicious_namespace = "team1\ninjected"
+
+        with caplog.at_level("ERROR"):
+            with pytest.raises(ApiException):
+                invoke(kubernetes_service, malicious_namespace)
+
+        namespace_records = [r.getMessage() for r in caplog.records if "team1" in r.getMessage()]
+        assert namespace_records, "expected a log record referencing the namespace"
+        message = namespace_records[0]
+        assert "team1injected" in message
+        assert "team1\ninjected" not in message
+        assert not any(line == "injected" for line in message.splitlines())

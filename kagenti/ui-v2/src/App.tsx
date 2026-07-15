@@ -13,6 +13,7 @@ import { BuildProgressPage } from './pages/BuildProgressPage';
 import { ToolCatalogPage } from './pages/ToolCatalogPage';
 import { ToolDetailPage } from './pages/ToolDetailPage';
 import { ToolBuildProgressPage } from './pages/ToolBuildProgressPage';
+import { ToolGenerationProgressPage } from './pages/ToolGenerationProgressPage';
 import { MCPGatewayPage } from './pages/MCPGatewayPage';
 import { AIGatewayPage } from './pages/AIGatewayPage';
 import { GatewayPoliciesPage } from './pages/GatewayPoliciesPage';
@@ -99,6 +100,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ToolBuildProgressPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tools/:namespace/:name/generate"
+          element={
+            <ProtectedRoute>
+              <ToolGenerationProgressPage />
             </ProtectedRoute>
           }
         />

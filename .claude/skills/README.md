@@ -339,7 +339,8 @@ flowchart LR
 │   ├── hypershift:quotas
 │   └── hypershift:setup
 ├── istio/                          Service mesh patterns
-│   └── istio:ambient-waypoint
+│   ├── istio:ambient-waypoint
+│   └── istio:mesh-selfheal
 ├── k8s/                            Kubernetes debugging
 │   ├── k8s:health
 │   ├── k8s:logs

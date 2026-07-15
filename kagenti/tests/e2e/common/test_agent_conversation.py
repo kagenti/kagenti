@@ -44,6 +44,37 @@ from kagenti.tests.e2e.conftest import (
 
 logger = logging.getLogger(__name__)
 
+# Error signatures that indicate a transient failure worth retrying. These match
+# either the text of a FAILED task's status message or the string form of an
+# exception raised while streaming the response.
+_TRANSIENT_ERROR_FRAGMENTS = (
+    "Cannot connect",
+    "Connection error",
+    "Expecting value",
+    "Error calling tool",
+    "timed out",
+    "Read timed out",
+    "ConnectionPool",
+)
+
+# httpx transport exceptions that are transient: the agent hung on its downstream
+# LLM/MCP call past the client read timeout, or the connection dropped. These are
+# raised by client.send_message() before any task result is returned, so they must
+# be classified by type — httpx.ReadTimeout in particular carries no message text.
+_TRANSIENT_TRANSPORT_EXCEPTIONS = (
+    httpx.TimeoutException,  # base of ReadTimeout, ConnectTimeout, WriteTimeout, PoolTimeout
+    httpx.ConnectError,
+    httpx.RemoteProtocolError,
+)
+
+
+def _is_transient_conversation_error(exc: Exception) -> bool:
+    """Return True if an exception raised while streaming the agent response is
+    transient and the query should be retried rather than failing the test."""
+    if isinstance(exc, _TRANSIENT_TRANSPORT_EXCEPTIONS):
+        return True
+    return any(frag in str(exc) for frag in _TRANSIENT_ERROR_FRAGMENTS)
+
 
 def _is_openshift_from_config():
     """Detect if running on OpenShift from KAGENTI_CONFIG_FILE."""
@@ -339,22 +370,34 @@ class TestWeatherAgentConversation:
             try:
                 last_result = await _send_and_collect_response(client, user_message)
             except Exception as e:
-                pytest.fail(f"Error during A2A conversation: {e}")
+                # A transport-level error (e.g. httpx.ReadTimeout when the agent
+                # hangs on its downstream LLM/MCP call) is raised here before any
+                # task result comes back, so the task_failed retry path below never
+                # sees it. Classify and retry transient errors instead of failing.
+                if (
+                    _is_transient_conversation_error(e)
+                    and attempt < _LLM_QUERY_MAX_ATTEMPTS
+                ):
+                    logger.warning(
+                        "Transient error on attempt %d/%d, retrying in %ds...\n  %s: %s",
+                        attempt,
+                        _LLM_QUERY_MAX_ATTEMPTS,
+                        _LLM_QUERY_RETRY_DELAY_S,
+                        type(e).__name__,
+                        e,
+                    )
+                    await asyncio.sleep(_LLM_QUERY_RETRY_DELAY_S)
+                    continue
+                _run_mcp_diagnostics()
+                pytest.fail(f"Error during A2A conversation: {type(e).__name__}: {e}")
 
             if last_result["task_failed"]:
                 error_text = last_result["full_response"][:_DIAG_ERROR_LIMIT]
                 # Retry on transient failures — the weather-tool pod may still
                 # be initializing, or the LLM/tool may return transient errors.
-                _TRANSIENT_ERRORS = (
-                    "Cannot connect",
-                    "Connection error",
-                    "Expecting value",
-                    "Error calling tool",
-                    "timed out",
-                    "Read timed out",
-                    "ConnectionPool",
+                is_transient = any(
+                    err in error_text for err in _TRANSIENT_ERROR_FRAGMENTS
                 )
-                is_transient = any(err in error_text for err in _TRANSIENT_ERRORS)
                 if is_transient and attempt < _LLM_QUERY_MAX_ATTEMPTS:
                     logger.warning(
                         "LLM connectivity error on attempt %d/%d, retrying in %ds...\n  %s",
@@ -503,13 +546,31 @@ class TestWeatherAgentConversation:
                         client, user_message, context_id=context_id
                     )
                 except Exception as e:
-                    pytest.fail(f"Turn {turn} failed: {e}")
+                    # Transport-level errors (e.g. httpx.ReadTimeout) are raised
+                    # before any task result, bypassing the task_failed retry path
+                    # below. Classify and retry transient errors instead of failing.
+                    if (
+                        _is_transient_conversation_error(e)
+                        and attempt < _LLM_QUERY_MAX_ATTEMPTS
+                    ):
+                        logger.warning(
+                            "Turn %d: transient error on attempt %d/%d, retrying in %ds...\n  %s: %s",
+                            turn,
+                            attempt,
+                            _LLM_QUERY_MAX_ATTEMPTS,
+                            _LLM_QUERY_RETRY_DELAY_S,
+                            type(e).__name__,
+                            e,
+                        )
+                        await asyncio.sleep(_LLM_QUERY_RETRY_DELAY_S)
+                        continue
+                    _run_mcp_diagnostics()
+                    pytest.fail(f"Turn {turn} failed: {type(e).__name__}: {e}")
 
                 if last_result["task_failed"]:
                     error_text = last_result["full_response"][:_DIAG_ERROR_LIMIT]
                     is_transient = any(
-                        err in error_text
-                        for err in ("Cannot connect", "Connection error")
+                        err in error_text for err in _TRANSIENT_ERROR_FRAGMENTS
                     )
                     if is_transient and attempt < _LLM_QUERY_MAX_ATTEMPTS:
                         logger.warning(
