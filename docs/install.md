@@ -415,47 +415,14 @@ kubectl get secret keycloak-initial-admin -n keycloak \
 
 ---
 
-## Keycloak Admin Credentials (operator)
+## Keycloak Authentication
 
-The kagenti-operator’s client-registration controller reads Keycloak admin credentials
-from the **`keycloak-initial-admin`** Secret in the Keycloak namespace (**`keycloak`** by
-default, configurable via `keycloak.namespace` / the operator's
-`--keycloak-admin-secret-namespace` flag). The bootstrap job grants the operator a Role
-to read that Secret in the Keycloak namespace — the admin credentials are **not**
-replicated into agent namespaces.
+Kagenti supports two modes for how the operator and agent workloads authenticate to Keycloak:
 
-AuthBridge and agent OAuth client registration depend on these credentials. If the
-operator cannot read the secret, agent OAuth client registration stalls and agent
-sidecars may return 503 until registration completes.
+- **Client secrets (default)** — the operator uses admin credentials to register agent OAuth clients; agents authenticate with provisioned client secrets. No extra infrastructure required.
+- **SPIFFE authentication (recommended)** — the operator and agents authenticate using their SPIFFE identities (JWT-SVIDs). Requires SPIRE. Eliminates all provisioned credentials.
 
-### Pointing the operator at a different secret
-
-By default the operator reads the `keycloak-initial-admin` Secret provisioned in the
-`keycloak` namespace by the deps chart. If you manage Keycloak admin credentials
-elsewhere (e.g. via an external secrets operator), point the chart at your own Secret
-through the `keycloak.*` values rather than editing the operator directly:
-
-```yaml
-keycloak:
-  namespace: keycloak            # namespace the operator reads the secret from
-  adminSecretName: my-admin      # your Secret's name
-  adminUsernameKey: username     # key holding the admin username
-  adminPasswordKey: password     # key holding the admin password
-```
-
-The referenced Secret must live in `keycloak.namespace` and expose the username and
-password under the configured keys.
-
-### Verifying
-
-```bash
-kubectl get secret keycloak-initial-admin -n keycloak
-```
-
-The operator reads this Secret from the `keycloak` namespace — it is **not** replicated
-into agent namespaces (`team1`, `team2`), so `NotFound` there is expected.
-
-> **Security note:** For production deployments, use a dedicated Keycloak service account with limited permissions instead of the admin account. See the [Identity Guide](./identity-guide.md) for details.
+Both modes are configured automatically during install. See the **[Authentication Guide](./authentication.md)** for full setup, configuration, and how each mode works.
 
 ---
 
