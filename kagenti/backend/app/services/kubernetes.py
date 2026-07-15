@@ -158,6 +158,8 @@ class KubernetesService:
         label_selector: Optional[str] = None,
     ) -> List[dict]:
         """List custom resources in a namespace."""
+        namespace = _sanitize(namespace)
+        plural = _sanitize(plural)
         try:
             response = self.custom_api.list_namespaced_custom_object(
                 group=group,
@@ -180,6 +182,7 @@ class KubernetesService:
         log_api_error: bool = True,
     ) -> dict:
         """List cluster-scoped custom resources (e.g., ClusterBuildStrategies)."""
+        plural = _sanitize(plural)
         try:
             return self.custom_api.list_cluster_custom_object(
                 group=group,
@@ -201,6 +204,9 @@ class KubernetesService:
         name: str,
     ) -> dict:
         """Get a specific custom resource."""
+        namespace = _sanitize(namespace)
+        plural = _sanitize(plural)
+        name = _sanitize(name)
         try:
             return self.custom_api.get_namespaced_custom_object(
                 group=group,
@@ -222,6 +228,9 @@ class KubernetesService:
         name: str,
     ) -> dict:
         """Delete a custom resource."""
+        namespace = _sanitize(namespace)
+        plural = _sanitize(plural)
+        name = _sanitize(name)
         try:
             return self.custom_api.delete_namespaced_custom_object(
                 group=group,
@@ -243,6 +252,8 @@ class KubernetesService:
         body: dict,
     ) -> dict:
         """Create a custom resource."""
+        namespace = _sanitize(namespace)
+        plural = _sanitize(plural)
         try:
             return self.custom_api.create_namespaced_custom_object(
                 group=group,
@@ -265,6 +276,9 @@ class KubernetesService:
         body: dict,
     ) -> dict:
         """Patch a custom resource."""
+        namespace = _sanitize(namespace)
+        plural = _sanitize(plural)
+        name = _sanitize(name)
         try:
             return self.custom_api.patch_namespaced_custom_object(
                 group=group,
@@ -289,6 +303,8 @@ class KubernetesService:
         the workload name (e.g. ``git-issue-agent``) rather than falling back
         to the ReplicaSet hash.
         """
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
         try:
             self.core_api.read_namespaced_service_account(name=name, namespace=namespace)
             logger.debug(f"ServiceAccount '{name}' already exists in {namespace}")
@@ -319,6 +335,8 @@ class KubernetesService:
         This is idempotent — if the ConfigMap already exists it is left unchanged
         so that user customizations are preserved.
         """
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
         try:
             self.core_api.read_namespaced_config_map(name=name, namespace=namespace)
             logger.debug(f"ConfigMap '{name}' already exists in {namespace}")
@@ -415,6 +433,7 @@ class KubernetesService:
 
     def create_deployment(self, namespace: str, body: dict) -> dict:
         """Create a Deployment in the specified namespace."""
+        namespace = _sanitize(namespace)
         try:
             result = self.apps_api.create_namespaced_deployment(
                 namespace=namespace,
@@ -427,6 +446,8 @@ class KubernetesService:
 
     def get_deployment(self, namespace: str, name: str) -> dict:
         """Get a Deployment by name."""
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
         try:
             result = self.apps_api.read_namespaced_deployment(
                 name=name,
@@ -439,6 +460,7 @@ class KubernetesService:
 
     def list_deployments(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
         """List Deployments in a namespace with optional label selector."""
+        namespace = _sanitize(namespace)
         try:
             result = self.apps_api.list_namespaced_deployment(
                 namespace=namespace,
@@ -451,6 +473,8 @@ class KubernetesService:
 
     def delete_deployment(self, namespace: str, name: str) -> None:
         """Delete a Deployment by name."""
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
         try:
             self.apps_api.delete_namespaced_deployment(
                 name=name,
@@ -462,6 +486,8 @@ class KubernetesService:
 
     def patch_deployment(self, namespace: str, name: str, body: dict) -> dict:
         """Patch a Deployment with the provided body."""
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
         try:
             result = self.apps_api.patch_namespaced_deployment(
                 name=name,
@@ -479,6 +505,7 @@ class KubernetesService:
 
     def create_service(self, namespace: str, body: dict) -> dict:
         """Create a Service in the specified namespace."""
+        namespace = _sanitize(namespace)
         try:
             result = self.core_api.create_namespaced_service(
                 namespace=namespace,
@@ -491,6 +518,8 @@ class KubernetesService:
 
     def get_service(self, namespace: str, name: str) -> dict:
         """Get a Service by name."""
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
         try:
             result = self.core_api.read_namespaced_service(
                 name=name,
@@ -518,6 +547,7 @@ class KubernetesService:
 
     def list_services(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
         """List Services in a namespace with optional label selector."""
+        namespace = _sanitize(namespace)
         try:
             result = self.core_api.list_namespaced_service(
                 namespace=namespace,
@@ -624,6 +654,7 @@ class KubernetesService:
 
     def create_statefulset(self, namespace: str, body: dict) -> dict:
         """Create a StatefulSet in the specified namespace."""
+        namespace = _sanitize(namespace)
         try:
             result = self.apps_api.create_namespaced_stateful_set(
                 namespace=namespace,
@@ -636,6 +667,8 @@ class KubernetesService:
 
     def get_statefulset(self, namespace: str, name: str) -> dict:
         """Get a StatefulSet by name."""
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
         try:
             result = self.apps_api.read_namespaced_stateful_set(
                 name=name,
@@ -648,6 +681,7 @@ class KubernetesService:
 
     def list_statefulsets(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
         """List StatefulSets in a namespace with optional label selector."""
+        namespace = _sanitize(namespace)
         try:
             result = self.apps_api.list_namespaced_stateful_set(
                 namespace=namespace,
@@ -660,6 +694,8 @@ class KubernetesService:
 
     def delete_statefulset(self, namespace: str, name: str) -> None:
         """Delete a StatefulSet by name."""
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
         try:
             self.apps_api.delete_namespaced_stateful_set(
                 name=name,
@@ -671,6 +707,8 @@ class KubernetesService:
 
     def patch_statefulset(self, namespace: str, name: str, body: dict) -> dict:
         """Patch a StatefulSet with the provided body."""
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
         try:
             result = self.apps_api.patch_namespaced_stateful_set(
                 name=name,
@@ -688,6 +726,7 @@ class KubernetesService:
 
     def create_job(self, namespace: str, body: dict) -> dict:
         """Create a Job in the specified namespace."""
+        namespace = _sanitize(namespace)
         try:
             result = self.batch_api.create_namespaced_job(
                 namespace=namespace,
@@ -700,6 +739,8 @@ class KubernetesService:
 
     def get_job(self, namespace: str, name: str) -> dict:
         """Get a Job by name."""
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
         try:
             result = self.batch_api.read_namespaced_job(
                 name=name,
@@ -712,6 +753,7 @@ class KubernetesService:
 
     def list_jobs(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
         """List Jobs in a namespace with optional label selector."""
+        namespace = _sanitize(namespace)
         try:
             result = self.batch_api.list_namespaced_job(
                 namespace=namespace,
@@ -724,6 +766,8 @@ class KubernetesService:
 
     def delete_job(self, namespace: str, name: str) -> None:
         """Delete a Job by name."""
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
         try:
             # Use propagationPolicy=Background to delete pods
             self.batch_api.delete_namespaced_job(
