@@ -208,7 +208,11 @@ class TestSandboxStatusObservability:
         assert ready >= desired, f"Gateway: {ready}/{desired} replicas ready"
 
     def test_agent_deployments_status_queryable(self):
-        """Each agent deployment exposes replicas, readyReplicas, conditions."""
+        """Each agent deployment exposes replicas, readyReplicas, conditions.
+
+        Filters by the operator-managed kagenti.io/type=agent label
+        (applied by kagenti-operator via AgentRuntime reconciliation).
+        """
         deployments = kubectl_get_deployments_json(AGENT_NS)
         agent_deploys = [
             d
@@ -229,7 +233,11 @@ class TestSandboxStatusObservability:
             )
 
     def test_agent_pods_status_queryable(self):
-        """Each agent pod exposes phase, containerStatuses, and resource usage."""
+        """Each agent pod exposes phase, containerStatuses, and resource usage.
+
+        Filters by the operator-managed kagenti.io/type=agent label
+        (applied by kagenti-operator via AgentRuntime reconciliation).
+        """
         pods = kubectl_get_pods_json(AGENT_NS)
         agent_pods = [
             p

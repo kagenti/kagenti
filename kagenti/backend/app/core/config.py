@@ -82,6 +82,39 @@ class Settings(BaseSettings):
     )
     kagenti_feature_flag_acp: bool = False  # ACP WebSocket protocol gateway
     kagenti_feature_flag_external_skills: bool = False  # External skill registry references
+    # Simulated MCP tools: LLM-driven, stateful tools generated from an OpenAPI spec
+    kagenti_feature_flag_simulated_tools: bool = False
+    # Generic simulation-harness image serving all simulated tools (epic #2151)
+    simulation_harness_image: str = "ghcr.io/kagenti/simulation-harness:latest"
+    # Pull secret for the harness image while it lives in a private registry (interim,
+    # epic #2151). References the Helm-created per-namespace `ghcr-secret`. Set empty
+    # to disable — once the image is public, anonymous pull works and this is unneeded.
+    simulation_image_pull_secret: str = "ghcr-secret"
+    # Image pull policy for the harness container. Defaults to Always (production
+    # pulls :latest from the registry); set IfNotPresent/Never for local dev when
+    # the image is side-loaded into the cluster (e.g. `kind load`).
+    simulation_image_pull_policy: str = "Always"
+    # Generation orchestration (#2162): watchdog ceiling from StatefulSet
+    # creationTimestamp — covers image pull + pod start + the harness's own 120s
+    # creation budget. Also bounds the trigger task's post-retry window.
+    simulation_generation_timeout: int = 600
+    # httpx timeout (seconds) for harness control-plane calls.
+    simulation_harness_request_timeout: float = 10.0
+    # Seconds between trigger-task POST attempts while the harness is still starting.
+    simulation_trigger_poll_interval: int = 5
+    # Auto-inject MCP_URL / LLM env vars on agent import (TUI parity; weather demo defaults)
+    kagenti_feature_flag_agent_import_defaults: bool = False
+    skill_autosync_interval: int = (
+        30  # seconds between registry sync checks (env: SKILL_AUTOSYNC_INTERVAL)
+    )
+    # Hosts/IPs/CIDRs allowed to bypass the registry-URL private-address SSRF block
+    # (env: SKILL_REGISTRY_ALLOWED_HOSTS, comma-separated). Empty by default — all
+    # private/internal addresses stay blocked. Entries match the URL hostname
+    # (case-insensitive) or the resolved IP (single IP or CIDR). Use for self-hosted
+    # or in-cluster skill registries (e.g. "192.168.50.16,10.0.0.0/8").
+    skill_registry_allowed_hosts: str = ""
+    # Trace-analysis Observability card (links to the standalone trace-analysis component)
+    kagenti_feature_flag_trace_analysis: bool = False  # Trace-analysis Observability card
 
     # AuthBridge runtime config (mounted from Helm-managed ConfigMap)
     authbridge_runtime_config_path: str = "/etc/kagenti/authbridge/config.yaml"
@@ -95,6 +128,7 @@ class Settings(BaseSettings):
     traces_dashboard_url: str = ""
     network_dashboard_url: str = ""
     mlflow_dashboard_url: str = ""
+    trace_analysis_dashboard_url: str = ""
     mcp_inspector_url: str = ""
     mcp_proxy_full_address: str = ""
     keycloak_console_url: str = ""

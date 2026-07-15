@@ -34,6 +34,11 @@ APP_KUBERNETES_IO_COMPONENT = "app.kubernetes.io/component"
 KAGENTI_SPIRE_LABEL = "kagenti.io/spire"
 KAGENTI_SPIRE_ENABLED_VALUE = "enabled"
 
+# Simulated MCP tools (epic #2151)
+KAGENTI_SIMULATED_LABEL = "kagenti.io/simulated"  # safety marker; UI badge; list filter
+KAGENTI_AUTOSCALING_ANNOTATION = "kagenti.io/autoscaling"  # HPA-off marker (declarative opt-out)
+SIMULATION_HARNESS_SKILLS_MOUNT = "/app/skills-store"  # HARNESS_SKILLS_FOLDER mount path
+
 # Per-sidecar opt-out labels (envoy-proxy / spiffe-helper /
 # client-registration) are gone after kagenti-extensions#411 — they
 # referenced separate sidecars that no longer exist. The master enable
@@ -181,6 +186,12 @@ SKILL_REGISTRY_SKILL_NAME_ANNOTATION = "kagenti.io/registry-skill-name"
 SKILL_REGISTRY_SKILL_VERSION_ANNOTATION = "kagenti.io/registry-skill-version"
 SKILL_FETCHER_SCRIPTS_CM = "kagenti-skill-fetcher-scripts"
 SKILL_FETCHER_IMAGE = "alpine:3.21.3"
+
+# Skill auto-sync constants
+SKILL_AUTOSYNC_CONFIG_CM = "kagenti-skill-autosync-config"
+SKILL_AUTOSYNC_LABEL = "kagenti.io/auto-sync"
+SKILL_NS_TAG_PREFIX = "namespace:"
+SKILL_NS_DEFAULT_TAG = "namespace:default"
 
 # Default Keycloak in-cluster URL (used by AuthBridge ConfigMaps)
 DEFAULT_KEYCLOAK_INTERNAL_URL = "http://keycloak-service.keycloak.svc:8080"

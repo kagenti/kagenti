@@ -167,12 +167,15 @@ class TestCreateExternalSkill:
         mock_kube = MagicMock()
         mock_kube.core_api.create_namespaced_config_map.return_value = MagicMock()
 
+        public_addr = [(None, None, None, None, ("93.184.216.34", 0))]
         with (
             patch("app.routers.skills.get_kubernetes_service", return_value=mock_kube),
             patch("app.routers.skills.settings") as mock_settings,
+            patch("app.routers.skills.socket.getaddrinfo", return_value=public_addr),
         ):
             mock_settings.kagenti_feature_flag_external_skills = True
             mock_settings.kagenti_feature_flag_skills = True
+            mock_settings.skill_registry_allowed_hosts = ""
             client = TestClient(self._make_app())
             resp = client.post(
                 "/skills/external",
@@ -204,6 +207,7 @@ class TestCreateExternalSkill:
             patch("app.routers.skills.settings") as mock_settings,
         ):
             mock_settings.kagenti_feature_flag_external_skills = False
+            mock_settings.skill_registry_allowed_hosts = ""
             client = TestClient(self._make_app())
             resp = client.post(
                 "/skills/external",

@@ -181,7 +181,7 @@ and lets us decouple merge velocity from release readiness.
 1. **Always off by default.** The flag must default to `False` / `off`.
 2. **Use the canonical mechanism.** Flags live in `kagenti/backend/app/core/config.py`
    as `kagenti_feature_flag_<name>: bool = False` and are exposed to the frontend
-   via the `GET /api/config/features` endpoint (see `app/routers/config.py`).
+   via the `GET /api/v1/config/features` endpoint (see `app/routers/config.py`).
 3. **Guard at the module boundary.** Feature-flagged modules are conditionally
    imported in `app/main.py`. Follow the existing pattern (try/except with
    warning on ImportError).

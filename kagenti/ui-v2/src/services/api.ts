@@ -27,6 +27,8 @@ import type {
   CreateSkillRequest,
   CreateSkillResponse,
   CreateExternalSkillRequest,
+  SkillAutoSyncConfig,
+  SkillAutoSyncStatus,
   AuthBridgeConfig,
   AuthBridgeStats,
 } from '@/types';
@@ -63,10 +65,14 @@ export function setTokenForceRefresher(refresher: () => Promise<string | null>):
  */
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Parsed FastAPI `detail` payload (string | array | object), preserved verbatim
+   *  so callers can read structured details such as the reseed 422 `json_path`. */
+  detail?: unknown;
+  constructor(message: string, status: number, detail?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -145,10 +151,14 @@ async function apiFetch<T>(
     const errorData = await response.json().catch(() => ({}));
     throw new ApiError(
       extractErrorMessage(errorData, `API error: ${response.status} ${response.statusText}`),
-      response.status
+      response.status,
+      (errorData as Record<string, unknown>).detail
     );
   }
 
+  if (response.status === 204 || response.headers.get('content-length') === '0') {
+    return undefined as T;
+  }
   return response.json();
 }
 
@@ -245,6 +255,9 @@ export const agentService = {
     // Per-workload mTLS posture (maps to AgentRuntime.Spec.MTLSMode).
     // Backend rejects mtlsMode != 'disabled' when authBridgeMode === 'envoy-sidecar'.
     mtlsMode?: 'disabled' | 'permissive' | 'strict';
+    // Per-workload TLS bridge (maps to AgentRuntime.Spec.TLSBridgeMode=enabled).
+    // Requires proxy-sidecar/lite; backend rejects it with envoy-sidecar.
+    tlsBridgeEnabled?: boolean;
     outboundRoutes?: Array<{ host: string; target_audience: string; token_scopes: string }>;
     outboundPortsExclude?: string;
     inboundPortsExclude?: string;
@@ -459,6 +472,7 @@ export const shipwrightService = {
       authBridgeEnabled?: boolean;
       authBridgeMode?: 'proxy-sidecar' | 'envoy-sidecar' | 'lite' | 'waypoint';
       mtlsMode?: 'disabled' | 'permissive' | 'strict';
+      tlsBridgeEnabled?: boolean;
       outboundRoutes?: Array<{ host: string; target_audience: string; token_scopes: string }>;
       outboundPortsExclude?: string;
       inboundPortsExclude?: string;
@@ -710,6 +724,7 @@ export interface DashboardConfig {
   traces: string;
   network: string;
   mlflow: string;
+  traceAnalysis: string | null;
   mcpInspector: string | null;
   mcpProxy: string | null;
   keycloakConsole: string;
@@ -1550,6 +1565,21 @@ export const skillService = {
       body: JSON.stringify(data),
     });
   },
+
+  async getAutoSync(): Promise<SkillAutoSyncStatus> {
+    return apiFetch('/skills/autosync');
+  },
+
+  async enableAutoSync(cfg: SkillAutoSyncConfig): Promise<SkillAutoSyncStatus> {
+    return apiFetch('/skills/autosync', {
+      method: 'POST',
+      body: JSON.stringify(cfg),
+    });
+  },
+
+  async disableAutoSync(): Promise<void> {
+    await apiFetch('/skills/autosync', { method: 'DELETE' });
+  },
 };
 
 export const authBridgeService = {
@@ -1559,6 +1589,125 @@ export const authBridgeService = {
 
   async getStatus(namespace: string, name: string): Promise<AuthBridgeStats> {
     return apiFetch(`/agents/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/identity-status`);
+  },
+};
+
+// --- Simulated tools (#2165) ---
+
+export type GenerationStatus = 'Generating' | 'Ready' | 'Failed' | 'Error';
+
+export interface SimulationCreateRequest {
+  namespace: string;
+  openapiSpec: string;
+  name?: string;
+  envVars?: Array<{
+    name: string;
+    value?: string;
+    valueFrom?: {
+      secretKeyRef?: { name: string; key: string };
+      configMapKeyRef?: { name: string; key: string };
+    };
+  }>;
+}
+
+export interface SimulationCreateResponse {
+  success: boolean;
+  name: string;
+  namespace: string;
+  status: string;
+  message: string;
+}
+
+export interface GenerationStatusResponse {
+  status: GenerationStatus;
+  reason?: string;
+  mcpUrl?: string;
+}
+
+export interface SimulationLifecycleResponse {
+  success: boolean;
+  name: string;
+  namespace: string;
+  status: string;
+  message: string;
+}
+
+export interface SimulationResetResponse {
+  success: boolean;
+  name: string;
+  namespace: string;
+  message: string;
+}
+
+export interface SimulationDeleteResponse {
+  success: boolean;
+  name: string;
+  namespace: string;
+  deletedResources: string[];
+  message: string;
+}
+
+export interface SimulationDatabaseResponse {
+  success: boolean;
+  name: string;
+  namespace: string;
+  message: string;
+}
+
+export const simulationService = {
+  async create(data: SimulationCreateRequest): Promise<SimulationCreateResponse> {
+    return apiFetch<SimulationCreateResponse>('/simulation/tools', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getGenerationStatus(
+    namespace: string,
+    name: string
+  ): Promise<GenerationStatusResponse> {
+    return apiFetch<GenerationStatusResponse>(
+      `/simulation/tools/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/generation-status`
+    );
+  },
+
+  async stop(namespace: string, name: string): Promise<SimulationLifecycleResponse> {
+    return apiFetch<SimulationLifecycleResponse>(
+      `/simulation/tools/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/stop`,
+      { method: 'POST' }
+    );
+  },
+
+  async start(namespace: string, name: string): Promise<SimulationLifecycleResponse> {
+    return apiFetch<SimulationLifecycleResponse>(
+      `/simulation/tools/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/start`,
+      { method: 'POST' }
+    );
+  },
+
+  async reset(namespace: string, name: string): Promise<SimulationResetResponse> {
+    return apiFetch<SimulationResetResponse>(
+      `/simulation/tools/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/reset`,
+      { method: 'POST' }
+    );
+  },
+
+  async delete(namespace: string, name: string): Promise<SimulationDeleteResponse> {
+    return apiFetch<SimulationDeleteResponse>(
+      `/simulation/tools/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+      { method: 'DELETE' }
+    );
+  },
+
+  async reseedDatabase(
+    namespace: string,
+    name: string,
+    database: string
+  ): Promise<SimulationDatabaseResponse> {
+    return apiFetch<SimulationDatabaseResponse>(
+      `/simulation/tools/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/database`,
+      { method: 'PUT', body: JSON.stringify({ database }) }
+    );
   },
 };
 

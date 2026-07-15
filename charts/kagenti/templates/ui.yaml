@@ -8,7 +8,8 @@ metadata:
   name: {{ .Values.ui.configmap }}
   namespace: "{{ .Values.ui.namespace }}"
   labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
+    app.kubernetes.io/name: kagenti-ui
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 data:
   DOMAIN_NAME: "{{ .Values.ui.domainName }}"
   API_URL: "http://{{ .Values.ui.api.hostname }}:8080"
@@ -22,9 +23,16 @@ data:
   {{- else }}
   MLFLOW_DASHBOARD_URL: ""
   {{- end }}
+  {{- if .Values.featureFlags.traceAnalysis }}
+  TRACE_ANALYSIS_DASHBOARD_URL: "http://trace-analysis.{{ .Values.ui.domainName }}:8080"
+  {{- else }}
+  TRACE_ANALYSIS_DASHBOARD_URL: ""
+  {{- end }}
   NETWORK_TRAFFIC_DASHBOARD_URL: "http://kiali.{{ .Values.ui.domainName }}:8080"
   MCP_INSPECTOR_URL: "http://mcp-inspector.{{ .Values.ui.domainName }}:8080"
-  MCP_PROXY_FULL_ADDRESS: "http://mcp-proxy.{{ .Values.ui.domainName }}:8080"
+  # Proxy served on the inspector host under /mcp-proxy by the nginx sidecar
+  # (single origin).
+  MCP_PROXY_FULL_ADDRESS: "http://mcp-inspector.{{ .Values.ui.domainName }}:8080/mcp-proxy"
   KEYCLOAK_CONSOLE_URL: "http://keycloak.{{ .Values.ui.domainName }}:8080/admin/{{ .Values.keycloak.realm }}/console/"
 ---
 {{- end }}
@@ -36,7 +44,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-backend
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 ---
 # Backend Deployment
 apiVersion: apps/v1
@@ -48,7 +56,7 @@ metadata:
     app.kubernetes.io/name: kagenti-backend
     app.kubernetes.io/component: backend
     app.kubernetes.io/part-of: kagenti-ui
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
@@ -61,11 +69,10 @@ spec:
         # See https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments
         checksum/config: {{ printf "%s|%s|%s|%s|%s|%t|%t" .Values.ui.domainName .Values.ui.api.hostname .Values.ui.namespace .Values.ui.configmap .Values.keycloak.realm .Values.components.phoenix.enabled .Values.components.mlflow.enabled | sha256sum }}
         checksum/oauth-config: {{ printf "%s|%s|%s|%s" .Values.keycloak.url .Values.keycloak.publicUrl .Values.keycloak.realm .Values.ui.namespace | sha256sum }}
+        checksum/authbridge-runtime-config: {{ include "kagenti.authbridge-runtime-config-yaml" . | sha256sum }}
       labels:
         app.kubernetes.io/name: kagenti-backend
         app.kubernetes.io/component: backend
-      annotations:
-        checksum/authbridge-runtime-config: {{ include "kagenti.authbridge-runtime-config-yaml" . | sha256sum }}
     spec:
       serviceAccountName: kagenti-backend
       {{- if .Values.ui.auth.enabled }}
@@ -134,6 +141,10 @@ spec:
             - name: SHIPWRIGHT_DEFAULT_STRATEGY
               value: {{ .Values.ui.backend.shipwrightDefaultStrategy | quote }}
             {{- end }}
+            {{- if .Values.ui.backend.skillRegistryAllowedHosts }}
+            - name: SKILL_REGISTRY_ALLOWED_HOSTS
+              value: {{ .Values.ui.backend.skillRegistryAllowedHosts | quote }}
+            {{- end }}
             # Feature flags
             - name: KAGENTI_FEATURE_FLAG_SANDBOX
               value: "{{ .Values.featureFlags.sandbox }}"
@@ -151,6 +162,8 @@ spec:
               value: "{{ .Values.featureFlags.authbridgeAPI }}"
             - name: KAGENTI_FEATURE_FLAG_ADMIN
               value: "{{ .Values.featureFlags.admin }}"
+            - name: KAGENTI_FEATURE_FLAG_TRACE_ANALYSIS
+              value: "{{ .Values.featureFlags.traceAnalysis }}"
             - name: KEYCLOAK_URL
               value: {{ .Values.keycloak.url | quote }}
             - name: KEYCLOAK_PUBLIC_URL
@@ -173,6 +186,12 @@ spec:
                 configMapKeyRef:
                   name: "{{ .Values.ui.configmap }}"
                   key: "MLFLOW_DASHBOARD_URL"
+                  optional: true
+            - name: TRACE_ANALYSIS_DASHBOARD_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: "{{ .Values.ui.configmap }}"
+                  key: "TRACE_ANALYSIS_DASHBOARD_URL"
                   optional: true
             - name: MCP_INSPECTOR_URL
               valueFrom:
@@ -285,7 +304,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-backend
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   type: ClusterIP
   ports:
@@ -307,7 +326,7 @@ metadata:
     app.kubernetes.io/name: kagenti-ui
     app.kubernetes.io/component: frontend
     app.kubernetes.io/part-of: kagenti-ui
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
@@ -371,7 +390,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-ui
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   type: ClusterIP
   ports:
@@ -390,7 +409,7 @@ metadata:
   name: kagenti-backend
   labels:
     app.kubernetes.io/name: kagenti-backend
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: ["namespaces"]
@@ -465,8 +484,9 @@ rules:
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["rolebindings"]
     verbs: ["get", "create"]
-  {{- if .Values.featureFlags.sandbox }}
-  # PersistentVolumeClaims for agent workspace storage (sandbox)
+  {{- if or .Values.featureFlags.sandbox .Values.featureFlags.simulatedTools }}
+  # PersistentVolumeClaims — sandbox agent workspace storage, and simulated-tool
+  # StatefulSet volumes that the delete path enumerates and tears down (#2151).
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "create", "patch", "delete"]
@@ -496,7 +516,7 @@ metadata:
   name: kagenti-backend
   labels:
     app.kubernetes.io/name: kagenti-backend
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -515,9 +535,14 @@ metadata:
   name: kagenti-ui
   namespace: "{{ .Values.ui.namespace }}"
   labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
+    app.kubernetes.io/name: kagenti-ui
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
   annotations:
     openshift.io/host.generated: "true"
+    # Agent chat proxied through the UI involves a cold MCP session + multiple
+    # LLM round-trips that can exceed HAProxy's 30s default, surfacing as a 504
+    # on the first request even though the agent itself completes.
+    haproxy.router.openshift.io/timeout: "120s"
 spec:
   path: /
   port:
@@ -538,9 +563,14 @@ metadata:
   name: kagenti-api
   namespace: "{{ .Values.ui.namespace }}"
   labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
+    app.kubernetes.io/name: kagenti-api
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
   annotations:
     openshift.io/host.generated: "true"
+    # Agent chat proxied through the backend API involves a cold MCP session +
+    # multiple LLM round-trips that can exceed HAProxy's 30s default, surfacing
+    # as a 504 on the first request even though the agent itself completes.
+    haproxy.router.openshift.io/timeout: "120s"
 spec:
   path: /
   port:
@@ -562,7 +592,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-ui
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   parentRefs:
     - name: http
@@ -596,7 +626,7 @@ metadata:
   namespace: "{{ .Values.ui.namespace }}"
   labels:
     app.kubernetes.io/name: kagenti-api
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "kagenti.commonLabels" . | nindent 4 }}
 spec:
   parentRefs:
     - name: http

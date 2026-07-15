@@ -1,54 +1,55 @@
 # Automation Health Dashboard
 
-> Last updated: 2026-06-10 13:00 ET | Programs: 2 active
+> Last updated: 2026-07-14 13:00 ET | Programs: 3 active
 
 ## Executive Summary
 
 | Metric | Value |
 |--------|-------|
-| Total issues auto-created | 93 (link-health: 74, dep-bump: 19) |
-| Total issues auto-resolved | 20 |
+| Total issues auto-created | 118 (link-health: 79, dep-bump: 39) |
+| Total issues auto-resolved | 33 |
 | Total PRs auto-opened | 0 |
-| Estimated hours saved | 5.0 hrs (at 15 min/resolved issue) |
-| Programs active | 2 |
-| Last successful scan | 2026-06-10 |
+| Estimated hours saved | 8.2 hrs (at 15 min/resolved issue) |
+| PRs reviewed by clawgenti | 62 |
+| Programs active | 3 |
+| Last successful scan | 2026-07-14 |
 
 ## Link Health
 
 | Metric | Value | Trend |
 |--------|-------|-------|
-| Repos scanned | 17 | |
-| Total links checked | 2365 | |
-| Broken (internal) | 37 | -47 from first scan |
-| Broken (external) | 23 | -7 from first scan |
-| Issues created (cumulative) | 74 | |
-| Issues resolved (cumulative) | 11 | |
+| Repos scanned | 19 | |
+| Total links checked | 5358 | |
+| Broken (internal) | 30 | -54 from first scan |
+| Broken (external) | 591 | +561 from first scan |
+| Issues created (cumulative) | 79 | |
+| Issues resolved (cumulative) | 12 | |
 
 ### Trend (last 10 scans)
 
 | Date | Internal | External | Delta |
 |------|----------|----------|-------|
+| 2026-07-10 | 30 | 591 | +6 |
+| 2026-07-08 | 31 | 584 | +567 |
+| 2026-06-29 | 30 | 18 | 0 |
+| 2026-06-26 | 30 | 18 | +2 |
+| 2026-06-24 | 29 | 17 | -1 |
+| 2026-06-22 | 29 | 18 | +3 |
+| 2026-06-19 | 29 | 15 | 0 |
+| 2026-06-17 | 29 | 15 | -11 |
+| 2026-06-12 | 37 | 18 | -5 |
 | 2026-06-10 | 37 | 23 | +2 |
-| 2026-06-08 | 36 | 22 | +6 |
-| 2026-06-05 | 29 | 23 | 0 |
-| 2026-06-05 | 29 | 23 | -7 |
-| 2026-06-05 | 36 | 23 | 0 |
-| 2026-06-03 | 37 | 22 | 0 |
-| 2026-06-01 | 37 | 22 | +2 |
-| 2026-05-29 | 36 | 21 | +3 |
-| 2026-05-27 | 32 | 22 | -12 |
-| 2026-05-25 | 43 | 23 | +2 |
 
 ## Dependency Bumps
 
 | Metric | Value | Trend |
 |--------|-------|-------|
-| Repos scanned | 17 | |
-| Open Dependabot PRs | 43 | |
-| Stale PRs (SLA breached) | 9 | baseline: 8 |
-| SLA compliance rate | 79% | |
+| Repos scanned | 20 | |
+| Open Dependabot PRs | 62 | |
+| Stale PRs (SLA breached) | 7 | baseline: 8 |
+| SLA compliance rate | 88% | |
 | Median time-to-merge | 1d | baseline: 1d |
-| Dependabot coverage | 47% (8/17 repos) | |
+| Dependabot coverage | 35% (7/20 repos) | |
 
 ### By Severity Tier
 
@@ -57,47 +58,94 @@
 | Critical | 0 | 3d |
 | High | 3 | 7d |
 | Medium | 0 | 30d |
-| Routine | 6 | 14d |
+| Routine | 4 | 14d |
 | Major | 0 | 30d |
 
 ### Patch Velocity (last 10 scans)
 
 | Date | Stale Security | Stale Routine | Delta |
 |------|----------------|---------------|-------|
-| 2026-06-09 | 3 | 6 | -2 |
-| 2026-06-04 | 3 | 8 | -12 |
-| 2026-06-02 | 3 | 20 | +15 |
-| 2026-05-22 | 3 | 5 | 0 |
-| 2026-05-22 | 3 | 5 | +8 |
+| 2026-07-14 | 3 | 4 | -4 |
+| 2026-07-09 | 4 | 7 | +11 |
+| 2026-07-07 | 0 | 0 | -13 |
+| 2026-07-02 | 7 | 4 | -4 |
+| 2026-06-30 | 8 | 7 | +4 |
+| 2026-06-25 | 4 | 9 | +1 |
+| 2026-06-23 | 4 | 8 | +8 |
+| 2026-06-18 | 3 | 1 | +1 |
+| 2026-06-16 | 3 | 0 | -6 |
+| 2026-06-11 | 3 | 6 | 0 |
+
+## PR Review Bot
+
+Headline impact — median time-to-merge before vs. after the bot became active in each repo:
+
+| Metric | Value | Note |
+|--------|-------|------|
+| Median TTM — before activation | 10.4h | per repo, PRs opened before its first bot review |
+| Median TTM — after activation | 12.9h | per repo, PRs opened on/after its first bot review |
+| PRs reviewed (cumulative) | 62 | failed: 0 |
+| Currently queued for review | 0 | |
+
+> Per-repo activation: kagenti/kagenti since 2026-06-12; kagenti/kagenti-extensions since 2026-06-13; kagenti/automation since 2026-06-16; kagenti/agent-skills since 2026-06-16
+
+Reviewed vs. unreviewed (secondary — interpret with care):
+
+| Metric | Value | Note |
+|--------|-------|------|
+| Median TTM — reviewed | 26h | PRs clawgenti reviewed |
+| Median TTM — unreviewed | 10.3h | PRs without a bot review |
+
+> Reviewed PRs are self-selected: `ready-for-ai-review` is applied to substantive PRs, so a *higher* reviewed TTM reflects which PRs get reviewed, not the bot slowing merges. Use the before/after rows above for impact.
+
+### Review Activity (last 10 runs)
+
+| Date (UTC) | Reviewed | Processed | Failed |
+|------------|----------|-----------|--------|
+| 2026-07-14 16:21 | 1 | 1 | 0 |
+| 2026-07-14 14:36 | 1 | 1 | 0 |
+| 2026-07-14 14:06 | 1 | 1 | 0 |
+| 2026-07-14 02:51 | 1 | 1 | 0 |
+| 2026-07-13 15:53 | 1 | 1 | 0 |
+| 2026-07-13 15:07 | 1 | 1 | 0 |
+| 2026-07-12 15:37 | 1 | 1 | 0 |
+| 2026-07-12 14:07 | 1 | 1 | 0 |
+| 2026-07-09 17:22 | 1 | 1 | 0 |
+| 2026-07-09 14:52 | 2 | 2 | 0 |
 
 ## Cross-Program Coverage
 
-| Repo | Link Health | Dep Bump | Programs |
-|------|-------------|----------|----------|
-| adk | yes | yes | 2 |
-| agent-examples | yes | yes | 2 |
-| agentic-control-plane | yes | no | 1 |
-| ecosystem-guide | yes | no | 1 |
-| .github | no | yes | 1 |
-| kagenti | yes | no | 1 |
-| kagenti-operator | yes | yes | 2 |
-| OpenShell | yes | yes | 2 |
-| plugins-adapter | no | yes | 1 |
-| workload-harness | yes | no | 1 |
+| Repo | Link Health | Dep Bump | PR Review | Programs |
+|------|-------------|----------|-----------|----------|
+| adk | yes | yes | no | 2 |
+| agent-examples | yes | yes | no | 2 |
+| agentic-control-plane | no | yes | no | 1 |
+| agent-skills | no | no | yes | 1 |
+| automation | no | no | yes | 1 |
+| context-guru | no | yes | no | 1 |
+| ecosystem-guide | yes | no | no | 1 |
+| kagenti | yes | no | yes | 2 |
+| kagenti-extensions | no | yes | yes | 2 |
+| kagenti-operator | yes | yes | no | 2 |
+| OpenShell | yes | yes | no | 2 |
+| pi | yes | no | no | 1 |
+| serverless-harness | yes | no | no | 1 |
 
 
 ### Coverage Summary
-- Repos under at least one program: 10 / 10 (100%)
-- Repos under all programs: 4 / 10 (40%)
+- Repos under at least one program: 13 / 13 (100%)
+- Repos under all programs: 0 / 13 (0%)
 
 ## Cron Health
 
 | Job | Schedule | Last Run | Status |
 |-----|----------|----------|--------|
-| link-health-scanner | Mon/Wed/Fri 7am ET | 2026-06-10 | ok |
-| link-health-fixer | Tue/Thu 8am ET | 2026-06-10 | ok |
-| dep-bump-scanner | Tue/Thu 10am ET | 2026-06-10 | ok |
-| dep-bump-fixer | Tue/Thu 12pm ET | 2026-06-10 | ok |
+| link-health-scanner | Mon/Wed/Fri 7am ET | 2026-07-14 | ok |
+| link-health-fixer | Tue/Thu 8am ET | 2026-07-14 | ok |
+| dep-bump-scanner | Tue/Thu 10am ET | 2026-07-14 | ok |
+| dep-bump-fixer | Tue/Thu 12pm ET | 2026-07-14 | ok |
+| pr-review-scanner | every ~15 min | 2026-07-14 | ok |
+| pr-review-fixer | every ~15 min | 2026-07-14 | ok |
 
 ---
 *Generated by Kagenti Automation Health Dashboard. Do not edit manually.*

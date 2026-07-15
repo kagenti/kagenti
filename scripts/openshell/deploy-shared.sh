@@ -566,13 +566,13 @@ fi
 if $STEP_LITELLM; then
   log_info "Step 5: LiteLLM model proxy"
 
-  LITEMAAS_URL="${MAAS_LLAMA4_API_BASE:-https://litellm-prod.apps.maas.redhatworkshops.io/v1}"
+  LITEMAAS_URL="${MAAS_LLAMA4_API_BASE:-https://litellm-litemaas.apps.prod.rhoai.rh-aiservices-bu.com/v1}"
   LITEMAAS_KEY="${MAAS_LLAMA4_API_KEY:-}"
-  LITEMAAS_MODEL="${MAAS_LLAMA4_MODEL:-llama-scout-17b}"
+  LITEMAAS_MODEL="${MAAS_LLAMA4_MODEL:-Qwen3.6-35B-A3B}"
   LITELLM_NS="${LITELLM_NS:-team1}"
   LITELLM_PROXY_NAME="litellm-model-proxy"
 
-  DEEPSEEK_MODEL="${MAAS_DEEPSEEK_MODEL:-deepseek-r1-distill-qwen-14b}"
+  DEEPSEEK_MODEL="${MAAS_DEEPSEEK_MODEL:-Qwen3.6-35B-A3B}"
 
   if [[ -z "$LITEMAAS_KEY" ]]; then
     log_warn "MAAS_LLAMA4_API_KEY not set — skipping LiteLLM proxy"

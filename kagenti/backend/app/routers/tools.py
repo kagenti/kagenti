@@ -9,7 +9,7 @@ Tool API endpoints.
 import asyncio
 import logging
 import re
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from contextlib import AsyncExitStack
 from urllib.parse import urlparse
 
@@ -23,6 +23,9 @@ from pydantic import BaseModel, field_validator
 from app.core.auth import ROLE_OPERATOR, ROLE_VIEWER, require_roles
 from app.core.config import settings
 from app.core.constants import (
+    CRD_GROUP,
+    CRD_VERSION,
+    AGENTRUNTIMES_PLURAL,
     KAGENTI_TYPE_LABEL,
     PROTOCOL_LABEL_PREFIX,
     KAGENTI_FRAMEWORK_LABEL,
@@ -33,6 +36,7 @@ from app.core.constants import (
     APP_KUBERNETES_IO_NAME,
     APP_KUBERNETES_IO_MANAGED_BY,
     KAGENTI_UI_CREATOR_LABEL,
+    KAGENTI_SIMULATED_LABEL,
     RESOURCE_TYPE_TOOL,
     VALUE_PROTOCOL_MCP,
     VALUE_TRANSPORT_STREAMABLE_HTTP,
@@ -87,6 +91,7 @@ from app.services.shipwright import (
 from app.utils.routes import (
     create_route_for_agent_or_tool,
     lookup_service_port,
+    rollback_workload_resources,
     route_exists,
     sanitize_log,
     select_route_port,
@@ -233,15 +238,9 @@ class CreateToolRequest(BaseModel):
     # SPIRE identity (gates spiffe-helper inside the combined authbridge container)
     spireEnabled: bool = False
 
-    # Per-workload AuthBridge mode override. Tools don't create an
-    # AgentRuntime CR (they use the deprecated kagenti.io/authbridge-mode
-    # pod annotation, see tools.py:1041-1046), so this field flows
-    # through the annotation path, not via Spec.AuthBridgeMode.
-    #
-    # mtlsMode is intentionally NOT exposed for tools: it lives on the
-    # AgentRuntime CR's Spec, and there's no equivalent pod annotation
-    # for it. Once tools start producing AgentRuntime CRs (tracked as
-    # an operator-side follow-up), mtlsMode can be added here too.
+    # Per-workload AuthBridge mode override. Tools now create an
+    # AgentRuntime CR, so this field flows through both the CR's
+    # Spec.AuthBridgeMode and the deprecated pod annotation path.
     authBridgeMode: Optional[Literal["proxy-sidecar", "envoy-sidecar", "lite", "waypoint"]] = None
 
     # Port exclusion annotations
@@ -462,6 +461,98 @@ def _get_workload_status(workload: dict) -> str:
     return "Not Ready"
 
 
+def _get_tool_build_status(kube: KubernetesService, name: str, namespace: str) -> Optional[str]:
+    """Derive a build-status indicator for a source-built tool with no workload.
+
+    Looks at the latest Shipwright BuildRun for the given build name and maps its
+    phase to a status string:
+      - "Build Failed"  -> latest BuildRun failed
+      - "Building"      -> BuildRun pending/running, or no BuildRun yet
+      - None            -> build succeeded (a workload exists or is being finalized)
+
+    Returns None (not a status) for Succeeded builds so callers can fall through
+    to the real workload / 404 handling.
+    """
+    try:
+        buildruns = kube.list_custom_resources(
+            group=SHIPWRIGHT_CRD_GROUP,
+            version=SHIPWRIGHT_CRD_VERSION,
+            namespace=namespace,
+            plural=SHIPWRIGHT_BUILDRUNS_PLURAL,
+            label_selector=f"kagenti.io/build-name={name}",
+        )
+    except ApiException:
+        # Constant message only (CodeQL py/log-injection): never
+        # interpolate namespace / build name / API reason.
+        logger.warning("Failed to list BuildRuns for a Shipwright build")
+        buildruns = []
+
+    # No BuildRun yet -> build just started; treat as "Building".
+    phase = "Pending"
+    latest = get_latest_buildrun(buildruns) if buildruns else None
+    if latest:
+        phase = extract_buildrun_info(latest)["phase"]
+
+    # Succeeded builds either already have a workload or are about to be
+    # finalized into one; let the caller handle that case.
+    if phase == "Succeeded":
+        return None
+    return "Build Failed" if phase == "Failed" else "Building"
+
+
+def _get_tool_build_detail(kube: KubernetesService, name: str, namespace: str) -> Optional[dict]:
+    """Build a synthetic get_tool response for a source-built tool with no workload.
+
+    Returns a response dict (same shape as get_tool's workload response) with a
+    readyStatus of "Building" or "Build Failed" when a Shipwright Build exists
+    for this tool and its latest BuildRun is in progress or failed. Returns None
+    when there is no build, or when the build has Succeeded (a workload exists or
+    is being finalized), so the caller can fall through to its 404 handling.
+    """
+    try:
+        build = kube.get_custom_resource(
+            group=SHIPWRIGHT_CRD_GROUP,
+            version=SHIPWRIGHT_CRD_VERSION,
+            namespace=namespace,
+            plural=SHIPWRIGHT_BUILDS_PLURAL,
+            name=name,
+        )
+    except ApiException as e:
+        if e.status != 404:
+            logger.warning("Failed to get Shipwright Build for a tool")
+        return None
+
+    status = _get_tool_build_status(kube, name, namespace)
+    if status is None:
+        return None
+
+    metadata = build.get("metadata", {}) or {}
+    labels = metadata.get("labels", {}) or {}
+    return {
+        "metadata": {
+            "name": metadata.get("name", name),
+            "namespace": metadata.get("namespace", namespace),
+            "labels": labels,
+            "annotations": metadata.get("annotations", {}) or {},
+            "creationTimestamp": _format_timestamp(
+                metadata.get("creationTimestamp") or metadata.get("creation_timestamp")
+            ),
+            "uid": metadata.get("uid"),
+        },
+        # No workload spec/status yet; expose the Build spec so callers that
+        # inspect source/git details still have them.
+        "spec": build.get("spec", {}) or {},
+        "status": {},
+        "readyStatus": status,
+        # We may be building a non-deployment.
+        # TODO record and retrieve build type.
+        "workloadType": WORKLOAD_TYPE_DEPLOYMENT,
+        "service": None,
+        # Signals to the frontend that this is a build placeholder, not a workload.
+        "isBuild": True,
+    }
+
+
 def _get_workload_type_from_resource(resource: dict) -> str:
     """Determine workload type from a Kubernetes resource.
 
@@ -500,6 +591,7 @@ def _extract_labels(labels: dict) -> ResourceLabels:
         protocol=protocols or None,
         framework=labels.get("kagenti.io/framework"),
         type=labels.get("kagenti.io/type"),
+        simulated=labels.get(KAGENTI_SIMULATED_LABEL) == "true",
     )
 
 
@@ -700,6 +792,46 @@ async def list_tools(
             if e.status != 404:
                 logger.warning(f"Error listing StatefulSets: {e}")
 
+        # Surface in-progress / failed Shipwright source builds that have no
+        # workload yet. A source-built tool has no Deployment/StatefulSet until
+        # its build Succeeds and is finalized, so without this it would be
+        # invisible here while building or after a failure. Guarded so a
+        # build-listing failure never breaks the core tool list.
+        try:
+            builds = collect_kagenti_shipwright_builds(
+                kube, [namespace], RESOURCE_TYPE_TOOL, logger
+            )
+            for build in builds:
+                # Workload already exists (build Succeeded + finalized, or a
+                # name collision) -> already listed above; skip to avoid dupes.
+                if build.name in existing_names:
+                    continue
+
+                # Succeeded builds either already have a workload (listed above)
+                # or are about to be finalized into one; don't surface them here.
+                status = _get_tool_build_status(kube, build.name, build.namespace)
+                if status is None:
+                    continue
+
+                tools.append(
+                    ToolSummary(
+                        name=build.name,
+                        namespace=build.namespace,
+                        description="Building from source",
+                        status=status,
+                        labels=_extract_labels({KAGENTI_TYPE_LABEL: build.resourceType}),
+                        # Note that we may be building a non-deployment.
+                        # TODO record and retrieve build type.
+                        workloadType=WORKLOAD_TYPE_DEPLOYMENT,
+                        # Collector already formats this as an ISO string, so do
+                        # not pass it through _format_timestamp (datetime-only).
+                        createdAt=build.creationTimestamp,
+                    )
+                )
+                existing_names.add(build.name)
+        except ApiException:
+            logger.warning("Failed to list Shipwright builds for tools", exc_info=True)
+
         return ToolListResponse(items=tools)
 
     except ApiException as e:
@@ -721,6 +853,12 @@ async def get_tool(
 
     Tries to find the tool as a Deployment first, then as a StatefulSet.
     Returns the workload details along with associated Service information.
+
+    A source-built tool has no Deployment/StatefulSet until its Shipwright
+    build Succeeds and is finalized. When no workload exists but a build does,
+    a synthetic response is returned with a readyStatus of "Building" or
+    "Build Failed" so the detail page can surface in-progress / failed builds
+    instead of a 404.
     """
     workload = None
     workload_type = None
@@ -739,12 +877,18 @@ async def get_tool(
             workload = kube.get_statefulset(namespace, name)
             workload_type = WORKLOAD_TYPE_STATEFULSET
         except ApiException as e:
-            if e.status == 404:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Tool '{name}' not found in namespace '{namespace}'",
-                )
-            raise HTTPException(status_code=e.status, detail=str(e.reason))
+            if e.status != 404:
+                raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # No workload yet -> fall back to a source build (in-progress or failed).
+    if workload is None:
+        build_response = _get_tool_build_detail(kube, name, namespace)
+        if build_response is not None:
+            return build_response
+        raise HTTPException(
+            status_code=404,
+            detail=f"Tool '{name}' not found in namespace '{namespace}'",
+        )
 
     # Get associated Service
     service_info = None
@@ -800,9 +944,10 @@ async def delete_tool(
     Deletes in order:
     1. Shipwright BuildRuns (if any)
     2. Shipwright Build (if any)
-    3. Deployment or StatefulSet
+    3. Deployment or StatefulSet (and, for a StatefulSet, its PersistentVolumeClaims)
     4. Service
     5. HTTPRoute or OpenShift Route (whichever exists)
+    6. AgentRuntime CR (if exists)
     """
     deleted_resources = []
 
@@ -854,6 +999,13 @@ async def delete_tool(
         if e.status != 404:
             logger.warning(f"Failed to delete Deployment '{name}': {e}")
 
+    # Capture StatefulSet-owned PVCs before deleting the workload (generic:
+    # StatefulSet PVCs are never auto-deleted, so they leak without this).
+    try:
+        pvc_names = kube.list_statefulset_pvcs(namespace, name)
+    except ApiException:
+        pvc_names = []
+
     # Delete StatefulSet (if exists)
     try:
         kube.delete_statefulset(namespace, name)
@@ -861,6 +1013,15 @@ async def delete_tool(
     except ApiException as e:
         if e.status != 404:
             logger.warning(f"Failed to delete StatefulSet '{name}': {e}")
+
+    # Delete PVCs the StatefulSet provisioned (404-tolerant, generic).
+    for pvc in pvc_names:
+        try:
+            kube.delete_persistent_volume_claim(namespace, pvc)
+            deleted_resources.append(f"PersistentVolumeClaim/{pvc}")
+        except ApiException as e:
+            if e.status != 404:
+                logger.warning(f"Failed to delete PVC '{pvc}': {e}")
 
     # Delete Service
     service_name = _get_tool_service_name(name)
@@ -898,6 +1059,20 @@ async def delete_tool(
     except ApiException as e:
         if e.status != 404:
             logger.warning(f"Failed to delete Route '{name}': {e}")
+
+    # Delete the AgentRuntime CR (if exists)
+    try:
+        kube.delete_custom_resource(
+            group=CRD_GROUP,
+            version=CRD_VERSION,
+            namespace=namespace,
+            plural=AGENTRUNTIMES_PLURAL,
+            name=name,
+        )
+        deleted_resources.append(f"AgentRuntime/{name}")
+    except ApiException as e:
+        if e.status != 404:
+            logger.warning(f"Failed to delete AgentRuntime '{name}': {e}")
 
     if deleted_resources:
         return DeleteResponse(
@@ -974,6 +1149,56 @@ def _build_service_ports(
     return ports
 
 
+def _ensure_tool_agentruntime(
+    kube: "KubernetesService",
+    name: str,
+    namespace: str,
+    workload_type: str,
+    auth_bridge_mode: Optional[str] = None,
+) -> None:
+    """Create an AgentRuntime CR for the tool workload. Skip if it already exists."""
+    kind_map = {
+        WORKLOAD_TYPE_DEPLOYMENT: "Deployment",
+        WORKLOAD_TYPE_STATEFULSET: "StatefulSet",
+    }
+    manifest = {
+        "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
+        "kind": "AgentRuntime",
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "labels": {
+                APP_KUBERNETES_IO_NAME: name,
+                APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
+            },
+        },
+        "spec": {
+            "type": RESOURCE_TYPE_TOOL,
+            "targetRef": {
+                "apiVersion": "apps/v1",
+                "kind": kind_map.get(workload_type, "Deployment"),
+                "name": name,
+            },
+        },
+    }
+    if auth_bridge_mode:
+        manifest["spec"]["authBridgeMode"] = auth_bridge_mode
+    try:
+        kube.create_custom_resource(
+            group=CRD_GROUP,
+            version=CRD_VERSION,
+            namespace=namespace,
+            plural=AGENTRUNTIMES_PLURAL,
+            body=manifest,
+        )
+        logger.info("Created AgentRuntime '%s' (tool) in namespace '%s'", name, namespace)
+    except ApiException as e:
+        if e.status == 409:
+            logger.info("AgentRuntime '%s' already exists in namespace '%s'", name, namespace)
+        else:
+            raise
+
+
 def _build_tool_deployment_manifest(
     name: str,
     namespace: str,
@@ -1020,7 +1245,6 @@ def _build_tool_deployment_manifest(
 
     # Build labels - required labels per migration plan
     labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
         APP_KUBERNETES_IO_NAME: name,
         f"{PROTOCOL_LABEL_PREFIX}{VALUE_PROTOCOL_MCP}": "",
         KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
@@ -1032,7 +1256,6 @@ def _build_tool_deployment_manifest(
 
     # Pod template labels (subset used on pod template metadata)
     pod_labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
         APP_KUBERNETES_IO_NAME: name,
         f"{PROTOCOL_LABEL_PREFIX}{VALUE_PROTOCOL_MCP}": "",
         KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
@@ -1057,10 +1280,9 @@ def _build_tool_deployment_manifest(
     if inbound_ports_exclude:
         pod_annotations[KAGENTI_INBOUND_PORTS_EXCLUDE] = inbound_ports_exclude
     if auth_bridge_mode:
-        # The deprecated kagenti.io/authbridge-mode annotation is the
-        # only per-pod mode override path for workloads without an
-        # AgentRuntime CR (tools today). The operator's resolution
-        # chain still honors it.
+        # The deprecated kagenti.io/authbridge-mode annotation.
+        # The operator's resolution chain still honors it alongside
+        # the AgentRuntime CR's authBridgeMode field.
         pod_annotations["kagenti.io/authbridge-mode"] = auth_bridge_mode
 
     manifest = {
@@ -1076,7 +1298,6 @@ def _build_tool_deployment_manifest(
             "replicas": 1,
             "selector": {
                 "matchLabels": {
-                    KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
                     APP_KUBERNETES_IO_NAME: name,
                 }
             },
@@ -1184,7 +1405,6 @@ def _build_tool_statefulset_manifest(
 
     # Build labels - required labels per migration plan
     labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
         APP_KUBERNETES_IO_NAME: name,
         f"{PROTOCOL_LABEL_PREFIX}{VALUE_PROTOCOL_MCP}": "",
         KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
@@ -1196,7 +1416,6 @@ def _build_tool_statefulset_manifest(
 
     # Pod template labels (subset used on pod template metadata)
     pod_labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
         APP_KUBERNETES_IO_NAME: name,
         f"{PROTOCOL_LABEL_PREFIX}{VALUE_PROTOCOL_MCP}": "",
         KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
@@ -1221,10 +1440,9 @@ def _build_tool_statefulset_manifest(
     if inbound_ports_exclude:
         pod_annotations[KAGENTI_INBOUND_PORTS_EXCLUDE] = inbound_ports_exclude
     if auth_bridge_mode:
-        # The deprecated kagenti.io/authbridge-mode annotation is the
-        # only per-pod mode override path for workloads without an
-        # AgentRuntime CR (tools today). The operator's resolution
-        # chain still honors it.
+        # The deprecated kagenti.io/authbridge-mode annotation.
+        # The operator's resolution chain still honors it alongside
+        # the AgentRuntime CR's authBridgeMode field.
         pod_annotations["kagenti.io/authbridge-mode"] = auth_bridge_mode
 
     manifest = {
@@ -1241,7 +1459,6 @@ def _build_tool_statefulset_manifest(
             "replicas": 1,
             "selector": {
                 "matchLabels": {
-                    KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
                     APP_KUBERNETES_IO_NAME: name,
                 }
             },
@@ -1340,7 +1557,6 @@ def _build_tool_service_manifest(
             "name": service_name,
             "namespace": namespace,
             "labels": {
-                KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
                 f"{PROTOCOL_LABEL_PREFIX}{VALUE_PROTOCOL_MCP}": "",
                 APP_KUBERNETES_IO_NAME: name,
                 APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
@@ -1349,7 +1565,6 @@ def _build_tool_service_manifest(
         "spec": {
             "type": "ClusterIP",
             "selector": {
-                KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
                 APP_KUBERNETES_IO_NAME: name,
             },
             "ports": ports,
@@ -1392,6 +1607,10 @@ async def create_tool(
     For source builds, creates a Shipwright Build + BuildRun and returns.
     The Deployment/StatefulSet is created later via the finalize-shipwright-build endpoint.
     """
+    # Persistent resources created during this call, tracked so we can roll them
+    # back if a later creation step fails (avoids leaking a workload, Service,
+    # AgentRuntime, or route). Only used by the image-deployment path below.
+    created: List[Tuple[str, str]] = []
     try:
         # Validate workload type
         if request.workloadType not in [WORKLOAD_TYPE_DEPLOYMENT, WORKLOAD_TYPE_STATEFULSET]:
@@ -1534,6 +1753,7 @@ async def create_tool(
                     auth_bridge_mode=request.authBridgeMode,
                 )
                 kube.create_statefulset(request.namespace, workload_manifest)
+                created.append(("StatefulSet", request.name))
                 logger.info(
                     f"Created StatefulSet '{request.name}' for tool in namespace '{request.namespace}'"
                 )
@@ -1556,6 +1776,7 @@ async def create_tool(
                     auth_bridge_mode=request.authBridgeMode,
                 )
                 kube.create_deployment(request.namespace, workload_manifest)
+                created.append(("Deployment", request.name))
                 logger.info(
                     f"Created Deployment '{request.name}' for tool in namespace '{request.namespace}'"
                 )
@@ -1568,9 +1789,20 @@ async def create_tool(
             )
             kube.create_service(request.namespace, service_manifest)
             service_name = _get_tool_service_name(request.name)
+            created.append(("Service", service_name))
             logger.info(
                 f"Created Service '{service_name}' for tool in namespace '{request.namespace}'"
             )
+
+            # Create AgentRuntime CR so the operator manages the type label
+            _ensure_tool_agentruntime(
+                kube=kube,
+                name=request.name,
+                namespace=request.namespace,
+                workload_type=request.workloadType,
+                auth_bridge_mode=request.authBridgeMode,
+            )
+            created.append(("AgentRuntime", request.name))
 
             message = f"Tool '{request.name}' deployment started ({request.workloadType})."
 
@@ -1588,6 +1820,11 @@ async def create_tool(
                     service_name=service_name,
                     service_port=service_port,
                 )
+                # create_route_for_agent_or_tool makes an HTTPRoute or an OpenShift
+                # Route depending on platform; track both so rollback deletes the
+                # right one (the other 404s and is swallowed).
+                created.append(("HTTPRoute", request.name))
+                created.append(("Route", request.name))
                 message += " HTTPRoute/Route created for external access."
 
             return CreateToolResponse(
@@ -1598,6 +1835,10 @@ async def create_tool(
             )
 
     except ApiException as e:
+        # Roll back only what THIS call created (tracked in `created`); if the very
+        # first create 409'd, `created` is empty and rollback is a no-op, so a
+        # pre-existing tool is never deleted.
+        rollback_workload_resources(kube, request.namespace, created)
         if e.status == 409:
             raise HTTPException(
                 status_code=409,
@@ -1610,6 +1851,19 @@ async def create_tool(
             )
         logger.error(f"Failed to create tool: {e}")
         raise HTTPException(status_code=e.status, detail=str(e.reason))
+    except HTTPException:
+        # Validation errors (400) raised above — nothing created yet, re-raise as-is.
+        raise
+    except Exception as e:
+        # Non-API failure (e.g. platform detection in route creation) after some
+        # resources were already created — roll back before surfacing a 500.
+        rollback_workload_resources(kube, request.namespace, created)
+        logger.error(
+            "Unexpected error creating tool '%s': %s",
+            sanitize_log(request.name),
+            sanitize_log(str(e)),
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to create tool: {e}")
 
 
 # Shipwright Build Endpoints for Tools
@@ -2027,6 +2281,15 @@ async def finalize_tool_shipwright_build(
             f"Created Service '{service_name}' in namespace '{namespace}' from Shipwright build"
         )
 
+        # Create AgentRuntime CR so the operator manages the type label
+        _ensure_tool_agentruntime(
+            kube=kube,
+            name=name,
+            namespace=namespace,
+            workload_type=workload_type,
+            auth_bridge_mode=auth_bridge_mode,
+        )
+
         message = f"Tool '{name}' created from Shipwright build ({workload_type})."
 
         # Create HTTPRoute if requested
@@ -2110,17 +2373,21 @@ async def _probe_mcp_reachability(mcp_endpoint: str, tool_url: str) -> None:
         )
         writer.close()
         await writer.wait_closed()
+    except asyncio.TimeoutError:
+        # Must precede the (OSError, ConnectionError) clause: asyncio.TimeoutError
+        # is builtin TimeoutError on 3.11+, which subclasses OSError. Catching
+        # OSError first would shadow this branch (pylint E0701) and wrongly
+        # return 502 for timeouts instead of 504.
+        logger.error("MCP server timeout (pre-check)")
+        raise HTTPException(
+            status_code=504,
+            detail=f"Timeout connecting to MCP server at {tool_url}",
+        )
     except (OSError, ConnectionError) as e:
         logger.error("MCP server unreachable (pre-check, %s)", type(e).__name__)
         raise HTTPException(
             status_code=502,
             detail=f"Failed to connect to MCP server at {tool_url}",
-        )
-    except asyncio.TimeoutError:
-        logger.error("MCP server timeout (pre-check)")
-        raise HTTPException(
-            status_code=504,
-            detail=f"Timeout connecting to MCP server at {tool_url}",
         )
 
 

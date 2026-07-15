@@ -127,6 +127,17 @@ if settings.kagenti_feature_flag_acp:
         logging.getLogger(__name__).warning(
             "ACP flag enabled but acp modules not installed — skipping"
         )
+
+_simulation_modules_loaded = False
+if settings.kagenti_feature_flag_simulated_tools:
+    try:
+        from app.routers import simulation  # noqa: E402
+
+        _simulation_modules_loaded = True
+    except ImportError:
+        logging.getLogger(__name__).warning(
+            "SIMULATED_TOOLS flag enabled but simulation modules not installed — skipping"
+        )
 # pylint: enable=wrong-import-position,no-name-in-module,import-error
 
 # Configure logging
@@ -158,6 +169,17 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Build reconciliation disabled (ENABLE_BUILD_RECONCILIATION=false)")
 
+    # Start skill auto-sync loop (only when external_skills feature is enabled)
+    skill_autosync_task = None
+    if settings.kagenti_feature_flag_external_skills:
+        from app.services.skill_autosync import run_skill_autosync_loop
+
+        skill_autosync_task = asyncio.create_task(run_skill_autosync_loop())
+        logger.info(
+            "Skill auto-sync started (default interval: %ds)",
+            settings.skill_autosync_interval,
+        )
+
     yield
 
     # Stop reconciliation
@@ -167,6 +189,18 @@ async def lifespan(app: FastAPI):
             await reconciliation_task
         except asyncio.CancelledError:
             pass
+
+    # Stop skill auto-sync
+    if skill_autosync_task:
+        skill_autosync_task.cancel()
+        try:
+            await skill_autosync_task
+        except asyncio.CancelledError:
+            pass
+
+    # Stop outstanding simulated-tool generation triggers
+    if _simulation_modules_loaded:
+        await simulation.cancel_generation_tasks()
 
     # Close OpenShell gateway gRPC channels
     if _acp_modules_loaded:
@@ -249,6 +283,10 @@ if _skills_modules_loaded:
 if _acp_modules_loaded:
     app.include_router(acp.router, prefix="/api/v1")
     logger.info("Feature flag ACP enabled — ACP WebSocket routes registered")
+
+if _simulation_modules_loaded:
+    app.include_router(simulation.router, prefix="/api/v1")
+    logger.info("Feature flag SIMULATED_TOOLS enabled — simulation routes registered")
 # pylint: enable=used-before-assignment
 
 

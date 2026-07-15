@@ -49,6 +49,7 @@ WITH_KIALI=false
 WITH_KUADRANT=false
 WITH_AGENT_SANDBOX=false
 WITH_SKILLS=false
+SKILL_REGISTRY_ALLOWED_HOSTS=""
 WITH_ALL=false
 SKIP_CLUSTER=false
 SKIP_MLFLOW=false
@@ -59,6 +60,8 @@ INSTALL_EXAMPLES=false
 DRY_RUN=false
 SECRETS_FILE_ARG=""
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
+ENABLE_OPERATOR_SPIFFE_AUTH=false
+ENABLE_AGENT_SPIFFE_AUTH=false
 
 # Versions
 CERT_MANAGER_VERSION="v1.17.2"
@@ -184,6 +187,11 @@ except Exception:
   fi
 }
 
+# ── Shared dependency installers (Tekton, Shipwright, build strategies) ─────
+# Sourced after log_*/run_cmd are defined; the lib reads DRY_RUN from this
+# scope and uses the helpers above.
+. "$REPO_ROOT/scripts/lib/install-deps.sh"
+
 # Load a single image into the Kind node via docker save piped to ctr import.
 # Avoids 'kind load docker-image' failures (e.g. "failed to detect containerd
 # snapshotter") on WSL2 and Rancher Desktop.
@@ -209,6 +217,7 @@ while [[ $# -gt 0 ]]; do
     --with-kiali)       WITH_KIALI=true; shift ;;
     --with-agent-sandbox) WITH_AGENT_SANDBOX=true; shift ;;
     --with-skills)      WITH_SKILLS=true; shift ;;
+    --skill-registry-allowed-hosts) SKILL_REGISTRY_ALLOWED_HOSTS="$2"; shift 2 ;;
     --with-all)         WITH_ALL=true; shift ;;
     --skip-cluster)     SKIP_CLUSTER=true; shift ;;
     --skip-mlflow)      SKIP_MLFLOW=true; shift ;;
@@ -221,6 +230,9 @@ while [[ $# -gt 0 ]]; do
     --kagenti-values)   KAGENTI_VALUES_FILES+=("--values" "$2"); shift 2 ;;
     --kagenti-deps-values) KAGENTI_DEPS_VALUES_FILES+=("--values" "$2"); shift 2 ;;
     --with-examples)    INSTALL_EXAMPLES=true; shift ;;
+    --enable-operator-spiffe-auth) ENABLE_OPERATOR_SPIFFE_AUTH=true; shift ;;
+    --enable-agent-spiffe-auth)   ENABLE_AGENT_SPIFFE_AUTH=true; shift ;;
+    --enable-spiffe-auth)         ENABLE_OPERATOR_SPIFFE_AUTH=true; ENABLE_AGENT_SPIFFE_AUTH=true; shift ;;
     --dry-run)          DRY_RUN=true; shift ;;
     -h|--help)
       echo "Usage: $0 [OPTIONS]"
@@ -240,7 +252,15 @@ while [[ $# -gt 0 ]]; do
       echo "  --with-agent-sandbox Install agent-sandbox controller (kubernetes-sigs)"
       echo "  --with-skills       Enable skills and external skill registries"
       echo "                      (enables featureFlags.skills and featureFlags.externalSkills;"
-      echo "                      auto-enables --with-backend and --with-ui)"
+      echo "                      deploys an in-cluster skillberry-store and auto-enables"
+      echo "                      autosync against it; auto-enables --with-backend and --with-ui)."
+      echo "                      Override the store image with the SKILLBERRY_STORE_IMAGE /"
+      echo "                      SKILLBERRY_STORE_TAG env vars (default tag 0.2.0)."
+      echo "  --skill-registry-allowed-hosts HOSTS"
+      echo "                      Comma-separated hosts/IPs/CIDRs allowed past the registry-URL"
+      echo "                      SSRF block (e.g. \"192.168.50.16\" or \"192.168.0.0/16\")."
+      echo "                      Needed only for EXTERNAL skill registries on private IPs;"
+      echo "                      the in-cluster store needs no allow-listing."
       echo "  --with-all          Enable all optional components"
       echo ""
       echo "Skip flags (override --with-all for resource-constrained environments):"
@@ -262,6 +282,16 @@ while [[ $# -gt 0 ]]; do
       echo "  --kagenti-deps-values FILE"
       echo "                      Helm override file to apply to Kagenti-deps chart"
       echo "  --with-examples     Install weather agent and weather tool examples"
+      echo "  --enable-operator-spiffe-auth"
+      echo "                      Operator authenticates to Keycloak using JWT-SVID instead"
+      echo "                      of admin credentials. Requires --with-spire."
+      echo "  --enable-agent-spiffe-auth"
+      echo "                      Agent/tool workloads authenticate to Keycloak using"
+      echo "                      JWT-SVID (federated-jwt) instead of client secrets."
+      echo "                      Requires --with-spire."
+      echo "  --enable-spiffe-auth"
+      echo "                      Shorthand for both --enable-operator-spiffe-auth and"
+      echo "                      --enable-agent-spiffe-auth. Requires --with-spire."
       echo "  --dry-run           Show commands without executing"
       echo "  -h, --help          Show this help"
       exit 0 ;;
@@ -311,7 +341,10 @@ START_SECONDS=$SECONDS
 
 echo ""
 echo "============================================"
-echo "  Kagenti Platform Setup (Kind)"
+case "${KAGENTI_SETUP_FLAVOR:-kind}" in
+  k8s) echo "  Kagenti Platform Setup (Kubernetes)" ;;
+  *)   echo "  Kagenti Platform Setup (Kind)" ;;
+esac
 echo "============================================"
 echo ""
 echo "  Cluster:       $CLUSTER_NAME"
@@ -330,6 +363,7 @@ echo "    Builds:        $WITH_BUILDS"
 echo "    Kiali:         $WITH_KIALI"
 echo "    Agent Sandbox: $WITH_AGENT_SANDBOX"
 echo "    Skills:        $WITH_SKILLS"
+echo "    Skill reg allow: ${SKILL_REGISTRY_ALLOWED_HOSTS:-<none>}"
 echo "    Skip cluster:  $SKIP_CLUSTER"
 echo "    Build images:  $BUILD_IMAGES"
 echo "    Preload imgs:  $PRELOAD_IMAGES"
@@ -337,6 +371,16 @@ echo "    Examples:      $INSTALL_EXAMPLES"
 echo "    Kagenti helm --values overrides: ${KAGENTI_VALUES_FILES[*]:-}"
 echo "    Kagenti-deps helm --values overrides: ${KAGENTI_DEPS_VALUES_FILES[*]:-}"
 echo ""
+
+# Validate flag combinations
+if $ENABLE_OPERATOR_SPIFFE_AUTH && ! $WITH_SPIRE; then
+  log_error "--enable-operator-spiffe-auth requires --with-spire (SPIRE must be installed for SPIFFE identities)"
+  exit 1
+fi
+if $ENABLE_AGENT_SPIFFE_AUTH && ! $WITH_SPIRE; then
+  log_error "--enable-agent-spiffe-auth requires --with-spire (SPIRE must be installed for SPIFFE identities)"
+  exit 1
+fi
 
 for cmd in helm kubectl; do
   if ! command -v "$cmd" &>/dev/null; then
@@ -513,11 +557,14 @@ log_info "Step 3: Istio Gateway Controller (core)"
 ISTIO_REPO="https://istio-release.storage.googleapis.com/charts/"
 
 log_info "Installing istio-base ${ISTIO_VERSION}..."
+# istiod owns the failurePolicy field on this webhook; delete it so Helm can recreate it cleanly on upgrades
+kubectl delete validatingwebhookconfiguration istiod-default-validator --ignore-not-found
 run_cmd helm upgrade --install istio-base base \
   --repo "$ISTIO_REPO" --version "$ISTIO_VERSION" \
   -n istio-system --create-namespace --wait
 
 log_info "Installing istiod ${ISTIO_VERSION}..."
+kubectl delete validatingwebhookconfiguration istio-validator-istio-system --ignore-not-found
 run_cmd helm upgrade --install istiod istiod \
   --repo "$ISTIO_REPO" --version "$ISTIO_VERSION" \
   -n istio-system --wait
@@ -578,10 +625,7 @@ fi
 # ============================================================================
 if $WITH_BUILDS; then
   log_info "Step 3b: Tekton"
-  log_info "Installing Tekton ${TEKTON_VERSION}..."
-  run_cmd kubectl apply --server-side \
-    -f "https://storage.googleapis.com/tekton-releases/pipeline/previous/${TEKTON_VERSION}/release.yaml"
-  log_success "Tekton applied"
+  install_tekton "$TEKTON_VERSION"
   echo ""
 fi
 
@@ -599,6 +643,11 @@ if $WITH_SPIRE; then
     -n spire-mgmt --create-namespace --wait
 
   log_info "Installing SPIRE ${SPIRE_VERSION}..."
+  # No --wait: SPIRE deploys workloads into a separate namespace (zero-trust-workload-identity-manager),
+  # so Helm's --wait finds nothing in spire-mgmt and times out. We wait explicitly below.
+  # Step 7 patches the OIDC configmap with kubectl (client-side-apply), which conflicts on re-runs.
+  kubectl delete configmap spire-spiffe-oidc-discovery-provider \
+    -n zero-trust-workload-identity-manager --ignore-not-found
   run_cmd helm upgrade --install spire spire \
     --repo "$SPIRE_REPO" --version "$SPIRE_VERSION" \
     -n spire-mgmt --create-namespace \
@@ -626,6 +675,16 @@ if $WITH_SPIRE; then
     --set "tornjak-frontend.apiServerURL=http://spire-tornjak-ui.${DOMAIN}:8080" \
     --set tornjak-frontend.service.type=ClusterIP \
     --set tornjak-frontend.service.port=3000
+
+  log_info "Waiting for SPIRE pods in zero-trust-workload-identity-manager..."
+  deadline=$((SECONDS + 120))
+  until kubectl get pod --no-headers -l app.kubernetes.io/instance=spire \
+    -n zero-trust-workload-identity-manager 2>/dev/null | grep -q .; do
+    if (( SECONDS >= deadline )); then log_error "Timed out waiting for SPIRE pods"; exit 1; fi
+    sleep 2
+  done
+  kubectl wait --for=condition=Ready pod -l app.kubernetes.io/instance=spire \
+    -n zero-trust-workload-identity-manager --timeout=300s
 
   log_success "SPIRE installed"
 else
@@ -730,7 +789,14 @@ log_success "kagenti-deps installed"
 echo ""
 
 # ── Configure Kind node to reach in-cluster container registry ──────────────
-if $WITH_BUILDS; then
+# Kind-only: writes /etc/hosts and /etc/containerd/certs.d on the Kind
+# control-plane container so kubelet can pull images from the in-cluster
+# registry by its cluster-DNS hostname. Vanilla Kubernetes operators need
+# to configure their nodes via the distribution's normal mechanism (e.g.
+# /etc/rancher/k3s/registries.yaml on K3s, /etc/containerd/config.toml +
+# restart on kubeadm); this script intentionally doesn't try to SSH into
+# nodes or guess the distro. Skip the block under the k8s flavor.
+if $WITH_BUILDS && [[ "${KAGENTI_SETUP_FLAVOR:-kind}" != "k8s" ]]; then
   REGISTRY_NAME="registry"
   REGISTRY_NS="cr-system"
   REGISTRY_HOST="${REGISTRY_NAME}.${REGISTRY_NS}.svc.cluster.local"
@@ -763,6 +829,14 @@ TOML
     fi
   fi
   echo ""
+elif $WITH_BUILDS; then
+  log_info "Skipping Kind registry-DNS step on vanilla Kubernetes."
+  log_info "  To pull images from the in-cluster registry by its cluster-DNS"
+  log_info "  hostname (registry.cr-system.svc.cluster.local:5000), configure"
+  log_info "  containerd on each node via your distribution's mechanism:"
+  log_info "    K3s:     /etc/rancher/k3s/registries.yaml + restart k3s/k3s-agent"
+  log_info "    kubeadm: /etc/containerd/config.toml + systemctl restart containerd"
+  echo ""
 fi
 
 # ============================================================================
@@ -770,165 +844,7 @@ fi
 # ============================================================================
 if $WITH_BUILDS; then
   log_info "Step 6b: Shipwright"
-
-  log_info "Installing Shipwright ${SHIPWRIGHT_VERSION}..."
-  run_cmd kubectl apply --server-side \
-    -f "https://github.com/shipwright-io/build/releases/download/${SHIPWRIGHT_VERSION}/release.yaml"
-
-  if ! $DRY_RUN; then
-    kubectl wait --for=jsonpath='{.status.phase}'=Active namespace/shipwright-build --timeout=30s 2>/dev/null || true
-
-    # cert-manager resources for webhook TLS
-    kubectl apply -f - <<'EOF'
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: shipwright-selfsigned-issuer
-spec:
-  selfSigned: {}
-EOF
-    kubectl apply -f - <<EOF
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: shipwright-ca
-  namespace: shipwright-build
-spec:
-  isCA: true
-  commonName: shipwright-ca
-  secretName: shipwright-ca-secret
-  duration: 26280h
-  privateKey:
-    algorithm: ECDSA
-    size: 256
-  issuerRef:
-    name: shipwright-selfsigned-issuer
-    kind: ClusterIssuer
-EOF
-    kubectl wait --for=condition=Ready certificate/shipwright-ca \
-      -n shipwright-build --timeout=60s 2>/dev/null || true
-
-    kubectl apply -f - <<'EOF'
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: shipwright-ca-issuer
-  namespace: shipwright-build
-spec:
-  ca:
-    secretName: shipwright-ca-secret
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: shipwright-build-webhook-cert
-  namespace: shipwright-build
-spec:
-  secretName: shipwright-build-webhook-cert
-  duration: 8760h
-  renewBefore: 720h
-  dnsNames:
-    - shp-build-webhook
-    - shp-build-webhook.shipwright-build
-    - shp-build-webhook.shipwright-build.svc
-    - shp-build-webhook.shipwright-build.svc.cluster.local
-  issuerRef:
-    name: shipwright-ca-issuer
-    kind: Issuer
-EOF
-    kubectl wait --for=condition=Ready certificate/shipwright-build-webhook-cert \
-      -n shipwright-build --timeout=60s 2>/dev/null || true
-
-    # Annotate CRDs for CA injection
-    for crd in clusterbuildstrategies.shipwright.io buildstrategies.shipwright.io \
-               builds.shipwright.io buildruns.shipwright.io; do
-      kubectl annotate crd "$crd" \
-        cert-manager.io/inject-ca-from=shipwright-build/shipwright-build-webhook-cert \
-        --overwrite 2>/dev/null || true
-    done
-
-    # Restart webhook to pick up TLS
-    kubectl rollout restart deployment/shipwright-build-webhook -n shipwright-build 2>/dev/null || true
-    _wait_deployment_ready shipwright-build-webhook shipwright-build "Shipwright webhook"
-
-    # Install sample build strategies
-    kubectl apply --server-side \
-      -f "https://github.com/shipwright-io/build/releases/download/${SHIPWRIGHT_VERSION}/sample-strategies.yaml" \
-      2>/dev/null || true
-
-    # Install buildah-insecure-push strategy for in-cluster registry (no TLS)
-    log_info "Installing buildah-insecure-push ClusterBuildStrategy..."
-    kubectl apply -f - <<'STRATEGY_EOF'
-apiVersion: shipwright.io/v1beta1
-kind: ClusterBuildStrategy
-metadata:
-  name: buildah-insecure-push
-spec:
-  parameters:
-    - name: dockerfile
-      description: Path to the Dockerfile
-      type: string
-      default: Dockerfile
-    - name: build-args
-      description: Build arguments in KEY=VALUE format
-      type: array
-      defaults: []
-    - name: storage-driver
-      description: The storage driver to use (overlay or vfs)
-      type: string
-      default: vfs
-  securityContext:
-    runAsUser: 0
-    runAsGroup: 0
-  steps:
-    - name: build-and-push
-      image: quay.io/containers/buildah:v1.37.5
-      workingDir: $(params.shp-source-root)
-      securityContext:
-        capabilities:
-          add:
-            - SETFCAP
-      command:
-        - /bin/bash
-      args:
-        - -c
-        - |
-          set -euo pipefail
-
-          BUILD_ARGS=()
-          for arg in "$@"; do
-            if [[ "$arg" == "--build-arg="* ]]; then
-              BUILD_ARGS+=("--build-arg" "${arg#--build-arg=}")
-            fi
-          done
-
-          echo "Building image..."
-          buildah --storage-driver=$(params.storage-driver) bud \
-            "${BUILD_ARGS[@]}" \
-            -f "$(params.shp-source-context)/$(params.dockerfile)" \
-            -t "$(params.shp-output-image)" \
-            "$(params.shp-source-context)"
-
-          echo "Pushing image to $(params.shp-output-image)..."
-          buildah --storage-driver=$(params.storage-driver) push \
-            --tls-verify=false \
-            "$(params.shp-output-image)" \
-            "docker://$(params.shp-output-image)"
-
-          echo "Build and push completed successfully!"
-        - --
-        - $(params.build-args[*])
-      resources:
-        limits:
-          cpu: "1"
-          memory: 2Gi
-        requests:
-          cpu: 250m
-          memory: 256Mi
-STRATEGY_EOF
-  fi
-
-  log_success "Shipwright installed"
+  install_shipwright "$SHIPWRIGHT_VERSION"
   echo ""
 fi
 
@@ -941,45 +857,35 @@ if $WITH_SPIRE && ! $DRY_RUN; then
   SPIRE_SERVER_NS="zero-trust-workload-identity-manager"
   KAGENTI_NS="kagenti-system"
 
-  # 7a: Patch SPIRE OIDC ConfigMap to add set_key_use if missing
-  log_info "Checking SPIRE OIDC ConfigMap..."
-  tries=0
-  while ! kubectl get configmap spire-spiffe-oidc-discovery-provider \
-    -n "$SPIRE_SERVER_NS" &>/dev/null; do
-    tries=$((tries + 1))
-    [ $tries -ge 90 ] && { log_warn "SPIRE OIDC ConfigMap not found after 3m"; break; }
-    sleep 2
-  done
-
-  if kubectl get configmap spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS" &>/dev/null; then
-    OIDC_CONF=$(kubectl get configmap spire-spiffe-oidc-discovery-provider \
-      -n "$SPIRE_SERVER_NS" \
-      -o jsonpath='{.data.oidc-discovery-provider\.conf}' 2>/dev/null || echo "")
-    if [ -n "$OIDC_CONF" ] && ! echo "$OIDC_CONF" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('set_key_use') else 1)" 2>/dev/null; then
-      log_info "Patching OIDC ConfigMap with set_key_use: true..."
-      PATCHED=$(echo "$OIDC_CONF" | python3 -c "import sys,json; d=json.load(sys.stdin); d['set_key_use']=True; json.dump(d,sys.stdout)")
-      kubectl get configmap spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS" -o json | \
-        python3 -c "
-import sys, json
-cm = json.load(sys.stdin)
-cm['data']['oidc-discovery-provider.conf'] = '''$PATCHED'''
-json.dump(cm, sys.stdout)
-" | kubectl apply -f -
-      kubectl rollout restart deployment/spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS"
-      kubectl rollout status deployment/spire-spiffe-oidc-discovery-provider \
-        -n "$SPIRE_SERVER_NS" --timeout=120s || true
-      log_success "OIDC ConfigMap patched"
-    else
-      log_success "OIDC ConfigMap already has set_key_use"
-    fi
-  fi
-
-  # Wait for OIDC discovery provider to be fully ready before starting IdP setup
+  # 7a: Patch OIDC ConfigMap to enable set_key_use (required for Keycloak to accept JWKS keys)
+  # The helm value spiffe-oidc-discovery-provider.config.set_key_use=true does not render into
+  # the ConfigMap with the current chart version, so we patch it directly.
   log_info "Waiting for OIDC discovery provider to be ready..."
   kubectl wait --for=condition=Available deployment/spire-spiffe-oidc-discovery-provider \
     -n "$SPIRE_SERVER_NS" --timeout=300s 2>/dev/null \
     && log_success "OIDC discovery provider ready" \
     || log_warn "OIDC discovery provider not ready after 5m — IdP setup may fail"
+
+  OIDC_CONF=$(kubectl get configmap spire-spiffe-oidc-discovery-provider \
+    -n "$SPIRE_SERVER_NS" \
+    -o jsonpath='{.data.oidc-discovery-provider\.conf}' 2>/dev/null || echo "")
+  if [ -n "$OIDC_CONF" ] && ! echo "$OIDC_CONF" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('set_key_use') else 1)" 2>/dev/null; then
+    log_info "Patching OIDC ConfigMap with set_key_use: true..."
+    PATCHED=$(echo "$OIDC_CONF" | python3 -c "import sys,json; d=json.load(sys.stdin); d['set_key_use']=True; json.dump(d,sys.stdout)")
+    kubectl get configmap spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS" -o json | \
+      python3 -c "
+import sys, json
+cm = json.load(sys.stdin)
+cm['data']['oidc-discovery-provider.conf'] = '''$PATCHED'''
+json.dump(cm, sys.stdout)
+" | kubectl apply -f -
+    kubectl rollout restart deployment/spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS"
+    kubectl rollout status deployment/spire-spiffe-oidc-discovery-provider \
+      -n "$SPIRE_SERVER_NS" --timeout=120s || true
+    log_success "OIDC ConfigMap patched with set_key_use: true"
+  else
+    log_success "OIDC ConfigMap already has set_key_use"
+  fi
 
   # 7b: Run SPIFFE IdP setup job (configures Keycloak with SPIRE identity provider)
   log_info "Setting up SPIFFE IdP..."
@@ -1118,11 +1024,12 @@ spec:
       serviceAccountName: kagenti-spiffe-idp-setup
       restartPolicy: OnFailure
       initContainers:
-        - name: wait-for-spire
+        - name: wait-for-dependencies
           image: "${KUBECTL_IMAGE}"
           command: ["sh", "-c"]
           args:
             - |
+              set -e
               echo "Waiting for SPIRE server..."
               kubectl wait --for=condition=ready pod \
                 -l app.kubernetes.io/name=server \
@@ -1131,6 +1038,21 @@ spec:
               kubectl wait --for=condition=ready pod \
                 -l app.kubernetes.io/name=spiffe-oidc-discovery-provider \
                 -n ${SPIRE_SERVER_NS} --timeout=300s
+              echo "Waiting for Keycloak to be ready..."
+              kubectl wait --for=condition=ready pod \
+                -l app=keycloak -n ${KC_NS} --timeout=300s
+              echo "Validating OIDC JWKS endpoint serves keys with 'use' field..."
+              OIDC_URL="http://spire-spiffe-oidc-discovery-provider.${SPIRE_SERVER_NS}.svc.cluster.local/keys"
+              for i in \$(seq 1 60); do
+                if curl -sf "\$OIDC_URL" | grep -q '"use"'; then
+                  echo "OIDC JWKS endpoint validated"
+                  exit 0
+                fi
+                echo "  Attempt \$i/60: OIDC keys not ready, retrying in 5s..."
+                sleep 5
+              done
+              echo "WARNING: OIDC keys validation timed out after 5m"
+              exit 1
       containers:
         - name: setup-spiffe-idp
           image: "${SPIFFE_IDP_IMAGE}"
@@ -1155,22 +1077,16 @@ spec:
               value: "${SPIFFE_IDP_ALIAS}"
 EOF
 
-  # Wait for job to complete
+  # Wait for job to complete (up to 10m — the job's wait_for_spire() retries
+  # for up to 5m if OIDC keys aren't ready, plus container startup overhead)
   log_info "Waiting for SPIFFE IdP setup job..."
-  tries=0
-  while true; do
-    SUCCEEDED=$(kubectl get job kagenti-spiffe-idp-setup-job -n "$KAGENTI_NS" \
-      -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "")
-    [ "$SUCCEEDED" = "1" ] && break
-    tries=$((tries + 1))
-    if [ $tries -ge 60 ]; then
-      log_warn "SPIFFE IdP setup job did not complete in 5m — check logs:"
-      log_warn "  kubectl logs -n $KAGENTI_NS job/kagenti-spiffe-idp-setup-job"
-      break
-    fi
-    sleep 5
-  done
-  [ "$SUCCEEDED" = "1" ] && log_success "SPIFFE IdP setup complete"
+  if kubectl wait --for=condition=complete job/kagenti-spiffe-idp-setup-job \
+       -n "$KAGENTI_NS" --timeout=600s 2>/dev/null; then
+    log_success "SPIFFE IdP setup complete"
+  else
+    log_warn "SPIFFE IdP setup job did not complete in 10m — check logs:"
+    log_warn "  kubectl logs -n $KAGENTI_NS job/kagenti-spiffe-idp-setup-job"
+  fi
   echo ""
 fi
 
@@ -1207,10 +1123,56 @@ fi
 log_info "Updating kagenti chart dependencies..."
 run_cmd helm dependency update "$REPO_ROOT/charts/kagenti/"
 
+# Helm applies a subchart's crds/ only on install, never on upgrade (kagenti#1335).
+# Pre-apply the operator CRDs from the resolved operator subchart so an upgrade
+# that introduces a new CRD doesn't crash-loop the controller-manager.
+_op_crds=""
+_op_tmp=""
+if [ -d "$REPO_ROOT/charts/kagenti/charts/kagenti-operator-chart/crds" ]; then
+  _op_crds="$REPO_ROOT/charts/kagenti/charts/kagenti-operator-chart/crds"
+else
+  _op_tgz=$(ls "$REPO_ROOT"/charts/kagenti/charts/kagenti-operator-chart-*.tgz 2>/dev/null | head -1 || true)
+  if [ -n "$_op_tgz" ]; then
+    _op_tmp=$(mktemp -d)
+    if tar xzf "$_op_tgz" -C "$_op_tmp"; then
+      _op_crds="$_op_tmp/kagenti-operator-chart/crds"
+    else
+      log_warn "Failed to extract operator CRDs from $(basename "$_op_tgz")"
+    fi
+  fi
+fi
+_op_rc=0
+if [ -n "$_op_crds" ] && [ -d "$_op_crds" ]; then
+  log_info "Applying kagenti-operator CRDs (Helm skips subchart CRDs on upgrade)..."
+  { run_cmd kubectl apply --server-side --force-conflicts -f "$_op_crds" &&
+    run_cmd kubectl wait --for=condition=Established --timeout=60s -f "$_op_crds"; } || _op_rc=$?
+else
+  log_warn "kagenti-operator CRDs not found under charts/kagenti/charts/ — skipping (agent operator disabled?)"
+fi
+# Always clean the temp dir (even if the apply failed under set -e), then surface any error.
+if [ -n "$_op_tmp" ]; then rm -rf "$_op_tmp"; fi
+if [ "$_op_rc" -ne 0 ]; then log_error "Failed to apply kagenti-operator CRDs"; exit "$_op_rc"; fi
+
 # Delete old OAuth secret jobs (immutable — must delete before helm upgrade)
 kubectl delete job kagenti-ui-oauth-secret-job -n kagenti-system --ignore-not-found 2>/dev/null || true
 kubectl delete job kagenti-agent-oauth-secret-job -n kagenti-system --ignore-not-found 2>/dev/null || true
 kubectl delete job mlflow-oauth-secret-job -n kagenti-system --ignore-not-found 2>/dev/null || true
+
+# Delete ClusterRoleBindings whose roleRef changed between chart versions.
+# Kubernetes forbids mutating roleRef — the binding must be deleted so Helm can
+# recreate it with the new reference. (Fixes #1838)
+_delete_stale_rolebinding() {
+  local binding="$1" expected_role="$2"
+  local current_role
+  current_role=$(kubectl get clusterrolebinding "$binding" -o jsonpath='{.roleRef.name}' 2>/dev/null || echo "")
+  if [ -n "$current_role" ] && [ "$current_role" != "$expected_role" ]; then
+    log_info "Deleting ClusterRoleBinding/$binding (roleRef changed: $current_role → $expected_role)"
+    kubectl delete clusterrolebinding "$binding" --ignore-not-found 2>/dev/null || true
+  fi
+}
+_delete_stale_rolebinding "kagenti-operator-httproute-binding-kagenti" "kagenti-operator-httproute-kagenti"
+_delete_stale_rolebinding "kagenti-manager-rolebinding" "kagenti-manager-role"
+_delete_stale_rolebinding "kagenti-mlflow-integration-kagenti" "mlflow-operator-mlflow-integration"
 
 # ── Wait for preload to finish (if running) ──
 if [ -n "$PRELOAD_LOAD_PID" ]; then
@@ -1270,10 +1232,33 @@ KAGENTI_FLAGS=(
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
   --set "featureFlags.skills=${WITH_SKILLS}"
   --set "featureFlags.externalSkills=${WITH_SKILLS}"
+  --set "components.skillberryStore.enabled=${WITH_SKILLS}"
   --set "components.mlflow.enabled=${WITH_MLFLOW}"
   --set "ui.auth.enabled=$($WITH_SPIRE && echo true || echo false)"
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
+  --set "kagenti-operator-chart.featureGates.injectTools=true"
+  --set "kagenti-operator-chart.kuadrant.enable=${WITH_KUADRANT}"
+  --set "kagenti-operator-chart.spiffe.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
+  --set "kagenti-operator-chart.spiffe.operatorAuth.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
+  --set "kagenti-operator-chart.keycloak.publicUrl=http://keycloak.${DOMAIN}:8080"
+  --set "authBridge.clientAuthType=$($ENABLE_AGENT_SPIFFE_AUTH && echo federated-jwt || echo client-secret)"
+  --set "spire.enabled=${WITH_SPIRE}"
 )
+
+# Allow-list hosts/IPs/CIDRs past the registry-URL SSRF block (for LAN / in-cluster
+# skill registries on private IPs). Escape commas so Helm treats the value as a
+# single string rather than a list.
+if [[ -n "$SKILL_REGISTRY_ALLOWED_HOSTS" ]]; then
+  KAGENTI_FLAGS+=(--set-string "ui.backend.skillRegistryAllowedHosts=${SKILL_REGISTRY_ALLOWED_HOSTS//,/\\,}")
+fi
+
+# Optional in-cluster skillberry-store image override (no dedicated flag).
+# Defaults come from charts/kagenti/values.yaml (tag 0.2.0).
+if $WITH_SKILLS; then
+  [[ -n "${SKILLBERRY_STORE_IMAGE:-}" ]] && KAGENTI_FLAGS+=(--set "skillberryStore.image.repository=${SKILLBERRY_STORE_IMAGE}")
+  [[ -n "${SKILLBERRY_STORE_TAG:-}" ]]   && KAGENTI_FLAGS+=(--set "skillberryStore.image.tag=${SKILLBERRY_STORE_TAG}")
+fi
+
 KAGENTI_FLAGS=( "${KAGENTI_FLAGS[@]}" ${KAGENTI_VALUES_FILES[@]+"${KAGENTI_VALUES_FILES[@]}"} )
 
 # When --build-images is set, the build step tags images ":latest" and loads
@@ -1296,9 +1281,19 @@ fi
 
 log_info "Installing kagenti..."
 run_cmd helm upgrade --install kagenti "$REPO_ROOT/charts/kagenti/" \
-  -n kagenti-system --wait --timeout 20m \
+  -n kagenti-system \
   "${SECRETS_FLAGS[@]+"${SECRETS_FLAGS[@]}"}" \
   "${KAGENTI_FLAGS[@]}"
+
+log_info "Waiting for kagenti pods..."
+deadline=$((SECONDS + 120))
+until kubectl get pod --no-headers -l app.kubernetes.io/name=kagenti-operator-chart \
+  -n kagenti-system 2>/dev/null | grep -q .; do
+  if (( SECONDS >= deadline )); then log_error "Timed out waiting for kagenti-operator pods"; exit 1; fi
+  sleep 2
+done
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=kagenti-operator-chart \
+  -n kagenti-system --timeout=300s
 
 log_success "kagenti installed"
 echo ""
@@ -1319,16 +1314,13 @@ if $WITH_KUADRANT; then
 
   if ! $DRY_RUN; then
     _wait_deployment_ready kuadrant-operator-controller-manager "$KUADRANT_NS" "Kuadrant operator"
-
-    # Create Kuadrant CR to instantiate Authorino
-    log_info "Creating Kuadrant CR..."
-    kubectl apply -f - <<EOF
-apiVersion: kuadrant.io/v1beta1
-kind: Kuadrant
-metadata:
-  name: kuadrant
-  namespace: ${KUADRANT_NS}
-EOF
+    # Kuadrant CR is created by the kagenti-operator's Kuadrant operand controller
+    # when --enable-kuadrant is set (see kagenti-operator chart values).
+    # The operator was installed before the Kuadrant CRD existed, so restart it
+    # to trigger KuadrantCRDExists() re-evaluation and controller registration.
+    log_info "Restarting kagenti-operator to pick up Kuadrant CRD..."
+    kubectl rollout restart deployment/kagenti-controller-manager -n kagenti-system
+    _wait_deployment_ready kagenti-controller-manager kagenti-system "kagenti-operator"
   fi
 
   log_success "Kuadrant installed"

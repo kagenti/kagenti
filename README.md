@@ -100,7 +100,7 @@ Kagenti provides a set of components and assets that make it easier to manage AI
 |-----------|-------------|
 | **[Kagenti UI](./kagenti/ui-v2/)** | Dashboard for deploying agents/tools as Kubernetes Deployments, interactive testing, and monitoring |
 | **[Identity & Auth Bridge](./docs/identity-guide.md)** | Identity pattern assets that capture common authorization scenarios and provide reusable building blocks for implementing consistent authorization across services |
-| **[Agent Lifecycle Operator](https://github.com/kagenti/kagenti-extensions/tree/main/kagenti-webhook)** | Kubernetes admission webhook for building agents from source, managing lifecycle, and coordinating platform services |
+| **[Agent Lifecycle Operator](https://github.com/kagenti/kagenti-operator)** | Kubernetes admission webhook for building agents from source, managing lifecycle, and coordinating platform services |
 | **[MCP Gateway](https://github.com/Kuadrant/mcp-gateway/blob/main/README.md)** | Unified gateway for Model Context Protocol (MCP) servers and tools. It acts as the entry point for policy enforcement, handling requests and routing them through the appropriate authorization patterns |
 | **[Plugins adapter](https://github.com/kagenti/plugins-adapter)** | Adapter for security and safety plugins for Envoy-based gateways |
 
@@ -158,18 +158,20 @@ To learn how to deploy agents and MCP tools, follow the **[Weather Agent Demo](h
 | **Installation** | [Installation Guide](./docs/install.md) (Kind & OpenShift) |
 | **Components** | [Component Details](./docs/components.md) |
 | **Demos & Tutorials** | [Demo Documentation](./docs/demos/README.md) |
+| **Developing Kagenti Apps** | [Application Development Guide](./docs/developing-kagenti-app.md) · [App Demo Example](./kagenti/examples/app-demo/README.md) |
 | **Import Your Own Agent** | [New Agent Guide](./docs/new-agent.md) |
 | **Import Your Own Tool** | [New Tool Guide](./docs/new-tool.md) |
 | **Skills Configuration & Usage** | [Skills Guide](./docs/skills.md) |
 | **Architecture Details** | [Technical Details](./docs/tech-details.md) |
 | **Identity, Security, and Auth Bridge** | [Identity and Auth Bridge](./docs/identity-guide.md) |
+| **Fine-Grained Zero-Trust Access Control** | [Access Control](./docs/access-control/README.md) |
 | **Developer Guide** | [Contributing](./docs/dev-guide.md) |
 | **Troubleshooting** | [Troubleshooting Guide](./docs/troubleshooting.md) |
 | **Blog Posts** | [Kagenti Blog](./docs/blogs.md) |
 
 ## Supported Protocols
 
-- **[A2A (Agent-to-Agent)](https://google.github.io/A2A)** — Standard protocol for agent communication
+- **[A2A (Agent-to-Agent)](https://a2a-protocol.org/latest/)** — Standard protocol for agent communication
 - **[MCP (Model Context Protocol)](https://modelcontextprotocol.io)** — Protocol for tool/server integration
 
 ## Contributing

@@ -12,7 +12,7 @@ import re
 import socket
 import ipaddress
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from urllib.parse import urlparse
 
 import httpx
@@ -101,11 +101,13 @@ from app.models.responses import (
     ResourceLabels,
     DeleteResponse,
 )
+from app.services.agent_env_defaults import apply_agent_import_defaults
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
 from app.routers.skills import _sanitize_k8s_name
 from app.utils.routes import (
     create_route_for_agent_or_tool,
     detect_platform,
+    rollback_workload_resources,
     route_exists,
     sanitize_log,
     select_route_port,
@@ -239,6 +241,11 @@ class CreateAgentRequest(BaseModel):
     framework: str = "LangGraph"
     envVars: Optional[List[EnvVar]] = None
     skills: Optional[List[str]] = None
+    # Optional MCP tool link — when agent import defaults are enabled, MCP_URL is injected
+    mcpToolName: Optional[str] = None
+    # LLM preset: openai, ollama, openrouter (used with agent import defaults)
+    llmPreset: Optional[str] = None
+    llmModel: Optional[str] = None
 
     # Workload type: 'deployment', 'statefulset', or 'job'
     workloadType: str = WORKLOAD_TYPE_DEPLOYMENT
@@ -288,6 +295,16 @@ class CreateAgentRequest(BaseModel):
     # model_validator so the form gets a fast 422 instead of a
     # webhook denial after the manifest is built.
     mtlsMode: Optional[Literal["disabled", "permissive", "strict"]] = None
+
+    # Per-workload TLS bridge: decrypt the agent's outbound HTTPS so AuthBridge's
+    # pipeline can inspect it. Maps to AgentRuntime.Spec.TLSBridgeMode (enabled
+    # when True; left unset → operator default "disabled"). Like mtlsMode, it's a
+    # plain per-agent field — no operator feature gate and no UI feature flag; the
+    # import-form checkbox shows whenever AuthBridge is enabled. The bridge lives
+    # in the Go forward proxy, so it requires proxy-sidecar/lite mode — the
+    # validator below mirrors the operator webhook's reject of envoy-sidecar. It
+    # also needs cert-manager and an operator build that supports the bridge.
+    tlsBridgeEnabled: bool = False
 
     # Port exclusion annotations
     outboundPortsExclude: Optional[str] = None
@@ -347,6 +364,24 @@ class CreateAgentRequest(BaseModel):
         API call) submitting that combination is valid and the
         operator turns SPIRE on for them.
         """
+        return self
+
+    @model_validator(mode="after")
+    def _check_tlsbridge_compatible_with_mode(self) -> "CreateAgentRequest":
+        """Reject tlsBridgeEnabled with an authBridgeMode that can't host the
+        bridge, mirroring the operator's checkTLSBridgeCompatibleWithMode
+        (agentruntime_webhook.go). The TLS bridge lives in the Go forward proxy,
+        which only exists in proxy-sidecar / lite. Uses the same ALLOWLIST as the
+        operator (empty → defaults to proxy-sidecar) rather than a denylist, so a
+        future authBridgeMode can't slip past this fast-422 and only get rejected
+        at the webhook.
+        """
+        allowed = (None, "", "proxy-sidecar", "lite")
+        if self.tlsBridgeEnabled and self.authBridgeMode not in allowed:
+            raise ValueError(
+                "tlsBridgeEnabled requires authBridgeMode proxy-sidecar or lite "
+                f"(the TLS bridge lives in the Go forward proxy); got {self.authBridgeMode!r}"
+            )
         return self
 
 
@@ -819,6 +854,65 @@ async def list_agents(
                 # CRD not installed or not accessible - that's fine, just skip
                 if e.status not in (404, 403):
                     logger.warning(f"Failed to list legacy Agent CRDs: {e.reason}")
+
+        # Surface in-progress / failed Shipwright source builds that have no
+        # workload yet. A source-built agent has no Deployment/StatefulSet/etc.
+        # until its build Succeeds and is finalized, so without this it would be
+        # invisible here while building or after a failure. Guarded so a
+        # build-listing failure never breaks the core agent list.
+        try:
+            builds = collect_kagenti_shipwright_builds(
+                kube, [namespace], RESOURCE_TYPE_AGENT, logger
+            )
+            for build in builds:
+                # Workload already exists (build Succeeded + finalized, or a
+                # name collision) -> already listed above; skip to avoid dupes.
+                if build.name in agent_names:
+                    continue
+
+                try:
+                    buildruns = kube.list_custom_resources(
+                        group=SHIPWRIGHT_CRD_GROUP,
+                        version=SHIPWRIGHT_CRD_VERSION,
+                        namespace=build.namespace,
+                        plural=SHIPWRIGHT_BUILDRUNS_PLURAL,
+                        label_selector=f"kagenti.io/build-name={build.name}",
+                    )
+                except ApiException:
+                    # Constant message only (CodeQL py/log-injection): never
+                    # interpolate namespace / build name / API reason.
+                    logger.warning("Failed to list BuildRuns for a Shipwright build")
+                    buildruns = []
+
+                # No BuildRun yet -> build just started; treat as "Building".
+                phase = "Pending"
+                latest = get_latest_buildrun(buildruns) if buildruns else None
+                if latest:
+                    phase = extract_buildrun_info(latest)["phase"]
+
+                # Succeeded builds either already have a workload (listed above)
+                # or are about to be finalized into one; don't surface them here.
+                if phase == "Succeeded":
+                    continue
+                status = "Build Failed" if phase == "Failed" else "Building"
+
+                agents.append(
+                    AgentSummary(
+                        name=build.name,
+                        namespace=build.namespace,
+                        description="Building from source",
+                        status=status,
+                        labels=_extract_labels({KAGENTI_TYPE_LABEL: build.resourceType}),
+                        # Note that we may be building a non-deployment.  TODO record and retrieve build type.
+                        workloadType=WORKLOAD_TYPE_DEPLOYMENT,
+                        # Collector already formats this as an ISO string, so do
+                        # not pass it through _format_timestamp (datetime-only).
+                        createdAt=build.creationTimestamp,
+                    )
+                )
+                agent_names.add(build.name)
+        except ApiException:
+            logger.warning("Failed to list Shipwright builds for agents", exc_info=True)
 
         return AgentListResponse(items=agents)
 
@@ -1596,9 +1690,8 @@ def _build_deployment_from_agent_crd(agent: dict) -> dict:
     # derivation uses the workload name rather than the ReplicaSet hash.
     pod_spec.setdefault("serviceAccountName", name)
 
-    # Build selector labels
+    # Build selector labels (type label is applied by the operator via AgentRuntime)
     selector_labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: name,
     }
 
@@ -1651,9 +1744,8 @@ def _build_service_from_agent_crd(agent: dict) -> dict:
     labels = metadata.get("labels", {}).copy()
     labels[APP_KUBERNETES_IO_MANAGED_BY] = KAGENTI_UI_CREATOR_LABEL
 
-    # Build selector labels
+    # Build selector labels (type label is applied by the operator via AgentRuntime)
     selector_labels = {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: name,
     }
 
@@ -2494,6 +2586,7 @@ def _build_agent_shipwright_build_manifest(
         "authBridgeEnabled": request.authBridgeEnabled,
         "spireEnabled": request.spireEnabled,
         "authBridgeMode": request.authBridgeMode,
+        "gitPath": request.gitPath,
     }
     if request.outboundRoutes:
         resource_config["outboundRoutes"] = [r.model_dump() for r in request.outboundRoutes]
@@ -2505,11 +2598,19 @@ def _build_agent_shipwright_build_manifest(
         resource_config["defaultOutboundPolicy"] = request.defaultOutboundPolicy
     if request.mtlsMode:
         resource_config["mtlsMode"] = request.mtlsMode
+    if request.tlsBridgeEnabled:
+        resource_config["tlsBridgeEnabled"] = True
     if request.persistentStorage:
         resource_config["persistentStorage"] = request.persistentStorage.model_dump()
     # Add env vars if present
     if request.envVars:
         resource_config["envVars"] = [ev.model_dump(exclude_none=True) for ev in request.envVars]
+    if request.mcpToolName:
+        resource_config["mcpToolName"] = request.mcpToolName
+    if request.llmPreset:
+        resource_config["llmPreset"] = request.llmPreset
+    if request.llmModel:
+        resource_config["llmModel"] = request.llmModel
     if request.skills:
         resource_config["skills"] = request.skills
     # Add service ports if present
@@ -2861,10 +2962,8 @@ def _build_common_labels(
     """
     Build common labels for agent workloads.
 
-    All agent workloads MUST have these labels:
-    - kagenti.io/type: agent
-    - app.kubernetes.io/name: <agent-name>
-    - protocol.kagenti.io/<protocol>: "" (at least one)
+    Common labels for agent workloads. The kagenti.io/type label is applied
+    by the kagenti-operator via AgentRuntime reconciliation, not here.
 
     Args:
         request: The agent creation request.
@@ -2874,10 +2973,7 @@ def _build_common_labels(
         Dictionary of labels.
     """
     labels = {
-        # Required labels
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: request.name,
-        # Recommended labels
         KAGENTI_FRAMEWORK_LABEL: request.framework,
         KAGENTI_WORKLOAD_TYPE_LABEL: workload_type,
         APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
@@ -2916,9 +3012,17 @@ def _build_selector_labels(request: "CreateAgentRequest") -> Dict[str, str]:
         Dictionary of selector labels.
     """
     return {
-        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: request.name,
     }
+
+
+def _agentruntime_supported_workload(workload_type: str) -> bool:
+    """Whether a workload type gets an AgentRuntime CR (per-agent AuthBridge
+    config). Sandbox, deployment, and statefulset are supported; Job is not —
+    a run-to-completion Job doesn't fit the attach / config-rollout model.
+    Single source of truth for the two _ensure_agentruntime call sites
+    (create_agent and finalize_shipwright_build)."""
+    return workload_type not in (WORKLOAD_TYPE_JOB,)
 
 
 def _build_agentruntime_manifest(
@@ -2928,16 +3032,24 @@ def _build_agentruntime_manifest(
     agent_type: str = RESOURCE_TYPE_AGENT,
     auth_bridge_mode: Optional[str] = None,
     mtls_mode: Optional[str] = None,
+    tls_bridge_enabled: bool = False,
 ) -> dict:
     """Build an AgentRuntime CR manifest for the given workload."""
     kind_map = {
         WORKLOAD_TYPE_DEPLOYMENT: "Deployment",
         WORKLOAD_TYPE_STATEFULSET: "StatefulSet",
+        WORKLOAD_TYPE_SANDBOX: "Sandbox",
+    }
+    # Sandbox is an agents.x-k8s.io CR, not apps/v1 — emit the right targetRef
+    # apiVersion per kind so the operator's resolveTargetRef finds the workload
+    # (a wrong apps/v1 ref for a Sandbox would dangle and never reconcile).
+    apiversion_map = {
+        WORKLOAD_TYPE_SANDBOX: f"{AGENT_SANDBOX_CRD_GROUP}/{AGENT_SANDBOX_CRD_VERSION}",
     }
     spec: dict = {
         "type": agent_type,
         "targetRef": {
-            "apiVersion": "apps/v1",
+            "apiVersion": apiversion_map.get(workload_type, "apps/v1"),
             "kind": kind_map.get(workload_type, "Deployment"),
             "name": name,
         },
@@ -2946,6 +3058,10 @@ def _build_agentruntime_manifest(
         spec["authBridgeMode"] = auth_bridge_mode
     if mtls_mode:
         spec["mtlsMode"] = mtls_mode
+    # Only set when enabled; unset → operator default "disabled" (also keeps the
+    # CRD field off envoy-sidecar agents so the validating webhook doesn't reject).
+    if tls_bridge_enabled:
+        spec["tlsBridgeMode"] = "enabled"
     return {
         "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
         "kind": "AgentRuntime",
@@ -2969,10 +3085,17 @@ def _ensure_agentruntime(
     agent_type: str = RESOURCE_TYPE_AGENT,
     auth_bridge_mode: Optional[str] = None,
     mtls_mode: Optional[str] = None,
+    tls_bridge_enabled: bool = False,
 ) -> None:
     """Create an AgentRuntime CR for the workload. Skip if it already exists."""
     manifest = _build_agentruntime_manifest(
-        name, namespace, workload_type, agent_type, auth_bridge_mode, mtls_mode
+        name,
+        namespace,
+        workload_type,
+        agent_type,
+        auth_bridge_mode,
+        mtls_mode,
+        tls_bridge_enabled,
     )
     try:
         kube.create_custom_resource(
@@ -3292,10 +3415,14 @@ def _build_statefulset_manifest(
                     "volumes": [
                         {"name": "cache", "emptyDir": {}},
                         {"name": "marvin", "emptyDir": {}},
-                        {"name": "shared-data", "emptyDir": {}},
                         *skill_volumes,
                         *ext_volumes,
-                    ],
+                    ]
+                    + (
+                        []
+                        if request.persistentStorage and request.persistentStorage.enabled
+                        else [{"name": "shared-data", "emptyDir": {}}]
+                    ),
                 },
             },
         },
@@ -3304,6 +3431,24 @@ def _build_statefulset_manifest(
     # Add init containers for external skills
     if ext_init_containers:
         manifest["spec"]["template"]["spec"]["initContainers"] = ext_init_containers
+
+    # When persistent storage is requested, declare a volumeClaimTemplate so the
+    # StatefulSet provisions a PVC bound to the pod's stable identity; the
+    # shared-data volume above is omitted from `volumes` in that case because
+    # the template name (shared-data) becomes the volume.
+    if request.persistentStorage and request.persistentStorage.enabled:
+        manifest["spec"]["volumeClaimTemplates"] = [
+            {
+                "metadata": {
+                    "name": "shared-data",
+                    "labels": {APP_KUBERNETES_IO_NAME: request.name},
+                },
+                "spec": {
+                    "accessModes": ["ReadWriteOnce"],
+                    "resources": {"requests": {"storage": request.persistentStorage.size}},
+                },
+            }
+        ]
 
     # Add image pull secrets if specified
     if request.imagePullSecret:
@@ -3611,6 +3756,12 @@ async def create_agent(
             s for s in request.skills if s and not _is_skill_external(kube, request.namespace, s)
         ]
 
+    request = apply_agent_import_defaults(request, kube)
+
+    # Persistent resources created during this call, tracked so we can roll them
+    # back if a later creation step fails (avoids leaking a workload, Service,
+    # AgentRuntime, or route). Only used by the image-deployment path below.
+    created: List[Tuple[str, str]] = []
     try:
         if request.deploymentMethod == "image":
             # Deploy from existing container image
@@ -3683,6 +3834,7 @@ async def create_agent(
                     namespace=request.namespace,
                     body=workload_manifest,
                 )
+                created.append(("Deployment", request.name))
                 logger.info(
                     f"Created Deployment '{request.name}' in namespace '{request.namespace}'"
                 )
@@ -3700,6 +3852,7 @@ async def create_agent(
                     namespace=request.namespace,
                     body=workload_manifest,
                 )
+                created.append(("StatefulSet", request.name))
                 logger.info(
                     f"Created StatefulSet '{request.name}' in namespace '{request.namespace}'"
                 )
@@ -3717,6 +3870,7 @@ async def create_agent(
                     namespace=request.namespace,
                     body=workload_manifest,
                 )
+                created.append(("Job", request.name))
                 logger.info(f"Created Job '{request.name}' in namespace '{request.namespace}'")
             elif request.workloadType == WORKLOAD_TYPE_SANDBOX:
                 sandbox_manifest = _build_sandbox_manifest(
@@ -3732,6 +3886,7 @@ async def create_agent(
                     namespace=request.namespace,
                     body=sandbox_manifest,
                 )
+                created.append(("Sandbox", request.name))
                 logger.info(f"Created Sandbox '{request.name}' in namespace '{request.namespace}'")
 
             # Create Service (not needed for Jobs).
@@ -3744,9 +3899,13 @@ async def create_agent(
                     service_manifest,
                     request.workloadType,
                 )
+                created.append(("Service", request.name))
 
-            # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
-            if request.workloadType not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX):
+            # Create AgentRuntime CR so the per-agent AuthBridge config (mtls /
+            # authBridgeMode / tlsBridgeMode) is applied. Sandbox is included
+            # (targetRef -> agents.x-k8s.io Sandbox); only Job is excluded —
+            # a run-to-completion Job doesn't fit the attach/restart model.
+            if _agentruntime_supported_workload(request.workloadType):
                 _ensure_agentruntime(
                     kube=kube,
                     name=request.name,
@@ -3754,7 +3913,9 @@ async def create_agent(
                     workload_type=request.workloadType,
                     auth_bridge_mode=request.authBridgeMode,
                     mtls_mode=request.mtlsMode,
+                    tls_bridge_enabled=request.tlsBridgeEnabled,
                 )
+                created.append(("AgentRuntime", request.name))
 
             message = f"Agent '{request.name}' deployed as {request.workloadType} successfully."
 
@@ -3774,6 +3935,11 @@ async def create_agent(
                     service_name=request.name,
                     service_port=service_port,
                 )
+                # create_route_for_agent_or_tool makes an HTTPRoute or an OpenShift
+                # Route depending on platform; track both so rollback deletes the
+                # right one (the other 404s and is swallowed).
+                created.append(("HTTPRoute", request.name))
+                created.append(("Route", request.name))
                 message += " HTTPRoute/Route created for external access."
 
         else:
@@ -3842,6 +4008,10 @@ async def create_agent(
         )
 
     except ApiException as e:
+        # Roll back only what THIS call created (tracked in `created`); if the very
+        # first create 409'd, `created` is empty and rollback is a no-op, so a
+        # pre-existing agent is never deleted.
+        rollback_workload_resources(kube, request.namespace, created)
         if e.status == 409:
             raise HTTPException(
                 status_code=409,
@@ -3859,6 +4029,19 @@ async def create_agent(
             )
         logger.error(f"Failed to create agent: {e}")
         raise HTTPException(status_code=e.status, detail=str(e.reason))
+    except HTTPException:
+        # Validation errors (400) raised above — nothing created yet, re-raise as-is.
+        raise
+    except Exception as e:
+        # Non-API failure (e.g. platform detection in route creation) after some
+        # resources were already created — roll back before surfacing a 500.
+        rollback_workload_resources(kube, request.namespace, created)
+        logger.error(
+            "Unexpected error creating agent '%s': %s",
+            sanitize_log(request.name),
+            sanitize_log(str(e)),
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to create agent: {e}")
 
 
 class FinalizeShipwrightBuildRequest(BaseModel):
@@ -3884,11 +4067,17 @@ class FinalizeShipwrightBuildRequest(BaseModel):
     # the user picked at form-submit time (stashed on the BuildRun via
     # kagenti.io/agent-config annotation).
     mtlsMode: Optional[Literal["disabled", "permissive", "strict"]] = None
+    # Mirrors CreateAgentRequest.tlsBridgeEnabled. None → inherit the value
+    # stashed on the BuildRun annotation at form-submit time.
+    tlsBridgeEnabled: Optional[bool] = None
     outboundRoutes: Optional[List[OutboundRoute]] = None
     outboundPortsExclude: Optional[str] = None
     inboundPortsExclude: Optional[str] = None
     defaultOutboundPolicy: Optional[Literal["passthrough", "exchange"]] = None
     persistentStorage: Optional[PersistentStorageConfig] = None
+    mcpToolName: Optional[str] = None
+    llmPreset: Optional[str] = None
+    llmModel: Optional[str] = None
 
     @model_validator(mode="after")
     def _check_mtls_compatible_with_mode(self) -> "FinalizeShipwrightBuildRequest":
@@ -3902,6 +4091,22 @@ class FinalizeShipwrightBuildRequest(BaseModel):
         for the full rationale (including why SPIRE-vs-mTLS coupling
         is handled at the operator data-plane layer rather than here).
         """
+        return self
+
+    @model_validator(mode="after")
+    def _check_tlsbridge_compatible_with_mode(self) -> "FinalizeShipwrightBuildRequest":
+        """Mirror of CreateAgentRequest._check_tlsbridge_compatible_with_mode at
+        the Shipwright finalize boundary, so a direct finalize caller (or a combo
+        inherited from the BuildRun's stored config) with tlsBridgeEnabled +
+        envoy-sidecar/waypoint gets the same fast 422 instead of a later webhook
+        denial. Same allowlist as the operator (empty → defaults to proxy-sidecar).
+        """
+        allowed = (None, "", "proxy-sidecar", "lite")
+        if self.tlsBridgeEnabled and self.authBridgeMode not in allowed:
+            raise ValueError(
+                "tlsBridgeEnabled requires authBridgeMode proxy-sidecar or lite "
+                f"(the TLS bridge lives in the Go forward proxy); got {self.authBridgeMode!r}"
+            )
         return self
 
 
@@ -4190,10 +4395,30 @@ async def finalize_shipwright_build(
             request.mtlsMode if request.mtlsMode is not None else stored_config.get("mtlsMode")
         )
 
+        # Per-workload TLS bridge (bool; None on the finalize request → inherit
+        # the stored value). Same store-then-read-back flow as mtlsMode.
+        final_tls_bridge_enabled = (
+            request.tlsBridgeEnabled
+            if request.tlsBridgeEnabled is not None
+            else bool(stored_config.get("tlsBridgeEnabled"))
+        )
+
         # Persistent storage
         final_persistent_storage = request.persistentStorage
         if final_persistent_storage is None and stored_config.get("persistentStorage"):
             final_persistent_storage = PersistentStorageConfig(**stored_config["persistentStorage"])
+
+        final_mcp_tool_name = (
+            request.mcpToolName
+            if request.mcpToolName is not None
+            else stored_config.get("mcpToolName")
+        )
+        final_llm_preset = (
+            request.llmPreset if request.llmPreset is not None else stored_config.get("llmPreset")
+        )
+        final_llm_model = (
+            request.llmModel if request.llmModel is not None else stored_config.get("llmModel")
+        )
 
         # Step 3: Create workload + Service with the built image
         # Build a CreateAgentRequest-like object for manifest builders
@@ -4214,12 +4439,19 @@ async def finalize_shipwright_build(
             spireEnabled=final_spire_enabled,
             authBridgeMode=final_auth_bridge_mode,
             mtlsMode=final_mtls_mode,
+            tlsBridgeEnabled=final_tls_bridge_enabled,
             outboundRoutes=final_outbound_routes,
             outboundPortsExclude=final_outbound_ports_exclude,
             inboundPortsExclude=final_inbound_ports_exclude,
             defaultOutboundPolicy=final_default_outbound_policy,
             persistentStorage=final_persistent_storage,
+            gitPath=stored_config.get("gitPath")
+            or build.get("spec", {}).get("source", {}).get("contextDir", ""),
+            mcpToolName=final_mcp_tool_name,
+            llmPreset=final_llm_preset,
+            llmModel=final_llm_model,
         )
+        agent_request = apply_agent_import_defaults(agent_request, kube)
 
         # Ensure a dedicated ServiceAccount exists so the webhook's
         # SPIFFE identity uses the workload name, not the ReplicaSet hash.
@@ -4363,11 +4595,12 @@ async def finalize_shipwright_build(
         )
         _create_or_replace_service(kube, namespace, name, service_manifest, final_workload_type)
 
-        # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
-        # Only for agents — tools don't need sidecar injection
+        # Create AgentRuntime CR so the per-agent AuthBridge config is applied.
+        # Sandbox is included (targetRef -> agents.x-k8s.io Sandbox); only Job is
+        # excluded. Agents only — tools don't need sidecar injection.
         resource_type = build_labels.get(KAGENTI_TYPE_LABEL, RESOURCE_TYPE_AGENT)
         if (
-            final_workload_type not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX)
+            _agentruntime_supported_workload(final_workload_type)
             and resource_type == RESOURCE_TYPE_AGENT
         ):
             _ensure_agentruntime(
@@ -4377,6 +4610,7 @@ async def finalize_shipwright_build(
                 workload_type=final_workload_type,
                 auth_bridge_mode=final_auth_bridge_mode,
                 mtls_mode=final_mtls_mode,
+                tls_bridge_enabled=final_tls_bridge_enabled,
             )
 
         message = f"Agent '{name}' deployed as {final_workload_type} with image '{output_image}'."

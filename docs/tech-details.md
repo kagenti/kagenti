@@ -93,7 +93,7 @@ It is deployed in the `kagenti-system` namespace.
  
 ## Agents
 
-- **a2a-contact-extractor-agent**: Marvin agent exposed via [A2A](https://google.github.io/A2A) protocol. 
+- **a2a-contact-extractor-agent**: Marvin agent exposed via [A2A](https://a2a-protocol.org/latest/) protocol. 
 It extracts structured contact information from text using Marvin's extraction capabilities
 - **a2a-currency-agent**: LangGraph agent exposed via A2A protocol. It provides exchange rates for currencies.
 - **slack-researcher**: Autogen agent exposed via A2A protocol. It implements a slack assistant to perform various research tasks on slack.

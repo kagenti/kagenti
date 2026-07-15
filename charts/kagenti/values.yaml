@@ -32,7 +32,10 @@ featureFlags:
   authbridgeAPI: true
   # Enables Platform Status card
   # on http://kagenti-ui.localtest.me:8080/admin
-  admin: false
+  admin: true
+  # Trace-analysis Observability card. Links to the standalone trace-analysis
+  # component (separate repo) which must be deployed for the card to work.
+  traceAnalysis: false
 
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
@@ -60,6 +63,82 @@ components:
     # Path prefix where MLflow UI is served (appended to the route URL).
     # RHOAI MLflow uses --static-prefix=/mlflow by default.
     routePath: "/mlflow"
+  # In-cluster skillberry-store skill registry (deployed by --with-skills).
+  # When enabled, the store runs as a pod and autosync is seeded against it
+  # via the kagenti-skill-autosync-config ConfigMap (see skillberryStore below).
+  # Behavior is additionally gated by featureFlags.externalSkills.
+  skillberryStore:
+    enabled: false
+
+# ------------------------------------------------------------------
+#  In-cluster skillberry-store configuration
+#  (only rendered when components.skillberryStore.enabled=true)
+# ------------------------------------------------------------------
+skillberryStore:
+  image:
+    repository: ghcr.io/skillberry-ai/skillberry-store
+    tag: "0.2.0"             # override via --set or values overlay
+    pullPolicy: IfNotPresent
+    # Override the container entrypoint. The default image command (`make run`)
+    # re-runs `uv install` at startup and requires network access to github.com.
+    # This bypasses that by running the pre-installed venv directly.
+    #
+    # The store's skill-generation feature shells out to the Claude Code CLI,
+    # which is NOT bundled in the upstream image. Install it at startup (best
+    # effort; `|| true` keeps the store up if the npm fetch fails) so it lands
+    # on PATH (/usr/local/bin) before the app process starts. This is a network
+    # fetch on every pod start (~15s); bake it into a derived image if that
+    # startup cost or the network dependency is unacceptable.
+    command:
+      - sh
+      - -c
+      - |
+        npm install -g @anthropic-ai/claude-code || true
+        exec .venv/bin/python -m skillberry_store.main
+  imagePullSecrets: []        # public image; empty default
+  apiPort: 8000
+  uiPort: 8002
+  baseDir: /data              # SBS_BASE_DIR; PVC mount point
+  # Hosts the store's Vite dev server accepts in the Host header
+  # (VITE_ALLOWED_HOSTS). The UI is reached through the gateway under a
+  # non-localhost hostname, which Vite blocks by default. Empty = derive the
+  # gateway host from domain (skillberry-store.<domain>). Set to "true" to allow
+  # any host. Requires a store image with VITE_ALLOWED_HOSTS support (>= 0.2.0).
+  allowedHosts: ""
+  # Browser-facing store UI URL surfaced in the Kagenti UI (the in-cluster
+  # registry-url is server-side only and not browser-reachable). Empty = derive
+  # from domain: http://skillberry-store.<domain>:<ingressPort>. Set explicitly
+  # for OpenShift routes or custom ingress.
+  uiUrl: ""
+  # Extra environment variables appended to the store container, after the
+  # chart-managed SBS_* / ENABLE_UI vars. Standard core/v1 EnvVar entries, so
+  # both literal values and valueFrom (secretKeyRef/configMapKeyRef) work.
+  # Example:
+  #   extraEnv:
+  #     - name: SBS_LOG_LEVEL
+  #       value: "debug"
+  #     - name: SBS_API_TOKEN
+  #       valueFrom:
+  #         secretKeyRef:
+  #           name: skillberry-store-secrets
+  #           key: api-token
+  extraEnv: []
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClassName: ""      # "" = cluster default
+    accessMode: ReadWriteOnce
+  autosync:
+    enabled: true             # seed kagenti-skill-autosync-config when store deployed
+    syncInterval: 30
+    allowedTags: ""           # optional tag filter
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
 
 # Secrets — override via a .secrets.yaml file or --set secrets.<key>=<value>.
 # githubUser/githubToken are optional: only needed to deploy agents/tools from
@@ -75,6 +154,11 @@ secrets:
 
 common:
   kubectlImage: "quay.io/kubestellar/kubectl:1.30.14"
+  # Pinned to a tag that exists on registry.redhat.io. Do NOT bump blindly to
+  # match the cluster's OCP version — ose-cli is not published for every release
+  # (e.g. v4.20 is absent), and the route-processor apply uses --validate=false
+  # so a version-skewed client still works (issue #1983). Override for air-gapped
+  # mirrors or to pin a newer tag once it is known to be published.
   oseCLIImage: "registry.redhat.io/openshift4/ose-cli:v4.15"
 
 # ------------------------------------------------------------------
@@ -108,7 +192,10 @@ ui:
     resources:
       limits:
         cpu: 100m
-        memory: 128Mi
+        # nginx worker_processes is pinned in the image (see kagenti/ui-v2/Dockerfile),
+        # so memory no longer scales with host CPU count. 256Mi is defense-in-depth
+        # headroom above the measured footprint. See kagenti#1991.
+        memory: 256Mi
       requests:
         cpu: 25m
         memory: 64Mi
@@ -124,6 +211,11 @@ ui:
     # Default Shipwright build strategy for internal registries
     # Kind: "buildah-insecure-push" (no TLS), OCP: "buildah" (TLS-enabled registry)
     shipwrightDefaultStrategy: ""
+    # Hosts/IPs/CIDRs allowed to bypass the skill registry-URL private-address SSRF
+    # block (comma-separated). Empty by default — all private/internal addresses stay
+    # blocked. Set for self-hosted/in-cluster skill registries, e.g.
+    # "192.168.50.16,10.0.0.0/8".
+    skillRegistryAllowedHosts: ""
     resources:
       limits:
         cpu: 250m
@@ -267,7 +359,7 @@ kagenti-operator-chart:
     container:
       cmd: /manager
       image:
-        tag: 0.3.0-alpha.4
+        tag: 0.3.0-alpha.6
       args:
       - "--leader-elect"
       - "--metrics-bind-address=:8443"
@@ -303,10 +395,27 @@ kagenti-operator-chart:
   # sidecar. Client registration is operator-managed.
   defaults:
     images:
-      authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.7
-      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.7
-      authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.7
-      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.7
+      authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.10
+      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.10
+      authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.10
+      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.10
+
+# ------------------------------------------------------------------
+#  SPIFFE Configuration
+# ------------------------------------------------------------------
+# NOTE: Operator SPIFFE authentication is now configured under
+# kagenti-operator-chart.spiffe.operatorAuth (see line 265 below).
+# This consolidation eliminates the duplicate kagentiOperator.spiffeAuth
+# section that previously existed here.
+# ------------------------------------------------------------------
+spiffe:
+  # SPIFFE Identity Provider alias in Keycloak
+  idpAlias: "spire-spiffe"
+  # SPIRE OIDC Discovery Provider URL
+  oidcDiscoveryURL: "http://spire-spiffe-oidc-discovery-provider.zero-trust-workload-identity-manager.svc:8080"
+
+# Trust domain (used for SPIFFE IDs)
+spireTrustDomain: localtest.me
 
 # ------------------------------------------------------------------
 #  MCP Gateway Configuration
@@ -375,25 +484,36 @@ mlflowOAuthSecret:
   useServiceAccountCA: true
 
 # ------------------------------------------------------------------
+#  Trace Analysis Configuration
+#  Deployed into kagenti-system (alongside MLflow) when
+#  featureFlags.traceAnalysis is true. Backs the Observability
+#  "Trace Analysis" card; reachable at trace-analysis.<domainName>:8080.
+# ------------------------------------------------------------------
+traceAnalysis:
+  image:
+    repository: ghcr.io/kagenti/trace-analysis
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  # MLflow tracking endpoint the service reads traces from (in-cluster DNS).
+  mlflowTrackingUri: "http://mlflow:5000"
+  maxTraces: 50
+  # When enabled, turns on both: OAuth2 client-credentials auth to MLflow
+  # (mlflow-oidc-auth) and the Keycloak UI login gate. Both use credentials
+  # from secretName (the platform's mlflow-oauth-secret). Set false when
+  # Keycloak is not available in the cluster.
+  auth:
+    enabled: true
+    secretName: mlflow-oauth-secret
+  resources:
+    requests:
+      cpu: 50m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+
+# ------------------------------------------------------------------
 #  Spiffe/Spire configs
 # ------------------------------------------------------------------
 spire:
   enabled: true
-
-# ------------------------------------------------------------------
-#  OpenShell Configuration
-# ------------------------------------------------------------------
-openshell:
-  enabled: false
-  gateway:
-    image: ghcr.io/kagenti/openshell/gateway
-    tag: v0.0.56
-    pullPolicy: IfNotPresent
-  computeDriver:
-    image: ghcr.io/kagenti/openshell-driver-openshift/compute-driver
-    tag: v0.1.0-rc.4
-    pullPolicy: IfNotPresent
-  credentialsDriver:
-    image: ghcr.io/kagenti/openshell-credentials-keycloak/credentials-driver
-    tag: main-d7d8306
-    pullPolicy: IfNotPresent

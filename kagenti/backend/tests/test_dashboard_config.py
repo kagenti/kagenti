@@ -37,6 +37,7 @@ class TestDashboardConfigPhoenixToggle:
                 mock_settings.traces_dashboard_url = ""
                 mock_settings.network_dashboard_url = ""
                 mock_settings.mlflow_dashboard_url = ""
+                mock_settings.trace_analysis_dashboard_url = ""
                 mock_settings.mcp_inspector_url = ""
                 mock_settings.mcp_proxy_full_address = ""
                 mock_settings.keycloak_console_url = ""
@@ -59,6 +60,7 @@ class TestDashboardConfigPhoenixToggle:
                 mock_settings.traces_dashboard_url = phoenix_url
                 mock_settings.network_dashboard_url = ""
                 mock_settings.mlflow_dashboard_url = ""
+                mock_settings.trace_analysis_dashboard_url = ""
                 mock_settings.mcp_inspector_url = ""
                 mock_settings.mcp_proxy_full_address = ""
                 mock_settings.keycloak_console_url = ""
@@ -79,6 +81,7 @@ class TestDashboardConfigPhoenixToggle:
                 mock_settings.traces_dashboard_url = ""
                 mock_settings.network_dashboard_url = ""
                 mock_settings.mlflow_dashboard_url = ""
+                mock_settings.trace_analysis_dashboard_url = ""
                 mock_settings.mcp_inspector_url = ""
                 mock_settings.mcp_proxy_full_address = ""
                 mock_settings.keycloak_console_url = ""
@@ -100,6 +103,7 @@ class TestDashboardConfigPhoenixToggle:
                 mock_settings.traces_dashboard_url = ""
                 mock_settings.network_dashboard_url = ""
                 mock_settings.mlflow_dashboard_url = mlflow_url
+                mock_settings.trace_analysis_dashboard_url = ""
                 mock_settings.mcp_inspector_url = ""
                 mock_settings.mcp_proxy_full_address = ""
                 mock_settings.keycloak_console_url = ""
