@@ -100,18 +100,19 @@ def kagenti_config():
         return yaml.safe_load(f)
 
 
-@pytest.fixture(scope="session")
-def enabled_features(kagenti_config):
+def _compute_enabled_features(kagenti_config):
     """
-    Extract enabled feature flags from config.
+    Extract enabled feature flags from every layer of a loaded kagenti config.
 
-    Returns dict like: {'keycloak': True, 'spire': True, 'platform_operator': True, ...}
-    Treats operators as features for unified handling.
+    Shared by the ``enabled_features`` fixture and ``pytest_collection_modifyitems``
+    so the two paths cannot diverge. Uses OR semantics when a feature appears in
+    more than one layer: enabled anywhere => enabled.
 
-    Extracts features from ALL layers of the config:
-    - Top-level enabled flags (gatewayApi, certManager, tekton, kiali, etc.)
+    Layers:
+    - Top-level enabled flags (gatewayApi, certManager, tekton, kiali, rhoai)
     - charts.*.enabled
-    - charts.*.values.components.*
+    - charts.kagenti-deps/kagenti .values.components.* (operators included)
+    - charts.kagenti.values.featureFlags.*
     """
     if not kagenti_config:
         return {}
@@ -133,37 +134,45 @@ def enabled_features(kagenti_config):
     # ===== Chart-level enabled flags =====
     charts = kagenti_config.get("charts", {})
 
-    # Each chart can have an enabled flag
+    # Each chart can have an enabled flag (e.g., "istio", "mcpGateway")
     for chart_name, chart_config in charts.items():
         if isinstance(chart_config, dict) and "enabled" in chart_config:
-            # Store as chart name (e.g., "istio", "mcpGateway")
             features[chart_name] = chart_config["enabled"]
 
     # ===== Component-level enabled flags =====
-
-    # Check charts.kagenti-deps.values.components
-    deps_chart = charts.get("kagenti-deps", {})
-    deps_components = deps_chart.get("values", {}).get("components", {})
-
-    for component_name, component_config in deps_components.items():
-        if isinstance(component_config, dict) and "enabled" in component_config:
-            features[component_name] = component_config["enabled"]
-
-    # Check charts.kagenti.values.components (includes operators)
-    kagenti_chart = charts.get("kagenti", {})
-    components = kagenti_chart.get("values", {}).get("components", {})
-
-    for component_name, component_config in components.items():
-        if isinstance(component_config, dict) and "enabled" in component_config:
-            features[component_name] = component_config["enabled"]
+    # OR across charts: a component enabled in kagenti-deps but disabled in the
+    # kagenti chart (or vice versa) stays enabled.
+    for chart_key in ("kagenti-deps", "kagenti"):
+        components = charts.get(chart_key, {}).get("values", {}).get("components", {})
+        for component_name, component_config in components.items():
+            if isinstance(component_config, dict) and "enabled" in component_config:
+                features[component_name] = (
+                    features.get(component_name, False) or component_config["enabled"]
+                )
 
     # ===== Feature flags (charts.kagenti.values.featureFlags.*) =====
-    feature_flags = kagenti_chart.get("values", {}).get("featureFlags", {})
+    feature_flags = charts.get("kagenti", {}).get("values", {}).get("featureFlags", {})
     for flag_name, flag_value in feature_flags.items():
         if isinstance(flag_value, bool):
             features[flag_name] = features.get(flag_name, False) or flag_value
 
     return features
+
+
+@pytest.fixture(scope="session")
+def enabled_features(kagenti_config):
+    """
+    Extract enabled feature flags from config.
+
+    Returns dict like: {'keycloak': True, 'spire': True, 'platform_operator': True, ...}
+    Treats operators as features for unified handling.
+
+    Extracts features from ALL layers of the config:
+    - Top-level enabled flags (gatewayApi, certManager, tekton, kiali, etc.)
+    - charts.*.enabled
+    - charts.*.values.components.*
+    """
+    return _compute_enabled_features(kagenti_config)
 
 
 @pytest.fixture(scope="session")
@@ -385,58 +394,8 @@ def pytest_collection_modifyitems(config, items):
         # Failed to load config - don't skip any tests
         return
 
-    # Build enabled features dict (same logic as enabled_features fixture)
-    enabled = {}
-
-    # ===== Top-level enabled flags =====
-    top_level_features = [
-        "gatewayApi",
-        "certManager",
-        "tekton",
-        "kiali",
-        "rhoai",
-    ]
-    for feature in top_level_features:
-        if feature in kagenti_config:
-            enabled[feature] = kagenti_config[feature].get("enabled", False)
-
-    # ===== Chart-level enabled flags =====
-    charts = kagenti_config.get("charts", {})
-
-    # Each chart can have an enabled flag
-    for chart_name, chart_config in charts.items():
-        if isinstance(chart_config, dict) and "enabled" in chart_config:
-            enabled[chart_name] = chart_config["enabled"]
-
-    # ===== Component-level enabled flags =====
-
-    # deps components
-    deps_chart = charts.get("kagenti-deps", {})
-    deps_components = deps_chart.get("values", {}).get("components", {})
-
-    for component_name, component_config in deps_components.items():
-        if isinstance(component_config, dict) and "enabled" in component_config:
-            # Use OR logic: if any chart enables a feature, it stays enabled
-            # (e.g., istio enabled in kagenti-deps but disabled in kagenti chart)
-            enabled[component_name] = (
-                enabled.get(component_name, False) or component_config["enabled"]
-            )
-
-    # kagenti components (includes operators)
-    kagenti_chart = charts.get("kagenti", {})
-    components = kagenti_chart.get("values", {}).get("components", {})
-
-    for component_name, component_config in components.items():
-        if isinstance(component_config, dict) and "enabled" in component_config:
-            enabled[component_name] = (
-                enabled.get(component_name, False) or component_config["enabled"]
-            )
-
-    # feature flags (charts.kagenti.values.featureFlags.*)
-    feature_flags = kagenti_chart.get("values", {}).get("featureFlags", {})
-    for flag_name, flag_value in feature_flags.items():
-        if isinstance(flag_value, bool):
-            enabled[flag_name] = enabled.get(flag_name, False) or flag_value
+    # Build enabled features dict (shared with the enabled_features fixture)
+    enabled = _compute_enabled_features(kagenti_config)
 
     # Detect OpenShift from config
     is_openshift = _detect_openshift_from_config(kagenti_config)
