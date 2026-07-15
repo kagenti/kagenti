@@ -1,12 +1,22 @@
 # Rosso — A Platform for Governed, Zero-Trust Agent Autonomy
 
+> **Rosso is a research project first.** We build a production platform because ideas about autonomous agents only earn trust when they run — but the reason the project exists is to answer questions no one has settled yet: *What is an agent's identity, when the agent rewrites its own behavior at runtime? How do you lend authority to something non-deterministic and keep it bounded? What does it mean to govern an actor you cannot fully predict?* Everything below is organized around where we are pushing past the state of the art, and where we are honestly still building on it.
+
 ## The shift already underway
 
 Software is learning to act on its own. AI agents no longer just answer questions — they plan, call tools, spend money, move data, and delegate to other agents to finish work that unfolds over minutes, hours, or days. The unit of computation is no longer a request that arrives and returns. It is an autonomous actor that reasons, remembers, and reaches out into the world on someone's behalf.
 
 Our infrastructure was not built for this. The cloud-native stack assumes deterministic services with fixed identities, stable filesystems, short-lived requests, and permissions granted ahead of time. Agents violate every one of those assumptions. They are non-deterministic, long-running, stateful, and — most consequentially — they act with authority they were lent rather than authority they own. When an agent decides at runtime which tool to call and which data to touch, the guarantees that made cloud-native software safe to operate simply don't hold.
 
-**Rosso exists to close that gap.** We are defining and building the platform primitives that autonomous agents need to run in production the way real organizations require: provable identity, delegated authority, enforceable policy, durable memory, and governed reach — all by default, and all without asking agent developers to become security engineers.
+**Rosso exists to close that gap — and to close it with genuinely new ideas, not just new plumbing.** We are defining the platform primitives that autonomous agents need to run in production: provable identity, delegated authority, enforceable policy, durable memory, and governed reach — all by default, and all without asking agent developers to become security engineers. Where a strong open standard already exists — SPIFFE for workload identity, A2A for agent cards, RFC 8693 for token exchange — we build on it and say so plainly. Our contribution is what those standards do not yet reach: **binding an agent's authority to the integrity of what it is actually made of, making delegated authority credential-less by construction, and giving memory, cost, and governance the same first-class treatment identity has.**
+
+### Where the frontier is
+
+Not every primitive is equally novel, and we think saying so is what makes the novel parts credible. Three honest tiers run through this document:
+
+- **Frontier — genuinely new.** Skill-bound identity (a tampered capability changes the agent's cryptographic identity, fail-closed), the adaptive memory manifold, and the surrogate approval agent. These are ideas we have not seen elsewhere; some are still designs on the bench.
+- **Novel composition — new arrangement of known parts.** A single policy decision point fed by data lineage and budget; a zero-trust credential plane where the agent uses keys it can never read; signed identity-carrying events. The pieces exist; wiring them into one enforceable path for agents is the contribution.
+- **Standards, hardened.** Runtime workload identity (SPIFFE/SPIRE), signed agent cards (A2A), and just-in-time token exchange (RFC 8693). We are strengthening and integrating these, not reinventing them — and the frontier work is what we layer on top.
 
 ## The problem, stated plainly
 
@@ -30,21 +40,27 @@ We organize that fabric into three pillars — an **Identity Fabric**, a **Gover
 
 ### Attested Identity — who an agent provably is
 
-**Today:** Every agent is given a cryptographic identity rooted in the workload itself, not in a secret handed to it. Rosso goes beyond signing an agent's published card: a runtime attester *observes the running workload* and cryptographically vouches for what it actually is — its image, its platform claims, its integrity — producing a runtime-attested identity a consumer can trust for access decisions.
+**Today:** Every agent is given a cryptographic identity rooted in the workload itself, not in a secret handed to it — built on SPIFFE/SPIRE workload identity and JWS-signed A2A agent cards. This is a strong, standard foundation, and we build on it directly.
 
-**Horizon:** Identity becomes continuous and compositional — issued, attested, and continuously true rather than asserted once and assumed forever, and eventually extending down to individual skills and tool calls so that trust is verifiable at every level of the stack.
+**Horizon:** A *runtime attester* that observes the running workload and vouches for what it actually is — image, platform claims, integrity — not merely that a legitimate workload served the card. Today the standards prove *who is running*; they don't prove *how the card got here*. Closing that gap moves identity from asserted-once to continuously-true.
+
+**The innovation:** *identity that keeps proving itself.* The novelty is not the SVID or the signed card — those are prior art we adopt — but pushing attestation from "a trusted workload is running" toward "the artifact this workload is serving is provably intact, right now," at the moment of every access decision.
 
 ### Skill & Supply-Chain Integrity — what the agent is made of
 
-**Today:** Agents are increasingly assembled from skills, prompts, and capabilities pulled from external registries — a supply chain with no integrity story. Rosso is building verification that ties an agent's *authority* to the integrity of its *components*.
+**Today:** Agents are increasingly assembled from skills, prompts, and capabilities pulled from external registries — a supply chain with no runtime integrity story. Build-time provenance (SLSA, Sigstore) proves a component was published through a trusted process; it says nothing about what a *running* agent has actually loaded.
 
-**Horizon:** We bind a signature-verified skill digest into the agent's attested identity, so that a tampered or unverifiable skill changes the identity and its access falls away automatically — fail-closed by construction. Supply-chain compromise stops being a detection problem and becomes an impossibility of the trust model.
+**Horizon:** We fold a signature-verified skill-integrity digest into the agent's cryptographic identity itself — the SPIFFE identity path carries the skill hash — so a tampered or unverifiable skill yields a *different* identity, and the platform refuses to authorize it, fail-closed, before token exchange and before any tool call.
+
+**The innovation — this is our flagship:** *a modified skill changes who the agent is.* Skill integrity stops being an advisory scan and becomes part of the workload's identity. This goes beyond build-time supply-chain provenance (which is static and off to the side) and beyond stock workload attestation (which proves who is running, not the integrity of the artifact it loaded) — turning supply-chain compromise from a detection problem into a property the trust model makes impossible. It is an early-stage design, and we are pursuing the upstream primitives it needs in the open.
 
 ### Delegation & Consent — acting for a user, with bounded authority
 
-**Today:** When an agent acts on your behalf, it should carry exactly the authority you granted, for exactly as long as it needs it. Rosso provides just-in-time, user-scoped delegation: an under-privileged agent obtains ephemeral, narrowly-scoped credentials at the moment it needs them, through a consent flow in which neither the agent nor the platform ever holds the user's credentials.
+**Today:** When an agent acts on your behalf, it should carry exactly the authority you granted, for exactly as long as it needs it. Rosso implements just-in-time, user-scoped delegation on the OAuth token-exchange standard (RFC 8693) — an under-privileged agent obtains ephemeral, narrowly-scoped tokens at the moment it needs them, with the user's identity propagated down the agent-to-tool chain and re-scoped to least privilege at each hop.
 
-**Horizon:** Delegation becomes contextual and revocable end-to-end — authority that is minted for a single intent, provably scoped to it, and dissolves the instant the task completes.
+**Horizon:** Authority that is minted for a *single intent*, provably scoped to it, and dissolves the instant the task completes — and a delegation path where *neither the agent nor the platform ever holds a standing credential for the user*, which the standard alone does not achieve (token exchange still relies on a party minting tokens that stand in for the user).
+
+**The innovation — a composition, honestly:** the token-exchange mechanics are standard and we use them as such. The contribution is the *shape* of delegation for agents — reducing the window and blast radius toward per-intent, self-expiring authority, and driving toward genuinely credential-less delegation rather than merely well-scoped standing credentials.
 
 ---
 
@@ -58,9 +74,13 @@ We organize that fabric into three pillars — an **Identity Fabric**, a **Gover
 
 **Horizon:** Policy expressed in *human language*. The platform infers an agent's intended behavior and derives — then continuously audits — the fine-grained rules that match it, keeping intent and enforcement in sync as the agent fleet grows beyond what any security team could hand-author.
 
+**The innovation:** *policy that authors and audits itself against inferred intent.* Rego, OPA, and central PDPs are established; the frontier is a control-plane agent that translates natural-language intent into enforceable rules and continuously checks the live rules back against that intent — treating drift between what we meant and what is enforced as a detectable, correctable condition.
+
 ### Human-in-the-Loop — from micro-management to delegated trust
 
 We are redefining the human–agent relationship, shifting from active micro-management today to a future of autonomous decisions through delegated trust. In the near term, we are instrumenting the platform to continuously monitor long-running, event-driven, and asynchronous agents, enabling seamless human-in-the-loop interaction — such as mobile notifications — to safely verify high-risk actions and harvest direct feedback. For the long term, we are researching the **Agentic Avatar (Surrogate Agent)**, a personalized cognitive representation in code that replaces repetitive manual micro-approvals. By dynamically learning the user's habits, risk tolerances, and implicit intentions, this backend proxy safely auto-approves agent actions on the user's behalf — evolving the platform from a reactive notification system into a trusted, proactive digital representative.
+
+**The innovation — frontier:** *the approver becomes an agent too.* Approval workflows and human-in-the-loop gates are well-trodden; the new idea is a learned surrogate that models one specific user's judgment and stands in for them on routine decisions — reserving the human for the genuinely novel or high-risk, and turning oversight from a bottleneck into something that scales with the agent fleet.
 
 ### Cost & Budget Governance — autonomy with a spending limit
 
@@ -68,11 +88,15 @@ We are redefining the human–agent relationship, shifting from active micro-man
 
 **Horizon:** Budget becomes a first-class dimension of every authorization decision, enabling fair multi-tenant economics, FinOps chargeback, and cost as a governed resource rather than a surprise.
 
+**The innovation — composition:** LLM gateways already meter and cap spend. The new angle is making budget a term in the *authorization* decision — the same PDP that decides *may this agent act* also decides *can it afford to* — so a session can be aborted mid-flight by the platform, not merely rate-limited at the gateway, and cost becomes a governance signal rather than a billing report.
+
 ### Data Security & Governance — context on every decision
 
 **Today:** Data flows through an agent platform — in prompts, out through tool calls, across sessions and users — with no centralized governance. Rosso is building data-aware controls: classifying and tracing data lineage across agent trajectories, detecting breach and corruption risk, and feeding that context into policy decisions so an unsafe action can be blocked *before* it happens.
 
 **Horizon:** The platform understands not just *whether* an action is allowed but *what data* it would move and where that data came from — closing the confused-deputy and exfiltration gaps that static controls cannot see.
+
+**The innovation — composition:** classification and DLP exist; lineage catalogs exist. The new arrangement is feeding *live data lineage* — where this content originated, across which agents and sessions it has traveled — into a *pre-execution* authorization verdict, so an agent is stopped from moving data based on the data's own history, not just the action's shape.
 
 ### Quality & Evaluation — trusting the governors themselves
 
@@ -92,9 +116,13 @@ We are redefining the human–agent relationship, shifting from active micro-man
 
 **Horizon:** A serverless model for agents — scale-to-zero when idle, fast cold-start regardless of how long the conversation has run, and session mobility and self-healing recovery as native platform capabilities rather than bespoke integrations each team rebuilds.
 
+**The innovation — composition:** durable logs and checkpointing are known techniques. The new arrangement is treating the *agent session itself* as the portable, replayable unit — so a conversation can scale to zero, cold-start in constant time regardless of its length, and be reconstituted on a different instance, making an agent as elastic and mobile as a stateless service without being stateless.
+
 ### Long-Term Memory — the cognitive foundation
 
 We are building the cognitive foundation for next-generation AI by transforming how autonomous agents remember, marrying immediate software systems with long-term neural design. In the near term, we are establishing **Long-Term Memory (LTM) as a platform-managed middleware layer** to continuously hydrate stateless agents with vital operational context at runtime. But stateful hydration is just the first step: our long-term research introduces **brain-inspired representation plasticity** to this layer, treating stored document vectors as mutable coordinates that warp, drift, and split under the gravity of live query streams. By uniting robust context plumbing with this adaptive memory manifold, we are creating a self-healing retrieval system that organically tracks shifting enterprise language without ever needing to touch the underlying, frozen LLM weights.
+
+**The innovation — frontier, and a second flagship:** *a memory that reshapes itself.* Retrieval-augmented memory today is static — vectors are written once and queried against a frozen embedding space. The new idea is a memory substrate whose stored representations *drift and reorganize* under live query pressure, so the system adapts to how an enterprise's language actually shifts over time without retraining or touching the model's weights. Memory becomes a first-class, plastic platform layer rather than a bolt-on vector store.
 
 ### Eventing & Governed Egress — communication and reach the agent can't abuse
 
@@ -102,11 +130,15 @@ We are building the cognitive foundation for next-generation AI by transforming 
 
 **Horizon:** No component influenced by model output — not the agent, not its sandbox, not its logs — ever holds a raw credential. The agent gets to *use* a credential it can never *read*, for any destination, through one unified mechanism.
 
+**The innovation — composition:** signed events and egress proxies are established individually. The contribution is the invariant that ties them together — *no component influenced by model output ever holds a raw secret* — enforced by injecting credentials at the network layer keyed to workload identity, so prompt injection cannot exfiltrate a key the agent was never given in the first place.
+
 ### Multi-Tenant Sandbox Isolation — safe execution by construction
 
-**Today:** Autonomous code execution demands strong isolation. Rosso runs agents in isolated, per-tenant sandboxes with defense-in-depth — network, filesystem, and identity boundaries — and a one-namespace-per-user model, so a compromised or misbehaving agent is contained by construction rather than by trust.
+**Today:** Autonomous code execution demands strong isolation. Rosso runs agents in isolated, per-tenant sandboxes with defense-in-depth — network, filesystem, and identity boundaries (Landlock, seccomp, network namespaces) — and a one-namespace-per-user model, so a compromised or misbehaving agent is contained by construction rather than by trust.
 
-**Horizon:** Sandboxes that are disposable, instantly provisioned, and portable — a user's full working environment teleported into a governed remote runtime and torn down when done, with isolation strong enough that the platform can safely run untrusted agents from anywhere.
+**Horizon:** Sandboxes that are disposable, instantly provisioned, and portable — a user's full working environment *teleported* into a governed remote runtime and torn down when done, with isolation strong enough that the platform can safely run untrusted agents from anywhere.
+
+**The innovation — composition:** OS-level sandboxing is mature. The new arrangement is *teleportation* — packaging a user's local agent context (instructions, skills, settings) into a governed, isolated remote sandbox that runs with the platform's identity and credential guarantees — so the same session can move between a laptop and a hardened multi-tenant runtime without giving up isolation or governance.
 
 ### Extensible Plugin Pipeline — a governed extensibility model
 
@@ -114,11 +146,13 @@ We are building the cognitive foundation for next-generation AI by transforming 
 
 **Horizon:** An open extensibility standard for agent governance — a single, runtime-agnostic contract that lets the community contribute policy engines, guardrails, and context tooling that any Rosso deployment can adopt.
 
+**The innovation — composition:** the value is not the plugin mechanism but the *decision discipline* it enforces — many components may enrich a request with context, but exactly one renders the verdict, no plugin can short-circuit it, and every decision leaves one auditable record. It turns an ad-hoc chain of interceptors into a governed decision pipeline with a single point of authority.
+
 ---
 
 ## What the primitives compose into: governed autonomy
 
-Taken one at a time, these are features. Taken together, they are something new: a platform on which an agent can be genuinely autonomous *and* genuinely governable at the same time.
+Taken one at a time, some of these are features and some are frontier research. Taken together, they are something new: a platform on which an agent can be genuinely autonomous *and* genuinely governable at the same time. The innovation is not any single box — it is the insistence that identity, integrity, delegation, policy, cost, memory, and reach compose into *one enforceable path*, and the willingness to invent the missing pieces (skill-bound identity, plastic memory, the surrogate approver) rather than stop at what the standards already give us.
 
 Attested identity means you know what you're trusting, down to the skills it's made of. Delegation and consent mean the agent acts with borrowed, bounded, revocable authority — and a human, or eventually that human's trusted surrogate, in the loop where it counts. Policy decides every action from full context, within a budget, with data lineage in view. Durable state and long-term memory make the agent recoverable enough — and contextual enough — to trust with real work. Eventing and governed egress mean it can reach the world while every hop is authenticated and every credential stays out of its hands. And sandbox isolation means all of this runs contained by construction.
 
