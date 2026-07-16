@@ -13,10 +13,12 @@ deployment shape (kagenti-extensions#411):
 | **Plugins included** | jwt-validation + token-exchange + a2a/mcp/inference parsers | Same as proxy-sidecar | jwt-validation + token-exchange only |
 | **Use when** | Standard deployments | Need transparent interception of non-HTTP protocols | Size-constrained / no protocol-aware events |
 
-`spiffe-helper` is bundled inside every combined image and runs only when the
-operator sets `SPIRE_ENABLED=true` on the workload (driven by the
-`kagenti.io/spire: enabled` label). Client registration is handled by the
-operator's reconciler — there's no in-pod client-registration sidecar.
+SPIRE integration is built into every combined image using the
+[go-spiffe](https://github.com/spiffe/go-spiffe) SDK. It is enabled or disabled
+per workload via the `SPIRE_ENABLED` env var (driven by the
+`kagenti.io/spiffe-helper-inject` label) — there is no separate spiffe-helper
+binary or process. Client registration is handled by the operator's reconciler —
+there's no in-pod client-registration sidecar.
 
 ## Selecting a mode
 
@@ -42,8 +44,9 @@ spec:
     name: weather-service
 ```
 
-The deprecated annotation is retained for tools and other workloads that
-don't have their own AgentRuntime CR yet:
+The deprecated annotation is retained for backward compatibility. Use the
+namespace `authbridge-runtime-config` ConfigMap instead — it is the canonical
+way to set mode and applies to all workloads in the namespace:
 
 ```yaml
 metadata:

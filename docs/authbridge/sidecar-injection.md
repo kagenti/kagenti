@@ -21,7 +21,7 @@ kubectl get pods -n team1 -l app=weather-service \
 |---|---|---|---|
 | `proxy-sidecar` (default) | `<agent>` `authbridge-proxy` | — | SPIRE integration is in-process inside `authbridge-proxy` when `SPIRE_ENABLED=true` |
 | `lite` | `<agent>` `authbridge-proxy` | — | Same shape as proxy-sidecar; uses `authbridge-lite` image (auth-only) |
-| `envoy-sidecar` | `<agent>` `envoy-proxy` | `proxy-init` | SPIRE integration is in-process inside `envoy-proxy` when `SPIRE_ENABLED=true`; proxy-init is privileged |
+| `envoy-sidecar` | `<agent>` `envoy-proxy` | `proxy-init` | SPIRE integration is in-process inside `envoy-proxy` when `SPIRE_ENABLED=true`; proxy-init runs as root (UID 0) with NET_ADMIN/NET_RAW — not privileged |
 | `waypoint` | — | — | Not injected as a sidecar; waypoint is a standalone deployment |
 
 > **There is no spiffe-helper container or process.** AuthBridge uses the
@@ -54,7 +54,7 @@ These let you disable a specific sidecar while leaving others active.
 | Label | Default | Set to `false` to… |
 |---|---|---|
 | `kagenti.io/envoy-proxy-inject` | inject (when feature gate is on) | Disable the `envoy-proxy` sidecar (envoy-sidecar mode only) |
-| `kagenti.io/spiffe-helper-inject` | inject (enabled) | Suppress SPIRE — sets `SPIRE_ENABLED=false` on the combined sidecar, preventing the bundled spiffe-helper process from starting |
+| `kagenti.io/spiffe-helper-inject` | inject (enabled) | Suppress SPIRE — sets `SPIRE_ENABLED=false` on the sidecar, preventing the go-spiffe workload API source from being opened |
 
 ### Deprecated label
 
@@ -83,28 +83,16 @@ metadata:
 
 ## How to switch modes
 
-Mode is resolved from this chain (first non-empty wins):
+Mode is resolved by the **mutating webhook** from this chain (first non-empty wins):
 
-1. `AgentRuntime.Spec.AuthBridgeMode` on the workload's CR **(canonical)**
-2. `mode:` field in the namespace-level `authbridge-runtime-config` ConfigMap
-3. `kagenti.io/authbridge-mode` pod annotation *(deprecated — still honored)*
-4. Cluster-wide default: `proxy-sidecar`
+1. `mode:` field in the namespace-level `authbridge-runtime-config` ConfigMap
+2. `kagenti.io/authbridge-mode` pod annotation *(deprecated — still honored)*
+3. Cluster-wide default: `proxy-sidecar`
 
-### Per-workload override (AgentRuntime CR)
-
-```yaml
-apiVersion: kagenti.io/v1alpha1
-kind: AgentRuntime
-metadata:
-  name: weather-service
-  namespace: team1
-spec:
-  authBridgeMode: envoy-sidecar   # proxy-sidecar | envoy-sidecar | lite | waypoint
-  targetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: weather-service
-```
+> **Note on `AgentRuntime.Spec.AuthBridgeMode`:** This field exists on the CRD and is
+> enum-validated, but the mutating webhook does not read it during injection. Setting it
+> does not change which containers are injected. Use the namespace ConfigMap to control
+> mode for all workloads in a namespace.
 
 ### Namespace default (ConfigMap)
 
@@ -127,7 +115,7 @@ kubectl logs -n kagenti-system deploy/kagenti-operator \
 
 ## Cluster-admin feature gates
 
-Feature gates are loaded from the `kagenti-webhook-config` ConfigMap in the
+Feature gates are loaded from the `kagenti-feature-gates` ConfigMap in the
 operator's namespace and take effect immediately (no restart needed).
 
 | Gate | Default | Controls |
@@ -147,16 +135,16 @@ Pod admitted by webhook
        └─ globalEnabled=true?  — No → skip
             └─ type=tool and injectTools=false?  — Yes → skip
                  └─ kagenti.io/inject=disabled?  — Yes → skip
-                      └─ Resolve mode (CR → namespace CM → annotation → default)
+                      └─ Resolve mode (namespace CM → annotation → default)
                            ├─ waypoint → skip (standalone deployment)
                            ├─ proxy-sidecar / lite
                            │    └─ inject authbridge-proxy
                            │         + HTTP_PROXY env vars into agent container
-                           │         + SPIRE_ENABLED based on spiffe-helper decision
+                           │         + SPIRE_ENABLED based on spiffe-helper-inject label
                            └─ envoy-sidecar
                                 └─ inject envoy-proxy (if envoyProxy gate=true and label≠false)
                                      + proxy-init (follows envoy-proxy decision)
-                                     + SPIRE_ENABLED based on spiffe-helper decision
+                                     + SPIRE_ENABLED based on spiffe-helper-inject label
 ```
 
 ## Related
