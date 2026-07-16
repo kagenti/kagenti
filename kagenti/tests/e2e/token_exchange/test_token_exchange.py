@@ -428,10 +428,6 @@ class TestSpiffeTokenExchange:
         )
         return result
 
-    @pytest.mark.xfail(
-        reason="tx-e2e-agent pod not Ready/exec-able in CI — see #2129",
-        strict=False,
-    )
     def test_spiffe_jwt_svid_present(self, spiffe_mode):
         """JWT SVID file exists in agent's envoy-proxy container."""
         if not spiffe_mode:
@@ -560,7 +556,7 @@ def _call_tool_from_agent(token: str, path: str = "/echo") -> dict:
         "import urllib.request, json, sys; "
         "req = urllib.request.Request("
         f"'http://tx-e2e-tool:8080{path}', "
-        "headers={'Authorization': 'Bearer ' + sys.argv[1]}); "
+        "headers={'Authorization': 'Bearer ' + sys.argv[1]})\n"
         "try:\n"
         "  resp = urllib.request.urlopen(req, timeout=15)\n"
         "  print(resp.read().decode())\n"
@@ -881,7 +877,7 @@ class TestInboundJwtValidation:
         """
         script = (
             "import urllib.request, json; "
-            "req = urllib.request.Request('http://tx-e2e-tool:8080/echo'); "
+            "req = urllib.request.Request('http://tx-e2e-tool:8080/echo')\n"
             "try:\n"
             "  resp = urllib.request.urlopen(req, timeout=10)\n"
             "  print(json.dumps({'status': resp.status}))\n"
@@ -917,10 +913,6 @@ class TestInboundJwtValidation:
                 "Inbound JWT validation may not be configured."
             )
 
-    @pytest.mark.xfail(
-        reason="tx-e2e-agent pod not Ready/exec-able in CI — see #2129",
-        strict=False,
-    )
     def test_invalid_token_rejected(self):
         """Request with a garbage token is rejected by inbound ext_proc."""
         fake_token = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJmYWtlIn0.invalid_sig"
