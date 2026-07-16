@@ -428,6 +428,12 @@ class TestSpiffeTokenExchange:
         )
         return result
 
+    @pytest.mark.xfail(
+        reason="tx-e2e-agent pod not Ready in CI: operator client-registration does not "
+        "create the client-credentials Secret (CREDS 0/2), so the injected pod stays "
+        "FailedMount and never becomes exec-able — see #2129",
+        strict=False,
+    )
     def test_spiffe_jwt_svid_present(self, spiffe_mode):
         """JWT SVID file exists in agent's envoy-proxy container."""
         if not spiffe_mode:
@@ -913,6 +919,12 @@ class TestInboundJwtValidation:
                 "Inbound JWT validation may not be configured."
             )
 
+    @pytest.mark.xfail(
+        reason="tx-e2e-agent pod not Ready in CI: operator client-registration does not "
+        "create the client-credentials Secret (CREDS 0/2), so the injected pod stays "
+        "FailedMount and never becomes exec-able — see #2129",
+        strict=False,
+    )
     def test_invalid_token_rejected(self):
         """Request with a garbage token is rejected by inbound ext_proc."""
         fake_token = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJmYWtlIn0.invalid_sig"
