@@ -49,11 +49,14 @@ namespace `authbridge-runtime-config` ConfigMap instead — it is the canonical
 way to set mode and applies to all workloads in the namespace:
 
 ```yaml
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  labels:
-    kagenti.io/type: tool
-  annotations:
-    kagenti.io/authbridge-mode: "envoy-sidecar"
+  name: authbridge-runtime-config
+  namespace: team1
+data:
+  config.yaml: |
+    mode: envoy-sidecar
 ```
 
 ## Proxy-Sidecar Mode (Default)

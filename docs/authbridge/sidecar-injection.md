@@ -60,7 +60,7 @@ These let you disable a specific sidecar while leaving others active.
 
 | Annotation | Status | Replacement |
 |---|---|---|
-| `kagenti.io/authbridge-mode` | **Deprecated** — still honored | Use `AgentRuntime.Spec.AuthBridgeMode` |
+| `kagenti.io/authbridge-mode` | **Deprecated** — still honored | Set `mode:` in the namespace `authbridge-runtime-config` ConfigMap |
 
 ### Examples
 
@@ -103,7 +103,8 @@ metadata:
   name: authbridge-runtime-config
   namespace: team1
 data:
-  mode: proxy-sidecar
+  config.yaml: |
+    mode: proxy-sidecar
 ```
 
 ### Verify the resolved mode
