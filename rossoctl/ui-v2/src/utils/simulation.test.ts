@@ -153,13 +153,28 @@ describe('extractReseedError', () => {
     const err = { status: 422, message: 'database is not valid JSON', detail: 'database is not valid JSON' };
     expect(extractReseedError(err)).toEqual({ message: 'database is not valid JSON' });
   });
-  it('maps 409 to an in-flight message', () => {
-    expect(extractReseedError({ status: 409, message: 'x' })).toEqual({
+  it('surfaces the backend detail for a 409 (in-flight)', () => {
+    expect(
+      extractReseedError({ status: 409, message: 'Tool calls are in flight; retry the re-seed shortly' })
+    ).toEqual({ message: 'Tool calls are in flight; retry the re-seed shortly' });
+  });
+  it('surfaces the remap-409 "no active simulation" detail', () => {
+    expect(
+      extractReseedError({ status: 409, message: 'Simulated tool has no active, ready simulation to re-seed' })
+    ).toEqual({ message: 'Simulated tool has no active, ready simulation to re-seed' });
+  });
+  it('falls back to a friendly 409 message when the detail is empty', () => {
+    expect(extractReseedError({ status: 409, message: '' })).toEqual({
       message: 'Tool calls are in flight — retry the re-seed shortly.',
     });
   });
-  it('maps 502 to an unreachable message', () => {
-    expect(extractReseedError({ status: 502, message: 'x' })).toEqual({
+  it('surfaces the unexpected-status detail for a 502', () => {
+    expect(
+      extractReseedError({ status: 502, message: 'Failed to re-seed simulated-tool database' })
+    ).toEqual({ message: 'Failed to re-seed simulated-tool database' });
+  });
+  it('falls back to a friendly 502 message when the detail is empty', () => {
+    expect(extractReseedError({ status: 502, message: '' })).toEqual({
       message: 'Simulated tool is not reachable (it may be stopped).',
     });
   });

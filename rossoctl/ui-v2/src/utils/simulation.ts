@@ -150,9 +150,12 @@ export function extractReseedError(err: unknown): { message: string; jsonPath?: 
       return { message: e.message || 'Dataset does not validate against the tool schema' };
     }
     case 409:
-      return { message: 'Tool calls are in flight — retry the re-seed shortly.' };
+      // Two distinct backend causes share this code (in-flight calls vs. the
+      // 404/503→409 "no active simulation" remap); prefer the actual detail.
+      return { message: e.message || 'Tool calls are in flight — retry the re-seed shortly.' };
     case 502:
-      return { message: 'Simulated tool is not reachable (it may be stopped).' };
+      // Likewise: harness-unreachable vs. an unexpected harness status.
+      return { message: e.message || 'Simulated tool is not reachable (it may be stopped).' };
     default:
       return { message: e.message || 'Failed to re-seed the database.' };
   }
