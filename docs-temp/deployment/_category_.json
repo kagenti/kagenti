@@ -4,6 +4,6 @@
   "link": {
     "type": "generated-index",
     "title": "Deployment",
-    "description": "Install and configure Rosso on your target — local Kind, OpenShift, or Helm — and get it production-ready."
+    "description": "Install and configure Rossoctl on your target — local Kind, OpenShift, or Helm — and get it production-ready."
   }
 }

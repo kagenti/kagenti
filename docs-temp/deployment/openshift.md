@@ -5,7 +5,7 @@ sidebar_position: 3
 
 # Deploy on OpenShift
 
-Rosso runs on OpenShift with a few platform-specific considerations — routes for ingress, OLM-managed operators, and security context constraints. This page covers what differs from a vanilla Kubernetes install.
+Rossoctl runs on OpenShift with a few platform-specific considerations — routes for ingress, OLM-managed operators, and security context constraints. This page covers what differs from a vanilla Kubernetes install.
 
 ## Requirements
 
@@ -33,7 +33,7 @@ certificate is trusted or replaced with a CA-signed one. See [Troubleshooting](.
 
 ```bash
 rossoctl status
-oc get routes -n rosso-system
+oc get routes -n rossoctl-system
 ```
 
 :::note For contributors

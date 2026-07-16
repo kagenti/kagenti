@@ -5,7 +5,7 @@ sidebar_position: 4
 
 # Feature Flags
 
-Optional capabilities in Rosso are gated behind feature flags and are **off by default**. This keeps a default install lean and lets you adopt newer capabilities deliberately. Flip a flag with `rossoctl config set` or a Helm value.
+Optional capabilities in Rossoctl are gated behind feature flags and are **off by default**. This keeps a default install lean and lets you adopt newer capabilities deliberately. Flip a flag with `rossoctl config set` or a Helm value.
 
 ## Available flags
 
@@ -25,8 +25,8 @@ Optional capabilities in Rosso are gated behind feature flags and are **off by d
 rossoctl config set features.skills=true
 
 # Helm
-helm upgrade rosso oci://ghcr.io/rosso/rosso \
-  --namespace rosso-system \
+helm upgrade rossoctl oci://ghcr.io/rossoctl/rossoctl \
+  --namespace rossoctl-system \
   --set features.skills=true
 ```
 

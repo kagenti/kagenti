@@ -5,7 +5,7 @@ sidebar_position: 3
 
 # Tools & MCP
 
-Tools are how agents affect the world — query a database, call an API, file a ticket. Rosso standardizes tools on the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) and puts a **gateway** in front of them so that access is discoverable, authenticated, and audited.
+Tools are how agents affect the world — query a database, call an API, file a ticket. Rossoctl standardizes tools on the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) and puts a **gateway** in front of them so that access is discoverable, authenticated, and audited.
 
 ## The MCP Gateway
 

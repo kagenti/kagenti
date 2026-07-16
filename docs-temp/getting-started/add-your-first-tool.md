@@ -5,13 +5,13 @@ sidebar_position: 5
 
 # Add Your First Tool
 
-Agents get their reach from tools. Rosso exposes tools over the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) and routes every call through the **MCP Gateway**, which handles discovery, authentication, and audit for you. This page registers a tool and connects it to an agent.
+Agents get their reach from tools. Rossoctl exposes tools over the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) and routes every call through the **MCP Gateway**, which handles discovery, authentication, and audit for you. This page registers a tool and connects it to an agent.
 
 ## 1. Deploy an MCP tool
 
 ```bash
 rossoctl tool deploy weather-mcp \
-  --image ghcr.io/rosso-samples/weather-mcp:latest \
+  --image ghcr.io/rossoctl-samples/weather-mcp:latest \
   --namespace team1
 ```
 

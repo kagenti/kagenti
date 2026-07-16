@@ -5,7 +5,7 @@ sidebar_position: 1
 
 # CLI Reference: `rossoctl`
 
-`rossoctl` is the command-line interface for installing Rosso and managing agents, tools, and configuration. This page is a starter reference; run `rossoctl <command> --help` for the authoritative, up-to-date flags.
+`rossoctl` is the command-line interface for installing Rossoctl and managing agents, tools, and configuration. This page is a starter reference; run `rossoctl <command> --help` for the authoritative, up-to-date flags.
 
 :::info Naming
 The CLI is `rossoctl` on this site. During the rename it may still be distributed as `kagenti`; the

@@ -5,7 +5,7 @@ sidebar_position: 3
 
 # Authentication
 
-Workload identity answers *which workload*. Authentication answers *which user or client*, and what role they hold. Rosso uses [Keycloak](https://www.keycloak.org/) as its OAuth2/OIDC provider for user login, client registration, and token issuance.
+Workload identity answers *which workload*. Authentication answers *which user or client*, and what role they hold. Rossoctl uses [Keycloak](https://www.keycloak.org/) as its OAuth2/OIDC provider for user login, client registration, and token issuance.
 
 ## Users and single sign-on
 
@@ -21,9 +21,9 @@ The platform API uses OAuth2 bearer tokens and a small set of roles:
 
 | Role | Can do |
 |------|--------|
-| `rosso-viewer` | Read-only: list and inspect agents, tools, traces |
-| `rosso-operator` | Deploy and manage agents and tools |
-| `rosso-admin` | Full control, including platform configuration |
+| `rossoctl-viewer` | Read-only: list and inspect agents, tools, traces |
+| `rossoctl-operator` | Deploy and manage agents and tools |
+| `rossoctl-admin` | Full control, including platform configuration |
 
 ```bash
 # Authenticate the CLI (opens Keycloak login)

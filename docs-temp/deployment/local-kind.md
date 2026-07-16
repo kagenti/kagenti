@@ -5,7 +5,7 @@ sidebar_position: 2
 
 # Deploy on Kind
 
-[Kind](https://kind.sigs.k8s.io/) (Kubernetes in Docker) is the recommended way to run Rosso locally — for development, demos, and evaluation. It's the same path the [Installation](../getting-started/installation.md) quickstart uses, with more detail and options here.
+[Kind](https://kind.sigs.k8s.io/) (Kubernetes in Docker) is the recommended way to run Rossoctl locally — for development, demos, and evaluation. It's the same path the [Installation](../getting-started/installation.md) quickstart uses, with more detail and options here.
 
 ## Create the cluster and install
 

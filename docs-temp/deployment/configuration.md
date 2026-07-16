@@ -5,7 +5,7 @@ sidebar_position: 5
 
 # Configuration
 
-Rosso is configured through Helm values (or `rossoctl config`) and a set of feature flags. This page covers the settings you'll touch most; the full list lives in the [Configuration Reference](../reference/configuration-reference.md).
+Rossoctl is configured through Helm values (or `rossoctl config`) and a set of feature flags. This page covers the settings you'll touch most; the full list lives in the [Configuration Reference](../reference/configuration-reference.md).
 
 ## Feature flags
 

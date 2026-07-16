@@ -5,7 +5,7 @@ sidebar_position: 1
 
 # Deployment Overview
 
-Rosso runs on any conformant Kubernetes cluster. This page helps you pick a target and points to the right install guide; the following pages cover each in detail.
+Rossoctl runs on any conformant Kubernetes cluster. This page helps you pick a target and points to the right install guide; the following pages cover each in detail.
 
 ## Choose a target
 

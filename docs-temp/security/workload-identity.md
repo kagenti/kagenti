@@ -5,14 +5,14 @@ sidebar_position: 2
 
 # Workload Identity
 
-Every workload on Rosso — agent, tool, or platform service — has a cryptographic identity issued by [SPIFFE/SPIRE](https://spiffe.io/). This is the foundation everything else rests on: authentication, delegation, and audit all start from "which workload is this, provably?"
+Every workload on Rossoctl — agent, tool, or platform service — has a cryptographic identity issued by [SPIFFE/SPIRE](https://spiffe.io/). This is the foundation everything else rests on: authentication, delegation, and audit all start from "which workload is this, provably?"
 
 ## SPIFFE IDs and SVIDs
 
 A workload's identity is a **SPIFFE ID** — a URI that names it within a trust domain:
 
 ```text
-spiffe://rosso.example.com/ns/team1/sa/orders-agent
+spiffe://rossoctl.example.com/ns/team1/sa/orders-agent
 ```
 
 SPIRE attests the workload and issues it a short-lived **SVID** (an X.509 certificate or JWT) that proves that identity. Because SVIDs are short-lived and automatically rotated, there's no credential to steal and reuse for long.

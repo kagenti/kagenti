@@ -5,7 +5,7 @@ sidebar_position: 2
 
 # Configure the MCP Gateway
 
-The MCP Gateway is the single front door for tool calls. This guide shows how to register MCP servers, set routing prefixes, and require authentication — the day-to-day tasks of running tools on Rosso. For the concept, see [Tools & MCP](../concepts/tools-and-mcp.md).
+The MCP Gateway is the single front door for tool calls. This guide shows how to register MCP servers, set routing prefixes, and require authentication — the day-to-day tasks of running tools on Rossoctl. For the concept, see [Tools & MCP](../concepts/tools-and-mcp.md).
 
 ## Register an MCP server
 

@@ -5,7 +5,7 @@ sidebar_position: 1
 
 # Operations Overview
 
-Once Rosso is installed and agents are live, the work shifts to day-two operations: keeping agents healthy, managing their lifecycle, handling state, and scaling with demand. This section is for whoever runs the platform after launch.
+Once Rossoctl is installed and agents are live, the work shifts to day-two operations: keeping agents healthy, managing their lifecycle, handling state, and scaling with demand. This section is for whoever runs the platform after launch.
 
 ## The day-two surface
 
@@ -21,7 +21,7 @@ Once Rosso is installed and agents are live, the work shifts to day-two operatio
 
 ```bash
 rossoctl status
-kubectl get pods -n rosso-system
+kubectl get pods -n rossoctl-system
 rossoctl agent list --all-namespaces
 ```
 

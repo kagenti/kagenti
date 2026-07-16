@@ -5,9 +5,9 @@ sidebar_position: 2
 
 # Agents
 
-An **agent** is a workload that reasons and acts — it takes a goal, decides what to do, and calls tools or other agents to get there. On Rosso, an agent is just a container that speaks [A2A](https://a2aproject.github.io/A2A/), enrolled with the platform through an `AgentRuntime` resource.
+An **agent** is a workload that reasons and acts — it takes a goal, decides what to do, and calls tools or other agents to get there. On Rossoctl, an agent is just a container that speaks [A2A](https://a2aproject.github.io/A2A/), enrolled with the platform through an `AgentRuntime` resource.
 
-## What makes it an agent on Rosso
+## What makes it an agent on Rossoctl
 
 - **It publishes an Agent Card.** Every agent exposes a discovery document at `/.well-known/agent-card.json` describing its capabilities and skills. That's how other agents and the platform find and understand it.
 - **It's enrolled via `AgentRuntime`.** You describe the workload (image or source, config, resources) and the operator reconciles the Deployment, Service, identity, and policy wiring.
@@ -15,7 +15,7 @@ An **agent** is a workload that reasons and acts — it takes a goal, decides wh
 
 ## Framework-neutral by design
 
-Rosso doesn't ship an agent framework and doesn't ask you to adopt one. If your agent speaks A2A, it runs — whether it was built with LangGraph, CrewAI, AG2, AutoGen, a custom loop, or a coding agent like Claude Code. See [Bring your own agent](../guides/bring-your-own-agent.md).
+Rossoctl doesn't ship an agent framework and doesn't ask you to adopt one. If your agent speaks A2A, it runs — whether it was built with LangGraph, CrewAI, AG2, AutoGen, a custom loop, or a coding agent like Claude Code. See [Bring your own agent](../guides/bring-your-own-agent.md).
 
 ## A minimal agent
 

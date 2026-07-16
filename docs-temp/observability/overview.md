@@ -5,7 +5,7 @@ sidebar_position: 1
 
 # Observability Overview
 
-You can't operate what you can't see. Agents are especially opaque — they make decisions and chains of tool calls that are hard to reconstruct after the fact. Rosso instruments the platform so you get traces, metrics, cost, and network topology out of the box.
+You can't operate what you can't see. Agents are especially opaque — they make decisions and chains of tool calls that are hard to reconstruct after the fact. Rossoctl instruments the platform so you get traces, metrics, cost, and network topology out of the box.
 
 ## What you can see
 
@@ -17,7 +17,7 @@ You can't operate what you can't see. Agents are especially opaque — they make
 
 ## Built on OpenTelemetry
 
-Rosso emits telemetry using [OpenTelemetry](https://opentelemetry.io/) and the emerging **GenAI semantic conventions** — the standard attributes for LLM and agent spans (model, tokens, tool calls). Because it's standard OTel, you can send it to the backends you already run, not just the ones Rosso ships.
+Rossoctl emits telemetry using [OpenTelemetry](https://opentelemetry.io/) and the emerging **GenAI semantic conventions** — the standard attributes for LLM and agent spans (model, tokens, tool calls). Because it's standard OTel, you can send it to the backends you already run, not just the ones Rossoctl ships.
 
 ## Ships with
 

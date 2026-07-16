@@ -4,6 +4,6 @@
   "link": {
     "type": "generated-index",
     "title": "Concepts",
-    "description": "The ideas behind Rosso — how agents, tools, skills, identity, and the control plane fit together."
+    "description": "The ideas behind Rossoctl — how agents, tools, skills, identity, and the control plane fit together."
   }
 }

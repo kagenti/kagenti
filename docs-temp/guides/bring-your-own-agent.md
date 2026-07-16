@@ -5,7 +5,7 @@ sidebar_position: 4
 
 # Bring Your Own Agent
 
-Rosso runs agents built with any framework, as long as they speak [A2A](https://a2aproject.github.io/A2A/). You don't rewrite your agent to adopt the platform — you wrap it so it publishes an Agent Card and accepts A2A requests, then deploy it like any other workload.
+Rossoctl runs agents built with any framework, as long as they speak [A2A](https://a2aproject.github.io/A2A/). You don't rewrite your agent to adopt the platform — you wrap it so it publishes an Agent Card and accepts A2A requests, then deploy it like any other workload.
 
 ## The one requirement: speak A2A
 

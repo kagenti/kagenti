@@ -1,6 +1,6 @@
 ---
 sidebar_label: Quickstart
-sidebar_position: 3
+sidebar_position: 2
 ---
 
 # Quickstart
@@ -13,7 +13,7 @@ You've installed the CLI and the platform ([Installation](installation.md)) and 
 
 ## 1. Deploy a sample agent
 
-Rosso ships a few example agents. Deploy the weather agent:
+Rossoctl ships a few example agents. Deploy the weather agent:
 
 ```bash
 rossoctl agent deploy weather --namespace team1
@@ -51,7 +51,7 @@ It's 14°C and overcast in Amsterdam right now.
 ```
 
 :::tip Prefer a UI?
-The Rosso dashboard offers the same import-deploy-test loop with a visual chat window. Open it with
+The Rossoctl dashboard offers the same import-deploy-test loop with a visual chat window. Open it with
 `rossoctl ui open`.
 :::
 

@@ -1,17 +1,17 @@
 ---
 sidebar_label: Installation
-sidebar_position: 2
+sidebar_position: 3
 ---
 
 # Installation
 
-This page gets the Rosso platform running on a local Kind cluster — the fastest way to try it. For other targets and production settings, see [Deployment](../deployment/overview.md).
+This page gets the Rossoctl platform running on a local Kind cluster — the fastest way to try it. For other targets and production settings, see [Deployment](../deployment/overview.md).
 
 ## 1. Install the CLI
 
 ```bash
-# macOS / Linux (Homebrew)
-brew install rossoctl
+# macOS / Linux
+curl -L http://rossoctl.dev/downloadRossoctl | sh -
 
 # Verify
 rossoctl version
@@ -43,7 +43,7 @@ first run; subsequent installs reuse the cache.
 
 ```bash
 rossoctl status
-kubectl get pods -n rosso-system
+kubectl get pods -n rossoctl-system
 ```
 
 You should see the control-plane pods `Running`. If something is stuck, see [Troubleshooting](../troubleshooting.md).
@@ -55,6 +55,6 @@ You should see the control-plane pods `Running`. If something is stuck, see [Tro
 
 :::note For contributors
 Confirm the real install commands and flags against `kagenti/docs/install.md` (today the installer is
-`scripts/kind/setup-kagenti.sh` with `--with-*` flags). Replace the Homebrew line if the CLI ships a
+`scripts/kind/setup-kagenti.sh` with `--with-*` flags). Replace the `curl -L` line if the CLI ships a
 different way.
 :::

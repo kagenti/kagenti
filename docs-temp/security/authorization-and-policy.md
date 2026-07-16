@@ -5,7 +5,7 @@ sidebar_position: 5
 
 # Authorization & Policy
 
-Identity tells you *who*; authorization decides *what they may do*. On Rosso, policy is enforced centrally — at the gateway and through AuthBridge — so you reason about permissions in one place rather than trusting each agent to behave.
+Identity tells you *who*; authorization decides *what they may do*. On Rossoctl, policy is enforced centrally — at the gateway and through AuthBridge — so you reason about permissions in one place rather than trusting each agent to behave.
 
 ## Scoped permissions
 

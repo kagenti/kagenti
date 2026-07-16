@@ -5,7 +5,7 @@ sidebar_position: 6
 
 # Sandbox Agents
 
-Some agents run arbitrary code, rewrite their own files, and act without being asked. You want those agents contained so a mistake — or a prompt injection — can't reach the rest of your systems. Rosso's sandboxing (**OpenShell**) gives each agent a kernel-isolated execution environment with a policy-controlled egress.
+Some agents run arbitrary code, rewrite their own files, and act without being asked. You want those agents contained so a mistake — or a prompt injection — can't reach the rest of your systems. Rossoctl's sandboxing (**OpenShell**) gives each agent a kernel-isolated execution environment with a policy-controlled egress.
 
 ## What the sandbox isolates
 
@@ -35,7 +35,7 @@ spec:
   egress:
     allow:
       - github.com
-      - registry.rosso-system.svc
+      - registry.rossoctl-system.svc
 ```
 
 ## When to use it

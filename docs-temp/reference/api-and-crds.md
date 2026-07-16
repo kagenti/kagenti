@@ -5,7 +5,7 @@ sidebar_position: 2
 
 # API & Custom Resources
 
-Rosso is driven by Kubernetes custom resources, so you can manage everything declaratively and with GitOps. This page lists the main resources and their purpose; field-level schemas belong in each resource's generated CRD reference.
+Rossoctl is driven by Kubernetes custom resources, so you can manage everything declaratively and with GitOps. This page lists the main resources and their purpose; field-level schemas belong in each resource's generated CRD reference.
 
 :::info Naming
 Resources on this site use the `rossoctl.dev` API group. During the rename, live clusters may still use
@@ -39,7 +39,7 @@ spec:
 
 ## Platform API
 
-The platform also exposes a REST API (used by the CLI and UI) secured with OAuth2 bearer tokens and the `rosso-viewer` / `rosso-operator` / `rosso-admin` roles — see [Authentication](../security/authentication.md).
+The platform also exposes a REST API (used by the CLI and UI) secured with OAuth2 bearer tokens and the `rossoctl-viewer` / `rossoctl-operator` / `rossoctl-admin` roles — see [Authentication](../security/authentication.md).
 
 :::note For contributors
 Replace this with generated CRD docs (fields, defaults, validation) once the `rossoctl.dev` API group is

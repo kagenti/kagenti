@@ -5,7 +5,7 @@ sidebar_position: 3
 
 # Configuration Reference
 
-The complete set of configuration values for a Rosso install. For the common cases and how-to, see [Deployment: Configuration](../deployment/configuration.md); this page is the exhaustive lookup.
+The complete set of configuration values for a Rossoctl install. For the common cases and how-to, see [Deployment: Configuration](../deployment/configuration.md); this page is the exhaustive lookup.
 
 ## Helm values
 
@@ -17,7 +17,7 @@ Values are grouped by component. The table below is a starting scaffold — expa
 | `features.skills` | `false` | Enable skills |
 | `features.externalSkills` | `false` | Enable the Skillberry store |
 | `gateway.replicas` | `1` | MCP Gateway replicas |
-| `identity.trustDomain` | `rosso.local` | SPIFFE trust domain |
+| `identity.trustDomain` | `rossoctl.local` | SPIFFE trust domain |
 | `observability.enabled` | `false` | Install the observability stack |
 | `observability.tracing.exporter` | — | OTLP endpoint for traces |
 

@@ -5,7 +5,7 @@ sidebar_position: 6
 
 # Audit & Governance
 
-Governance is being able to answer, after the fact, *what did this agent do, on whose behalf, and was it allowed?* Rosso records every tool call and grounds it in verifiable identity, so autonomous agents remain accountable.
+Governance is being able to answer, after the fact, *what did this agent do, on whose behalf, and was it allowed?* Rossoctl records every tool call and grounds it in verifiable identity, so autonomous agents remain accountable.
 
 ## The audit trail
 

@@ -5,7 +5,7 @@ sidebar_position: 2
 
 # Tracing
 
-A trace is the single most useful artifact for understanding an agent: it shows the full sequence of reasoning steps, model calls, and tool invocations behind one request. Rosso captures traces automatically using OpenTelemetry, and gives you MLflow and Phoenix to explore them.
+A trace is the single most useful artifact for understanding an agent: it shows the full sequence of reasoning steps, model calls, and tool invocations behind one request. Rossoctl captures traces automatically using OpenTelemetry, and gives you MLflow and Phoenix to explore them.
 
 ## What a trace captures
 
@@ -16,7 +16,7 @@ A trace is the single most useful artifact for understanding an agent: it shows 
 
 ## Explore traces
 
-Rosso can run **MLflow** and **Phoenix** in-cluster; both consume the same OpenTelemetry data:
+Rossoctl can run **MLflow** and **Phoenix** in-cluster; both consume the same OpenTelemetry data:
 
 ```bash
 rossoctl install --local --with-observability

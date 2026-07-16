@@ -5,11 +5,11 @@ sidebar_position: 1
 
 # Prerequisites
 
-Before you install Rosso, make sure your workstation and target cluster meet the requirements below. Most first-time users run everything locally on Kind — that path needs only Docker or Podman and a few CLIs.
+Before you install Rossoctl, make sure your workstation and target cluster meet the requirements below. Most first-time users run everything locally on Kind — that path needs only Docker or Podman and a few CLIs.
 
 :::info Naming
-Rosso is mid-rename from *Kagenti*. Commands and resources on this site use the target names —
-`rossoctl`, the `rossoctl.dev` API group, and the `rosso-system` namespace. You may still see
+Rossoctl is mid-rename from *Kagenti*. Commands and resources on this site use the target names —
+`rossoctl`, the `rossoctl.dev` API group, and the `rossoctl-system` namespace. You may still see
 `kagenti`-prefixed names in some components until the rename lands.
 :::
 
@@ -18,10 +18,11 @@ Rosso is mid-rename from *Kagenti*. Commands and resources on this site use the 
 | Tool | Version | Why |
 |------|---------|-----|
 | Docker or Podman | latest | Runs the local Kind cluster and builds images |
-| `kubectl` | 1.29+ | Talks to the cluster |
-| `kind` | 0.23+ | Local Kubernetes for development |
-| `rossoctl` | latest | The Rosso CLI (installs the platform, manages agents and tools) |
+| `rossoctl` | latest | The Rossoctl CLI (installs the platform, manages agents and tools) |
+| `kubectl` | 1.29+ | Optional — Talks to the local cluster |
+| `kind` | 0.23+ | Optional — for Local Kubernetes for development |
 | `helm` | 3.14+ | Optional — for chart-based installs |
+| `ollama` | 0.12 | Optional — for self-hosted LLM demos |
 
 ## Cluster requirements
 
@@ -35,7 +36,7 @@ Supported targets:
 
 ## Model access
 
-Agents need a model backend. You can point Rosso at a hosted API (any OpenAI-compatible endpoint) or run models locally with [Ollama](../guides/use-local-models.md). Have an API key ready if you plan to use a hosted provider.
+Agents need a model backend. You can point Rossoctl at a hosted API (any OpenAI-compatible endpoint) or run models locally with [Ollama](../guides/use-local-models.md). Have an API key ready if you plan to use a hosted provider.
 
 :::note For contributors
 Pin exact versions once we settle a support matrix, and confirm the minimum CPU/RAM against a fresh

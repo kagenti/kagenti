@@ -5,7 +5,7 @@ sidebar_position: 1
 
 # Architecture
 
-Rosso is organized around four pillars — **Lifecycle, Networking, Security, and Observability** — that together turn a Kubernetes cluster into a place where agents can run safely. This page gives you the mental model; the rest of the Concepts section drills into each piece.
+Rossoctl is organized around four pillars — **Lifecycle, Networking, Security, and Observability** — that together turn a Kubernetes cluster into a place where agents can run safely. This page gives you the mental model; the rest of the Concepts section drills into each piece.
 
 ## The four pillars
 
@@ -39,7 +39,7 @@ flowchart TD
 
 ## Design principles
 
-- **Framework-neutral** — agents speak open protocols (A2A, MCP); Rosso doesn't care how they were built.
+- **Framework-neutral** — agents speak open protocols (A2A, MCP); Rossoctl doesn't care how they were built.
 - **Zero static credentials** — identity is cryptographic and issued at runtime.
 - **Governed by default** — policy, audit, and observability are part of the platform, not an add-on.
 

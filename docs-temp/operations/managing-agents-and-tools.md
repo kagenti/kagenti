@@ -5,7 +5,7 @@ sidebar_position: 2
 
 # Managing Agents & Tools
 
-Agents and tools have a lifecycle: you deploy them, update them as code changes, pause the ones you aren't using, and retire them when they're done. Rosso manages that lifecycle through the operator, so these are declarative, reviewable operations.
+Agents and tools have a lifecycle: you deploy them, update them as code changes, pause the ones you aren't using, and retire them when they're done. Rossoctl manages that lifecycle through the operator, so these are declarative, reviewable operations.
 
 ## Update an agent
 

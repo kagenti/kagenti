@@ -5,13 +5,13 @@ sidebar_position: 3
 
 # State & Sessions
 
-Agents that hold a conversation or work over long periods need memory that survives a restart. Rosso provides persistent state and session management so an agent can be rescheduled, upgraded, or resumed without losing its context.
+Agents that hold a conversation or work over long periods need memory that survives a restart. Rossoctl provides persistent state and session management so an agent can be rescheduled, upgraded, or resumed without losing its context.
 
 ## Why it matters
 
 A stateless restart is fine for a request/response tool. It's a problem for an agent mid-task: lose the session and you lose the conversation, the plan, and any partial work. Persistent state lets you treat agents as durable, resumable workloads.
 
-## What Rosso persists
+## What Rossoctl persists
 
 - **Conversation history** — so a user can pick up where they left off.
 - **Session context** — the working state an agent accumulates during a task.

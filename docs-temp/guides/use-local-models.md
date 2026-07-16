@@ -5,7 +5,7 @@ sidebar_position: 5
 
 # Use Local Models
 
-Agents need a model backend, and you don't have to send data to a hosted provider to use Rosso. This guide points agents at a local or self-hosted model through any OpenAI-compatible endpoint — [Ollama](https://ollama.com/) is the common choice for local development.
+Agents need a model backend, and you don't have to send data to a hosted provider to use Rossoctl. This guide points agents at a local or self-hosted model through any OpenAI-compatible endpoint — [Ollama](https://ollama.com/) is the common choice for local development.
 
 ## Run a model with Ollama
 
@@ -14,7 +14,7 @@ ollama pull llama3.1
 ollama serve
 ```
 
-In-cluster, Rosso can run Ollama for you as part of the platform so agents reach it at a stable Service address.
+In-cluster, Rossoctl can run Ollama for you as part of the platform so agents reach it at a stable Service address.
 
 ## Point an agent at it
 
@@ -30,7 +30,7 @@ spec:
   image: ghcr.io/my-org/local-agent:1.0.0
   env:
     - name: LLM_API_BASE
-      value: http://ollama.rosso-system.svc:11434/v1
+      value: http://ollama.rossoctl-system.svc:11434/v1
     - name: LLM_MODEL
       value: llama3.1
 ```
@@ -49,7 +49,7 @@ For a hosted provider, set the same variables to the provider's endpoint and ref
 
 :::tip Keep data in your network
 Running the model locally means prompts and completions never leave your infrastructure — the same
-reason many teams run agents on Rosso in the first place.
+reason many teams run agents on Rossoctl in the first place.
 :::
 
 :::note For contributors

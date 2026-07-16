@@ -9,7 +9,7 @@ This guide covers the full path from source to a running, governed agent — inc
 
 ## Build from source, in-cluster
 
-Rosso can build your agent image inside the cluster with [Shipwright](https://shipwright.io/), so contributors don't need a local Docker setup or registry credentials:
+Rossoctl can build your agent image inside the cluster with [Shipwright](https://shipwright.io/), so contributors don't need a local Docker setup or registry credentials:
 
 ```bash
 rossoctl agent deploy orders-agent \
@@ -23,7 +23,7 @@ The operator runs the build, pushes to the in-cluster registry, and rolls out th
 <details>
 <summary>Advanced: choose a build strategy</summary>
 
-Rosso supports multiple build strategies (for example `buildah` and `buildah-insecure-push` for local
+Rossoctl supports multiple build strategies (for example `buildah` and `buildah-insecure-push` for local
 registries). Set the strategy when your registry or base image needs it:
 
 ```bash
@@ -48,7 +48,7 @@ rossoctl agent deploy orders-agent \
 ```
 
 :::warning
-Don't bake credentials into images or inline them in the CR. Rosso injects runtime identity and
+Don't bake credentials into images or inline them in the CR. Rossoctl injects runtime identity and
 short-lived tokens; most agents need no long-lived secrets. See [Security & Identity](../security/overview.md).
 :::
 

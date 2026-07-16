@@ -5,31 +5,31 @@ sidebar_position: 4
 
 # Deploy with Helm
 
-For shared clusters and GitOps pipelines, install Rosso from its OCI Helm charts. This gives you versioned, declarative installs you can manage the same way as the rest of your platform.
+For shared clusters and GitOps pipelines, install Rossoctl from its OCI Helm charts. This gives you versioned, declarative installs you can manage the same way as the rest of your platform.
 
 ## Charts
 
-Rosso publishes OCI charts:
+Rossoctl publishes OCI charts:
 
 ```text
-oci://ghcr.io/rosso/rosso            # the platform
-oci://ghcr.io/rosso/rosso-deps       # dependencies (mesh, identity, etc.)
-oci://ghcr.io/rosso/mcp-gateway      # the MCP gateway
+oci://ghcr.io/rossoctl/rossoctl            # the platform
+oci://ghcr.io/rossoctl/rossoctl-deps       # dependencies (mesh, identity, etc.)
+oci://ghcr.io/rossoctl/mcp-gateway      # the MCP gateway
 ```
 
 ## Install
 
 ```bash
-helm install rosso oci://ghcr.io/rosso/rosso \
-  --namespace rosso-system --create-namespace \
+helm install rossoctl oci://ghcr.io/rossoctl/rossoctl \
+  --namespace rossoctl-system --create-namespace \
   --values values.yaml
 ```
 
 ## Upgrade
 
 ```bash
-helm upgrade rosso oci://ghcr.io/rosso/rosso \
-  --namespace rosso-system \
+helm upgrade rossoctl oci://ghcr.io/rossoctl/rossoctl \
+  --namespace rossoctl-system \
   --values values.yaml
 ```
 
