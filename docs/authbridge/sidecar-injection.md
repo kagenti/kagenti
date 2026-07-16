@@ -20,7 +20,7 @@ kubectl get pods -n team1 -l app=weather-service \
 | Mode | Regular containers | Init containers | Notes |
 |---|---|---|---|
 | `proxy-sidecar` (default) | `<agent>` `authbridge-proxy` | — | SPIRE integration is in-process inside `authbridge-proxy` when `SPIRE_ENABLED=true` |
-| `lite` | `<agent>` `authbridge-proxy` | — | Same shape as proxy-sidecar; uses `authbridge-lite` image (auth-only) |
+| `lite` | `<agent>` `authbridge-proxy` | — | Same shape as proxy-sidecar; uses `authbridge-lite` image (auth-only plugins); SPIRE integration in-process when `SPIRE_ENABLED=true` |
 | `envoy-sidecar` | `<agent>` `envoy-proxy` | `proxy-init` | SPIRE integration is in-process inside `envoy-proxy` when `SPIRE_ENABLED=true`; proxy-init runs as root (UID 0) with NET_ADMIN/NET_RAW — not privileged |
 | `waypoint` | — | — | Not injected as a sidecar; waypoint is a standalone deployment |
 

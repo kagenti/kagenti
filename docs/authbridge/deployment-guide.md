@@ -22,31 +22,18 @@ there's no in-pod client-registration sidecar.
 
 ## Selecting a mode
 
-The operator resolves mode per workload from this chain
-(kagenti-operator#361):
+The mutating webhook resolves mode from this chain (first non-empty wins):
 
-1. `AgentRuntime.Spec.AuthBridgeMode` on the workload's CR (canonical).
-2. `mode:` field on the namespace-level `authbridge-runtime-config` ConfigMap.
-3. The deprecated `kagenti.io/authbridge-mode` pod annotation (still honored).
-4. Cluster-wide default (`proxy-sidecar`).
+1. `mode:` field in the namespace-level `authbridge-runtime-config` ConfigMap **(canonical)**.
+2. The deprecated `kagenti.io/authbridge-mode` pod annotation (still honored).
+3. Cluster-wide default (`proxy-sidecar`).
 
-```yaml
-# Canonical: per-workload override on the AgentRuntime CR
-apiVersion: kagenti.io/v1alpha1
-kind: AgentRuntime
-metadata:
-  name: weather-service
-spec:
-  authBridgeMode: envoy-sidecar
-  targetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: weather-service
-```
+> **Note:** `AgentRuntime.Spec.AuthBridgeMode` is enum-validated by the CRD webhook but is not
+> read by the mutating webhook when resolving injection mode. Setting it does not change which
+> containers are injected.
 
-The deprecated annotation is retained for backward compatibility. Use the
-namespace `authbridge-runtime-config` ConfigMap instead — it is the canonical
-way to set mode and applies to all workloads in the namespace:
+The canonical way to set mode is the namespace ConfigMap, which applies to all workloads in
+the namespace:
 
 ```yaml
 apiVersion: v1
@@ -246,7 +233,7 @@ kubectl exec deploy/weather-service -n team1 -c envoy-proxy -- \
 
 ### Proxy Not Injected
 
-1. Verify the pod has `kagenti.io/type: agent` label
+1. Verify the pod has `kagenti.io/type: agent` label — the operator sets this automatically when an AgentRuntime CR targets the workload
 2. Check that the Kagenti operator webhook is running:
    ```bash
    kubectl get mutatingwebhookconfigurations | grep kagenti
