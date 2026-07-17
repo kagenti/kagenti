@@ -1,0 +1,72 @@
+# Minimal Ubuntu image with a set of open-source AI coding agents + git.
+# Runs as root so `apt-get install <pkg>` works at runtime. Easy to trim: delete
+# any agent line you don't want.
+#
+#   docker build -f Dockerfile-agent -t claude-agent .
+#   # default CMD prints versions; override to run any agent or a shell:
+#   docker run --rm -e ANTHROPIC_API_KEY=sk-... claude-agent claude -p "say hello"
+#   docker run --rm -it claude-agent bash
+#
+# Agents included (all open source, BYO API key):
+#   claude  - Claude Code            (Anthropic, native installer)
+#   codex   - OpenAI Codex CLI       npm  @openai/codex
+#   gemini  - Google Gemini CLI      npm  @google/gemini-cli   (Apache-2.0)
+#   qwen    - Qwen Code              npm  @qwen-code/qwen-code
+#   pi      - Pi Coding Agent        npm  @earendil-works/pi-coding-agent (MIT)
+#   aider   - Aider pair programmer  pipx aider-chat           (Apache-2.0)
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Base tooling: git (required), curl/ca-certificates for installers, ripgrep for
+# code search, python3/pipx for Python-based agents (aider).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        git curl ca-certificates ripgrep python3 pipx \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node.js 22 (NodeSource) — the npm-distributed agents need Node >= 20.
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Claude Code — official native installer (does not use Node at runtime).
+RUN curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH="/root/.local/bin:${PATH}"
+
+# npm-based agents (one layer; drop any you don't need).
+RUN npm install -g \
+        @openai/codex \
+        @google/gemini-cli \
+        @qwen-code/qwen-code \
+        @earendil-works/pi-coding-agent \
+    && npm cache clean --force
+
+# Aider (Python) via pipx into an isolated venv on PATH.
+RUN pipx install aider-chat && pipx ensurepath
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Optional extra agents — uncomment to include:
+#   OpenCode:  RUN npm install -g opencode-ai
+#   Goose:     RUN curl -fsSL https://raw.githubusercontent.com/block/goose/main/download_cli.sh | CONFIGURE=false bash
+
+# Use the system ripgrep we installed above (Claude Code's builtin isn't needed).
+ENV USE_BUILTIN_RIPGREP=0
+
+# Stay root so the image can `apt-get install` more packages at runtime.
+WORKDIR /workspace
+
+# Default output: for each installed agent, print the command you'd run and its
+# version, so `docker run <img>` alone tells you what's available and how to use it.
+CMD ["bash", "-lc", "\
+for a in \
+  'claude|Claude Code (Anthropic)|claude --version' \
+  'codex|OpenAI Codex CLI|codex --version' \
+  'gemini|Google Gemini CLI|gemini --version' \
+  'qwen|Qwen Code|qwen --version' \
+  'pi|Pi Coding Agent|pi --version' \
+  'aider|Aider|aider --version'; do \
+    IFS='|' read -r bin desc cmd <<< \"$a\"; \
+    printf '\\n== %-8s %s ==\\n  run:     %s\\n  version: ' \"$bin\" \"$desc\" \"$bin\"; \
+    $cmd 2>&1 | head -n1; \
+done; echo"]

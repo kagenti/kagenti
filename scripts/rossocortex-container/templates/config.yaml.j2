@@ -1,0 +1,41 @@
+mode: proxy-sidecar
+
+listener:
+  reverse_proxy_addr: ":{{ reverse_proxy_port }}"
+  forward_proxy_addr: "0.0.0.0:{{ port }}"
+  transparent_proxy_addr: ":{{ transparent_port }}"
+  reverse_proxy_backend: "http://127.0.0.1:1"
+  session_api_addr: ":{{ session_port }}"
+
+tls_bridge:
+  mode: enabled
+  ca_dir: {{ ca_dir }}
+  ports: [443]
+
+session:
+  enabled: true
+
+stats:
+  address: ":{{ stats_port }}"
+
+pipeline:
+  outbound:
+    plugins:
+      - name: placeholder-resolve
+        config:
+          source: secret_dir
+          secret_dir: {{ credentials_dir }}
+{% if inference_parser %}
+      - name: inference-parser
+{% endif %}
+{% if mcp_parser %}
+      - name: mcp-parser
+{% endif %}
+  inbound:
+    plugins:
+{% if budget_track %}
+      - name: litellm-budget-track
+        config:
+          spend_file: {{ spend_file }}
+          max_budget: {{ max_budget }}
+{% endif %}

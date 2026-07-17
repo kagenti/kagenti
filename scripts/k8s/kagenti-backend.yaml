@@ -1,0 +1,148 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kagenti-backend
+  namespace: kagenti-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kagenti-backend
+rules:
+- apiGroups: [""]
+  resources: [namespaces]
+  verbs: [get, list]
+- apiGroups: [""]
+  resources: [pods, services, serviceaccounts, configmaps, secrets]
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: ["apps"]
+  resources: [deployments, statefulsets]
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: ["batch"]
+  resources: [jobs]
+  verbs: [get, list, watch, create, patch, delete]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: [rolebindings]
+  verbs: [get, create, patch]
+- apiGroups: ["route.openshift.io"]
+  resources: [routes]
+  verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kagenti-backend
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kagenti-backend
+subjects:
+- kind: ServiceAccount
+  name: kagenti-backend
+  namespace: kagenti-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kagenti-backend-config
+  namespace: kagenti-system
+data:
+  ENABLE_AUTH: "false"
+  DEBUG: "false"
+  DOMAIN_NAME: "apps.epoc002.ete14.res.ibm.com"
+  KEYCLOAK_URL: "http://keycloak-service.keycloak:8080"
+  KEYCLOAK_PUBLIC_URL: "https://keycloak-keycloak.apps.epoc002.ete14.res.ibm.com"
+  KEYCLOAK_REALM: "kagenti"
+  DEFAULT_REGISTRY_URL: "image-registry.openshift-image-registry.svc:5000"
+  SHIPWRIGHT_DEFAULT_STRATEGY: "buildah"
+  KAGENTI_FEATURE_FLAG_SANDBOX: "false"
+  KAGENTI_FEATURE_FLAG_INTEGRATIONS: "false"
+  KAGENTI_FEATURE_FLAG_TRIGGERS: "false"
+  KAGENTI_FEATURE_FLAG_ADMIN: "false"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kagenti-backend
+  namespace: kagenti-system
+  labels:
+    app: kagenti-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kagenti-backend
+  template:
+    metadata:
+      labels:
+        app: kagenti-backend
+    spec:
+      serviceAccountName: kagenti-backend
+      containers:
+      - name: backend
+        image: ghcr.io/kagenti/kagenti/backend:v0.7.0-alpha.3
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: kagenti-backend-config
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 512Mi
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kagenti-backend
+  namespace: kagenti-system
+  labels:
+    app: kagenti-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: kagenti-backend
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: kagenti-backend
+  namespace: kagenti-system
+spec:
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  port:
+    targetPort: http
+  to:
+    kind: Service
+    name: kagenti-backend
+    weight: 100

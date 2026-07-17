@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>kagenti-teleport-setup</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #333; }
+    h1 { border-bottom: 2px solid #2563eb; padding-bottom: 8px; }
+    code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre { background: #1e293b; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+    pre code { background: none; padding: 0; color: inherit; }
+    a { color: #2563eb; }
+    .download { display: inline-block; margin: 16px 0; padding: 12px 24px; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; font-weight: 500; }
+    .download:hover { background: #1d4ed8; }
+    table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+    th, td { border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left; }
+    th { background: #f8fafc; }
+  </style>
+</head>
+<body>
+  <h1>kagenti-teleport-setup</h1>
+  <p><strong>kosh</strong> is a CLI that builds on <a href="https://github.com/NVIDIA/OpenShell/">OpenShell</a> by adding local sandboxing, project teleport (sync + upload to remote sandboxes), domain allowlisting, and agent deployment.</p>
+  <p>This is a self-contained setup script that installs kosh and configures OpenShell gateway access. No kubectl or cluster access required.</p>
+
+  <a class="download" href="kagenti-teleport-setup.py">Download kagenti-teleport-setup.py</a>
+
+  <h2>Quick Start</h2>
+  <pre><code># Download and run
+
+curl -sSfk -O https://kagenti-teleport-setup-team1.apps.epoc002.ete14.res.ibm.com/kagenti-teleport-setup.py
+uv run kagenti-teleport-setup.py --user alice --password alice123 --test
+
+# Direct uv run (requires TMPDIR to exist)
+mkdir -p "${TMPDIR:-/tmp}" && \
+uv run https://kagenti-teleport-setup-team1.apps.epoc002.ete14.res.ibm.com/kagenti-teleport-setup.py \
+  --user alice --password alice123 --test</code></pre>
+
+  <h2>First Steps</h2>
+  <p>After setup completes, you have the <code>kosh</code> CLI ready. Here's the typical workflow:</p>
+
+  <h3>1. Create a local sandbox</h3>
+  <pre><code># Make sure ANTHROPIC_AUTH_TOKEN is set
+export ANTHROPIC_AUTH_TOKEN=&lt;your-token&gt;
+
+# Pick a name for your agent workspace
+export AGENT_NAME=${USER}-agent1
+
+# Create a sandboxed environment
+kosh local-sandbox create $AGENT_NAME</code></pre>
+
+  <h3>2. Work inside the sandbox</h3>
+  <pre><code># Reconnect later (or from a new terminal)
+kosh local-sandbox connect $AGENT_NAME
+
+# Run Claude inside the sandbox
+claude -r
+
+# Exit the sandbox when done
+exit</code></pre>
+
+  <h3>3. Teleport to a remote OpenShell sandbox</h3>
+  <pre><code># Upload your project to a remote sandbox
+kosh teleport -d $AGENT_NAME
+
+# Connect to the remote sandbox
+kosh sandbox connect $AGENT_NAME
+
+# Run Claude remotely
+claude -r</code></pre>
+
+  <h3>4. Run headless agent commands</h3>
+  <pre><code># Execute a one-shot prompt in the remote sandbox
+kosh sandbox exec -n $AGENT_NAME -- claude --dangerously-skip-permissions \
+  -p 'say hi from kagenti openshell sandbox'</code></pre>
+
+  <h3>5. Deploy agents and tools (optional)</h3>
+  <pre><code># Login to Kagenti backend
+kosh login --kagenti-url https://kagenti-backend-kagenti-system.apps.epoc002.ete14.res.ibm.com \
+  --keycloak-url https://keycloak-keycloak.apps.epoc002.ete14.res.ibm.com \
+  --user dev-user --password UonNQPfcSmzPmDSP
+
+# Deploy a tool and agent
+kosh deploy tool --name weather-tool --namespace team1 \
+  --image ghcr.io/kagenti/agent-examples/weather_tool:latest \
+  --protocol streamable_http --port 8000 --target-port 8000
+
+kosh deploy agent --name weather-service --namespace team1 \
+  --image ghcr.io/kagenti/agent-examples/weather_service:latest \
+  --protocol a2a --framework LangGraph --port 8080 --target-port 8000 \
+  --authbridge --spire
+
+# List deployed agents and tools
+kosh catalog agents -n team1
+kosh catalog tools -n team1</code></pre>
+
+  <h2>Useful Commands</h2>
+  <table>
+    <tr><th>Command</th><th>Purpose</th></tr>
+    <tr><td><code>kosh local-sandbox list</code></td><td>List local sandboxes</td></tr>
+    <tr><td><code>kosh local-sandbox connect [name]</code></td><td>Reconnect to a sandbox</td></tr>
+    <tr><td><code>kosh sandbox list</code></td><td>List remote OpenShell sandboxes</td></tr>
+    <tr><td><code>kosh sandbox connect &lt;name&gt;</code></td><td>Connect to remote sandbox</td></tr>
+    <tr><td><code>kosh teleport -d &lt;dir&gt;</code></td><td>Upload project to remote sandbox</td></tr>
+    <tr><td><code>kosh allow add &lt;domain&gt;</code></td><td>Allow network domain in sandbox</td></tr>
+  </table>
+
+  <h2>What the setup does</h2>
+  <ol>
+    <li>Checks for <code>uv</code>, exits with install instructions if missing</li>
+    <li>Validates Python 3.12+ (auto-installs if missing)</li>
+    <li>Downloads <code>kosh.py</code> + support files to current directory</li>
+    <li>Configures openshell gateway (OIDC auth mode)</li>
+    <li>Installs embedded mTLS certificates (CA + client cert/key)</li>
+    <li>Performs headless OIDC login via PKCE flow</li>
+    <li>Persists <code>kosh</code> alias to <code>~/.zshrc</code> / <code>~/.bashrc</code></li>
+    <li>Tests with <code>kosh sandbox list</code></li>
+  </ol>
+
+  <h2>Prerequisites</h2>
+  <p>Install <a href="https://docs.astral.sh/uv/">uv</a>:</p>
+  <pre><code>curl -LsSf https://astral.sh/uv/install.sh | sh</code></pre>
+
+  <h2>Test Users</h2>
+  <table>
+    <tr><th>User</th><th>Password</th><th>Role</th><th>Groups</th></tr>
+    <tr><td>alice</td><td>alice123</td><td>openshell-user</td><td>team1</td></tr>
+    <tr><td>bob</td><td>bob123</td><td>openshell-user</td><td>team2</td></tr>
+    <tr><td>admin</td><td>admin123</td><td>openshell-admin</td><td>team1, team2</td></tr>
+  </table>
+
+  <h2>Environment Variables</h2>
+  <table>
+    <tr><th>Variable</th><th>Purpose</th></tr>
+    <tr><td><code>ANTHROPIC_AUTH_TOKEN</code></td><td>Token for Claude API access (required for sandboxes)</td></tr>
+    <tr><td><code>KOSH_GATEWAY_URL</code></td><td>Gateway URL (default: openshell-team1.apps.epoc002.ete14.res.ibm.com)</td></tr>
+    <tr><td><code>KOSH_USER</code></td><td>Username for OIDC login</td></tr>
+    <tr><td><code>KOSH_PASSWORD</code></td><td>Password for OIDC login</td></tr>
+    <tr><td><code>BOBSHELL_API_KEY</code></td><td>Bob shell API key (stored securely as provider credential)</td></tr>
+  </table>
+
+  <h2>Channels</h2>
+  <p>Use <code>--dev</code> to install the development version:</p>
+  <pre><code>uv run https://kagenti-teleport-setup-team1.apps.epoc002.ete14.res.ibm.com/kagenti-teleport-setup.py \
+  --dev --user alice --password alice123 --test</code></pre>
+</body>
+</html>

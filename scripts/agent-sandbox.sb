@@ -1,0 +1,381 @@
+(version 1)
+
+;; ==========================================================================
+;; SBPL QUICK REFERENCE
+;; ==========================================================================
+;; This file is an SBPL (Sandbox Profile Language) profile for macOS sandbox-exec.
+;;
+;; Key syntax:
+;;   (literal "/path")    — matches exactly this one path, not its children
+;;   (subpath "/path")    — matches this path and everything below it (recursive)
+;;   (param "NAME")       — value passed in via sandbox-exec -D NAME=value
+;;   (global-name "X")    — matches a Mach IPC service by its registered name
+;;   (path-ancestors "/p") — matches every parent directory of the path
+;;   (target same-sandbox)  — filter for signal rules; only processes in the same sandbox
+;;   (local ip "addr:port") — filter for network-bind/network-inbound; matches local endpoint
+;;   (ipc-posix-name "X")   — matches a POSIX shared memory segment by name
+;;   (preference-domain "X") — matches a CFPreferences domain for user-preference-read
+;;   (privilege-id NAME)    — matches a specific system privilege by identifier
+;;   (with no-report)       — suppress sandbox-violation log noise for a specific deny rule
+;;   (with report)          — explicitly enable logging for a deny rule (used with deny default)
+;;
+;; Trailing * in operation names (file-read*, file-write*, file*):
+;;   * means "all sub-operations in this family". For example:
+;;   file-read*  = file-read-data + file-read-metadata + file-read-xattr
+;;   file-write* = file-write-data + file-write-flags + file-write-mode + ...
+;;   file*       = all file operations (read + write + ioctl + map + everything)
+;;
+;; Rule evaluation order:
+;;   SBPL uses LAST MATCH WINS (not first match). A later rule overrides an
+;;   earlier one for the same path. This is the opposite of iptables/pf.
+;;   Example: (deny file-read* (subpath "/home")) followed by
+;;   (allow file-read* (subpath "/home/project")) — the allow takes effect.
+;;
+;; Apple reference profiles mentioned in comments:
+;;   blastdoor.sb  — high-security, used for iMessage parsing (very restrictive)
+;;   airlock.sb    — high-security, used for AirDrop preview (very restrictive)
+;;   system.sb     — baseline profile for most macOS apps (more permissive)
+;; ==========================================================================
+
+;; --- 0. Deny everything by default (DENY) ---
+;; For debugging, watch: log stream --predicate 'sender == "Sandbox"' --style compact
+;; Note: `(with report)` does NOT apply to `(deny default ...)` on macOS — the
+;; profile fails to load with "report modifier does not apply to deny action".
+;; To trace violations, attach `(with report)` to specific deny rules instead,
+;; or watch the log unfiltered (deny default produces kernel-side reports
+;; without an explicit modifier).
+(deny default)
+
+;; --- 1. DYNAMIC CODE GENERATION — V8 JIT (JIT) ---
+(allow dynamic-code-generation)
+
+;; --- 2. PROCESS OPERATIONS (PROC) ---
+(allow process-fork)                       ;; child_process.fork/spawn
+(allow process-exec)                       ;; execute git, bash, etc.
+(allow process-exec-interpreter)           ;; script execution (#!/usr/bin/env ...)
+(allow process-info-listpids)              ;; list running PIDs
+(allow process-info-pidinfo)               ;; Node.js checks child PID status
+(allow process-info-pidfdinfo)             ;; fd info for child processes
+(allow process-info-pidfileportinfo)       ;; fileport info
+(allow process-info-rusage)                ;; resource usage queries
+(allow process-codesigning-status*)        ;; all codesigning check sub-operations during exec
+
+;; --- 3. SIGNAL — child process management (SIG) ---
+(allow signal (target same-sandbox))       ;; only signal processes in same sandbox
+
+;; --- 4. PSEUDO-TERMINAL (PTY) ---
+(allow pseudo-tty)                         ;; interactive child processes, TTY I/O
+
+;; --- 5. NETWORK (NET) ---
+(allow network-outbound)                   ;; API calls (Anthropic), git, npm
+(allow network-bind (local ip "localhost:*"))   ;; bind to loopback, any port (* = all ports)
+(allow network-inbound (local ip "localhost:*")) ;; accept connections on loopback only
+
+;; --- 6. SYSCTL (SYSCTL) ---
+(allow sysctl-read)                        ;; Node.js reads hw.ncpu, kern.osversion, etc.
+
+;; --- 7. MACH IPC — system services (MACH) ---
+;; Enumerated allowlist. To find missing entries after a breakage:
+;;   change (deny default) to (deny default (with report)) and run:
+;;   log stream --predicate 'process == "sandboxd"' --style compact
+(allow mach-lookup
+  ;; System logging (os_log + legacy ASL path; both in blastdoor.sb / airlock.sb)
+  (global-name "com.apple.system.logger")
+  (global-name "com.apple.logd")
+  ;; Removed: com.apple.logd.admin — only needed by log-management tools
+  ;;   (diagnosticd, OSLogService, logd_reporter), not by log emitters.
+
+  ;; Security / code signing / TLS certificate validation
+  (global-name "com.apple.SecurityServer")        ;; security framework, code-signing policy
+  (global-name "com.apple.security.syspolicy")    ;; Gatekeeper checks on process-exec
+  (global-name "com.apple.trustd")                ;; TLS cert chain validation
+  (global-name "com.apple.trustd.agent")          ;; per-user TLS trust settings
+  (global-name "com.apple.ocspd")                 ;; cert revocation (OCSP)
+
+  ;; User identity (getpwuid_r — needed by Node.js os.userInfo())
+  (global-name "com.apple.system.opendirectoryd.libinfo") ;; libinfo: getpwuid, getpwnam, etc.
+
+  ;; Network (DNS resolver, network reachability, HTTPS)
+  (global-name "com.apple.SystemConfiguration.configd") ;; network reachability / SCNetworkReachability
+  (global-name "com.apple.mDNSResponder")               ;; DNS: getaddrinfo() → mDNSResponder via Mach
+  ;; Removed: com.apple.networkd — Node.js uses BSD sockets via libuv directly,
+  ;;   not the high-level networkd daemon (used by assistantd, Maps, App Store, etc.)
+  ;; Removed: com.apple.nsurlsessiond — NSURLSession is ObjC/Swift only;
+  ;;   Node.js has its own HTTP stack and never calls NSURLSession.
+  ;; Removed: com.apple.cfprefsd.agent / com.apple.cfprefsd.daemon — unnecessary
+  ;;   with scoped (allow user-preference-read) above; CFPreferences reads go through
+  ;;   the higher-level SBPL rule, not direct cfprefsd Mach IPC.
+  ;; Removed: com.apple.distributed_notifications@Uv3 — CFNotificationCenter
+  ;;   distributed notifications, used by GUI apps to coordinate across processes.
+  ;;   Not required for a CLI agent. The apple.shm.notification_center shared memory
+  ;;   (rule 8 SHM) already covers the notify(3) path that CoreFoundation depends on.
+)
+;; FSEvents (directory watching) — DISABLED by default.
+;; Uncomment the line below to enable. See README.md § "FSEvents" for trade-offs.
+;;
+;; Why you might need it: without FSEvents, Node.js fs.watch falls back to
+;; kqueue (one fd per watched file). On large node_modules trees this exhausts
+;; ulimit -n and produces "EMFILE: too many open files, watch". Affected tools:
+;; webpack/Watchpack, Next.js dev server, Vite, nodemon, chokidar.
+;;
+;; Security risk: fseventsd does NOT check the client's sandbox profile — it
+;; delivers filesystem event notifications (paths, event type, timestamp) for
+;; ANY path the client registers, even paths denied by file-read rules. This is
+;; a metadata leak (filenames and modification patterns), not a content leak.
+;; Apple's high-security sandboxes (blastdoor.sb, airlock.sb) deny FSEvents;
+;; broader sandboxes like system.sb allow it.
+;;
+;; To enable, uncomment:
+;; (allow mach-lookup (global-name "com.apple.FSEvents"))
+
+;; Unknown Mach lookups fall through to (deny default).
+;; To discover missing entries: change (deny default) → (deny default (with report)) and run:
+;;   log stream --predicate 'process == "sandboxd"' --style compact
+(allow mach-task-name)                     ;; required for basic Mach IPC to work at all
+(allow mach-per-user-lookup)               ;; per-user Mach bootstrap namespace lookups
+
+;; --- 8. IPC — POSIX shared memory, notification center (SHM) ---
+(allow ipc-posix-shm-read*
+  (ipc-posix-name "apple.shm.notification_center"))
+(allow ipc-posix-shm-write-data
+  (ipc-posix-name "apple.shm.notification_center"))
+
+;; --- 9. USER PREFERENCES (PREFS) ---
+;; Scoped to the minimum three domains a network-capable Node.js CLI needs.
+;; blastdoor.sb and airlock.sb grant zero user-preference-read.
+;; system.sb's (system-network) function enumerates CFNetwork + SystemConfiguration;
+;; NSGlobalDomain covers locale, language, and timezone for Node.js Date/Intl.
+;; Unrestricted (allow user-preference-read) exposes all CFPreferences domains,
+;; including third-party app tokens stored in defaults (1Password, etc.).
+(allow user-preference-read
+  (preference-domain "NSGlobalDomain")              ;; locale, language, timezone (Node.js Intl/Date)
+  (preference-domain "com.apple.CFNetwork")         ;; HTTP proxy config (system.sb system-network)
+  (preference-domain "com.apple.SystemConfiguration")) ;; network reachability config
+
+;; --- 10. SYSTEM PRIVILEGES (SYSPRIV) ---
+;; (allow system-privilege) is NOT needed:
+;;   - "priv-tcsetpgrp" is not a valid SBPL identifier; tcsetpgrp uses session ownership checks
+;;     in XNU (tty.c:1537), not priv_check() calls — no privilege required at all.
+;;   - sysctl reads are covered by (allow sysctl-read) above.
+;;   - /bin/ps is setuid and blocked by the sandbox regardless of this rule.
+;;   - process-info-listpids (rule 2) handles PID listing without system-privilege.
+;; Apple's own production profiles (blastdoor.sb, airlock.sb, quicklook-thumbnail-secure.sb)
+;; all use (deny system-privilege) and suppress PRIV_GLOBAL_PROC_INFO log noise.
+;; (with no-report) = don't log this specific deny — it fires constantly and is harmless.
+(deny system-privilege (privilege-id PRIV_GLOBAL_PROC_INFO) (with no-report))
+
+;; --- 11. IOCTL — terminal control (DEVIO) ---
+(allow file-ioctl (subpath "/dev"))
+
+;; ==========================================================================
+;; FILE SYSTEM
+;; ==========================================================================
+
+;; --- 12. Block ssh-agent socket directory (SSH) ---
+;; sandbox.sh passes SSH_AGENT_DIR as either:
+;;   - the real directory of SSH_AUTH_SOCK (when SSH agent should be blocked), or
+;;   - a non-existent path like /private/var/no-ssh-agent-placeholder (when
+;;     SSH agent is allowed or absent). A subpath of a non-existent path never
+;;     matches anything, so the rule becomes a harmless no-op.
+;; This "sentinel path" pattern is also used for DOCKER_SOCK_DIR below.
+;;
+;; file* = deny ALL file operations (read, write, ioctl, map — everything).
+(deny file* (subpath (param "SSH_AGENT_DIR")))
+
+;; --- 13. Docker socket access (DOCKER) ---
+;; Blocked by default. When ENABLE_DOCKER=1, sandbox.sh sets DOCKER_SOCK_DIR to
+;; the directory containing the Docker socket; allow read/write so the CLI can
+;; talk to the daemon. When disabled, a non-existent sentinel path is used
+;; (same pattern as SSH_AGENT_DIR above — the rule becomes a no-op).
+(allow file-read* file-write* (subpath (param "DOCKER_SOCK_DIR")))
+
+;; --- 14. System libraries & frameworks — read-only (ETC/SYSLIB/VARDB) ---
+;; /System/Library: kept broad — Apple's own system.sb uses (subpath "/System") which is
+;; even wider. Scoping to individual frameworks is impractical (276 frameworks,
+;; 1940 PrivateFrameworks); all are read-only system files.
+;;
+;; /Library: scoped to the three subdirs Apple's system.sb explicitly allows, plus
+;; .GlobalPreferences.plist (from blastdoor.sb). Previously (subpath "/Library") was
+;; too broad — it exposed /Library/Keychains (raw keychain SQLite databases),
+;; /Library/Extensions (kexts), /Library/LaunchDaemons, etc.
+;;
+;; /private/var/db: scoped down from (subpath "/private/var/db"). Only needed:
+;;   - timezone: Node.js date/time operations
+;;   - mds: Security.framework cert lookups (MDS = metadata server)
+;;   - DarwinDirectory: system.sb includes this literal
+;;
+;; /Applications: removed — all tools (git, node, npm, bash) are in /usr or
+;; /opt/homebrew. A CLI agent has no reason to read GUI app bundles.
+(allow file-read*
+  ;; macOS system (read-only; Apple's system.sb uses the broader (subpath "/System"))
+  (subpath "/System/Library")
+  ;; /Library: minimum per system.sb + blastdoor.sb
+  (subpath "/Library/Apple")                      ;; OAH/Rosetta runtime, Apple framework updates
+  (subpath "/Library/Filesystems/NetFSPlugins")   ;; network filesystem plugins (NFS, SMB, AFP)
+  (subpath "/Library/Preferences/Logging")        ;; logging filter config (system.sb)
+  (literal "/Library/Preferences/.GlobalPreferences.plist") ;; locale/timezone prefs (blastdoor.sb)
+  ;; Standard UNIX paths
+  (subpath "/usr")
+  (subpath "/bin")
+  (subpath "/sbin")
+  (subpath "/dev")
+  ;; /private/etc: scoped — previously (subpath "/private/etc") exposed sudoers,
+  ;; master.passwd, pam.d, ssh host keys, pf.conf, etc. Allowlist only what
+  ;; Node.js, bash, git, and curl actually need.
+  (literal "/private/etc")                       ;; directory metadata for path resolution
+  (literal "/private/etc/hosts")                 ;; DNS host overrides
+  (literal "/private/etc/resolv.conf")           ;; DNS nameserver config (symlink)
+  (literal "/private/var/run/resolv.conf")       ;; DNS nameserver config (resolved target)
+  (literal "/private/etc/localtime")             ;; timezone (symlink to /var/db/timezone/)
+  (subpath "/private/etc/ssl")                   ;; TLS CA certs (cert.pem, openssl.cnf)
+  (literal "/private/etc/services")              ;; getservbyname() port lookups
+  (literal "/private/etc/protocols")             ;; getprotobyname()
+  (literal "/private/etc/shells")                ;; valid shell list
+  (literal "/private/etc/paths")                 ;; PATH construction via path_helper
+  (subpath "/private/etc/paths.d")               ;; additional PATH entries
+  (literal "/private/etc/profile")               ;; system sh/bash login profile
+  (literal "/private/etc/bashrc")                ;; system bashrc
+  (literal "/private/etc/zshrc")                 ;; system zshrc
+  (literal "/private/etc/zprofile")              ;; system zsh login profile
+  (literal "/private/etc/passwd")                ;; getpwnam() user lookups
+  (literal "/private/etc/group")                 ;; getgrnam() group lookups
+  (subpath "/private/etc/openldap")              ;; LDAP config (used by some network libs)
+  ;; /private/var/db: scoped — previously the full subpath exposed auth.db, biome, appstore, etc.
+  (subpath "/private/var/db/timezone")            ;; timezone data for Date operations
+  (subpath "/private/var/db/mds")                 ;; Security.framework cert/MDS lookups
+  (literal "/private/var/db/DarwinDirectory/local/recordStore.data") ;; user record (system.sb)
+  ;; Homebrew tools (git, node, npm, bash, etc.)
+  ;; /opt itself must be readable for lstat — Node.js realpathSync walks each
+  ;; path component and EPERM on the parent dir aborts module resolution.
+  (literal "/opt")
+  (subpath "/opt/homebrew")
+  ;; Symlink targets and root anchors
+  (literal "/etc")
+  (literal "/tmp")
+  (literal "/var")
+  (literal "/private")
+  (literal "/"))
+
+;; --- 15. Memory-map executables — dylib/native module loading (FMAP) ---
+;; file-map-executable = allow loading a file into memory as executable code.
+;; Required for shared libraries (.dylib) and native Node.js modules (.node).
+(allow file-map-executable
+  (subpath "/System/Library")
+  (subpath "/Library/Apple")                      ;; OAH/Rosetta runtime (system.sb)
+  (subpath "/usr/lib")
+  (subpath "/usr/local")
+  (subpath "/opt/homebrew")
+  (subpath "/bin")
+  (subpath "/sbin")
+  (subpath (param "PROJECT_DIR"))
+  (subpath (param "SANDBOX_ADDITIONAL_DIR"))      ;; opt-in second project-style dir (sentinel when unset)
+  (subpath (param "SANDBOX_SKILLS_DIR")))         ;; opt-in shared skills dir (sentinel when unset)
+
+;; --- 16. Block lsof (LSOF) ---
+;; lsof exposes open file descriptors, sockets, and network connections of ALL
+;; processes system-wide (not just same-sandbox). An agent could use it to
+;; discover secrets in other processes' fds or map the host's network activity.
+;; deny process-exec prevents launching it; deny file-read* prevents reading
+;; the binary (e.g., copying it elsewhere to execute or inspecting it).
+(deny process-exec (literal "/usr/sbin/lsof"))
+(deny file-read*   (literal "/usr/sbin/lsof"))
+
+;; --- 17. Deny reads/writes to SANDBOX_DIR and HOST_HOME — broad (PROJFS) ---
+;; SBPL uses LAST MATCH WINS. These broad denies are intentionally placed
+;; BEFORE the narrower PROJECT_DIR allows in rules 18–19. The later allows
+;; override these denies for PROJECT_DIR only; everything else stays denied.
+(deny file-read*  (subpath (param "SANDBOX_DIR")))
+(deny file-write* (subpath (param "SANDBOX_DIR")))
+(deny file-read*  (subpath (param "HOST_HOME")))
+(deny file-write* (subpath (param "HOST_HOME")))
+
+;; --- 18. Claude binary — read-only, single file (CBIN) ---
+;; Literal (not subpath): only the claude binary itself is readable, not every
+;; other binary in the same directory (e.g., ~/.local/bin/openshell).
+;; Write access removed: allowing the agent to overwrite its own binary enables
+;; self-modification to escape future sandboxing. Run `claude update` from
+;; outside the sandbox instead.
+(allow file-read*  (literal (param "CLAUDE_BIN")))
+
+;; --- 19. Project directory — full access, includes .claude/ config (PROJFS) ---
+(allow file-read*  (subpath (param "PROJECT_DIR")))
+(allow file-write* (subpath (param "PROJECT_DIR")))
+
+;; --- 19b. Additional sandboxed directory — same access as PROJECT_DIR (PROJFS) ---
+;; sandbox.sh validates that SANDBOX_ADDITIONAL_DIR is a real directory under
+;; SANDBOX_DIR. When the env var is unset, sandbox.sh substitutes a non-existent
+;; sentinel path (/private/var/no-additional-dir-placeholder) so these subpath
+;; rules become harmless no-ops — same pattern as DOCKER_SOCK_DIR (rule 13).
+;;
+;; These allows must come AFTER the broad SANDBOX_DIR deny (rule 17) so
+;; last-match-wins restores access to this one subtree without opening the rest
+;; of SANDBOX_DIR.
+;;
+;; CRITICAL: sandbox.sh must resolve the path with `pwd -P` (physical) before
+;; passing it via -D. The kernel resolves symlinks before testing subpath
+;; rules, so a logical path here will never match the kernel's resolved real
+;; path when any component is a symlink — the user sees `cd` succeed (covered
+;; by path-ancestors metadata) but `ls`/`cat` fail with EPERM.
+(allow file-read*  (subpath (param "SANDBOX_ADDITIONAL_DIR")))
+(allow file-write* (subpath (param "SANDBOX_ADDITIONAL_DIR")))
+
+;; --- 19c. Shared skills directory — same access as SANDBOX_ADDITIONAL_DIR (PROJFS) ---
+;; sandbox.sh validates SANDBOX_SKILLS_DIR as a real directory under SANDBOX_DIR
+;; and creates a project-local symlink at .claude/skills -> $SANDBOX_SKILLS_DIR
+;; so Claude finds skills at the well-known path. The symlink itself sits inside
+;; PROJECT_DIR (covered by rule 19); the kernel resolves the symlink to the
+;; target path before checking subpath rules, so the allow below — matching the
+;; resolved real path — is what actually grants access.
+;;
+;; When SANDBOX_SKILLS_DIR is unset, sandbox.sh substitutes the sentinel
+;; /private/var/no-skills-dir-placeholder, making these allows no-ops.
+;;
+;; Same `pwd -P` requirement as SANDBOX_ADDITIONAL_DIR — see rule 19b.
+(allow file-read*  (subpath (param "SANDBOX_SKILLS_DIR")))
+(allow file-write* (subpath (param "SANDBOX_SKILLS_DIR")))
+
+;; Allow stat/lstat on every parent directory of PROJECT_DIR,
+;; SANDBOX_ADDITIONAL_DIR, SANDBOX_SKILLS_DIR, HOST_HOME, and SANDBOX_DIR
+;; (e.g., /, /Users, /Users/me, /Users/me/sandbox) so the OS can resolve the
+;; full path. path-ancestors is mandatory — hard-coded literals are incorrect
+;; because they assume a specific directory depth (Design §19).
+;;
+;; SANDBOX_ADDITIONAL_DIR and SANDBOX_SKILLS_DIR are included for full
+;; symmetry with PROJECT_DIR. In the flat case (sibling of PROJECT_DIR) their
+;; ancestors overlap with PROJECT_DIR's, but if either sits deeper under
+;; SANDBOX_DIR (e.g., SANDBOX_DIR/group/sub) the intermediate components like
+;; SANDBOX_DIR/group are NOT covered by PROJECT_DIR's or SANDBOX_DIR's
+;; ancestor chains and path traversal would EPERM at those components.
+;;
+;; When the corresponding env var is unset, sandbox.sh substitutes the
+;; sentinel placeholder (/private/var/no-additional-dir-placeholder or
+;; /private/var/no-skills-dir-placeholder); their ancestors (/, /private,
+;; /private/var) are already covered or harmless to allow read-metadata on.
+(allow file-read-metadata
+  (path-ancestors (param "PROJECT_DIR"))
+  (path-ancestors (param "SANDBOX_ADDITIONAL_DIR"))
+  (path-ancestors (param "SANDBOX_SKILLS_DIR"))
+  (path-ancestors (param "HOST_HOME"))
+  (path-ancestors (param "SANDBOX_DIR")))
+
+;; --- 20. Temporary directories (TMPDIR/VARFLD) ---
+;; /tmp, /private/tmp, /var/tmp, /private/var/tmp: DENIED.
+;; sandbox.sh creates a private temp at PROJECT_DIR/.tmp and sets TMPDIR to it.
+;; The PROJECT_DIR allow (rule 19) already covers the private temp.
+;; Shared temp dirs are denied to prevent cross-process data leaks and
+;; symlink attacks. System per-user temp (/var/folders) is kept for
+;; CoreFoundation/NSTemporaryDirectory() which resolve there internally.
+;;
+;; Claude Code's internal temp: Claude Code defaults to /tmp/claude-<uid>/ but
+;; respects CLAUDE_CODE_TMPDIR. sandbox.sh sets this to PROJECT_DIR/.tmp/claude-<uid>,
+;; which is already covered by the PROJECT_DIR allow (rule 19). No extra rule needed.
+(allow file-read* file-write* (subpath "/var/folders"))
+(allow file-read* file-write* (subpath "/private/var/folders"))
+
+;; --- 21. Device nodes (DEVIO) ---
+;; Must allow the entire /dev subpath rather than individual literals like
+;; /dev/null, /dev/stdout, /dev/stderr.  On macOS, /dev/stdout is a symlink
+;; to /dev/fd/1, which the kernel's fdesc filesystem resolves to the
+;; underlying pty or pipe.  The sandbox evaluates the resolved path, so
+;; literal "/dev/stdout" never matches the actual write target.
+(allow file-write* (subpath "/dev"))
