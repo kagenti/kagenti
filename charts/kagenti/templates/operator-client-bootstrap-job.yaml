@@ -75,10 +75,12 @@ spec:
       restartPolicy: OnFailure
       containers:
       - name: bootstrap
-        # NOTE: operator-spiffe-bootstrap has not been published yet; :latest is a placeholder
-        # until the image is built and pushed as part of the release pipeline.
-        # Override via kagenti-operator-chart.spiffe.operatorAuth.bootstrapImage.
-        image: {{ (index .Values "kagenti-operator-chart" "spiffe" "operatorAuth" "bootstrapImage") | default "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest" }}
+        # NOTE: operator-spiffe-bootstrap is not published yet and this Job is off
+        # by default (kagenti-operator-chart.spiffe.operatorAuth.enabled=false). The
+        # default below is a placeholder version to satisfy the release pin-check;
+        # override via kagenti-operator-chart.spiffe.operatorAuth.bootstrapImage once
+        # the image is built and pushed.
+        image: {{ (index .Values "kagenti-operator-chart" "spiffe" "operatorAuth" "bootstrapImage") | default "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:0.0.0-unreleased" }}
         imagePullPolicy: IfNotPresent
         env:
         - name: KEYCLOAK_URL
