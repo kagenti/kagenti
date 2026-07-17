@@ -510,12 +510,18 @@ class BudgetProxyHandler(BaseHTTPRequestHandler):
             agent_proxy = None
             if agent not in ("anonymous", "unknown"):
                 agent_proxy = _ensure_authbridge_for_agent(agent)
-            if agent_proxy:
-                client_kwargs["proxy"] = agent_proxy
-            elif self.authbridge_proxy:
-                client_kwargs["proxy"] = self.authbridge_proxy
+            proxy = agent_proxy or self.authbridge_proxy
+            if proxy:
+                client_kwargs["proxy"] = proxy
+            # TLS verification for the hop rossocortex controls. When
+            # ROSSOCORTEX_UPSTREAM_INSECURE is set, the upstream is internal/
+            # self-signed: AuthBridge owns+MITMs it via tls_bridge.upstream_insecure
+            # when its bridge handshake succeeds; but the bridge can fall back to
+            # passthrough (then rossocortex sees the real self-signed cert), so we
+            # also skip verification here as the safety net. Otherwise trust the
+            # AuthBridge MITM CA bundle (combined-ca).
             if self.upstream_insecure:
-                client_kwargs["verify"] = False  # ROSSOCORTEX_UPSTREAM_INSECURE (internal/self-signed upstream)
+                client_kwargs["verify"] = False
             elif self.ssl_cert_file:
                 client_kwargs["verify"] = self.ssl_cert_file
             with httpx.Client(**client_kwargs) as client:
@@ -670,12 +676,24 @@ def _localize_agent_config(config_path: Path) -> Path | None:
             return config_path
         ca_dir = m.group(1)
         host_root = ca_dir[:-3] if ca_dir.endswith("/ca") else str(Path(ca_dir).parent)
-        if host_root == str(CONFIG_DIR):
-            return config_path  # already correct
-        localized = text.replace(host_root, str(CONFIG_DIR))
+        localized = text if host_root == str(CONFIG_DIR) else text.replace(host_root, str(CONFIG_DIR))
+
+        # Make the container's runtime ROSSOCORTEX_UPSTREAM_INSECURE authoritative:
+        # so AuthBridge itself owns the upstream TLS (MITM + re-originate) for a
+        # self-signed upstream, rather than falling back to passthrough.
+        insecure = os.environ.get("ROSSOCORTEX_UPSTREAM_INSECURE", "").lower() in ("1", "true", "yes")
+        want = f"upstream_insecure: {'true' if insecure else 'false'}"
+        if re.search(r"^\s*upstream_insecure:.*$", localized, flags=re.M):
+            localized = re.sub(r"(?m)^(\s*)upstream_insecure:.*$", lambda mm: f"{mm.group(1)}{want}", localized)
+        else:
+            # Insert right after the ca_dir line (inside the tls_bridge block).
+            localized = re.sub(r"(?m)^(\s*)ca_dir:.*$", lambda mm: f"{mm.group(0)}\n{mm.group(1)}{want}", localized, count=1)
+
+        if localized == text:
+            return config_path  # nothing to change
         out = config_path.parent / "config.container.yaml"
         out.write_text(localized)
-        sys.stderr.write(f"[rossocortex] Localized agent config paths {host_root} -> {CONFIG_DIR}\n")
+        sys.stderr.write(f"[rossocortex] Localized agent config (paths -> {CONFIG_DIR}, upstream_insecure={insecure})\n")
         return out
     except OSError as e:
         sys.stderr.write(f"[rossocortex] Could not localize agent config: {e}\n")

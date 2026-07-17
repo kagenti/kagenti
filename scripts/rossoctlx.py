@@ -54,6 +54,7 @@ tls_bridge:
   mode: enabled
   ca_dir: {{ ca_dir }}
   ports: [443]
+  upstream_insecure: {{ 'true' if upstream_insecure else 'false' }}
 
 session:
   enabled: true
@@ -933,6 +934,7 @@ def _generate_agent_config(agent_name: str, ports: dict, budget: float | None, c
         budget_track=budget is not None and budget > 0,
         spend_file=str(spend_file),
         max_budget=budget or 0,
+        upstream_insecure=os.environ.get("ROSSOCORTEX_UPSTREAM_INSECURE", "").lower() in ("1", "true", "yes"),
     )
     config_file.write_text(rendered)
     return config_file

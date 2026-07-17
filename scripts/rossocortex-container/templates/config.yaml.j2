@@ -11,6 +11,7 @@ tls_bridge:
   mode: enabled
   ca_dir: {{ ca_dir }}
   ports: [443]
+  upstream_insecure: {{ 'true' if upstream_insecure else 'false' }}
 
 session:
   enabled: true
