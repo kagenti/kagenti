@@ -249,14 +249,18 @@ jobs:
         if: success()
         run: |
           sleep 30
-          kubectl rollout status deployment/tx-e2e-agent -n tx-e2e --timeout=300s || true
-          kubectl rollout status deployment/tx-e2e-tool -n tx-e2e --timeout=300s || true
+          # Wait for the client-credentials Secret the injected pod mounts (operator registers it async).
           for i in $(seq 1 30); do
             CREDS=$(kubectl get secrets -n tx-e2e -o name | grep -c kagenti-keycloak-client-credentials || echo "0")
             [ "$CREDS" -ge 2 ] && echo "Credentials ready ($CREDS)" && break
             echo "Waiting for credentials ($CREDS/2)..."
             sleep 10
           done
+          # Best-effort readiness — NOT fatal. The operator's client-registration (which creates the
+          # client-credentials Secret the pod mounts) is flaky in CI, so the pod may never reach Ready;
+          # don't gate the job on it. The two exec-based tests stay xfail until that's fixed. See #2129.
+          kubectl wait --for=condition=Ready pod -l app=tx-e2e-agent -n tx-e2e --timeout=180s || true
+          kubectl wait --for=condition=Ready pod -l app=tx-e2e-tool -n tx-e2e --timeout=180s || true
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
 
@@ -285,8 +289,16 @@ jobs:
           bash .github/scripts/token-exchange/56-enable-spiffe.sh
           bash .github/scripts/token-exchange/60-configure-fgap.sh
           sleep 30
-          kubectl rollout status deployment/tx-e2e-agent -n tx-e2e --timeout=300s || true
-          kubectl rollout status deployment/tx-e2e-tool -n tx-e2e --timeout=300s || true
+          # Wait for the client-credentials Secret the injected pod mounts (operator registers it async).
+          for i in $(seq 1 30); do
+            CREDS=$(kubectl get secrets -n tx-e2e -o name | grep -c kagenti-keycloak-client-credentials || echo "0")
+            [ "$CREDS" -ge 2 ] && echo "Credentials ready ($CREDS)" && break
+            echo "Waiting for credentials ($CREDS/2)..."
+            sleep 10
+          done
+          # Non-fatal (exploratory RHBK leg): give the injected pods a chance but don't fail the job.
+          kubectl wait --for=condition=Ready pod -l app=tx-e2e-agent -n tx-e2e --timeout=240s || true
+          kubectl wait --for=condition=Ready pod -l app=tx-e2e-tool -n tx-e2e --timeout=240s || true
           bash .github/scripts/token-exchange/80-run-tests.sh
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
