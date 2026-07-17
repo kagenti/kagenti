@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kagenti-rossoctl"
-version = "0.2.1"
+version = "0.2.2"
 description = "rossoctlx — CLI to manage a rossocortex budget proxy"
 requires-python = ">=3.11"
 # PEP 723 inline deps in rossoctlx.py are ignored by pip; declare runtime deps here.

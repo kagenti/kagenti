@@ -21,7 +21,7 @@ from pathlib import Path
 
 import httpx
 
-ROSSOCTL_VERSION = "0.2.1"  # keep in sync with scripts/pyproject.toml [project].version
+ROSSOCTL_VERSION = "0.2.2"  # keep in sync with scripts/pyproject.toml [project].version
 DEFAULT_CONTROL_URL = "http://localhost:8181"
 DEFAULT_PROXY_PORT = 8185
 _xdg_config = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
@@ -646,6 +646,10 @@ def cmd_start_container(port: int, control_port: int, upstream: str, budget: flo
         "-e", f"ROSSOCORTEX_DAILY_BUDGET={budget}",
     ]
 
+    # Forward the upstream-TLS toggle into the container (internal/self-signed upstreams).
+    if os.environ.get("ROSSOCORTEX_UPSTREAM_INSECURE", "").lower() in ("1", "true", "yes"):
+        cmd += ["-e", "ROSSOCORTEX_UPSTREAM_INSECURE=1"]
+
     cmd.append(image)
 
     print(f"Starting rossocortex container ({runtime})...")
@@ -751,10 +755,18 @@ def cmd_status(control_url: str):
         resp = httpx.get(f"{control_url}/version", timeout=3.0)
         data = resp.json()
         label = _runtime_label()
+        state = _load_state()
         print(f"rossocortex is running ({label}, pid={data['pid']})")
         print(f"  Mode:       {data['mode']}")
         print(f"  Budget:     ${data['budget']['spent_today']:.4f} / ${data['budget']['daily_limit']:.2f} ({data['budget']['calls_today']} calls)")
         print(f"  Upstream:   {data['upstream']}")
+        proxy_port = state.get("port", "?")
+        ctrl_port = state.get("control_port", "?")
+        if label == "container":
+            owner = f"container '{CONTAINER_NAME}'" + (f" ({state['container_id']})" if state.get("container_id") else "")
+        else:
+            owner = f"local pid {data['pid']}"
+        print(f"  Ports:      proxy {proxy_port}, control {ctrl_port}  (published by {owner})")
         print(f"  Control:    {control_url}")
         print(f"  Config:     {CONFIG_DIR}")
 
@@ -772,7 +784,8 @@ def cmd_status(control_url: str):
     except httpx.ConnectError:
         state = _load_state()
         if state:
-            print(f"rossocortex is NOT running (stale state: port={state.get('port')}, mode={state.get('mode')})")
+            print(f"rossocortex is NOT running (stale state)")
+            print(f"  Ports (last run): proxy {state.get('port', '?')}, control {state.get('control_port', '?')}  (mode={state.get('mode', '?')})")
             print(f"  Config: {CONFIG_DIR}")
             print(f"  Tried:  {control_url}")
         else:
