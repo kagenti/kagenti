@@ -175,6 +175,8 @@ spec:
           export _MLFLOW_SERVER_FILE_STORE="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mlflow" && \
           export MLFLOW_HOST="0.0.0.0" && \
           export MLFLOW_PORT="5000" && \
+          export _MLFLOW_HUEY_STORAGE_PATH=$(mktemp -d /dev/shm/mlflow-huey-XXXXXX) && \
+          export MLFLOW_GATEWAY_URI="http://localhost:5000" && \
           # Initialize MLflow database (create tables + run alembic upgrades)
           # Uses _initialize_tables which does create_all() first (safe for fresh DB)
           # then _upgrade_db() for any pending migrations.
@@ -209,7 +211,8 @@ spec:
           # Skip auth entirely — Istio mTLS protects /v1/traces.
           original_is_unprotected = AuthMiddleware._is_unprotected_route
           def patched_is_unprotected(self, path: str) -> bool:
-              if path.startswith("/v1/traces") or path in ("/version", "/ping"):
+              _UNPROTECTED_PREFIXES = ("/v1/traces", "/endpoints/", "/gateway/", "/api/2.0/endpoints/")
+              if path.startswith(_UNPROTECTED_PREFIXES) or path in ("/version", "/ping"):
                   return True
               return original_is_unprotected(self, path)
           AuthMiddleware._is_unprotected_route = patched_is_unprotected
@@ -222,7 +225,7 @@ spec:
           # /health is already natively exempt at this layer.
           _original_flask_is_unprotected = _before_request._is_unprotected_route
           def _patched_flask_is_unprotected(path: str) -> bool:
-              if path in ("/version", "/ping"):
+              if path.startswith(("/endpoints/", "/gateway/", "/api/2.0/endpoints/")) or path in ("/version", "/ping"):
                   return True
               return _original_flask_is_unprotected(path)
           _before_request._is_unprotected_route = _patched_flask_is_unprotected
@@ -234,7 +237,7 @@ spec:
           # above (no username), the permission check would return 401.
           original_find_validator = fpm._find_fastapi_validator
           def patched_find_validator(path: str):
-              if path.startswith("/v1/traces"):
+              if path.startswith(("/v1/traces", "/endpoints/", "/gateway/", "/api/2.0/endpoints/")):
                   return None
               return original_find_validator(path)
           fpm._find_fastapi_validator = patched_find_validator
@@ -380,6 +383,26 @@ spec:
           init_thread.start()
           print("Started database initialization thread")
 
+          import subprocess, sys, time as _time
+          _server_up_time = str(int(_time.time() * 1000))
+          _job_runner_env = {
+              **os.environ,
+              "MLFLOW_SERVER_PID": str(os.getpid()),
+              "_MLFLOW_SERVER_UP_TIME": _server_up_time,
+              "MLFLOW_TRACKING_URI": os.environ["MLFLOW_BACKEND_STORE_URI"],
+              "MLFLOW_DEPLOYMENTS_TARGET": "http://localhost:5000",
+          }
+          # Configure the LLM backend for built-in judges (Safety, etc.)
+          # Uses Ollama via OpenAI-compatible API on the host
+          _judge_model = os.environ.get("MLFLOW_GENAI_JUDGE_DEFAULT_MODEL")
+          if _judge_model:
+              _job_runner_env["MLFLOW_GENAI_JUDGE_DEFAULT_MODEL"] = _judge_model
+          _job_runner_proc = subprocess.Popen(
+              [sys.executable, "-m", "mlflow.server.jobs._job_runner"],
+              env=_job_runner_env,
+          )
+          print(f"Started job runner (PID {_job_runner_proc.pid})")
+
           import uvicorn
           uvicorn.run(app, host="0.0.0.0", port=5000, log_level="info")
           '
@@ -417,6 +440,16 @@ spec:
         - name: DEFAULT_LANDING_PAGE_IS_PERMISSIONS
           value: "false"
         {{- end }}
+        {{- with .Values.mlflow.judgeModel }}
+        - name: MLFLOW_GENAI_JUDGE_DEFAULT_MODEL
+          value: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.mlflow.openaiApiBase }}
+        - name: OPENAI_API_BASE
+          value: {{ . | quote }}
+        {{- end }}
+        - name: OPENAI_API_KEY
+          value: {{ .Values.mlflow.openaiApiKey | default "unused" | quote }}
         ports:
         - containerPort: 5000
           name: http
@@ -446,7 +479,7 @@ spec:
             memory: "512Mi"
             cpu: "100m"
           limits:
-            memory: "2Gi"
+            memory: "4Gi"
             cpu: "1000m"
         volumeMounts:
         - name: mlflow-artifacts
