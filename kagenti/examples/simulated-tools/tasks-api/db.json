@@ -1,0 +1,7 @@
+{
+  "tasks": [
+    { "id": "task-1", "title": "Draft the OpenAPI spec", "completed": true, "createdAt": "2026-07-01T09:00:00Z" },
+    { "id": "task-2", "title": "Generate the simulated tool", "completed": false, "createdAt": "2026-07-02T10:30:00Z" },
+    { "id": "task-3", "title": "Run the E2E test", "completed": false, "createdAt": "2026-07-03T14:15:00Z" }
+  ]
+}

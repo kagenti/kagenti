@@ -13,39 +13,38 @@ deployment shape (kagenti-extensions#411):
 | **Plugins included** | jwt-validation + token-exchange + a2a/mcp/inference parsers | Same as proxy-sidecar | jwt-validation + token-exchange only |
 | **Use when** | Standard deployments | Need transparent interception of non-HTTP protocols | Size-constrained / no protocol-aware events |
 
-`spiffe-helper` is bundled inside every combined image and runs only when the
-operator sets `SPIRE_ENABLED=true` on the workload (driven by the
-`kagenti.io/spire: enabled` label). Client registration is handled by the
-operator's reconciler — there's no in-pod client-registration sidecar.
+SPIRE integration is built into every combined image using the
+[go-spiffe](https://github.com/spiffe/go-spiffe) SDK. It is enabled or disabled
+per workload via the `SPIRE_ENABLED` env var (driven by the
+`kagenti.io/spiffe-helper-inject` label) — there is no separate spiffe-helper
+binary or process. Client registration is handled by the operator's reconciler —
+there's no in-pod client-registration sidecar.
 
 ## Selecting a mode
 
-The operator resolves mode per workload from this chain
-(kagenti-operator#361):
+The mutating webhook resolves mode from this chain (first non-empty wins):
 
-1. `AgentRuntime.Spec.AuthBridgeMode` on the workload's CR (canonical).
-2. `mode:` field on the namespace-level `authbridge-runtime-config` ConfigMap.
-3. The deprecated `kagenti.io/authbridge-mode` pod annotation (still honored).
-4. Cluster-wide default (`proxy-sidecar`).
+1. `mode:` field in the namespace-level `authbridge-runtime-config` ConfigMap **(canonical)**.
+2. The deprecated `kagenti.io/authbridge-mode` pod annotation (still honored).
+3. Cluster-wide default (`proxy-sidecar`).
+
+> **Note:** `AgentRuntime.Spec.AuthBridgeMode` is enum-validated by the CRD webhook but is not
+> read by the mutating webhook when resolving injection mode. Setting it does not change which
+> containers are injected.
+
+The canonical way to set mode is the namespace ConfigMap, which applies to all workloads in
+the namespace:
 
 ```yaml
-# Canonical: per-workload override on the AgentRuntime CR
-apiVersion: kagenti.io/v1alpha1
-kind: AgentRuntime
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: weather-service
-spec:
-  authBridgeMode: envoy-sidecar
-  targetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: weather-service
+  name: authbridge-runtime-config
+  namespace: team1
+data:
+  config.yaml: |
+    mode: envoy-sidecar
 ```
-
-> **Note:** All workloads should use an AgentRuntime CR to enroll with the
-> platform. The operator applies `kagenti.io/type` labels automatically.
-> The deprecated `kagenti.io/authbridge-mode` annotation is still honored
-> but `AgentRuntime.Spec.AuthBridgeMode` is the canonical method.
 
 ## Proxy-Sidecar Mode (Default)
 
@@ -234,7 +233,7 @@ kubectl exec deploy/weather-service -n team1 -c envoy-proxy -- \
 
 ### Proxy Not Injected
 
-1. Verify the workload has an AgentRuntime CR targeting it (the operator applies the `kagenti.io/type` label automatically)
+1. Verify the pod has `kagenti.io/type: agent` label — the operator sets this automatically when an AgentRuntime CR targets the workload
 2. Check that the Kagenti operator webhook is running:
    ```bash
    kubectl get mutatingwebhookconfigurations | grep kagenti
@@ -253,5 +252,7 @@ injects defaults that can be overridden via Helm values.
 
 ## Further Reading
 
+- [Sidecar Injection](sidecar-injection.md) — expected containers per mode, label vocabulary, feature gates, how to switch modes
+- [Authentication Guide](../authentication.md) — how `CLIENT_AUTH_TYPE=federated-jwt` (SPIFFE auth) works, how to enable it, and how it compares to client-secret mode
 - [AuthBridge Binary README](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/cmd/README.md) — full YAML config reference, all listener modes
 - [AuthBridge Architecture](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/README.md) — sequence diagrams, protocol details

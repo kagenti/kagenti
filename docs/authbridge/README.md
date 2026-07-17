@@ -133,6 +133,7 @@ For a progressive walkthrough: [Demos](demos.md)
 |----------|----------|--------|
 | [Security Model](security-model.md) | End users, architects | Trust model, what's enforced, threat model |
 | [Deployment Guide](deployment-guide.md) | Operators, developers | Modes, configuration, troubleshooting |
+| [Sidecar Injection](sidecar-injection.md) | Operators, developers | Expected containers, label vocabulary, feature gates, how to switch modes |
 | [Demos](demos.md) | Everyone | Progressive hands-on walkthrough |
 | [Roadmap](roadmap.md) | Architects, contributors | Vision, upcoming features, epics |
 
