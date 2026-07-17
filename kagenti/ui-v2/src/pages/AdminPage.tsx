@@ -75,6 +75,8 @@ const FLAG_LABELS: Record<DisplayedFlag, string> = {
   skills: 'Skills',
   authbridgeAPI: 'AuthBridge API',
   externalSkills: 'External Skills',
+  traceAnalysis: 'Trace Analysis',
+  simulatedTools: 'Simulated Tools',
 };
 
 const PlatformStatusCard: React.FC = () => {

@@ -33,6 +33,11 @@ featureFlags:
   # Enables Platform Status card
   # on http://kagenti-ui.localtest.me:8080/admin
   admin: true
+  # Trace-analysis Observability card. Links to the standalone trace-analysis
+  # component (separate repo) which must be deployed for the card to work.
+  traceAnalysis: false
+  # Simulated MCP tools generated from OpenAPI specs (epic #2151).
+  simulatedTools: false
 
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
@@ -76,6 +81,22 @@ skillberryStore:
     repository: ghcr.io/skillberry-ai/skillberry-store
     tag: "0.2.0"             # override via --set or values overlay
     pullPolicy: IfNotPresent
+    # Override the container entrypoint. The default image command (`make run`)
+    # re-runs `uv install` at startup and requires network access to github.com.
+    # This bypasses that by running the pre-installed venv directly.
+    #
+    # The store's skill-generation feature shells out to the Claude Code CLI,
+    # which is NOT bundled in the upstream image. Install it at startup (best
+    # effort; `|| true` keeps the store up if the npm fetch fails) so it lands
+    # on PATH (/usr/local/bin) before the app process starts. This is a network
+    # fetch on every pod start (~15s); bake it into a derived image if that
+    # startup cost or the network dependency is unacceptable.
+    command:
+      - sh
+      - -c
+      - |
+        npm install -g @anthropic-ai/claude-code || true
+        exec .venv/bin/python -m skillberry_store.main
   imagePullSecrets: []        # public image; empty default
   apiPort: 8000
   uiPort: 8002
@@ -463,6 +484,35 @@ mlflowOAuthSecret:
   # When true, mount the in-cluster serviceaccount CA
   # into the mlflow-oauth-secret job via the SSL_CERT_FILE environment variable.
   useServiceAccountCA: true
+
+# ------------------------------------------------------------------
+#  Trace Analysis Configuration
+#  Deployed into kagenti-system (alongside MLflow) when
+#  featureFlags.traceAnalysis is true. Backs the Observability
+#  "Trace Analysis" card; reachable at trace-analysis.<domainName>:8080.
+# ------------------------------------------------------------------
+traceAnalysis:
+  image:
+    repository: ghcr.io/kagenti/trace-analysis
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  # MLflow tracking endpoint the service reads traces from (in-cluster DNS).
+  mlflowTrackingUri: "http://mlflow:5000"
+  maxTraces: 50
+  # When enabled, turns on both: OAuth2 client-credentials auth to MLflow
+  # (mlflow-oidc-auth) and the Keycloak UI login gate. Both use credentials
+  # from secretName (the platform's mlflow-oauth-secret). Set false when
+  # Keycloak is not available in the cluster.
+  auth:
+    enabled: true
+    secretName: mlflow-oauth-secret
+  resources:
+    requests:
+      cpu: 50m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
 
 # ------------------------------------------------------------------
 #  Spiffe/Spire configs
