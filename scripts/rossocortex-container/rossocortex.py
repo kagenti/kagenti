@@ -48,7 +48,7 @@ from pathlib import Path
 
 import httpx
 
-ROSSOCORTEX_VERSION = "0.2.1"  # keep in sync with rossoctlx CLI (scripts/pyproject.toml)
+ROSSOCORTEX_VERSION = "0.2.2"  # keep in sync with rossoctlx CLI (scripts/pyproject.toml)
 DEFAULT_PORT = 8180
 DEFAULT_CONTROL_PORT = 8181
 DEFAULT_BUDGET = 5.00
@@ -314,6 +314,7 @@ class BudgetProxyHandler(BaseHTTPRequestHandler):
     credential: str | None
     authbridge_proxy: str | None  # e.g. "http://localhost:3128"
     ssl_cert_file: str | None  # CA bundle for AuthBridge TLS interception
+    upstream_insecure: bool = False  # ROSSOCORTEX_UPSTREAM_INSECURE — skip TLS verify to upstream
 
     def log_message(self, format, *args):
         spend = _get_daily_spend()
@@ -460,12 +461,18 @@ class BudgetProxyHandler(BaseHTTPRequestHandler):
                     self._send_budget_error(agent, agent_spend, agent_budget)
                     return
 
-            upstream_host = self.upstream.split("//")[-1].split("/")[0].split(":")[0]
+            # LLM calls arrive on localhost and are forwarded to the configured
+            # upstream — that IS the proxy's purpose, so the upstream is always
+            # allowed and not subject to the per-agent network policy. The policy
+            # governs only arbitrary *other* hosts (e.g. a plain-HTTP request
+            # proxied to a non-upstream Host); the CONNECT path enforces it for
+            # HTTPS tunnels.
             req_host = self.headers.get("Host", "").split(":")[0]
-            target_host = upstream_host if req_host in ("localhost", "127.0.0.1", "") else req_host
-            policy_error = _check_network_policy(agent, target_host)
+            policy_error = None
+            if req_host not in ("localhost", "127.0.0.1", ""):
+                policy_error = _check_network_policy(agent, req_host)
             if policy_error:
-                _log_request(agent, method, self.path, 403, denied_reason=f"network_policy:{target_host}")
+                _log_request(agent, method, self.path, 403, denied_reason=f"network_policy:{req_host}")
                 error_body = json.dumps({
                     "error": {
                         "message": f"Rossocortex NetworkPolicy: {policy_error}",
@@ -507,7 +514,9 @@ class BudgetProxyHandler(BaseHTTPRequestHandler):
                 client_kwargs["proxy"] = agent_proxy
             elif self.authbridge_proxy:
                 client_kwargs["proxy"] = self.authbridge_proxy
-            if self.ssl_cert_file:
+            if self.upstream_insecure:
+                client_kwargs["verify"] = False  # ROSSOCORTEX_UPSTREAM_INSECURE (internal/self-signed upstream)
+            elif self.ssl_cert_file:
                 client_kwargs["verify"] = self.ssl_cert_file
             with httpx.Client(**client_kwargs) as client:
                 resp = client.request(
@@ -648,6 +657,31 @@ _authbridge_procs: dict[str, subprocess.Popen] = {}
 _authbridge_lock = threading.Lock()
 
 
+def _localize_agent_config(config_path: Path) -> Path | None:
+    """Rewrite a per-agent AuthBridge config whose paths point at a different
+    config-dir (e.g. host paths, when the config was generated on the host but is
+    consumed in the container). Detects the config root from `ca_dir` and remaps
+    it to CONFIG_DIR. Returns a localized config path, or None on failure."""
+    import re
+    try:
+        text = config_path.read_text()
+        m = re.search(r"ca_dir:\s*(\S+)", text)
+        if not m:
+            return config_path
+        ca_dir = m.group(1)
+        host_root = ca_dir[:-3] if ca_dir.endswith("/ca") else str(Path(ca_dir).parent)
+        if host_root == str(CONFIG_DIR):
+            return config_path  # already correct
+        localized = text.replace(host_root, str(CONFIG_DIR))
+        out = config_path.parent / "config.container.yaml"
+        out.write_text(localized)
+        sys.stderr.write(f"[rossocortex] Localized agent config paths {host_root} -> {CONFIG_DIR}\n")
+        return out
+    except OSError as e:
+        sys.stderr.write(f"[rossocortex] Could not localize agent config: {e}\n")
+        return None
+
+
 def _ensure_authbridge_for_agent(agent_name: str) -> str | None:
     """Spawn authbridge for agent on demand. Returns forward-proxy URL or None."""
     agents = _load_agents_registry()
@@ -667,6 +701,15 @@ def _ensure_authbridge_for_agent(agent_name: str) -> str | None:
         if not config_path.exists():
             sys.stderr.write(f"[rossocortex] No config for agent '{agent_name}' at {config_path}\n")
             return None
+
+        # The per-agent config may have been generated on the HOST with host
+        # absolute paths (e.g. /Users/.../.config/rossocortex/...). Inside the
+        # container the config dir is mounted at CONFIG_DIR (/etc/rossocortex), so
+        # those paths don't resolve and AuthBridge's CA init fails. Rewrite any
+        # stale config-dir prefix to CONFIG_DIR before spawning.
+        localized = _localize_agent_config(config_path)
+        if localized is not None:
+            config_path = localized
 
         if not AUTHBRIDGE_BINARY.exists():
             sys.stderr.write(f"[rossocortex] authbridge-proxy binary not found\n")
@@ -860,6 +903,9 @@ def main():
     BudgetProxyHandler.upstream = upstream
     BudgetProxyHandler.daily_budget = args.budget
     BudgetProxyHandler.credential = credential
+    BudgetProxyHandler.upstream_insecure = os.environ.get("ROSSOCORTEX_UPSTREAM_INSECURE", "").lower() in ("1", "true", "yes")
+    if BudgetProxyHandler.upstream_insecure:
+        print(f"  ⚠ ROSSOCORTEX_UPSTREAM_INSECURE=1 — TLS verification to the upstream is DISABLED")
     if args.authbridge:
         ca_combined = CONFIG_DIR / "ca" / "combined-ca.pem"
         BudgetProxyHandler.authbridge_proxy = f"http://localhost:{args.authbridge_port}"
