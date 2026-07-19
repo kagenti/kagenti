@@ -6,12 +6,12 @@ source "$SCRIPT_DIR/../lib/logging.sh"
 
 log_step "25" "Building ui-oauth-secret image from source"
 
-IMAGE_NAME="$(grep -A5 'uiOAuthSecret:' "$REPO_ROOT/charts/kagenti/values.yaml" | grep 'image:' | grep -v '#' | awk '{print $2}')"
-IMAGE_TAG="$(grep -A5 'uiOAuthSecret:' "$REPO_ROOT/charts/kagenti/values.yaml" | grep 'tag:' | awk '{print $2}')"
+IMAGE_NAME="$(grep -A5 'uiOAuthSecret:' "$REPO_ROOT/charts/rossoctl/values.yaml" | grep 'image:' | grep -v '#' | awk '{print $2}')"
+IMAGE_TAG="$(grep -A5 'uiOAuthSecret:' "$REPO_ROOT/charts/rossoctl/values.yaml" | grep 'tag:' | awk '{print $2}')"
 FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 
-NAMESPACE="kagenti-system"
-JOB_NAME="kagenti-ui-oauth-secret-job"
+NAMESPACE="rossoctl-system"
+JOB_NAME="rossoctl-ui-oauth-secret-job"
 
 if [ "$IS_OPENSHIFT" = "true" ]; then
     # ── OpenShift: use BuildConfig with binary source ──
@@ -54,7 +54,7 @@ EOF
 
     log_info "Starting OpenShift binary build from source..."
     OC_BUILD=$(oc start-build "$BUILD_NAME" -n "$BUILD_NS" \
-        --from-dir="$REPO_ROOT/kagenti/" --follow=false -o name 2>/dev/null || echo "")
+        --from-dir="$REPO_ROOT/rossoctl/" --follow=false -o name 2>/dev/null || echo "")
     if [ -z "$OC_BUILD" ]; then
         log_error "Failed to start build"
         exit 1
@@ -89,7 +89,7 @@ EOF
     kubectl delete job "$JOB_NAME" -n "$NAMESPACE" --ignore-not-found
     sleep 2
 
-    helm upgrade kagenti "$REPO_ROOT/charts/kagenti" -n "$NAMESPACE" \
+    helm upgrade rossoctl "$REPO_ROOT/charts/rossoctl" -n "$NAMESPACE" \
         --reuse-values --no-hooks \
         --set "uiOAuthSecret.image=${INTERNAL_REGISTRY}/${BUILD_NS}/${BUILD_NAME}" \
         --set "uiOAuthSecret.tag=latest" \
@@ -103,18 +103,18 @@ EOF
         exit 1
     }
 
-    log_info "Restarting kagenti-ui to pick up the new secret..."
-    kubectl rollout restart deployment/kagenti-ui -n "$NAMESPACE"
-    kubectl rollout status deployment/kagenti-ui -n "$NAMESPACE" --timeout=120s
+    log_info "Restarting rossoctl-ui to pick up the new secret..."
+    kubectl rollout restart deployment/rossoctl-ui -n "$NAMESPACE"
+    kubectl rollout status deployment/rossoctl-ui -n "$NAMESPACE" --timeout=120s
 
 else
     # ── Kind / vanilla Kubernetes: local build + kind load ──
     log_info "Building image: ${FULL_IMAGE}"
     docker build -t "${FULL_IMAGE}" \
-        -f "$REPO_ROOT/kagenti/auth/ui-oauth-secret/Dockerfile" \
-        "$REPO_ROOT/kagenti/"
+        -f "$REPO_ROOT/rossoctl/auth/ui-oauth-secret/Dockerfile" \
+        "$REPO_ROOT/rossoctl/"
 
-    CLUSTER_NAME="${KIND_CLUSTER_NAME:-kagenti}"
+    CLUSTER_NAME="${KIND_CLUSTER_NAME:-rossoctl}"
     log_info "Loading image into Kind cluster '${CLUSTER_NAME}'..."
     kind load docker-image "${FULL_IMAGE}" --name "${CLUSTER_NAME}"
 
@@ -125,7 +125,7 @@ else
     kubectl delete job "$JOB_NAME" -n "$NAMESPACE" --ignore-not-found
     sleep 2
 
-    helm upgrade kagenti "$REPO_ROOT/charts/kagenti" -n "$NAMESPACE" \
+    helm upgrade rossoctl "$REPO_ROOT/charts/rossoctl" -n "$NAMESPACE" \
         --reuse-values --no-hooks || true
 
     log_info "Waiting for oauth-secret job to complete..."
@@ -136,9 +136,9 @@ else
         exit 1
     }
 
-    log_info "Restarting kagenti-ui to pick up the new secret..."
-    kubectl rollout restart deployment/kagenti-ui -n "$NAMESPACE"
-    kubectl rollout status deployment/kagenti-ui -n "$NAMESPACE" --timeout=120s
+    log_info "Restarting rossoctl-ui to pick up the new secret..."
+    kubectl rollout restart deployment/rossoctl-ui -n "$NAMESPACE"
+    kubectl rollout status deployment/rossoctl-ui -n "$NAMESPACE" --timeout=120s
 fi
 
 log_success "ui-oauth-secret image built and loaded"

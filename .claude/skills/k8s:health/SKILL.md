@@ -1,6 +1,6 @@
 ---
 name: k8s:health
-description: Check comprehensive platform health including deployments, pods, services, certificates, and resources across the Kagenti platform
+description: Check comprehensive platform health including deployments, pods, services, certificates, and resources across the Rossoctl platform
 ---
 
 # Platform Health Check Skill
@@ -13,7 +13,7 @@ This skill helps you perform comprehensive platform health checks and identify i
 form for readability. When executing, always redirect:
 
 ```bash
-export LOG_DIR=/tmp/kagenti/k8s/${CLUSTER:-local}
+export LOG_DIR=/tmp/rossoctl/k8s/${CLUSTER:-local}
 mkdir -p $LOG_DIR
 
 # Example: health check script
@@ -59,7 +59,7 @@ MAX_ITERATIONS=30 POLL_INTERVAL=20 .github/scripts/verify_deployment.sh
 **Expected Output**:
 ```
 ===================================================================
-  Kagenti Deployment Health Monitor
+  Rossoctl Deployment Health Monitor
 ===================================================================
 
 Configuration:
@@ -92,7 +92,7 @@ Configuration:
 ### Run E2E Tests
 
 ```bash
-cd kagenti
+cd rossoctl
 
 # Install test dependencies (first time)
 uv pip install -r tests/requirements.txt
@@ -147,7 +147,7 @@ kubectl get ns
 
 ```bash
 # Core platform namespaces
-kubectl get pods -n kagenti-system       # Platform Operator
+kubectl get pods -n rossoctl-system       # Platform Operator
 kubectl get pods -n keycloak              # Keycloak
 kubectl get pods -n istio-system          # Istio
 kubectl get pods -n spire-server          # SPIRE
@@ -211,13 +211,13 @@ open http://keycloak.localtest.me:8080
 
 ```bash
 # Check operator deployment
-kubectl get deployment -n kagenti-system -l control-plane=controller-manager
+kubectl get deployment -n rossoctl-system -l control-plane=controller-manager
 
 # Check operator pods
-kubectl get pods -n kagenti-system -l control-plane=controller-manager
+kubectl get pods -n rossoctl-system -l control-plane=controller-manager
 
 # Check operator logs
-kubectl logs -n kagenti-system deployment/<operator-name> --tail=100
+kubectl logs -n rossoctl-system deployment/<operator-name> --tail=100
 
 # Check Component CRDs
 kubectl get components -A
@@ -288,7 +288,7 @@ kubectl top pods -A --sort-by=cpu | head -20
 # Namespace resource usage
 kubectl top pods -n team1
 kubectl top pods -n keycloak
-kubectl top pods -n kagenti-system
+kubectl top pods -n rossoctl-system
 
 # Docker container stats
 docker stats --no-stream
@@ -329,20 +329,20 @@ echo "Password: $KEYCLOAK_PASS"
 curl -k "http://keycloak.localtest.me:8080/realms/master/.well-known/openid-configuration" | python3 -m json.tool
 ```
 
-### Kagenti UI
+### Rossoctl UI
 
 ```bash
 # Check UI deployment
-kubectl get deployment -n kagenti-system kagenti-ui
+kubectl get deployment -n rossoctl-system rossoctl-ui
 
 # Check UI pods
-kubectl get pods -n kagenti-system -l app=kagenti-ui
+kubectl get pods -n rossoctl-system -l app=rossoctl-ui
 
 # Check UI logs
-kubectl logs -n kagenti-system deployment/kagenti-ui --tail=50
+kubectl logs -n rossoctl-system deployment/rossoctl-ui --tail=50
 
 # Access UI
-open http://kagenti-ui.localtest.me:8080
+open http://rossoctl-ui.localtest.me:8080
 ```
 
 ### Observability Stack (if addons installed)
@@ -551,7 +551,7 @@ done
 **After health check, if issues found**:
 - Use **k8s:logs** skill to examine error logs
 - Use **k8s:pods** skill for pod debugging
-- Use **kagenti:deploy** skill if full redeploy needed
+- Use **rossoctl:deploy** skill if full redeploy needed
 
 ## Pro Tips
 
@@ -566,6 +566,6 @@ done
 
 ## Related Skills
 
-- **kagenti:deploy**: Deploy or redeploy the platform
+- **rossoctl:deploy**: Deploy or redeploy the platform
 - **k8s:logs**: Query and analyze logs
 - **k8s:pods**: Debug specific pod issues

@@ -35,7 +35,7 @@ produces PR #1 — the foundation that validates all subsequent PRs.
 
 ## Prerequisites
 
-- Plan exists at `/tmp/kagenti/orchestrate/<target>/plan.md`
+- Plan exists at `/tmp/rossoctl/orchestrate/<target>/plan.md`
 - Target repo cloned in `.repos/<target>/`
 
 ## Step 1: Detect Language
@@ -212,7 +212,7 @@ gh pr create --repo org/repo --title "Add pre-commit hooks and code quality base
 
 ## Update Phase Status
 
-Update `/tmp/kagenti/orchestrate/<target>/phase-status.md`:
+Update `/tmp/rossoctl/orchestrate/<target>/phase-status.md`:
 - Set precommit to `complete`
 - Record PR number and date
 

@@ -18,8 +18,8 @@ real upstream.
   forward proxy; it is rejected with `envoy-sidecar`).
 - **cert-manager** installed (the operator provisions a per-agent CA
   `Certificate`/`Issuer`; cert-manager issues the Secret). cert-manager is
-  already installed on standard Kind and OpenShift kagenti installs.
-- A **kagenti-operator** build that supports the TLS bridge (the feature is
+  already installed on standard Kind and OpenShift rossoctl installs.
+- A **rossoctl-operator** build that supports the TLS bridge (the feature is
   inert on operator versions that predate it).
 
 It is decoupled from SPIRE/mTLS — the bridge CA comes from cert-manager, not an

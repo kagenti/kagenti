@@ -1,4 +1,4 @@
-# Kagenti Agent Sandbox Template — Full (Phases 1-4)
+# Rossoctl Agent Sandbox Template — Full (Phases 1-4)
 #
 # Capabilities:
 #   C1:  Pod lifecycle via agent-sandbox controller
@@ -15,13 +15,13 @@
 apiVersion: extensions.agents.x-k8s.io/v1alpha1
 kind: SandboxTemplate
 metadata:
-  name: kagenti-agent-sandbox
+  name: rossoctl-agent-sandbox
   namespace: team1
 spec:
   podTemplate:
     metadata:
       labels:
-        app.kubernetes.io/part-of: kagenti
+        app.kubernetes.io/part-of: rossoctl
         app.kubernetes.io/component: agent-sandbox
     spec:
       automountServiceAccountToken: false
@@ -38,14 +38,14 @@ spec:
         - sh
         - -c
         - |
-          REPO="${REPO_URL:-https://github.com/kagenti/kagenti.git}"
+          REPO="${REPO_URL:-https://github.com/rossoctl/rossoctl.git}"
           BRANCH="${REPO_BRANCH:-main}"
           echo "Cloning $REPO (branch: $BRANCH) into /workspace..."
           git clone --depth=1 --branch="$BRANCH" "$REPO" /workspace/repo
           echo "Clone complete: $(ls /workspace/repo | wc -l) files"
         env:
         - name: REPO_URL
-          value: "https://github.com/kagenti/kagenti.git"
+          value: "https://github.com/rossoctl/rossoctl.git"
         - name: REPO_BRANCH
           value: "main"
         - name: HTTP_PROXY

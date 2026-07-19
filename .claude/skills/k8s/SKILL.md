@@ -14,7 +14,7 @@ in bare form for readability, but when executing them, always use this pattern:
 
 ```bash
 # Set log directory (use cluster name or worktree to avoid session collisions)
-export LOG_DIR=/tmp/kagenti/k8s/${CLUSTER:-local}
+export LOG_DIR=/tmp/rossoctl/k8s/${CLUSTER:-local}
 mkdir -p $LOG_DIR
 
 # Pattern: redirect output, return status
@@ -55,7 +55,7 @@ kubectl get pods -n team1
 kubectl logs -n team1 deployment/weather-service --tail=100 -f
 
 # Operator logs
-kubectl logs -n kagenti-system -l app=kagenti-operator --tail=100
+kubectl logs -n rossoctl-system -l app=rossoctl-operator --tail=100
 ```
 
 ### Check Events

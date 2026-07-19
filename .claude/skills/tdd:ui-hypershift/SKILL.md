@@ -5,7 +5,7 @@ description: Rapid UI/backend iteration on HyperShift — edit, build, deploy, P
 
 # TDD UI+Backend on HyperShift
 
-Fast iteration loop for Kagenti UI and backend development on a live HyperShift cluster.
+Fast iteration loop for Rossoctl UI and backend development on a live HyperShift cluster.
 Covers the full cycle: edit → commit → push → build → rollout → Playwright test.
 
 ## When to Use
@@ -20,21 +20,21 @@ Covers the full cycle: edit → commit → push → build → rollout → Playwr
 ```bash
 # Cluster config
 export CLUSTER=sbox42
-export MANAGED_BY_TAG=kagenti-team
+export MANAGED_BY_TAG=rossoctl-team
 export KUBECONFIG=~/clusters/hcp/${MANAGED_BY_TAG}-${CLUSTER}/auth/kubeconfig
-export LOG_DIR="${LOG_DIR:-/tmp/kagenti/tdd/ui-${CLUSTER}}"
+export LOG_DIR="${LOG_DIR:-/tmp/rossoctl/tdd/ui-${CLUSTER}}"
 mkdir -p "$LOG_DIR"
 
 # Keycloak password (stored in K8s secret, not hardcoded)
-export KEYCLOAK_PASSWORD=$(kubectl -n keycloak get secret kagenti-test-users \
+export KEYCLOAK_PASSWORD=$(kubectl -n keycloak get secret rossoctl-test-users \
   -o jsonpath='{.data.admin-password}' | base64 -d)
 
 # UI URL from OpenShift route
-export KAGENTI_UI_URL="https://$(kubectl get route kagenti-ui -n kagenti-system \
+export ROSSOCTL_UI_URL="https://$(kubectl get route rossoctl-ui -n rossoctl-system \
   -o jsonpath='{.spec.host}')"
 
 # Working directory
-cd "${WORKTREE_DIR:-.worktrees/sandbox-agent}"/kagenti/ui-v2
+cd "${WORKTREE_DIR:-.worktrees/sandbox-agent}"/rossoctl/ui-v2
 ```
 
 ## Iteration Levels (fastest first)
@@ -44,7 +44,7 @@ cd "${WORKTREE_DIR:-.worktrees/sandbox-agent}"/kagenti/ui-v2
 Test file changed, no build needed:
 
 ```bash
-KUBECONFIG=$KUBECONFIG KAGENTI_UI_URL=$KAGENTI_UI_URL \
+KUBECONFIG=$KUBECONFIG ROSSOCTL_UI_URL=$ROSSOCTL_UI_URL \
   KEYCLOAK_USER=admin KEYCLOAK_PASSWORD=$KEYCLOAK_PASSWORD \
   npx playwright test e2e/<spec>.spec.ts --reporter=list \
   > $LOG_DIR/test.log 2>&1; echo "EXIT:$?"
@@ -59,14 +59,14 @@ Frontend code changed (components, pages, styles):
 git add -u && git commit -s -m "fix(ui): <description>" && git push
 
 # 2. Build UI image (~90s)
-oc -n kagenti-system start-build kagenti-ui > $LOG_DIR/ui-build.log 2>&1
+oc -n rossoctl-system start-build rossoctl-ui > $LOG_DIR/ui-build.log 2>&1
 # Poll until complete:
-while ! oc -n kagenti-system get build kagenti-ui-$(oc -n kagenti-system get bc kagenti-ui -o jsonpath='{.status.lastVersion}') -o jsonpath='{.status.phase}' 2>/dev/null | grep -qE 'Complete|Failed'; do sleep 10; done
-echo "Build: $(oc -n kagenti-system get build kagenti-ui-$(oc -n kagenti-system get bc kagenti-ui -o jsonpath='{.status.lastVersion}') -o jsonpath='{.status.phase}')"
+while ! oc -n rossoctl-system get build rossoctl-ui-$(oc -n rossoctl-system get bc rossoctl-ui -o jsonpath='{.status.lastVersion}') -o jsonpath='{.status.phase}' 2>/dev/null | grep -qE 'Complete|Failed'; do sleep 10; done
+echo "Build: $(oc -n rossoctl-system get build rossoctl-ui-$(oc -n rossoctl-system get bc rossoctl-ui -o jsonpath='{.status.lastVersion}') -o jsonpath='{.status.phase}')"
 
 # 3. Rollout (~15s)
-oc -n kagenti-system rollout restart deploy/kagenti-ui
-oc -n kagenti-system rollout status deploy/kagenti-ui --timeout=60s
+oc -n rossoctl-system rollout restart deploy/rossoctl-ui
+oc -n rossoctl-system rollout status deploy/rossoctl-ui --timeout=60s
 
 # 4. Test
 npx playwright test e2e/<spec>.spec.ts --reporter=list > $LOG_DIR/test.log 2>&1; echo "EXIT:$?"
@@ -81,12 +81,12 @@ Backend Python code changed (routers, services):
 git add -u && git commit -s -m "fix(backend): <description>" && git push
 
 # 2. Build backend image (~30s — Python, no npm)
-oc -n kagenti-system start-build kagenti-backend > $LOG_DIR/be-build.log 2>&1
+oc -n rossoctl-system start-build rossoctl-backend > $LOG_DIR/be-build.log 2>&1
 # Wait for completion (same polling pattern as UI)
 
 # 3. Rollout
-oc -n kagenti-system rollout restart deploy/kagenti-backend
-oc -n kagenti-system rollout status deploy/kagenti-backend --timeout=90s
+oc -n rossoctl-system rollout restart deploy/rossoctl-backend
+oc -n rossoctl-system rollout status deploy/rossoctl-backend --timeout=90s
 
 # 4. Test
 npx playwright test e2e/<spec>.spec.ts --reporter=list > $LOG_DIR/test.log 2>&1; echo "EXIT:$?"
@@ -98,14 +98,14 @@ npx playwright test e2e/<spec>.spec.ts --reporter=list > $LOG_DIR/test.log 2>&1;
 git add -u && git commit -s -m "fix: <description>" && git push
 
 # Build both in parallel
-oc -n kagenti-system start-build kagenti-backend &
-oc -n kagenti-system start-build kagenti-ui &
+oc -n rossoctl-system start-build rossoctl-backend &
+oc -n rossoctl-system start-build rossoctl-ui &
 wait
 # Poll both until complete, then:
 
-oc -n kagenti-system rollout restart deploy/kagenti-backend deploy/kagenti-ui
-oc -n kagenti-system rollout status deploy/kagenti-backend --timeout=90s
-oc -n kagenti-system rollout status deploy/kagenti-ui --timeout=90s
+oc -n rossoctl-system rollout restart deploy/rossoctl-backend deploy/rossoctl-ui
+oc -n rossoctl-system rollout status deploy/rossoctl-backend --timeout=90s
+oc -n rossoctl-system rollout status deploy/rossoctl-ui --timeout=90s
 
 # Test
 npx playwright test e2e/<spec>.spec.ts --reporter=list > $LOG_DIR/test.log 2>&1; echo "EXIT:$?"
@@ -123,14 +123,14 @@ oc -n team1 delete svc ${AGENT_NAME} --ignore-not-found
 ### Check pod crash reason
 
 ```bash
-oc -n kagenti-system logs deploy/kagenti-backend -c backend --tail=20
+oc -n rossoctl-system logs deploy/rossoctl-backend -c backend --tail=20
 oc -n team1 describe pod -l app.kubernetes.io/name=${AGENT_NAME} | grep -A5 "Events\|Error"
 ```
 
 ### Build failure diagnosis
 
 ```bash
-oc -n kagenti-system logs build/kagenti-ui-$(oc -n kagenti-system get bc kagenti-ui -o jsonpath='{.status.lastVersion}') | tail -20
+oc -n rossoctl-system logs build/rossoctl-ui-$(oc -n rossoctl-system get bc rossoctl-ui -o jsonpath='{.status.lastVersion}') | tail -20
 ```
 
 ### SPA routing for session reload (Keycloak redirect workaround)
@@ -166,5 +166,5 @@ After green tests:
 
 - `test:ui` — Playwright test writing patterns and selectors
 - `tdd:hypershift` — Python E2E tests via hypershift-full-test.sh
-- `kagenti:ui-debug` — Debug 502s, proxy issues, auth problems
+- `rossoctl:ui-debug` — Debug 502s, proxy issues, auth problems
 - `k8s:live-debugging` — Debug pods, logs, configs on live cluster

@@ -1,6 +1,6 @@
 # RC Release Validation - Run full E2E suite on Kind + HyperShift
 # Triggered manually to validate an RC before GA promotion.
-# See: https://github.com/kagenti/kagenti/issues/1723
+# See: https://github.com/rossoctl/rossoctl/issues/1723
 name: RC Release Validation
 
 on:
@@ -29,7 +29,7 @@ on:
         type: boolean
         default: false
       dep_builds:
-        description: 'JSON array of dependency builds (used by both Kind and HyperShift), e.g. [{"repo":"kagenti/kagenti-extensions","ref":"v0.6.0-rc.1"}]. Kind uses the kagenti-extensions ref for weather-agent deploy; HyperShift passes the full array to the deploy script.'
+        description: 'JSON array of dependency builds (used by both Kind and HyperShift), e.g. [{"repo":"rossoctl/rossocortex","ref":"v0.6.0-rc.1"}]. Kind uses the rossocortex ref for weather-agent deploy; HyperShift passes the full array to the deploy script.'
         required: false
         default: '[]'
 
@@ -134,8 +134,8 @@ jobs:
       - name: Create secrets for bash installer
         run: bash .github/scripts/common/20-create-secrets-bash.sh
 
-      - name: Install Kagenti platform (bash installer)
-        run: bash scripts/kind/setup-kagenti.sh --with-all --build-images
+      - name: Install Rossoctl platform (bash installer)
+        run: bash scripts/kind/setup-rossoctl.sh --with-all --build-images
 
       - name: Wait for platform and reduce Kuadrant resources
         run: bash .github/scripts/common/40-wait-platform-ready.sh
@@ -149,14 +149,14 @@ jobs:
       - name: Configure dockerhost service
         run: bash .github/scripts/common/70-configure-dockerhost.sh
 
-      - name: Wait for kagenti-operator CRDs
-        run: bash .github/scripts/kagenti-operator/41-wait-crds.sh
+      - name: Wait for rossoctl-operator CRDs
+        run: bash .github/scripts/operator/41-wait-crds.sh
 
       - name: Build weather-tool image
-        run: bash .github/scripts/kagenti-operator/71-build-weather-tool.sh
+        run: bash .github/scripts/operator/71-build-weather-tool.sh
 
       - name: Deploy weather-tool via Deployment + Service
-        run: bash .github/scripts/kagenti-operator/72-deploy-weather-tool.sh
+        run: bash .github/scripts/operator/72-deploy-weather-tool.sh
 
       - name: Resolve extensions git ref from dep_builds
         id: resolve-deps
@@ -164,18 +164,18 @@ jobs:
           EXTENSIONS_REF="${{ inputs.ref }}"
           DEP_BUILDS='${{ inputs.dep_builds }}'
           if [ "$DEP_BUILDS" != "[]" ] && [ -n "$DEP_BUILDS" ]; then
-            REF=$(echo "$DEP_BUILDS" | jq -r '.[] | select(.repo == "kagenti/kagenti-extensions") | .ref // empty')
+            REF=$(echo "$DEP_BUILDS" | jq -r '.[] | select(.repo == "rossoctl/rossocortex") | .ref // empty')
             if [ -n "$REF" ]; then
               EXTENSIONS_REF="$REF"
             fi
           fi
           echo "extensions_ref=${EXTENSIONS_REF}" >> "$GITHUB_OUTPUT"
-          echo "Using kagenti-extensions ref: ${EXTENSIONS_REF}"
+          echo "Using rossocortex ref: ${EXTENSIONS_REF}"
 
       - name: Deploy weather-service agent
-        run: bash .github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+        run: bash .github/scripts/operator/74-deploy-weather-agent.sh
         env:
-          KAGENTI_EXTENSIONS_GIT_REF: ${{ steps.resolve-deps.outputs.extensions_ref }}
+          ROSSOCTL_EXTENSIONS_GIT_REF: ${{ steps.resolve-deps.outputs.extensions_ref }}
 
       - name: Install test dependencies
         run: bash .github/scripts/common/80-install-test-deps.sh
@@ -190,9 +190,9 @@ jobs:
         run: bash .github/scripts/common/90-preflight-checks.sh
 
       - name: Run backend E2E tests
-        run: bash .github/scripts/kagenti-operator/90-run-e2e-tests.sh
+        run: bash .github/scripts/operator/90-run-e2e-tests.sh
         env:
-          KAGENTI_CONFIG_FILE: deployments/envs/dev_values.yaml
+          ROSSOCTL_CONFIG_FILE: deployments/envs/dev_values.yaml
           AGENT_URL: http://localhost:8000
           PLATFORM: kind
 
@@ -204,7 +204,7 @@ jobs:
           # second, colliding Keycloak). Reuse the platform Keycloak — its
           # KC_FEATURES now include token-exchange + admin-fine-grained-authz.
           bash .github/scripts/token-exchange/40-setup-keycloak-realm.sh
-          bash .github/scripts/token-exchange/50-enable-kagenti-ns.sh
+          bash .github/scripts/token-exchange/50-enable-rossoctl-ns.sh
           bash .github/scripts/token-exchange/55-setup-spiffe-idp.sh
           bash .github/scripts/token-exchange/70-deploy-test-workloads.sh
           bash .github/scripts/token-exchange/56-enable-spiffe.sh
@@ -216,7 +216,7 @@ jobs:
           sleep 30
           # Wait for the client-credentials Secret the injected pod mounts (operator registers it async).
           for i in $(seq 1 30); do
-            CREDS=$(kubectl get secrets -n tx-e2e -o name | grep -c kagenti-keycloak-client-credentials || echo "0")
+            CREDS=$(kubectl get secrets -n tx-e2e -o name | grep -c rossoctl-keycloak-client-credentials || echo "0")
             [ "$CREDS" -ge 2 ] && echo "Credentials ready ($CREDS)" && break
             echo "Waiting for credentials ($CREDS/2)..."
             sleep 10
@@ -244,8 +244,8 @@ jobs:
         with:
           name: kind-e2e-results
           path: |
-            kagenti/tests/e2e/results/
-            kagenti/ui-v2/playwright-report/
+            rossoctl/tests/e2e/results/
+            rossoctl/ui-v2/playwright-report/
           retention-days: 30
 
       - name: Collect logs on failure
@@ -257,7 +257,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: kind-failure-logs
-          path: /tmp/kagenti-logs/
+          path: /tmp/rossoctl-logs/
           retention-days: 14
 
   # ============================================================================
@@ -354,11 +354,11 @@ jobs:
           CLUSTER_SUFFIX: ${{ needs.preflight.outputs.cluster_suffix }}
           OCP_VERSION: ${{ env.OCP_VERSION }}
 
-      - name: Deploy Kagenti platform
-        run: bash .github/scripts/hypershift/ci/70-deploy-kagenti.sh
+      - name: Deploy Rossoctl platform
+        run: bash .github/scripts/hypershift/ci/70-deploy-rossoctl.sh
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
-          KAGENTI_DEP_BUILDS: ${{ inputs.dep_builds }}
+          ROSSOCTL_DEP_BUILDS: ${{ inputs.dep_builds }}
 
       - name: Build platform images
         run: bash .github/scripts/common/26-build-platform-images.sh
@@ -382,7 +382,7 @@ jobs:
         run: bash .github/scripts/hypershift/ci/80-run-e2e-tests.sh
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
-          KAGENTI_CONFIG_FILE: deployments/envs/ocp_ci_values.yaml
+          ROSSOCTL_CONFIG_FILE: deployments/envs/ocp_ci_values.yaml
           PLATFORM: ocp
 
       - name: Setup Keycloak for token exchange
@@ -390,7 +390,7 @@ jobs:
         run: |
           bash .github/scripts/token-exchange/35-install-keycloak-ocp.sh community
           bash .github/scripts/token-exchange/40-setup-keycloak-realm.sh
-          bash .github/scripts/token-exchange/50-enable-kagenti-ns.sh
+          bash .github/scripts/token-exchange/50-enable-rossoctl-ns.sh
           bash .github/scripts/token-exchange/55-setup-spiffe-idp.sh
           bash .github/scripts/token-exchange/70-deploy-test-workloads.sh
           bash .github/scripts/token-exchange/56-enable-spiffe.sh
@@ -404,7 +404,7 @@ jobs:
           sleep 30
           # Wait for the client-credentials Secret the injected pod mounts (operator registers it async).
           for i in $(seq 1 30); do
-            CREDS=$(kubectl get secrets -n tx-e2e -o name | grep -c kagenti-keycloak-client-credentials || echo "0")
+            CREDS=$(kubectl get secrets -n tx-e2e -o name | grep -c rossoctl-keycloak-client-credentials || echo "0")
             [ "$CREDS" -ge 2 ] && echo "Credentials ready ($CREDS)" && break
             echo "Waiting for credentials ($CREDS/2)..."
             sleep 10
@@ -433,7 +433,7 @@ jobs:
           sleep 10
           bash .github/scripts/token-exchange/35-install-keycloak-ocp.sh rhbk
           bash .github/scripts/token-exchange/40-setup-keycloak-realm.sh
-          bash .github/scripts/token-exchange/50-enable-kagenti-ns.sh
+          bash .github/scripts/token-exchange/50-enable-rossoctl-ns.sh
           bash .github/scripts/token-exchange/55-setup-spiffe-idp.sh
           bash .github/scripts/token-exchange/70-deploy-test-workloads.sh
           bash .github/scripts/token-exchange/56-enable-spiffe.sh
@@ -441,7 +441,7 @@ jobs:
           sleep 30
           # Wait for the client-credentials Secret the injected pod mounts (operator registers it async).
           for i in $(seq 1 30); do
-            CREDS=$(kubectl get secrets -n tx-e2e -o name | grep -c kagenti-keycloak-client-credentials || echo "0")
+            CREDS=$(kubectl get secrets -n tx-e2e -o name | grep -c rossoctl-keycloak-client-credentials || echo "0")
             [ "$CREDS" -ge 2 ] && echo "Credentials ready ($CREDS)" && break
             echo "Waiting for credentials ($CREDS/2)..."
             sleep 10
@@ -474,7 +474,7 @@ jobs:
           sudo mv trivy /usr/local/bin/
           rm trivy.tar.gz
           trivy k8s --kubeconfig "$KUBECONFIG" \
-            --include-namespaces kagenti-system \
+            --include-namespaces rossoctl-system \
             --severity HIGH,CRITICAL \
             --report summary \
             --timeout 10m || true
@@ -485,8 +485,8 @@ jobs:
         with:
           name: hypershift-e2e-results
           path: |
-            kagenti/tests/e2e/results/
-            kagenti/ui-v2/playwright-report/
+            rossoctl/tests/e2e/results/
+            rossoctl/ui-v2/playwright-report/
           retention-days: 30
 
       - name: Collect cluster info on failure

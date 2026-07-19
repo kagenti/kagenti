@@ -38,7 +38,7 @@ TEST_FAILED=0
 
 # Use very short cluster suffix to avoid AWS IAM name length issues
 CLUSTER_SUFFIX="al"  # "al" for "auto-labeling"
-MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+MANAGED_BY_TAG="${MANAGED_BY_TAG:-rossoctl-hypershift-custom}"
 FULL_CLUSTER_NAME="${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}"
 
 echo ""
@@ -58,7 +58,7 @@ log_info "Checking prerequisites..."
 
 if [ -z "${KUBECONFIG:-}" ]; then
     log_error "KUBECONFIG not set"
-    log_info "Please source credentials first: source .env.kagenti-hypershift-custom"
+    log_info "Please source credentials first: source .env.rossoctl-hypershift-custom"
     exit 1
 fi
 
@@ -118,36 +118,36 @@ fi
 # Check required labels
 LABELS=$(oc get hostedcluster "$FULL_CLUSTER_NAME" -n clusters -o jsonpath='{.metadata.labels}' 2>/dev/null)
 
-AUTO_CLEANUP=$(echo "$LABELS" | jq -r '.["kagenti.io/auto-cleanup"] // "missing"')
-TTL_HOURS=$(echo "$LABELS" | jq -r '.["kagenti.io/ttl-hours"] // "missing"')
-CLUSTER_TYPE=$(echo "$LABELS" | jq -r '.["kagenti.io/cluster-type"] // "missing"')
+AUTO_CLEANUP=$(echo "$LABELS" | jq -r '.["rossoctl.io/auto-cleanup"] // "missing"')
+TTL_HOURS=$(echo "$LABELS" | jq -r '.["rossoctl.io/ttl-hours"] // "missing"')
+CLUSTER_TYPE=$(echo "$LABELS" | jq -r '.["rossoctl.io/cluster-type"] // "missing"')
 
 # Verify each label
 if [ "$AUTO_CLEANUP" = "enabled" ]; then
-    log_success "Label kagenti.io/auto-cleanup: $AUTO_CLEANUP"
+    log_success "Label rossoctl.io/auto-cleanup: $AUTO_CLEANUP"
 else
-    log_error "Label kagenti.io/auto-cleanup missing or incorrect: $AUTO_CLEANUP"
+    log_error "Label rossoctl.io/auto-cleanup missing or incorrect: $AUTO_CLEANUP"
     TEST_FAILED=1
 fi
 
 if [ "$TTL_HOURS" != "missing" ] && [ "$TTL_HOURS" != "null" ]; then
-    log_success "Label kagenti.io/ttl-hours: $TTL_HOURS"
+    log_success "Label rossoctl.io/ttl-hours: $TTL_HOURS"
 else
-    log_error "Label kagenti.io/ttl-hours missing"
+    log_error "Label rossoctl.io/ttl-hours missing"
     TEST_FAILED=1
 fi
 
 if [ "$CLUSTER_TYPE" != "missing" ] && [ "$CLUSTER_TYPE" != "null" ]; then
-    log_success "Label kagenti.io/cluster-type: $CLUSTER_TYPE"
+    log_success "Label rossoctl.io/cluster-type: $CLUSTER_TYPE"
 else
-    log_error "Label kagenti.io/cluster-type missing"
+    log_error "Label rossoctl.io/cluster-type missing"
     TEST_FAILED=1
 fi
 
 # Show all auto-cleanup labels
 echo ""
 log_info "All auto-cleanup labels:"
-echo "$LABELS" | jq -r 'to_entries | map(select(.key | startswith("kagenti.io/"))) | from_entries'
+echo "$LABELS" | jq -r 'to_entries | map(select(.key | startswith("rossoctl.io/"))) | from_entries'
 
 # ============================================================================
 # Step 4: Test with cleanup script

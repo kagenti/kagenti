@@ -6,11 +6,11 @@
 
 ## Problem
 
-Claude Code sessions building PRs on kagenti/kagenti generate valuable metadata: token usage, model selection, skill invocations, subagent calls, CI iterations, problems faced. This data is currently lost when sessions end. Capturing it enables:
+Claude Code sessions building PRs on rossoctl/rossoctl generate valuable metadata: token usage, model selection, skill invocations, subagent calls, CI iterations, problems faced. This data is currently lost when sessions end. Capturing it enables:
 
 1. **Visibility** into agent-assisted development effort per PR/issue
 2. **Dataset building** for fine-tuning agent skills (speed, token efficiency, acceptance rate)
-3. **Portability** - same metadata format whether the agent runs locally or on OpenShift/Kagenti
+3. **Portability** - same metadata format whether the agent runs locally or on OpenShift/Rossoctl
 4. **Optimization** - track which skills/workflows consume the most tokens and iterate
 
 ## Architecture
@@ -80,7 +80,7 @@ Used for verification against JSONL-parsed totals.
 {
   "session_id": "00b11888-7e0c-4fb4-bb39-32ea32e09b64",
   "session_id_short": "00b11888",
-  "project": "kagenti/kagenti",
+  "project": "rossoctl/rossoctl",
   "branch": "fix/keycloak-652",
   "target": {
     "type": "pr",
@@ -328,9 +328,9 @@ Edges: colored per traversal status, with `Nx` counter labels.
 ```bash
 python3 .claude/scripts/session-analytics.py \
   --phase extract \
-  --repo kagenti/kagenti \
+  --repo rossoctl/rossoctl \
   --from 2026-01-01 --to 2026-02-15 \
-  --output-dir /tmp/kagenti/session/
+  --output-dir /tmp/rossoctl/session/
 ```
 
 ### Outputs
@@ -390,7 +390,7 @@ Three files in the output directory:
 # Claude Code Analytics Report
 
 **Period:** 2026-01-01 to 2026-02-15
-**Repository:** kagenti/kagenti
+**Repository:** rossoctl/rossoctl
 
 ## Summary
 
@@ -420,7 +420,7 @@ Three files in the output directory:
 
 ### HTML Dashboard
 
-Interactive dashboard at `/tmp/kagenti/session/dashboard.html`:
+Interactive dashboard at `/tmp/rossoctl/session/dashboard.html`:
 
 - Token usage over time (line chart)
 - Cost per PR (bar chart)

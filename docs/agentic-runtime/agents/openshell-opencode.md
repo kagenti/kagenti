@@ -83,7 +83,7 @@ kubectl set env statefulset/openshell-gateway -n openshell-system \
 | Web server | `opencode web` | Browser-based interface |
 | Quiet mode | `opencode -p "..." -q` | Scripting (no spinner) |
 
-## 6. Kagenti Integration
+## 6. Rossoctl Integration
 
 ### 6.1 Communication Adapter
 Three options (in order of preference):
@@ -92,14 +92,14 @@ Three options (in order of preference):
    Returns structured JSON. Simplest to implement.
 
 2. **OpenCode HTTP server mode** (Phase 2+): `opencode serve` inside the sandbox,
-   Kagenti backend calls the HTTP API. Supports sessions natively.
+   Rossoctl backend calls the HTTP API. Supports sessions natively.
 
 3. **A2A wrapper service** (Phase 3): Custom Starlette wrapper that translates
    A2A JSON-RPC to OpenCode HTTP API calls.
 
 ### 6.2 Session Management
 
-| Data | Storage | Survives Restart? | Kagenti Access |
+| Data | Storage | Survives Restart? | Rossoctl Access |
 |------|---------|-------------------|---------------|
 | Session history | `~/.opencode/opencode.db` (SQLite) | Yes (PVC) | Backend reads SQLite |
 | Config | `~/.config/opencode/` | Yes (PVC) | FileBrowser |
@@ -108,7 +108,7 @@ Three options (in order of preference):
 
 ### 6.3 Observable Events
 
-| Event | Source | Kagenti UI Component | Phase |
+| Event | Source | Rossoctl UI Component | Phase |
 |-------|--------|---------------------|-------|
 | Tool calls (edit, bash) | Session DB / JSON output | EventsPanel | Phase 2 |
 | LLM response | JSON output `-f json` | AgentChat | Phase 2 |
@@ -145,7 +145,7 @@ Same as openshell-claude — all supervisor protection layers active in the base
 ## 9. Skill Execution
 
 OpenCode uses OpenAI-compatible APIs and can route through LiteLLM. The
-`run_opencode_in_sandbox()` helper in [`conftest.py`](../../../kagenti/tests/e2e/openshell/conftest.py)
+`run_opencode_in_sandbox()` helper in [`conftest.py`](../../../rossoctl/tests/e2e/openshell/conftest.py)
 creates a Sandbox CR, injects `OPENAI_API_KEY` from the `litellm-virtual-keys`
 secret, and runs `opencode run` via `kubectl exec`.
 
@@ -228,13 +228,13 @@ kubectl exec -n team1 sandbox-opencode-test-0 -- \
 ### Via OpenShell Provider (Once TLS + Ingress Enabled)
 
 ```bash
-openshell provider create --name kagenti-litellm \
+openshell provider create --name rossoctl-litellm \
   --type generic \
   --credential "OPENAI_API_KEY=$(kubectl get secret litellm-virtual-keys \
     -n team1 -o jsonpath='{.data.api-key}' | base64 -d)"
 
 openshell sandbox create --name opencode-test \
-  --provider kagenti-litellm \
+  --provider rossoctl-litellm \
   --policy /tmp/policy-litellm.yaml \
   --no-auto-providers
 
@@ -255,7 +255,7 @@ opencode run -m openai/gpt-4o-mini "Review this code for security issues: ..."
 
 | Model | Supported | Notes |
 |-------|-----------|-------|
-| Mode 1: Kagenti Deployment | Possible | Run OpenCode HTTP server as a Deployment |
+| Mode 1: Rossoctl Deployment | Possible | Run OpenCode HTTP server as a Deployment |
 | Mode 2: Sandbox CR | **Current** | Gateway creates pod from base image |
 | Mode 2 + PVC | **Supported** | Workspace + session DB persist |
 | Mode 2 + HTTP server | **Planned** | `opencode serve` inside sandbox, backend calls API |

@@ -37,7 +37,7 @@ the main conversation context.
 
 ```bash
 # Session-scoped log directory
-export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-rca}"
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/rossoctl-rca}"
 mkdir -p "$LOG_DIR"
 ```
 
@@ -57,7 +57,7 @@ When this skill is invoked, determine the right sub-skill based on context:
 Check for HyperShift cluster:
 
 ```bash
-ls ~/clusters/hcp/kagenti-hypershift-custom-*/auth/kubeconfig 2>/dev/null
+ls ~/clusters/hcp/rossoctl-hypershift-custom-*/auth/kubeconfig 2>/dev/null
 ```
 
 Check for Kind cluster:

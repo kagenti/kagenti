@@ -12,7 +12,7 @@ Monitor running CI pipelines and report results. Creates task items for each CI 
 **CI log downloads MUST go to files.** Status checks (`gh pr checks`) are small and OK inline.
 
 ```bash
-export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-ci}"
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/rossoctl-ci}"
 mkdir -p "$LOG_DIR"
 
 # When downloading logs after completion:

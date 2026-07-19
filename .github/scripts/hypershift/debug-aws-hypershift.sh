@@ -12,8 +12,8 @@
 #   --check    Quiet mode - only return exit code (0=no resources, 1=resources exist)
 #
 # EXAMPLES:
-#   ./.github/scripts/hypershift/debug-aws-hypershift.sh                           # Uses default: kagenti-hypershift-ci-local
-#   ./.github/scripts/hypershift/debug-aws-hypershift.sh kagenti-hypershift-ci-123 # Specific cluster
+#   ./.github/scripts/hypershift/debug-aws-hypershift.sh                           # Uses default: rossoctl-hypershift-ci-local
+#   ./.github/scripts/hypershift/debug-aws-hypershift.sh rossoctl-hypershift-ci-123 # Specific cluster
 #   ./.github/scripts/hypershift/debug-aws-hypershift.sh --check local             # Check mode, returns exit code
 #
 
@@ -40,15 +40,15 @@ done
 # Sanitized username for default cluster suffix
 SANITIZED_USER=$(echo "${USER:-local}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-10)
 
-# Find and load .env file - priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.kagenti-*
-MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+# Find and load .env file - priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.rossoctl-*
+MANAGED_BY_TAG="${MANAGED_BY_TAG:-rossoctl-hypershift-custom}"
 find_env_file() {
     if [ -f "$REPO_ROOT/.env.${MANAGED_BY_TAG}" ]; then
         echo "$REPO_ROOT/.env.${MANAGED_BY_TAG}"
     elif [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
         echo "$REPO_ROOT/.env.hypershift-ci"
     else
-        ls "$REPO_ROOT"/.env.kagenti-* 2>/dev/null | head -1
+        ls "$REPO_ROOT"/.env.rossoctl-* 2>/dev/null | head -1
     fi
 }
 
@@ -93,7 +93,7 @@ if [ "$CHECK_MODE" = false ]; then
     echo ""
     echo "Cluster Name: $CLUSTER_NAME"
     echo "AWS Region:   ${AWS_REGION:-us-east-1}"
-    echo "Managed By:   ${MANAGED_BY_TAG:-kagenti-hypershift-ci}"
+    echo "Managed By:   ${MANAGED_BY_TAG:-rossoctl-hypershift-ci}"
     echo ""
 fi
 

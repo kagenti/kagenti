@@ -157,5 +157,5 @@ oc get deployment operator -n hypershift -o yaml | grep -A 5 oidc
 ## Contact
 
 - **Issue tracking**: OCPBUGS-XXXXX
-- **Kagenti team**: Ryan Jenkins, Ladas
+- **Rossoctl team**: Ryan Jenkins, Ladas
 - **Date**: June 10, 2026

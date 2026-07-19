@@ -1,1 +1,1 @@
-"""Kagenti Platform Agent Base — shared runtime for all agent frameworks."""
+"""Rossoctl Platform Agent Base — shared runtime for all agent frameworks."""

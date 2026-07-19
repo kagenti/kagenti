@@ -1,4 +1,4 @@
-# Releasing Kagenti
+# Releasing Rossoctl
 
 Practical guide for release managers. Covers the full lifecycle from alpha
 through GA, including the stabilization loop between RCs.
@@ -8,7 +8,7 @@ through GA, including the stabilization loop between RCs.
 
 ## Versioning Scheme
 
-Kagenti follows [Semantic Versioning 2.0](https://semver.org/) with three
+Rossoctl follows [Semantic Versioning 2.0](https://semver.org/) with three
 pre-release stages:
 
 ```
@@ -27,16 +27,16 @@ GoReleaser's `prerelease: auto` setting automatically marks tags containing
 
 ## Release Governance
 
-Any Kagenti maintainer (member of the
-[kagenti-maintainers](mailto:kagenti-maintainers@googlegroups.com) team) can
+Any Rossoctl maintainer (member of the
+[rossoctl-maintainers](mailto:rossoctl-maintainers@googlegroups.com) team) can
 cut a release. For GA releases, at least one other maintainer must sign off
 before tagging.
 
 ## Version Compatibility
 
-Each `kagenti/kagenti` release tag represents a tested set of component versions
-across the organization. The Helm chart (`charts/kagenti/Chart.yaml`) pins the
-exact sub-chart versions, and `charts/kagenti/values.yaml` pins the container
+Each `rossoctl/rossoctl` release tag represents a tested set of component versions
+across the organization. The Helm chart (`charts/rossoctl/Chart.yaml`) pins the
+exact sub-chart versions, and `charts/rossoctl/values.yaml` pins the container
 image tags.
 
 GA release notes should include a compatibility table:
@@ -46,39 +46,39 @@ GA release notes should include a compatibility table:
 
 | Component | Version |
 |-----------|---------|
-| kagenti (platform) | v0.6.0 |
-| kagenti-extensions (webhook) | v0.5.0 |
-| kagenti-operator | v0.3.0 |
+| rossoctl (platform) | v0.6.0 |
+| rossocortex (webhook) | v0.5.0 |
+| rossoctl-operator | v0.3.0 |
 | agent-examples | v0.2.0 |
 ```
 
 Users who install via Helm charts do not need to manage
-version compatibility manually — checking out a Kagenti release tag gives a
+version compatibility manually — checking out a Rossoctl release tag gives a
 consistent, tested set of components.
 
 ## Repositories and Artifacts
 
-The Kagenti platform spans multiple repositories. Each produces different
+The Rossoctl platform spans multiple repositories. Each produces different
 artifacts when a tag is pushed:
 
 | Repository | Artifacts on tag push | CI workflow(s) |
 |------------|----------------------|----------------|
-| [kagenti/kagenti](https://github.com/kagenti/kagenti) | Container images (ui-v2, backend, oauth-secrets), Helm charts (kagenti, kagenti-deps) | `build.yaml` |
-| [kagenti/kagenti-extensions](https://github.com/kagenti/kagenti-extensions) | Container images (envoy-with-processor, proxy-init, client-registration), webhook binary + ko image, Helm chart (kagenti-webhook-chart) | `build.yaml`, `goreleaser.yml` |
-| [kagenti/kagenti-operator](https://github.com/kagenti/kagenti-operator) | Operator image, Helm chart (kagenti-operator-chart) | repo-specific |
-| [kagenti/agent-examples](https://github.com/kagenti/agent-examples) | Sample agent/tool images | repo-specific |
+| [rossoctl/rossoctl](https://github.com/rossoctl/rossoctl) | Container images (ui-v2, backend, oauth-secrets), Helm charts (rossoctl, rossoctl-deps) | `build.yaml` |
+| [rossoctl/rossocortex](https://github.com/rossoctl/rossocortex) | Container images (envoy-with-processor, proxy-init, client-registration), webhook binary + ko image, Helm chart (rossoctl-webhook-chart) | `build.yaml`, `goreleaser.yml` |
+| [rossoctl/operator](https://github.com/rossoctl/operator) | Operator image, Helm chart (operator-chart) | repo-specific |
+| [rossoctl/examples](https://github.com/rossoctl/examples) | Sample agent/tool images | repo-specific |
 
 ## Release Order
 
-The `kagenti/kagenti` Helm chart depends on sub-charts from other repos
-(defined in `charts/kagenti/Chart.yaml`). Dependency repos must be tagged
+The `rossoctl/rossoctl` Helm chart depends on sub-charts from other repos
+(defined in `charts/rossoctl/Chart.yaml`). Dependency repos must be tagged
 **before** the main repo:
 
 ```
-1. kagenti/kagenti-operator     →  tag & wait for CI
-2. kagenti/kagenti-extensions   →  tag & wait for CI
-3. kagenti/agent-examples       →  tag (if applicable)
-4. kagenti/kagenti              →  update Chart.yaml, tag
+1. rossoctl/operator     →  tag & wait for CI
+2. rossoctl/rossocortex   →  tag & wait for CI
+3. rossoctl/examples       →  tag (if applicable)
+4. rossoctl/rossoctl              →  update Chart.yaml, tag
 ```
 
 ## Cutting an Alpha Release
@@ -111,42 +111,42 @@ Alpha releases are tagged from `main` during active development.
    breaking changes or significant issues since the previous alpha, add a brief
    note to the GitHub Release body (even for alphas, this helps early testers).
 
-### Updating kagenti/kagenti after dependency alphas
+### Updating rossoctl/rossoctl after dependency alphas
 
-After tagging `kagenti-extensions` and `kagenti-operator`, update the sub-chart
-versions in `charts/kagenti/Chart.yaml`:
+After tagging `rossocortex` and `rossoctl-operator`, update the sub-chart
+versions in `charts/rossoctl/Chart.yaml`:
 
 ```yaml
 dependencies:
-- name: kagenti-webhook-chart
+- name: rossoctl-webhook-chart
   version: X.Y.0-alpha.N    # <-- new version
-  repository: oci://ghcr.io/kagenti/kagenti-extensions
-- name: kagenti-operator-chart
+  repository: oci://ghcr.io/rossoctl/rossocortex
+- name: operator-chart
   version: X.Y.0-alpha.N    # <-- new version
-  repository: oci://ghcr.io/kagenti/kagenti-operator
+  repository: oci://ghcr.io/rossoctl/operator
 ```
 
-Run `helm dependency update charts/kagenti/` to regenerate `Chart.lock`, commit,
-merge, then tag `kagenti/kagenti`.
+Run `helm dependency update charts/rossoctl/` to regenerate `Chart.lock`, commit,
+merge, then tag `rossoctl/rossoctl`.
 
 ## Pinning Image Tags Before Release
 
-The `charts/kagenti/values.yaml` file references internal container images.
+The `charts/rossoctl/values.yaml` file references internal container images.
 Some of these currently use `tag: latest`, which must be pinned to the release
 version before cutting an RC or GA tag.
 
 ### Images that require pinning
 
-Check `charts/kagenti/values.yaml` for any `tag: latest` entries. As of v0.5.0,
+Check `charts/rossoctl/values.yaml` for any `tag: latest` entries. As of v0.5.0,
 these include:
 
 | Image | values.yaml key | Purpose |
 |-------|----------------|---------|
-| `ghcr.io/kagenti/kagenti/ui-oauth-secret` | `uiOAuthSecret.tag` | UI Keycloak client registration |
-| `ghcr.io/kagenti/kagenti/agent-oauth-secret` | `agentOAuthSecret.tag` | Agent Keycloak client registration |
-| `ghcr.io/kagenti/kagenti/api-oauth-secret` | `apiOAuthSecret.tag` | API Keycloak client registration |
-| `ghcr.io/kagenti/kagenti/phoenix-oauth-secret` | `phoenixOAuthSecret.tag` | Phoenix observability auth |
-| `quay.io/ladas/mlflow-oauth-secret` | `mlflowOAuthSecret.tag` | MLflow auth (move to `ghcr.io/kagenti/kagenti/mlflow-oauth-secret` once published) |
+| `ghcr.io/rossoctl/rossoctl/ui-oauth-secret` | `uiOAuthSecret.tag` | UI Keycloak client registration |
+| `ghcr.io/rossoctl/rossoctl/agent-oauth-secret` | `agentOAuthSecret.tag` | Agent Keycloak client registration |
+| `ghcr.io/rossoctl/rossoctl/api-oauth-secret` | `apiOAuthSecret.tag` | API Keycloak client registration |
+| `ghcr.io/rossoctl/rossoctl/phoenix-oauth-secret` | `phoenixOAuthSecret.tag` | Phoenix observability auth |
+| `quay.io/ladas/mlflow-oauth-secret` | `mlflowOAuthSecret.tag` | MLflow auth (move to `ghcr.io/rossoctl/rossoctl/mlflow-oauth-secret` once published) |
 
 Additionally, some Helm templates hardcode `:latest` for utility images
 (`bitnami/kubectl:latest`, `ose-cli:latest`). These should be pinned to
@@ -154,15 +154,15 @@ specific versions over time.
 
 ### What to do
 
-Before tagging an RC or GA release, update `charts/kagenti/values.yaml`:
+Before tagging an RC or GA release, update `charts/rossoctl/values.yaml`:
 
 ```yaml
 uiOAuthSecret:
-  image: ghcr.io/kagenti/kagenti/ui-oauth-secret
+  image: ghcr.io/rossoctl/rossoctl/ui-oauth-secret
   tag: vX.Y.0       # <-- pin to release tag, not "latest"
 
 agentOAuthSecret:
-  image: ghcr.io/kagenti/kagenti/agent-oauth-secret
+  image: ghcr.io/rossoctl/rossoctl/agent-oauth-secret
   tag: vX.Y.0       # <-- pin to release tag
 
 # ... repeat for all oauth-secret images
@@ -191,11 +191,11 @@ Release candidates signal feature-complete code ready for broader testing.
 1. **Tag dependency repos first** with their RC tags (following the
    [release order](#release-order)).
 
-2. **Update `charts/kagenti/Chart.yaml`** in `kagenti/kagenti` to reference
-   the new sub-chart RC versions. Run `helm dependency update charts/kagenti/`
+2. **Update `charts/rossoctl/Chart.yaml`** in `rossoctl/rossoctl` to reference
+   the new sub-chart RC versions. Run `helm dependency update charts/rossoctl/`
    to regenerate `Chart.lock`.
 
-3. **Pin all image tags** in `charts/kagenti/values.yaml` to the RC tag.
+3. **Pin all image tags** in `charts/rossoctl/values.yaml` to the RC tag.
    Replace any `tag: latest` entries with the RC version (see
    [Pinning Image Tags Before Release](#pinning-image-tags-before-release)).
 
@@ -221,7 +221,7 @@ Release candidates signal feature-complete code ready for broader testing.
    - [ ] Container images pushed with the RC tag
    - [ ] Helm charts pushed to OCI registry
    - [ ] GitHub Release created as **Pre-release**
-   - [ ] No `tag: latest` remains in `charts/kagenti/values.yaml`
+   - [ ] No `tag: latest` remains in `charts/rossoctl/values.yaml`
 
 7. **Run RC validation CI** (see
    [Validating an RC with CI](#validating-an-rc-with-ci) below):
@@ -254,11 +254,11 @@ A GA release is the final, stable, production-ready version.
 1. **Tag dependency repos first** with their GA tags (following the
    [release order](#release-order)).
 
-2. **Update `charts/kagenti/Chart.yaml`** to pin sub-chart versions to their
-   GA versions. Run `helm dependency update charts/kagenti/` to regenerate
+2. **Update `charts/rossoctl/Chart.yaml`** to pin sub-chart versions to their
+   GA versions. Run `helm dependency update charts/rossoctl/` to regenerate
    `Chart.lock`.
 
-3. **Pin all image tags** in `charts/kagenti/values.yaml` to the GA tag.
+3. **Pin all image tags** in `charts/rossoctl/values.yaml` to the GA tag.
    Verify no `tag: latest` entries remain (see
    [Pinning Image Tags Before Release](#pinning-image-tags-before-release)).
 
@@ -283,9 +283,9 @@ A GA release is the final, stable, production-ready version.
 
    | Component | Version |
    |-----------|---------|
-   | kagenti (platform) | vX.Y.0 |
-   | kagenti-extensions (webhook) | vA.B.0 |
-   | kagenti-operator | vC.D.0 |
+   | rossoctl (platform) | vX.Y.0 |
+   | rossocortex (webhook) | vA.B.0 |
+   | rossoctl-operator | vC.D.0 |
    | agent-examples | vE.F.0 |
 
    ## Upgrade Notes
@@ -302,12 +302,12 @@ A GA release is the final, stable, production-ready version.
    - [ ] GitHub Release is marked as **Latest** (not Pre-release)
    - [ ] All container images tagged and pushed
    - [ ] Helm charts published to OCI registry
-   - [ ] No `tag: latest` remains in `charts/kagenti/values.yaml`
+   - [ ] No `tag: latest` remains in `charts/rossoctl/values.yaml`
    - [ ] Installation guide version references are up to date
 
 7. **Announce** the release:
-   - [Slack](https://ibm.biz/kagenti-slack)
-   - [Mailing list](mailto:kagenti-maintainers@googlegroups.com)
+   - [Slack](https://ibm.biz/rossoctl-slack)
+   - [Mailing list](mailto:rossoctl-maintainers@googlegroups.com)
    - Consider a blog post for major releases
 
 ## Cutting a Patch Release
@@ -333,7 +333,7 @@ gh workflow run release-validation.yaml -f ref=v0.6.0-rc.9
 
 # Validate with a specific extensions dependency
 gh workflow run release-validation.yaml -f ref=v0.6.0-rc.9 \
-  -f dep_builds='[{"repo":"kagenti/kagenti-extensions","ref":"v0.6.0-rc.1"}]'
+  -f dep_builds='[{"repo":"rossoctl/rossocortex","ref":"v0.6.0-rc.1"}]'
 
 # Quick iteration: HyperShift only, keep cluster alive for debugging
 gh workflow run release-validation.yaml -f ref=v0.6.0-rc.9 \
@@ -393,8 +393,8 @@ After updating dependency versions in `Chart.yaml`, always run
 `helm dependency update` before committing:
 
 ```bash
-helm dependency update charts/kagenti/
-helm dependency update charts/kagenti-deps/
+helm dependency update charts/rossoctl/
+helm dependency update charts/rossoctl-deps/
 ```
 
 Forgetting this step causes Helm install failures because `Chart.lock` still
@@ -419,15 +419,15 @@ different times will get different image versions, making issues unreproducible.
 Search for remaining `latest` references:
 
 ```bash
-grep -n 'tag: latest' charts/kagenti/values.yaml
-grep -rn ':latest' charts/kagenti/templates/
+grep -n 'tag: latest' charts/rossoctl/values.yaml
+grep -rn ':latest' charts/rossoctl/templates/
 ```
 
 Fix any found before tagging.
 
 ## Using the Release Skill
 
-The `.claude/skills/release/SKILL.md` skill (see [PR #1021](https://github.com/kagenti/kagenti/pull/1021))
+The `.claude/skills/release/SKILL.md` skill (see [PR #1021](https://github.com/rossoctl/rossoctl/pull/1021))
 provides an interactive, AI-assisted workflow that automates the steps in this
 guide. It handles multi-repo coordination, artifact verification, and release
 notes generation.
@@ -453,7 +453,7 @@ pinning.
 The skill will:
 1. Check CI status on `main` for each repo
 2. Guide you through tagging dependency repos first (operator, extensions)
-3. Prompt you to update `Chart.yaml` and tag `kagenti/kagenti` last
+3. Prompt you to update `Chart.yaml` and tag `rossoctl/rossoctl` last
 4. Verify all GitHub Releases and container images were produced
 
 **Cut a release candidate:**
@@ -512,17 +512,17 @@ vX.Y.0-alpha.N   →   vX.Y.0-rc.1   →   rc.2 → ... → rc.N   →   vX.Y.0 
 Tag repos in this order. Wait for CI between each:
 
 ```
-1. kagenti/kagenti-operator     →  tag, wait for CI + images
-2. kagenti/kagenti-extensions   →  tag, wait for CI + images
-3. kagenti/agent-examples       →  tag (if applicable)
-4. kagenti/kagenti              →  update Chart.yaml + values.yaml, tag
+1. rossoctl/operator     →  tag, wait for CI + images
+2. rossoctl/rossocortex   →  tag, wait for CI + images
+3. rossoctl/examples       →  tag (if applicable)
+4. rossoctl/rossoctl              →  update Chart.yaml + values.yaml, tag
 ```
 
 ### Governance
 
 - Any maintainer can cut alpha/RC releases
 - GA requires sign-off from at least one other maintainer
-- Mailing list: `kagenti-maintainers@googlegroups.com`
+- Mailing list: `rossoctl-maintainers@googlegroups.com`
 
 ---
 
@@ -544,7 +544,7 @@ Tag repos in this order. Wait for CI between each:
 
 ```bash
 # 1. Verify CI passes on main for each repo
-gh run list --branch main --limit 3 --repo kagenti/<repo>
+gh run list --branch main --limit 3 --repo rossoctl/<repo>
 
 # 2. Pin images
 bash scripts/pin-release-tags.sh v0.7.0-alpha.1
@@ -554,7 +554,7 @@ bash scripts/check-release-pins.sh
 git tag -s v0.3.0-alpha.1 -m "v0.3.0-alpha.1"
 git push origin v0.3.0-alpha.1
 
-# 4. Update Chart.yaml + helm dependency update, commit, tag kagenti/kagenti
+# 4. Update Chart.yaml + helm dependency update, commit, tag rossoctl/rossoctl
 git tag -s v0.7.0-alpha.1 -m "v0.7.0-alpha.1"
 git push origin v0.7.0-alpha.1
 ```
@@ -574,7 +574,7 @@ git push origin release-X.Y
 git tag -s vA.B.0-rc.1 -m "vA.B.0-rc.1"
 git push origin vA.B.0-rc.1
 
-# 2. In kagenti/kagenti: update Chart.yaml with RC sub-chart versions
+# 2. In rossoctl/rossoctl: update Chart.yaml with RC sub-chart versions
 # 3. Pin image tags
 bash scripts/pin-release-tags.sh v0.6.0-rc.1
 bash scripts/check-release-pins.sh
@@ -598,14 +598,14 @@ Test RC → find bugs → fix on main (PRs) → cherry-pick to release branch �
 
 ```bash
 # PRs merged to main since last RC
-LAST_RC_DATE=$(gh release view v0.6.0-rc.6 --repo kagenti/kagenti --json publishedAt --jq '.publishedAt')
+LAST_RC_DATE=$(gh release view v0.6.0-rc.6 --repo rossoctl/rossoctl --json publishedAt --jq '.publishedAt')
 
-gh pr list --repo kagenti/kagenti --state merged --base main \
+gh pr list --repo rossoctl/rossoctl --state merged --base main \
   --search "merged:>$LAST_RC_DATE" --json number,title,mergeCommit \
   --jq '.[] | "#\(.number) \(.title) [\(.mergeCommit.oid[:12])]"'
 
 # Check dependency repos too
-gh pr list --repo kagenti/kagenti-extensions --state merged --base main \
+gh pr list --repo rossoctl/rossocortex --state merged --base main \
   --search "merged:>$LAST_RC_DATE" --json number,title,mergeCommit \
   --jq '.[] | "#\(.number) \(.title) [\(.mergeCommit.oid[:12])]"'
 ```
@@ -627,7 +627,7 @@ git push upstream release-0.6
 ```
 
 If dependency repos have fixes, cherry-pick and tag those first (dependency
-order), then update `Chart.yaml` in the kagenti release branch.
+order), then update `Chart.yaml` in the rossoctl release branch.
 
 #### 3c. Tag next RC
 
@@ -670,7 +670,7 @@ git tag -s v0.6.0 -m "v0.6.0"
 git push upstream v0.6.0
 
 # 5. Mark as latest
-gh release edit v0.6.0 --repo kagenti/kagenti --latest
+gh release edit v0.6.0 --repo rossoctl/rossoctl --latest
 ```
 
 ### 5. Patch Release
@@ -712,7 +712,7 @@ git fetch upstream release-X.Y
 git checkout -b cherry-pick-<desc> upstream/release-X.Y
 git cherry-pick -x <sha>
 git push origin cherry-pick-<desc>
-gh pr create --base release-X.Y --repo kagenti/kagenti \
+gh pr create --base release-X.Y --repo rossoctl/rossoctl \
   --title "fix: cherry-pick <description> for rc.N"
 ```
 
@@ -729,7 +729,7 @@ gh pr create --base release-X.Y --repo kagenti/kagenti \
 
 ## Image Tag Pinning
 
-Both charts (`charts/kagenti/` and `charts/kagenti-deps/`) must have all
+Both charts (`charts/rossoctl/` and `charts/rossoctl-deps/`) must have all
 image tags pinned before any release.
 
 ```bash
@@ -750,13 +750,13 @@ Images pinned by the script:
 
 | Chart | Image | Key |
 |-------|-------|-----|
-| kagenti | ui-v2 | `ui.frontend.tag` |
-| kagenti | backend | `ui.backend.tag` |
-| kagenti | ui-oauth-secret | `uiOAuthSecret.tag` |
-| kagenti | agent-oauth-secret | `agentOAuthSecret.tag` |
-| kagenti | api-oauth-secret | `apiOAuthSecret.tag` |
-| kagenti | mlflow-oauth-secret | `mlflowOAuthSecret.tag` |
-| kagenti-deps | spiffe-idp-setup | `spiffeIdp.image.tag` |
+| rossoctl | ui-v2 | `ui.frontend.tag` |
+| rossoctl | backend | `ui.backend.tag` |
+| rossoctl | ui-oauth-secret | `uiOAuthSecret.tag` |
+| rossoctl | agent-oauth-secret | `agentOAuthSecret.tag` |
+| rossoctl | api-oauth-secret | `apiOAuthSecret.tag` |
+| rossoctl | mlflow-oauth-secret | `mlflowOAuthSecret.tag` |
+| rossoctl-deps | spiffe-idp-setup | `spiffeIdp.image.tag` |
 
 ---
 
@@ -766,26 +766,26 @@ After every tag, verify:
 
 ```bash
 # GitHub Releases
-gh release view <version> --repo kagenti/kagenti
+gh release view <version> --repo rossoctl/rossoctl
 
 # Container images
 for img in ui-v2 backend ui-oauth-secret agent-oauth-secret api-oauth-secret; do
-  docker manifest inspect ghcr.io/kagenti/kagenti/$img:<version> >/dev/null 2>&1 \
+  docker manifest inspect ghcr.io/rossoctl/rossoctl/$img:<version> >/dev/null 2>&1 \
     && echo "$img OK" || echo "$img MISSING"
 done
 
 # Helm charts
-helm show chart oci://ghcr.io/kagenti/kagenti-extensions/kagenti-webhook-chart --version <version>
-helm show chart oci://ghcr.io/kagenti/kagenti-operator/kagenti-operator-chart --version <version>
+helm show chart oci://ghcr.io/rossoctl/rossocortex/rossoctl-webhook-chart --version <version>
+helm show chart oci://ghcr.io/rossoctl/operator/operator-chart --version <version>
 
 # Pre-release flag (should be true for alpha/RC, false for GA)
-gh release view <version> --repo kagenti/kagenti --json isPrerelease --jq '.isPrerelease'
+gh release view <version> --repo rossoctl/rossoctl --json isPrerelease --jq '.isPrerelease'
 ```
 
 E2E validation (mandatory for GA, recommended for RCs):
 
 ```bash
-gh workflow run e2e-release-validation.yaml -f version=<version> --repo kagenti/kagenti
+gh workflow run e2e-release-validation.yaml -f version=<version> --repo rossoctl/rossoctl
 ```
 
 ---
@@ -822,17 +822,17 @@ Release candidate for vX.Y.0.
 ## Component Versions
 | Component | Version |
 |-----------|---------|
-| kagenti (platform) | vX.Y.0 |
-| kagenti-extensions | vA.B.0 |
-| kagenti-operator | vC.D.0 |
+| rossoctl (platform) | vX.Y.0 |
+| rossocortex | vA.B.0 |
+| rossoctl-operator | vC.D.0 |
 
 ## Upgrade Notes
 - (steps from previous GA)
 ```
 
 ### Announce (GA only)
-- Slack: https://ibm.biz/kagenti-slack
-- Mailing list: kagenti-maintainers@googlegroups.com
+- Slack: https://ibm.biz/rossoctl-slack
+- Mailing list: rossoctl-maintainers@googlegroups.com
 
 ---
 
@@ -864,7 +864,7 @@ publish GitHub Security Advisory with CVE.
 
 These happen automatically on tag push (via `build.yaml`):
 
-- Container images built and pushed to `ghcr.io/kagenti/`
+- Container images built and pushed to `ghcr.io/rossoctl/`
 - Helm charts packaged and pushed to OCI registry
 - GitHub Release created (pre-release flag auto-detected from tag)
 

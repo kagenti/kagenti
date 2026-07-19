@@ -5,20 +5,20 @@
 # exit codes + brief summaries to the conversation context.
 #
 # Log directory convention:
-#   TDD sessions:  /tmp/kagenti/tdd/$WORKTREE/   (worktree-scoped, survives iterations)
-#   RCA sessions:  /tmp/kagenti/rca/$WORKTREE/   (worktree-scoped)
-#   K8s debugging: /tmp/kagenti/k8s/$CLUSTER/    (cluster-scoped)
-#   General:       /tmp/kagenti/logs/$$-<timestamp>/ (PID-scoped, unique per session)
+#   TDD sessions:  /tmp/rossoctl/tdd/$WORKTREE/   (worktree-scoped, survives iterations)
+#   RCA sessions:  /tmp/rossoctl/rca/$WORKTREE/   (worktree-scoped)
+#   K8s debugging: /tmp/rossoctl/k8s/$CLUSTER/    (cluster-scoped)
+#   General:       /tmp/rossoctl/logs/$$-<timestamp>/ (PID-scoped, unique per session)
 #
 # Usage in skills:
-#   export CONTEXT_SAFE_LOG_DIR=/tmp/kagenti/tdd/$WORKTREE
+#   export CONTEXT_SAFE_LOG_DIR=/tmp/rossoctl/tdd/$WORKTREE
 #   source .claude/scripts/lib/context-safe.sh
-#   run_captured "Deploy kagenti" $CONTEXT_SAFE_LOG_DIR/deploy.log helm upgrade ...
+#   run_captured "Deploy rossoctl" $CONTEXT_SAFE_LOG_DIR/deploy.log helm upgrade ...
 #
 # Or inline (without sourcing):
 #   command > $LOG_DIR/output.log 2>&1 && echo "OK" || echo "FAIL (see $LOG_DIR/output.log)"
 
-CONTEXT_SAFE_LOG_DIR="${CONTEXT_SAFE_LOG_DIR:-/tmp/kagenti/logs/$$-$(date +%s)}"
+CONTEXT_SAFE_LOG_DIR="${CONTEXT_SAFE_LOG_DIR:-/tmp/rossoctl/logs/$$-$(date +%s)}"
 mkdir -p "$CONTEXT_SAFE_LOG_DIR" 2>/dev/null
 
 # Run a command with output captured to a specific file.
@@ -64,7 +64,7 @@ run_quiet() {
 
 # Run kubectl command with output to file.
 # Usage: kube_captured "description" output_file kubectl_args...
-# Example: kube_captured "list pods" /tmp/pods.log get pods -n kagenti-system
+# Example: kube_captured "list pods" /tmp/pods.log get pods -n rossoctl-system
 kube_captured() {
     local desc="$1" output_file="$2"
     shift 2

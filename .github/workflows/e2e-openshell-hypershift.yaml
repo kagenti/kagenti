@@ -20,7 +20,7 @@ on:
       - 'deployments/openshell/**'
       - 'charts/openshell/**'
       - 'scripts/openshell/**'
-      - 'kagenti/tests/e2e/openshell/**'
+      - 'rossoctl/tests/e2e/openshell/**'
       - '.github/scripts/local-setup/openshell-full-test.sh'
       - '.github/workflows/e2e-openshell-hypershift.yaml'
   push:
@@ -29,7 +29,7 @@ on:
       - 'deployments/openshell/**'
       - 'charts/openshell/**'
       - 'scripts/openshell/**'
-      - 'kagenti/tests/e2e/openshell/**'
+      - 'rossoctl/tests/e2e/openshell/**'
       - '.github/scripts/local-setup/openshell-full-test.sh'
       - '.github/workflows/e2e-openshell-hypershift.yaml'
   workflow_dispatch:

@@ -16,17 +16,17 @@
 #   - Random suffix: CLUSTER_SUFFIX="" generates random 6-char suffix
 #
 # MANAGED_BY_TAG (controls cluster prefix and IAM scoping):
-#   - Local: defaults to kagenti-hypershift-custom (shared by all developers)
-#   - CI: set via secrets (kagenti-hypershift-ci)
+#   - Local: defaults to rossoctl-hypershift-custom (shared by all developers)
+#   - CI: set via secrets (rossoctl-hypershift-ci)
 #
 # EXAMPLES:
-#   # Using defaults (creates kagenti-hypershift-custom-ladas)
+#   # Using defaults (creates rossoctl-hypershift-custom-ladas)
 #   ./.github/scripts/hypershift/create-cluster.sh
 #
-#   # Custom suffix (creates kagenti-hypershift-custom-pr529)
+#   # Custom suffix (creates rossoctl-hypershift-custom-pr529)
 #   ./.github/scripts/hypershift/create-cluster.sh pr529
 #
-#   # Random suffix (creates kagenti-hypershift-custom-<random>)
+#   # Random suffix (creates rossoctl-hypershift-custom-<random>)
 #   CLUSTER_SUFFIX="" ./.github/scripts/hypershift/create-cluster.sh
 #
 #   # Custom instance type and replicas
@@ -87,7 +87,7 @@ find_hypershift_automation() {
     fi
 
     # Worktree-aware: if we're in .worktrees/, look higher up
-    # e.g., /path/kagenti_hypershift_ci/.worktrees/feature -> /path/hypershift-automation
+    # e.g., /path/rossoctl_hypershift_ci/.worktrees/feature -> /path/hypershift-automation
     if [[ "$REPO_ROOT" == *"/.worktrees/"* ]]; then
         # Extract path before .worktrees
         local base_path="${REPO_ROOT%%/.worktrees/*}"
@@ -193,18 +193,18 @@ if [ "$CI_MODE" = "true" ]; then
 elif [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ] && [ -n "${KUBECONFIG:-}" ]; then
     # Credentials already in environment (user ran: source .env.xxx before script)
     log_success "Using pre-sourced credentials from environment"
-    MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+    MANAGED_BY_TAG="${MANAGED_BY_TAG:-rossoctl-hypershift-custom}"
 else
     # Local mode: find and load .env file
-    # Priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.kagenti-*
-    MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+    # Priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.rossoctl-*
+    MANAGED_BY_TAG="${MANAGED_BY_TAG:-rossoctl-hypershift-custom}"
     find_env_file() {
         if [ -f "$REPO_ROOT/.env.${MANAGED_BY_TAG}" ]; then
             echo "$REPO_ROOT/.env.${MANAGED_BY_TAG}"
         elif [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
             echo "$REPO_ROOT/.env.hypershift-ci"
         else
-            ls "$REPO_ROOT"/.env.kagenti-* 2>/dev/null | head -1
+            ls "$REPO_ROOT"/.env.rossoctl-* 2>/dev/null | head -1
         fi
     }
 
@@ -295,7 +295,7 @@ fi
 echo "  Instance Type: $INSTANCE_TYPE"
 echo "  OCP Version:   $OCP_VERSION"
 echo "  Base Domain:   $BASE_DOMAIN"
-echo "  IAM Scope Tag: kagenti.io/managed-by=$MANAGED_BY_TAG"
+echo "  IAM Scope Tag: rossoctl.io/managed-by=$MANAGED_BY_TAG"
 echo ""
 
 # ============================================================================
@@ -351,7 +351,7 @@ log_info "Creating cluster (this may take 10-15 minutes)..."
 
 cd "$HYPERSHIFT_AUTOMATION_DIR"
 
-# Pass kagenti.io/managed-by tag for IAM scoping - this namespaced tag is applied
+# Pass rossoctl.io/managed-by tag for IAM scoping - this namespaced tag is applied
 # to all AWS resources (VPC, subnets, security groups, EC2 instances, etc.) and
 # allows IAM policies to restrict operations to only resources tagged with this value.
 # The tag key follows Kubernetes label conventions to avoid conflicts with other tools.
@@ -371,7 +371,7 @@ ansible-playbook site.yml \
     -e '{"create": true, "destroy": false, "create_iam": false}' \
     -e '{"iam": {"hcp_role_name": "'"$HCP_ROLE_NAME"'"}}' \
     -e "domain=$BASE_DOMAIN" \
-    -e "additional_tags=kagenti.io/managed-by=${MANAGED_BY_TAG}" \
+    -e "additional_tags=rossoctl.io/managed-by=${MANAGED_BY_TAG}" \
     -e '{"clusters": [{'"$CLUSTER_CONFIG"'}]}'
 
 # ============================================================================
@@ -459,8 +459,8 @@ fi
 # Pattern-based TTL assignment:
 #   - PR tests (*-pr-*, *-pr[0-9]*): 3h
 #   - After-merge tests (*-main-*, *-merge-*): 6h
-#   - CI generic (kagenti-hypershift-ci-*): 3h
-#   - Dev clusters (kagenti-hypershift-custom-*, *-team-*): 168h (1 week)
+#   - CI generic (rossoctl-hypershift-ci-*): 3h
+#   - Dev clusters (rossoctl-hypershift-custom-*, *-team-*): 168h (1 week)
 #   - Unknown patterns: 24h (fallback)
 #
 # Environment variables:
@@ -482,11 +482,11 @@ if [ "$ENABLE_AUTO_CLEANUP" = "true" ]; then
             TTL_HOURS="6"
             CLUSTER_TYPE="ci-main"
             ;;
-        kagenti-hypershift-ci-*)
+        rossoctl-hypershift-ci-*)
             TTL_HOURS="3"
             CLUSTER_TYPE="ci-generic"
             ;;
-        kagenti-hypershift-custom-*|*-team-*)
+        rossoctl-hypershift-custom-*|*-team-*)
             TTL_HOURS="168"  # 1 week
             CLUSTER_TYPE="dev"
             ;;
@@ -503,9 +503,9 @@ if [ "$ENABLE_AUTO_CLEANUP" = "true" ]; then
 
     # Apply labels using management cluster kubeconfig
     KUBECONFIG="$MGMT_KUBECONFIG" oc label hostedcluster "$CLUSTER_NAME" -n clusters \
-        "kagenti.io/auto-cleanup=enabled" \
-        "kagenti.io/ttl-hours=$TTL_HOURS" \
-        "kagenti.io/cluster-type=$CLUSTER_TYPE" \
+        "rossoctl.io/auto-cleanup=enabled" \
+        "rossoctl.io/ttl-hours=$TTL_HOURS" \
+        "rossoctl.io/cluster-type=$CLUSTER_TYPE" \
         --overwrite 2>/dev/null || {
             log_warn "Failed to apply auto-cleanup labels (cluster will not be auto-deleted)"
         }
@@ -644,21 +644,21 @@ else
 
     cat << EOF
 # ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ PHASE 3: DEPLOY KAGENTI + E2E (uses hosted cluster kubeconfig)              ┃
+# ┃ PHASE 3: DEPLOY ROSSOCTL + E2E (uses hosted cluster kubeconfig)              ┃
 # ┃ Credentials: KUBECONFIG from created cluster (cluster-admin on hosted)      ┃
 # ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 export KUBECONFIG=$CLUSTER_KUBECONFIG
 oc get nodes
 
-./scripts/ocp/setup-kagenti.sh --kagenti-repo .
+./scripts/ocp/setup-rossoctl.sh --rossoctl-repo .
 
-./.github/scripts/kagenti-operator/71-build-weather-tool.sh
-./.github/scripts/kagenti-operator/72-deploy-weather-tool.sh
-./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+./.github/scripts/operator/71-build-weather-tool.sh
+./.github/scripts/operator/72-deploy-weather-tool.sh
+./.github/scripts/operator/74-deploy-weather-agent.sh
 
 export AGENT_URL="https://\$(oc get route -n team1 weather-service -o jsonpath='{.spec.host}')"
-export KAGENTI_CONFIG_FILE=deployments/envs/ocp_ci_values.yaml
-./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
+export ROSSOCTL_CONFIG_FILE=deployments/envs/ocp_ci_values.yaml
+./.github/scripts/operator/90-run-e2e-tests.sh
 
 # ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 # ┃ CLEANUP: Destroy cluster (uses scoped CI credentials)                       ┃

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Kagenti sandbox proxy entrypoint
+# Rossoctl sandbox proxy entrypoint
 # Supports dynamic domain allowlist via ALLOWED_DOMAINS env var (comma-separated)
 set -eu
 

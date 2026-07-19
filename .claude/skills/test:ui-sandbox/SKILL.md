@@ -5,7 +5,7 @@ description: Playwright selector patterns for sandbox agent chat — proven sele
 
 # Sandbox UI Test Patterns
 
-Proven Playwright selectors and patterns for testing the Kagenti sandbox agent chat UI.
+Proven Playwright selectors and patterns for testing the Rossoctl sandbox agent chat UI.
 Based on 20+ iterations of debugging on live HyperShift clusters.
 
 ## Agent Selection

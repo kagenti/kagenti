@@ -12,7 +12,7 @@ Debug OpenShift-specific resources and platform issues.
 **All oc/kubectl commands MUST redirect output to files.**
 
 ```bash
-export LOG_DIR=/tmp/kagenti/k8s/${CLUSTER:-local}
+export LOG_DIR=/tmp/rossoctl/k8s/${CLUSTER:-local}
 mkdir -p $LOG_DIR
 
 # Pattern: redirect oc/kubectl output

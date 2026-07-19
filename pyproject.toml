@@ -3,12 +3,12 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "kagenti-project"
+name = "rossoctl-project"
 version = "0.1.0"
-description = "Monorepo for Kagenti code and Ansible deployments"
+description = "Monorepo for Rossoctl code and Ansible deployments"
 requires-python = ">=3.10"
 
-# List ALL required Python packages for both Ansible and the Kagenti code
+# List ALL required Python packages for both Ansible and the Rossoctl code
 dependencies = [
     # Ansible dependencies
     "ansible-core",
@@ -59,12 +59,12 @@ test = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["kagenti/tests"]
+testpaths = ["rossoctl/tests"]
 timeout = 300
 
 [tool.coverage.run]
-source = ["kagenti"]
-omit = ["kagenti/tests/*", "kagenti/examples/*"]
+source = ["rossoctl"]
+omit = ["rossoctl/tests/*", "rossoctl/examples/*"]
 
 [tool.coverage.report]
 show_missing = true
@@ -79,9 +79,9 @@ exclude = [
     ".worktrees",
     "charts",
     "deployments",
-    "kagenti/ui-v2",
-    "kagenti/tui",
-    "kagenti/backend/app/services/openshell/v1/*_pb2*.py",
+    "rossoctl/ui-v2",
+    "rossoctl/tui",
+    "rossoctl/backend/app/services/openshell/v1/*_pb2*.py",
 ]
 
 [tool.ruff.lint]
@@ -94,8 +94,8 @@ exclude = [
 select = ["E9", "F63", "F7", "F82"]
 
 [tool.setuptools]
-# Explicitly include only the kagenti package, exclude charts and deployments
-packages = ["kagenti"]
+# Explicitly include only the rossoctl package, exclude charts and deployments
+packages = ["rossoctl"]
 
 [tool.setuptools.package-data]
-kagenti = ["**/*"]
+rossoctl = ["**/*"]

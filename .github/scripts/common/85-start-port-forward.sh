@@ -82,20 +82,20 @@ for _ in {1..10}; do
 done
 
 # ============================================================================
-# Port-forward kagenti-backend to localhost:8002
+# Port-forward rossoctl-backend to localhost:8002
 # Required for UI agent/tool discovery E2E tests
 # ============================================================================
 
-log_info "Port-forwarding kagenti-backend service -> localhost:8002"
+log_info "Port-forwarding rossoctl-backend service -> localhost:8002"
 
 # Check if backend is deployed
-if kubectl get svc -n kagenti-system kagenti-backend >/dev/null 2>&1; then
-    kubectl port-forward -n kagenti-system svc/kagenti-backend 8002:8000 > /tmp/port-forward-backend.log 2>&1 &
+if kubectl get svc -n rossoctl-system rossoctl-backend >/dev/null 2>&1; then
+    kubectl port-forward -n rossoctl-system svc/rossoctl-backend 8002:8000 > /tmp/port-forward-backend.log 2>&1 &
     BACKEND_PORT_FORWARD_PID=$!
 
     if [ "$IS_CI" = true ]; then
         echo "BACKEND_PORT_FORWARD_PID=$BACKEND_PORT_FORWARD_PID" >> $GITHUB_ENV
-        echo "KAGENTI_BACKEND_URL=http://localhost:8002" >> $GITHUB_ENV
+        echo "ROSSOCTL_BACKEND_URL=http://localhost:8002" >> $GITHUB_ENV
     else
         echo $BACKEND_PORT_FORWARD_PID > /tmp/port-forward-backend.pid
     fi
@@ -109,7 +109,7 @@ if kubectl get svc -n kagenti-system kagenti-backend >/dev/null 2>&1; then
         sleep 1
     done
 else
-    log_info "kagenti-backend not deployed, skipping port-forward"
+    log_info "rossoctl-backend not deployed, skipping port-forward"
 fi
 
 # ============================================================================
@@ -119,10 +119,10 @@ fi
 
 log_info "Port-forwarding MLflow service -> localhost:5000"
 
-# Check if MLflow is deployed (kagenti-system for Kind, redhat-ods-applications for RHOAI)
+# Check if MLflow is deployed (rossoctl-system for Kind, redhat-ods-applications for RHOAI)
 MLFLOW_NS=""
-if kubectl get svc -n kagenti-system mlflow >/dev/null 2>&1; then
-    MLFLOW_NS="kagenti-system"
+if kubectl get svc -n rossoctl-system mlflow >/dev/null 2>&1; then
+    MLFLOW_NS="rossoctl-system"
 elif kubectl get svc -n redhat-ods-applications mlflow >/dev/null 2>&1; then
     MLFLOW_NS="redhat-ods-applications"
 fi

@@ -175,7 +175,7 @@ Today's pod creation involves two components that must coordinate:
 the **agent-sandbox-controller** (kubernetes-sigs, watches Sandbox CRs and creates
 pods) and the **OpenShell compute driver** (injects supervisor init containers
 via gateway Unix socket). A known race condition exists where both create
-Services for the same pod (kagenti#1581). The composition controller must
+Services for the same pod (rossoctl#1581). The composition controller must
 orchestrate both and handle this coordination:
 
 ```mermaid
@@ -315,14 +315,14 @@ OpenShell provides the runtime foundation beneath the sidecar:
 ## Interaction: Session-Based Protocol
 
 All agent access — interactive (SSH/terminal) and programmatic (ACP WebSocket) —
-routes through the OpenShell gateway. The Kagenti backend bridges ACP WebSocket
+routes through the OpenShell gateway. The Rossoctl backend bridges ACP WebSocket
 to the gateway's `ExecSandbox` gRPC, providing a unified session layer with
 mTLS, credential injection, and audit logging:
 
 ```mermaid
 sequenceDiagram
     participant Client as Client<br/>(IDE, CLI, workflow)
-    participant Backend as Kagenti Backend<br/>(ACP WebSocket)
+    participant Backend as Rossoctl Backend<br/>(ACP WebSocket)
     participant GW as OpenShell Gateway<br/>(gRPC, mTLS, SQLite)
     participant CD as Compute Driver<br/>(Unix socket)
     participant Agent as Sandbox Pod<br/>(supervisor + agent)

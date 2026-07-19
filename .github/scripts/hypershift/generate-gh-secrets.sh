@@ -2,7 +2,7 @@
 #
 # Push HyperShift CI Secrets to GitHub
 #
-# This script reads credentials from .env.kagenti-hypershift-ci,
+# This script reads credentials from .env.rossoctl-hypershift-ci,
 # tests them locally, and pushes all secrets to GitHub Actions.
 #
 # USAGE:
@@ -13,7 +13,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-ENV_FILE="$REPO_ROOT/.env.kagenti-hypershift-ci"
+ENV_FILE="$REPO_ROOT/.env.rossoctl-hypershift-ci"
 
 # Check if .env file exists
 if [ ! -f "$ENV_FILE" ]; then
@@ -58,7 +58,7 @@ echo ""
 if ! aws sts get-caller-identity; then
     echo ""
     echo "❌ AWS credentials are INVALID"
-    echo "   Please verify the credentials in .env.kagenti-hypershift-ci"
+    echo "   Please verify the credentials in .env.rossoctl-hypershift-ci"
     exit 1
 fi
 

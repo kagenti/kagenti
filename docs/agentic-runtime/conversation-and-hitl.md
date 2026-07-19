@@ -4,7 +4,7 @@
 
 ## Conversation Models
 
-OpenShell and Kagenti support three distinct conversation models. Each agent
+OpenShell and Rossoctl support three distinct conversation models. Each agent
 type uses one or more of these models.
 
 ### Model 1: Terminal Session (OpenShell native)
@@ -37,11 +37,11 @@ sequenceDiagram
 - **Session persistence:** dtach + PVC for workspace files
 - **Multi-turn:** Natural — continuous terminal I/O
 
-### Model 2: A2A Request-Response (Kagenti native)
+### Model 2: A2A Request-Response (Rossoctl native)
 
 ```mermaid
 sequenceDiagram
-    participant UI as Kagenti UI
+    participant UI as Rossoctl UI
     participant BE as Backend
     participant DB as PostgreSQL
     participant Agent as A2A Agent
@@ -60,7 +60,7 @@ sequenceDiagram
 ```
 
 - **Agents:** weather_agent, adk_agent, claude_sdk_agent
-- **Context storage:** Kagenti backend PostgreSQL
+- **Context storage:** Rossoctl backend PostgreSQL
 - **Session persistence:** Database-backed (survives pod restart)
 - **Multi-turn:** Backend reconstructs context from DB each turn
 
@@ -68,7 +68,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant BE as Kagenti Backend
+    participant BE as Rossoctl Backend
     participant GW as Gateway
     participant SB as Sandbox Pod
     participant Agent as Agent Process
@@ -83,7 +83,7 @@ sequenceDiagram
 ```
 
 - **Agents:** weather_supervised (via kubectl exec), builtin sandboxes (via ExecSandbox gRPC)
-- **Context storage:** Kagenti backend PostgreSQL + workspace PVC
+- **Context storage:** Rossoctl backend PostgreSQL + workspace PVC
 - **Session persistence:** Backend manages context, PVC preserves files
 - **Multi-turn:** Backend sends accumulated context with each exec
 
@@ -103,7 +103,7 @@ sequenceDiagram
 ### A2A Agents (weather, ADK, Claude SDK)
 
 **Option A: Backend-managed context (recommended)**
-The Kagenti backend stores conversation history in PostgreSQL. Each turn,
+The Rossoctl backend stores conversation history in PostgreSQL. Each turn,
 the backend loads the full history and includes it in the A2A request as
 additional context. The agent itself remains stateless.
 
@@ -130,7 +130,7 @@ The CLI+SSH model provides natural multi-turn. The agent process maintains
 context in memory. With dtach, the session survives disconnects.
 
 **Option B: ExecSandbox + backend context**
-The Kagenti backend calls ExecSandbox gRPC to send prompts. The backend
+The Rossoctl backend calls ExecSandbox gRPC to send prompts. The backend
 maintains conversation history in PostgreSQL and reconstructs context
 for each exec call.
 
@@ -151,8 +151,8 @@ action. Examples:
 |-------|-------------|-----|
 | **OpenShell OPA policy** | Implicit deny | Policy blocks disallowed actions; agent gets error |
 | **OpenShell proxy** | Implicit deny | HTTP CONNECT denied for blocked hosts |
-| **Kagenti UI** | `HitlApprovalCard` component | UI component exists for approval workflows |
-| **Kagenti backend** | Session events | Can intercept and hold agent actions |
+| **Rossoctl UI** | `HitlApprovalCard` component | UI component exists for approval workflows |
+| **Rossoctl backend** | Session events | Can intercept and hold agent actions |
 
 ### HITL Architecture
 
@@ -162,8 +162,8 @@ sequenceDiagram
     participant Proxy as Supervisor Proxy
     participant OPA as OPA Engine
     participant GW as Gateway
-    participant BE as Kagenti Backend
-    participant UI as Kagenti UI
+    participant BE as Rossoctl Backend
+    participant UI as Rossoctl UI
     participant Human as Human
 
     Agent->>Proxy: HTTP request (e.g., git push)
@@ -252,4 +252,4 @@ sequenceDiagram
 | Session written to PVC | openshell generic, claude, opencode | PASS | Data persists on PVC |
 | PVC survives sandbox deletion | ALL sandbox types | PASS | PVC independent of CR |
 | Workspace restore after restart | openshell_* | TODO Phase 2 | Backend loads workspace + DB history |
-| File browser reads PVC | openshell_* | TODO Phase 2 | Kagenti UI FileBrowser browses PVC |
+| File browser reads PVC | openshell_* | TODO Phase 2 | Rossoctl UI FileBrowser browses PVC |

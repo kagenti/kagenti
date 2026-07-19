@@ -1,6 +1,6 @@
 # Sandbox Lifecycle
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_04_sandbox_lifecycle.py`
+> **Test file:** `rossoctl/tests/e2e/openshell/test_04_sandbox_lifecycle.py`
 > **Tests:** 7 | **Pass:** 7 | **Skip:** 0 (Kind, fresh cluster)
 
 ## What This Tests
@@ -136,15 +136,15 @@ The OpenShell proposal requires:
 
 > "openshell term shows sandbox status"
 
-In Kagenti's A2A-first model, sandbox status is observed via:
+In Rossoctl's A2A-first model, sandbox status is observed via:
 
-| Proposal Requirement | Kagenti A2A Equivalent | How Tested |
+| Proposal Requirement | Rossoctl A2A Equivalent | How Tested |
 |---------------------|----------------------|-----------|
 | `openshell term` shows status | kubectl get pod/deploy/sandbox -o json | test_*_status_queryable |
 | Terminal session active | Agent A2A endpoint responds | test_02_a2a_connectivity |
 | Session reconnect | PVC-backed session restore | test_06_conversation_resume |
 
-The Kagenti UI PodStatusPanel queries the same Kubernetes API these tests validate.
+The Rossoctl UI PodStatusPanel queries the same Kubernetes API these tests validate.
 
 ## Sandbox CR Schema
 

@@ -51,7 +51,7 @@ Skills operate on either **sandbox** (safe) or **management** (requires approval
 | **Management** | Management cluster, AWS resources, git push, destructive ops | NO | Can chain commands (user approves anyway) |
 
 ### Sandbox skills (auto-approved)
-Commands target `localtest.me`, `KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-*`, or Kind clusters.
+Commands target `localtest.me`, `KUBECONFIG=~/clusters/hcp/rossoctl-hypershift-custom-*`, or Kind clusters.
 
 **IMPORTANT**: Run each command separately — not chained with `&&`. Chained or multiline commands break Claude Code's auto-approve pattern matching.
 
@@ -60,18 +60,18 @@ Commands target `localtest.me`, `KUBECONFIG=~/clusters/hcp/kagenti-hypershift-cu
 
 Check pod status:
 ```bash
-kubectl get pods -n kagenti-system
+kubectl get pods -n rossoctl-system
 ```
 
 Check logs:
 ```bash
-kubectl logs -n kagenti-system deployment/mlflow
+kubectl logs -n rossoctl-system deployment/mlflow
 ```
 
 ## BAD (chained commands won't match auto-approve patterns)
 
 ```bash
-kubectl get pods -n kagenti-system && kubectl logs -n kagenti-system deployment/mlflow
+kubectl get pods -n rossoctl-system && kubectl logs -n rossoctl-system deployment/mlflow
 ```
 ```
 
@@ -107,7 +107,7 @@ done
 
 ```bash
 # Find chained commands in sandbox skills (potential auto-approve issues)
-grep -n ' && ' .claude/skills/k8s:*/SKILL.md .claude/skills/kagenti:*/SKILL.md .claude/skills/kind:*/SKILL.md .claude/skills/local:*/SKILL.md .claude/skills/tdd:*/SKILL.md .claude/skills/rca:*/SKILL.md
+grep -n ' && ' .claude/skills/k8s:*/SKILL.md .claude/skills/rossoctl:*/SKILL.md .claude/skills/kind:*/SKILL.md .claude/skills/local:*/SKILL.md .claude/skills/tdd:*/SKILL.md .claude/skills/rca:*/SKILL.md
 ```
 
 ### Check Mermaid Diagram Presence
@@ -132,7 +132,7 @@ For each command in a sandbox skill, verify it matches a pattern in `.claude/set
 | `kubectl describe` | `Bash(kubectl describe:*)` |
 | `kubectl logs` | `Bash(kubectl logs:*)` |
 | `helm list` | `Bash(helm list:*)` |
-| `KUBECONFIG=~/clusters/hcp/... kubectl` | `Bash(KUBECONFIG=*/clusters/hcp/kagenti-hypershift-custom-*/auth/kubeconfig kubectl:*)` |
+| `KUBECONFIG=~/clusters/hcp/... kubectl` | `Bash(KUBECONFIG=*/clusters/hcp/rossoctl-hypershift-custom-*/auth/kubeconfig kubectl:*)` |
 | `uv run pytest` | `Bash(uv run pytest:*)` |
 
 If a command is NOT covered, add the pattern to `.claude/settings.json` in the `allow` array.
@@ -142,7 +142,7 @@ If a command is NOT covered, add the pattern to `.claude/settings.json` in the `
 When validating multiple skills:
 
 ```
-TaskCreate: "kagenti | skills | <category> | Verify | Validate <skill-name>"
+TaskCreate: "rossoctl | skills | <category> | Verify | Validate <skill-name>"
 ```
 
 ## Related Skills

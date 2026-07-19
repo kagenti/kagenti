@@ -1,8 +1,8 @@
-# Kagenti minimal installation configuration
+# Rossoctl minimal installation configuration
 # No Auth is enabled in this config
 
 ####################################################################
-# kagenti-deps
+# rossoctl-deps
 ####################################################################
 gatewayApi:
   enabled: true
@@ -15,9 +15,9 @@ tekton:
 
 charts:
   ####################################################################
-  # kagenti-deps
+  # rossoctl-deps
   ####################################################################
-  kagenti-deps:
+  rossoctl-deps:
     enabled: true
     values:
       openshift: false
@@ -28,9 +28,9 @@ charts:
           enabled: true
 
   ####################################################################
-  # kagenti
+  # rossoctl
   ####################################################################
-  kagenti:
+  rossoctl:
     enabled: true
     values:
      openshift: false

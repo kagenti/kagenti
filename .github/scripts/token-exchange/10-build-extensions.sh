@@ -1,31 +1,31 @@
 #!/usr/bin/env bash
-# Build kagenti-extensions images from source.
+# Build rossocortex images from source.
 #
 # Environment:
-#   KAGENTI_EXTENSIONS_ROOT   Local clone (optional; clones from GitHub if unset)
-#   KAGENTI_EXTENSIONS_REF    Git ref to clone (default: main)
+#   ROSSOCTL_EXTENSIONS_ROOT   Local clone (optional; clones from GitHub if unset)
+#   ROSSOCTL_EXTENSIONS_REF    Git ref to clone (default: main)
 #   PLATFORM                  "kind" or "ocp" (auto-detected if unset)
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
-log_step "10" "Build kagenti-extensions images"
+log_step "10" "Build rossocortex images"
 
 PLATFORM="${PLATFORM:-$(detect_platform)}"
-EXTENSIONS_REF="${KAGENTI_EXTENSIONS_REF:-main}"
-EXT_ROOT="${KAGENTI_EXTENSIONS_ROOT:-}"
+EXTENSIONS_REF="${ROSSOCTL_EXTENSIONS_REF:-main}"
+EXT_ROOT="${ROSSOCTL_EXTENSIONS_ROOT:-}"
 CLONE_DIR=""
 
 if [[ -z "$EXT_ROOT" ]]; then
-  CLONE_DIR="${TMPDIR:-/tmp}/kagenti-extensions-tx-e2e-$$"
-  log_info "Cloning kagenti-extensions (ref: $EXTENSIONS_REF)"
+  CLONE_DIR="${TMPDIR:-/tmp}/rossocortex-tx-e2e-$$"
+  log_info "Cloning rossocortex (ref: $EXTENSIONS_REF)"
   git clone --depth 1 --single-branch --branch "$EXTENSIONS_REF" \
-    "https://github.com/kagenti/kagenti-extensions.git" "$CLONE_DIR" 2>/dev/null || \
-  git clone "https://github.com/kagenti/kagenti-extensions.git" "$CLONE_DIR" && \
+    "https://github.com/rossoctl/rossocortex.git" "$CLONE_DIR" 2>/dev/null || \
+  git clone "https://github.com/rossoctl/rossocortex.git" "$CLONE_DIR" && \
     (cd "$CLONE_DIR" && git checkout "$EXTENSIONS_REF")
   EXT_ROOT="$CLONE_DIR"
 fi
 
-# Images to build. After kagenti-extensions#411 the unified binary was
+# Images to build. After rossocortex#411 the unified binary was
 # split into three mode-specific binaries, each with its own combined
 # image (spiffe-helper bundled inside, gated by SPIRE_ENABLED). The
 # old client-registration and standalone spiffe-helper images are gone
@@ -37,12 +37,12 @@ IMAGES=(
   "proxy-init:authbridge/proxy-init:Dockerfile.init"
 )
 
-REGISTRY="ghcr.io/kagenti/kagenti-extensions"
+REGISTRY="ghcr.io/rossoctl/rossocortex"
 
 # Extract pinned tags from values.yaml so locally-built images replace them
 PINNED_TAGS=()
-VALUES_FILE="$REPO_ROOT/charts/kagenti/values.yaml"
-for tag in $(grep -oP '(?<=kagenti-extensions/)[^:]+:\S+' "$VALUES_FILE" 2>/dev/null | sort -u); do
+VALUES_FILE="$REPO_ROOT/charts/rossoctl/values.yaml"
+for tag in $(grep -oP '(?<=rossocortex/)[^:]+:\S+' "$VALUES_FILE" 2>/dev/null | sort -u); do
   img="${tag%%:*}"
   ver="${tag#*:}"
   PINNED_TAGS+=("${img}:${ver}")
@@ -69,7 +69,7 @@ for entry in "${IMAGES[@]}"; do
     kind load docker-image "${REGISTRY}/${img_name}:latest" --name "${KIND_CLUSTER_NAME:-kind}" 2>/dev/null || true
 
   elif [[ "$PLATFORM" == "ocp" ]]; then
-    BUILD_NS="kagenti-system"
+    BUILD_NS="rossoctl-system"
     oc new-build --name "tx-${img_name}" --binary --strategy docker \
       --to="image-registry.openshift-image-registry.svc:5000/${BUILD_NS}/${img_name}:latest" \
       -n "$BUILD_NS" 2>/dev/null || true
@@ -84,4 +84,4 @@ if [[ -n "$CLONE_DIR" && -d "$CLONE_DIR" ]]; then
   rm -rf "$CLONE_DIR"
 fi
 
-log_success "All kagenti-extensions images built"
+log_success "All rossocortex images built"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Destroy Kind Cluster Script - Deletes Kind cluster for Kagenti testing
+# Destroy Kind Cluster Script - Deletes Kind cluster for Rossoctl testing
 # Usage: ./.github/scripts/kind/destroy-cluster.sh [cluster-name]
 
 set -euo pipefail
@@ -11,11 +11,11 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-CLUSTER_NAME="${1:-${CLUSTER_NAME:-kagenti}}"
+CLUSTER_NAME="${1:-${CLUSTER_NAME:-rossoctl}}"
 
 echo ""
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║         Kagenti Kind Cluster Cleanup                          ║"
+echo "║         Rossoctl Kind Cluster Cleanup                          ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 echo -e "${BLUE}Cluster: ${CLUSTER_NAME}${NC}"

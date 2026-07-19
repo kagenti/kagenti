@@ -6,7 +6,7 @@ description: Detect and recover from Istio Ambient mesh outages where ztunnel/wa
 # Istio Ambient Mesh Self-Heal
 
 Detect and recover the classic **"everything returns 503"** outage on a long-running or
-suspended dev/Kind cluster (kagenti/kagenti#1899): after a host suspend the Istio Ambient
+suspended dev/Kind cluster (rossoctl/rossoctl#1899): after a host suspend the Istio Ambient
 data plane (ztunnel + waypoints) keeps serving **expired istiod-issued mTLS certs** and never
 re-fetches, so all `*.localtest.me` routes 503 — while every pod still looks `Running`.
 
@@ -59,10 +59,10 @@ kubectl rollout restart daemonset/ztunnel -n "$ZT_NS"
 kubectl rollout restart deploy -A -l gateway.networking.k8s.io/managed-by=istio.io-mesh-controller
 
 # 3. the ingress gateway
-kubectl rollout restart deploy/http-istio -n kagenti-system
+kubectl rollout restart deploy/http-istio -n rossoctl-system
 
 # verify
-curl -s -o /dev/null -w "HTTP %{http_code}\n" -H "Host: kagenti-ui.localtest.me" http://127.0.0.1:8080/
+curl -s -o /dev/null -w "HTTP %{http_code}\n" -H "Host: rossoctl-ui.localtest.me" http://127.0.0.1:8080/
 ```
 
 ## Diagnostic one-liners
@@ -92,6 +92,6 @@ scripts/k8s/induce-mesh-outage.sh --restore     # undo
 
 ## References
 
-- kagenti/kagenti#1899 — the mesh-wide 503 outage this addresses.
+- rossoctl/rossoctl#1899 — the mesh-wide 503 outage this addresses.
 - istio/ztunnel#1679 — the upstream bug for the durable data-plane self-heal fix.
 - Related skills: `k8s:health`, `istio:ambient-waypoint`.

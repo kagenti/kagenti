@@ -7,40 +7,40 @@ They use variable substitution (`${VAR}`) and are rendered by `setup-hypershift-
 
 | File | Purpose | Used By |
 |------|---------|---------|
-| `ci-user-policy.json` | Scoped AWS permissions for CI automation | `kagenti-hypershift-ci` IAM user |
-| `hcp-role-policy.json` | AWS permissions for `hcp` CLI operations | `kagenti-hypershift-ci-role` IAM role |
-| `debug-user-policy.json` | Read-only AWS access for debugging | `kagenti-hypershift-ci-debug` IAM user |
-| `k8s-ci-clusterrole.yaml` | Kubernetes RBAC for HyperShift operations | `kagenti-hypershift-ci` ServiceAccount |
+| `ci-user-policy.json` | Scoped AWS permissions for CI automation | `rossoctl-hypershift-ci` IAM user |
+| `hcp-role-policy.json` | AWS permissions for `hcp` CLI operations | `rossoctl-hypershift-ci-role` IAM role |
+| `debug-user-policy.json` | Read-only AWS access for debugging | `rossoctl-hypershift-ci-debug` IAM user |
+| `k8s-ci-clusterrole.yaml` | Kubernetes RBAC for HyperShift operations | `rossoctl-hypershift-ci` ServiceAccount |
 
 ## Required Variables
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `MANAGED_BY_TAG` | Primary identifier for resource scoping | `kagenti-hypershift-ci` |
+| `MANAGED_BY_TAG` | Primary identifier for resource scoping | `rossoctl-hypershift-ci` |
 | `ROUTE53_ZONE_ID` | Route53 hosted zone ID for base domain | `Z1234567890ABC` |
-| `CLUSTER_ROLE_NAME` | Kubernetes ClusterRole name | `kagenti-hypershift-ci-k8s-role` |
-| `CLUSTER_ROLE_BINDING_NAME` | Kubernetes ClusterRoleBinding name | `kagenti-hypershift-ci-k8s-binding` |
-| `SA_NAME` | Kubernetes ServiceAccount name | `kagenti-hypershift-ci` |
-| `SA_NAMESPACE` | Kubernetes namespace for ServiceAccount | `kagenti-hypershift-ci` |
+| `CLUSTER_ROLE_NAME` | Kubernetes ClusterRole name | `rossoctl-hypershift-ci-k8s-role` |
+| `CLUSTER_ROLE_BINDING_NAME` | Kubernetes ClusterRoleBinding name | `rossoctl-hypershift-ci-k8s-binding` |
+| `SA_NAME` | Kubernetes ServiceAccount name | `rossoctl-hypershift-ci` |
+| `SA_NAMESPACE` | Kubernetes namespace for ServiceAccount | `rossoctl-hypershift-ci` |
 
 ## Tagging Strategy
 
 We use a **namespaced custom tag** passed via HyperShift's `--additional-tags`:
 
 ```
-Tag Key:   kagenti.io/managed-by
-Tag Value: ${MANAGED_BY_TAG}  (e.g., "kagenti-hypershift-ci")
+Tag Key:   rossoctl.io/managed-by
+Tag Value: ${MANAGED_BY_TAG}  (e.g., "rossoctl-hypershift-ci")
 
-IAM policy matches with: ec2:ResourceTag/kagenti.io/managed-by
+IAM policy matches with: ec2:ResourceTag/rossoctl.io/managed-by
 Condition: StringEquals to "${MANAGED_BY_TAG}"
 
 This scopes ALL mutate/delete operations to only resources tagged with:
-  kagenti.io/managed-by=kagenti-hypershift-ci
+  rossoctl.io/managed-by=rossoctl-hypershift-ci
 ```
 
 ### Why This Approach?
 
-1. **Namespaced tag key** - `kagenti.io/` prefix avoids conflicts with other tools (follows K8s label conventions)
+1. **Namespaced tag key** - `rossoctl.io/` prefix avoids conflicts with other tools (follows K8s label conventions)
 2. **Tag-based scoping** - Destructive operations (delete, terminate) require the tag
 3. **HyperShift integration** - Tags are passed via `--additional-tags` in `create-cluster.sh`
 4. **VPC setup exception** - Route table operations don't require tags (AWS auto-creates main route table untagged)
@@ -65,9 +65,9 @@ This scopes ALL mutate/delete operations to only resources tagged with:
 | **S3 Buckets** | ARN prefix: `${MANAGED_BY_TAG}-*` | HARD LIMIT |
 | **IAM Roles** | ARN prefix: `${MANAGED_BY_TAG}-*` | HARD LIMIT |
 | **IAM Profiles** | ARN prefix: `${MANAGED_BY_TAG}-*` | HARD LIMIT |
-| **EC2 (mutate/delete)** | Tag: `kagenti.io/managed-by=${MANAGED_BY_TAG}` | Requires custom tag |
+| **EC2 (mutate/delete)** | Tag: `rossoctl.io/managed-by=${MANAGED_BY_TAG}` | Requires custom tag |
 | **EC2 (VPC setup)** | Unrestricted | AWS auto-creates untagged resources |
-| **ELB (mutate/delete)** | Tag: `kagenti.io/managed-by=${MANAGED_BY_TAG}` | Requires custom tag |
+| **ELB (mutate/delete)** | Tag: `rossoctl.io/managed-by=${MANAGED_BY_TAG}` | Requires custom tag |
 | **Route53** | Broad access | Private zones created dynamically |
 | **OIDC** | Broad (ARN patterns vary) | hcp CLI only manages its own |
 
@@ -77,7 +77,7 @@ This scopes ALL mutate/delete operations to only resources tagged with:
 {
   "Condition": {
     "StringEquals": {
-      "ec2:ResourceTag/kagenti.io/managed-by": "${MANAGED_BY_TAG}"
+      "ec2:ResourceTag/rossoctl.io/managed-by": "${MANAGED_BY_TAG}"
     }
   }
 }
@@ -85,14 +85,14 @@ This scopes ALL mutate/delete operations to only resources tagged with:
 
 This condition:
 - Uses `StringEquals` for exact match on tag **value**
-- Only allows operations on resources tagged with `kagenti.io/managed-by=kagenti-hypershift-ci`
+- Only allows operations on resources tagged with `rossoctl.io/managed-by=rossoctl-hypershift-ci`
 - Applied to DELETE/TERMINATE operations (not CREATE, not VPC setup)
 
 ### What CAN Be Strictly Limited
 
 1. **S3 Buckets** - Prefix scoping via ARN. Can only access `${MANAGED_BY_TAG}-*` buckets.
 2. **IAM Roles/Profiles** - Prefix scoping via ARN. Can only manage `${MANAGED_BY_TAG}-*` resources.
-3. **EC2/ELB Mutate/Delete** - Tag value matching. Only resources tagged with `kagenti.io/managed-by`.
+3. **EC2/ELB Mutate/Delete** - Tag value matching. Only resources tagged with `rossoctl.io/managed-by`.
 
 ### What CANNOT Be Strictly Limited
 
@@ -119,7 +119,7 @@ This condition:
 Multiple layers provide protection:
 
 1. **IAM Policies** - Tag value matching for EC2/ELB delete/mutate, ARN prefix for S3/IAM
-2. **Custom namespaced tag** - `kagenti.io/managed-by` avoids conflicts with other tools
+2. **Custom namespaced tag** - `rossoctl.io/managed-by` avoids conflicts with other tools
 3. **hcp CLI behavior** - Only targets resources tagged with its infra-id
 4. **Cluster naming convention** - All clusters prefixed with `${MANAGED_BY_TAG}`
 5. **K8s RBAC** - Limits HostedCluster management on management cluster
@@ -165,7 +165,7 @@ Before applying policy changes in production:
 
 2. **Render with variables:**
    ```bash
-   export MANAGED_BY_TAG=kagenti-hypershift-ci
+   export MANAGED_BY_TAG=rossoctl-hypershift-ci
    export ROUTE53_ZONE_ID=Z1234567890ABC
    envsubst < policies/hcp-role-policy.json | jq .
    ```

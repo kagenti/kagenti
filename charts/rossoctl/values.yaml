@@ -1,0 +1,525 @@
+# Global settings
+openshift: true
+# Domain name for SPIFFE trust domain and service URLs
+domain: localtest.me
+
+# ------------------------------------------------------------------
+#  Feature flags: experimental features disabled by default
+# ------------------------------------------------------------------
+featureFlags:
+  # Sandbox runtime (session management, file browser, sidecars).
+  # NOT YET FULLY IMPLEMENTED — backend modules not merged. Do not enable.
+  # See PR #996
+  sandbox: false
+  # Third-party integration endpoints.
+  # (Currently undocumented)
+  integrations: false
+  # Event-driven trigger system.
+  # See PR #996
+  triggers: false
+  # kubernetes-sigs/agent-sandbox Sandbox workload type.
+  # Requires agent-sandbox CRDs (Enabled by `--with-agent-sandbox`).
+  # See docs/architecture/agent-sandbox.md
+  # See docs/superpowers/specs/2026-04-21-agent-sandbox-workload-type-design.md
+  agentSandbox: false
+  # Pluggable skills system.
+  # See PR #1344
+  skills: false
+  # External skill registry references (skillberry-store, etc.)
+  externalSkills: false
+  # Enables AuthBridge tab on Agent details page
+  # Show this UI by default (we'll remove gate after a version where it can be disabled with a flag)
+  authbridgeAPI: true
+  # Enables Platform Status card
+  # on http://rossoctl-ui.localtest.me:8080/admin
+  admin: true
+  # Trace-analysis Observability card. Links to the standalone trace-analysis
+  # component (separate repo) which must be deployed for the card to work.
+  traceAnalysis: false
+  # Simulated MCP tools generated from OpenAPI specs (epic #2151).
+  simulatedTools: false
+
+# ------------------------------------------------------------------
+#  Control Panel: Enable or disable components here
+# ------------------------------------------------------------------
+components:
+  agentNamespaces:
+    enabled: true
+  mcpGateway:
+    enabled: true
+  agentOperator:
+    enabled: true
+  ui:
+    enabled: true
+  istio:
+    enabled: true
+  phoenix:
+    enabled: false
+  mlflow:
+    enabled: false
+    # Namespace where the MLflow Route lives on OpenShift.
+    # Defaults to the release namespace (rossoctl-system).
+    # RHOAI-managed MLflow creates its Route in redhat-ods-applications;
+    # set routeNamespace: "redhat-ods-applications" when using RHOAI.
+    routeNamespace: ""
+    # Path prefix where MLflow UI is served (appended to the route URL).
+    # RHOAI MLflow uses --static-prefix=/mlflow by default.
+    routePath: "/mlflow"
+  # In-cluster skillberry-store skill registry (deployed by --with-skills).
+  # When enabled, the store runs as a pod and autosync is seeded against it
+  # via the rossoctl-skill-autosync-config ConfigMap (see skillberryStore below).
+  # Behavior is additionally gated by featureFlags.externalSkills.
+  skillberryStore:
+    enabled: false
+
+# ------------------------------------------------------------------
+#  In-cluster skillberry-store configuration
+#  (only rendered when components.skillberryStore.enabled=true)
+# ------------------------------------------------------------------
+skillberryStore:
+  image:
+    repository: ghcr.io/skillberry-ai/skillberry-store
+    tag: "0.2.0"             # override via --set or values overlay
+    pullPolicy: IfNotPresent
+    # Override the container entrypoint. The default image command (`make run`)
+    # re-runs `uv install` at startup and requires network access to github.com.
+    # This bypasses that by running the pre-installed venv directly.
+    #
+    # The store's skill-generation feature shells out to the Claude Code CLI,
+    # which is NOT bundled in the upstream image. Install it at startup (best
+    # effort; `|| true` keeps the store up if the npm fetch fails) so it lands
+    # on PATH (/usr/local/bin) before the app process starts. This is a network
+    # fetch on every pod start (~15s); bake it into a derived image if that
+    # startup cost or the network dependency is unacceptable.
+    command:
+      - sh
+      - -c
+      - |
+        npm install -g @anthropic-ai/claude-code || true
+        exec .venv/bin/python -m skillberry_store.main
+  imagePullSecrets: []        # public image; empty default
+  apiPort: 8000
+  uiPort: 8002
+  baseDir: /data              # SBS_BASE_DIR; PVC mount point
+  # Hosts the store's Vite dev server accepts in the Host header
+  # (VITE_ALLOWED_HOSTS). The UI is reached through the gateway under a
+  # non-localhost hostname, which Vite blocks by default. Empty = derive the
+  # gateway host from domain (skillberry-store.<domain>). Set to "true" to allow
+  # any host. Requires a store image with VITE_ALLOWED_HOSTS support (>= 0.2.0).
+  allowedHosts: ""
+  # Browser-facing store UI URL surfaced in the Rossoctl UI (the in-cluster
+  # registry-url is server-side only and not browser-reachable). Empty = derive
+  # from domain: http://skillberry-store.<domain>:<ingressPort>. Set explicitly
+  # for OpenShift routes or custom ingress.
+  uiUrl: ""
+  # Extra environment variables appended to the store container, after the
+  # chart-managed SBS_* / ENABLE_UI vars. Standard core/v1 EnvVar entries, so
+  # both literal values and valueFrom (secretKeyRef/configMapKeyRef) work.
+  # Example:
+  #   extraEnv:
+  #     - name: SBS_LOG_LEVEL
+  #       value: "debug"
+  #     - name: SBS_API_TOKEN
+  #       valueFrom:
+  #         secretKeyRef:
+  #           name: skillberry-store-secrets
+  #           key: api-token
+  extraEnv: []
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClassName: ""      # "" = cluster default
+    accessMode: ReadWriteOnce
+  autosync:
+    enabled: true             # seed rossoctl-skill-autosync-config when store deployed
+    syncInterval: 30
+    allowedTags: ""           # optional tag filter
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+# Secrets — override via a .secrets.yaml file or --set secrets.<key>=<value>.
+# githubUser/githubToken are optional: only needed to deploy agents/tools from
+# private GitHub repos or pull images from private registries.
+secrets:
+  githubUser: ""
+  githubToken: ""
+  openaiApiKey: ""
+  slackBotToken: ""
+  adminSlackBotToken: ""
+  quayUser: ""
+  quayToken: ""
+
+common:
+  kubectlImage: "quay.io/kubestellar/kubectl:1.30.14"
+  # Pinned to a tag that exists on registry.redhat.io. Do NOT bump blindly to
+  # match the cluster's OCP version — ose-cli is not published for every release
+  # (e.g. v4.20 is absent), and the route-processor apply uses --validate=false
+  # so a version-skewed client still works (issue #1983). Override for air-gapped
+  # mirrors or to pin a newer tag once it is known to be published.
+  oseCLIImage: "registry.redhat.io/openshift4/ose-cli:v4.15"
+
+# ------------------------------------------------------------------
+#  Components Configurations
+# ------------------------------------------------------------------
+
+# ------------------------------------------------------------------
+#  Agents Namespaces
+# ------------------------------------------------------------------
+agentNamespaces:
+- team1
+- team2
+
+# ------------------------------------------------------------------
+#  UI Configuration
+# ------------------------------------------------------------------
+ui:
+  configmap: rossoctl-ui-config
+  # Domain name for constructing service URLs (non-OpenShift only)
+  domainName: localtest.me
+  auth:
+    enabled: true
+  namespace: rossoctl-system
+  hostname: rossoctl-ui.localtest.me
+  url: http://rossoctl-ui.localtest.me:8080
+  # Frontend (UI v2) configuration
+  frontend:
+    enabled: true
+    image: ghcr.io/rossoctl/rossoctl/ui-v2
+    tag: v0.7.0-alpha.5
+    resources:
+      limits:
+        cpu: 100m
+        # nginx worker_processes is pinned in the image (see rossoctl/ui-v2/Dockerfile),
+        # so memory no longer scales with host CPU count. 256Mi is defense-in-depth
+        # headroom above the measured footprint. See rossoctl#1991.
+        memory: 256Mi
+      requests:
+        cpu: 25m
+        memory: 64Mi
+  # Backend API external access
+  api:
+    hostname: rossoctl-api.localtest.me
+  # Backend configuration
+  backend:
+    image: ghcr.io/rossoctl/rossoctl/backend
+    tag: v0.7.0-alpha.5
+    # Default registry for source-based builds (Kind: registry.cr-system.svc.cluster.local:5000)
+    defaultRegistryUrl: ""
+    # Default Shipwright build strategy for internal registries
+    # Kind: "buildah-insecure-push" (no TLS), OCP: "buildah" (TLS-enabled registry)
+    shipwrightDefaultStrategy: ""
+    # Hosts/IPs/CIDRs allowed to bypass the skill registry-URL private-address SSRF
+    # block (comma-separated). Empty by default — all private/internal addresses stay
+    # blocked. Set for self-hosted/in-cluster skill registries, e.g.
+    # "192.168.50.16,10.0.0.0/8".
+    skillRegistryAllowedHosts: ""
+    resources:
+      limits:
+        cpu: 250m
+        # Increased from 256Mi to 512Mi to support sandbox agent workloads
+        # (exec streaming, log tailing, and concurrent K8s API calls)
+        memory: 512Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi
+
+# ------------------------------------------------------------------
+#  UI OAuth Secret Creator Configuration
+# ------------------------------------------------------------------
+uiOAuthSecret:
+  image: ghcr.io/rossoctl/rossoctl/ui-oauth-secret
+  tag: v0.7.0-alpha.5
+  # When true, mount the in-cluster serviceaccount CA
+  # into the ui-oauth-secret job via the SSL_CERT_FILE environment variable.
+  # When false, the serviceaccount CA is only for the API server
+  # and will usually not validate external OpenShift route certificates.
+  useServiceAccountCA: true
+
+# ------------------------------------------------------------------
+#  Agent OAuth Secret Creator Configuration
+# ------------------------------------------------------------------
+agentOAuthSecret:
+  image: ghcr.io/rossoctl/rossoctl/agent-oauth-secret
+  tag: v0.7.0-alpha.5
+  # When true, mount the in-cluster serviceaccount CA
+  # into the agent-oauth-secret job via the SSL_CERT_FILE environment variable.
+  # When false, the serviceaccount CA is only for the API server
+  # and will usually not validate external OpenShift route certificates.
+  useServiceAccountCA: false
+  spiffePrefix: spiffe://localtest.me/sa
+  clientName: rossoctl-keycloak-client
+
+# ------------------------------------------------------------------
+#  API OAuth Secret Creator Configuration
+#  Creates a confidential client for programmatic API access via
+#  Client Credentials Grant. The credentials are stored in a K8s secret.
+#  WARNING: This is a shared credential for testing/dev only.
+# ------------------------------------------------------------------
+apiOAuthSecret:
+  enabled: false
+  image: ghcr.io/rossoctl/rossoctl/api-oauth-secret
+  tag: v0.7.0-alpha.5
+  # Client ID for the API service account
+  clientId: rossoctl-api
+  # Name of the K8s secret to store credentials
+  secretName: rossoctl-api-oauth-secret
+  # Realm role to assign to the service account
+  serviceAccountRole: rossoctl-operator
+  # When true, use the in-cluster serviceaccount CA for SSL verification
+  useServiceAccountCA: false
+
+# ------------------------------------------------------------------
+#  Keycloak Configuration
+# ------------------------------------------------------------------
+keycloak:
+  enabled: true
+  namespace: keycloak
+  adminSecretName: keycloak-initial-admin
+  adminUsernameKey: username
+  adminPasswordKey: password
+  url: http://keycloak-service.keycloak:8080
+  publicUrl: http://keycloak.localtest.me:8080
+  realm: rossoctl
+  autoBootstrapRealm: true
+  # Session/token lifetimes for long-running dev clusters (e.g. Kind).
+  # Keycloak defaults (30min idle, 10h max) cause "Signature has expired"
+  # errors after a few hours. These values extend lifetimes for dev use.
+  #
+  # ⚠️  PRODUCTION WARNING: These defaults are intentionally permissive for
+  # developer convenience. For production deployments, override with values
+  # appropriate for your security policy (e.g. 30min idle, 8h max session).
+  # Long-lived sessions increase the window for token theft/session hijacking.
+  sessionLifetimes:
+    # SSO Session Idle timeout in seconds (default: 7 days)
+    # Keycloak default is 1800 (30 min)
+    ssoSessionIdle: 604800
+    # SSO Session Max lifespan in seconds (default: 30 days)
+    # Keycloak default is 36000 (10 hours)
+    ssoSessionMax: 2592000
+    # Access token lifespan in seconds (default: 30 min)
+    # Keycloak default is 300 (5 min)
+    accessTokenLifespan: 1800
+
+# ------------------------------------------------------------------
+#  AuthBridge Configuration
+# ------------------------------------------------------------------
+authBridge:
+  # CLIENT_AUTH_TYPE: Controls how Keycloak clients authenticate
+  #   - "client-secret": Traditional client_secret authentication (default)
+  #   - "federated-jwt": JWT-SVID authentication via SPIFFE identity provider
+  # For federated-jwt, you must configure a SPIFFE identity provider in Keycloak
+  clientAuthType: "client-secret"
+  # SPIFFE_IDP_ALIAS: Keycloak SPIFFE identity provider alias (only used with federated-jwt)
+  spiffeIdpAlias: "spire-spiffe"
+  # How long AuthBridge fast-polls for credential files before switching to backoff
+  credentialWaitTimeout: "120s"
+  # Full authbridge pipeline configuration (single source of truth).
+  # SREs modify this block to change inbound/outbound plugins.
+  # Helm template expressions ({{ .Values.* }}) are supported — they are
+  # evaluated at render time via tpl().
+  pipeline: |
+    inbound:
+      plugins:
+        - name: jwt-validation
+          config:
+            issuer: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
+            keycloak_url: "http://keycloak-service.{{ .Values.keycloak.namespace }}.svc:8080"
+            keycloak_realm: {{ .Values.keycloak.realm | quote }}
+    outbound:
+      plugins:
+        - name: token-exchange
+          config:
+            keycloak_url: "http://keycloak-service.{{ .Values.keycloak.namespace }}.svc:8080"
+            keycloak_realm: {{ .Values.keycloak.realm | quote }}
+            default_policy: "passthrough"
+            identity:
+              type: {{ eq .Values.authBridge.clientAuthType "federated-jwt" | ternary "spiffe" .Values.authBridge.clientAuthType | quote }}
+              {{- if eq .Values.authBridge.clientAuthType "federated-jwt" }}
+              jwt_audience: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
+              {{- end }}
+
+# ------------------------------------------------------------------
+#  SPIFFE Identity Provider Setup Job Configuration
+#  (Only runs when SPIRE is enabled)
+# ------------------------------------------------------------------
+spiffeIdp:
+  image:
+    repository: ghcr.io/rossoctl/rossoctl/spiffe-idp-setup
+    tag: v0.7.0-alpha.5
+    pullPolicy: IfNotPresent
+
+# ------------------------------------------------------------------
+#  Rossoctl Operator Configuration (includes AuthBridge webhook)
+# ------------------------------------------------------------------
+operator-chart:
+  controllerManager:
+    container:
+      cmd: /manager
+      image:
+        tag: 0.3.0-alpha.8
+      args:
+      - "--leader-elect"
+      - "--metrics-bind-address=:8443"
+      - "--health-probe-bind-address=:8081"
+      - "--webhook-cert-path=/tmp/k8s-webhook-server/serving-certs"
+      - "--config-path=/etc/rossoctl/config.yaml"
+      - "--feature-gates-path=/etc/rossoctl/feature-gates/feature-gates.yaml"
+      # Client registration controller is enabled by default (operator-managed)
+      resources:
+        limits:
+          cpu: 150m
+          memory: 256Mi
+        requests:
+          cpu: 50m
+          memory: 128Mi
+  # SPIRE trust domain — used by the operator's ClientRegistrationReconciler to derive
+  # SPIFFE-based client IDs. On OCP, auto-discovery from ZTWIM CR works; on Kind,
+  # the explicit value is required because neither ZTWIM nor spire-bundle exist at startup.
+  signatureVerification:
+    spireTrustDomain: localtest.me
+  # Pin sidecar image tags injected by the AuthBridge webhook.
+  #
+  # After rossocortex#411 there are three combined images:
+  #   * authbridge      — proxy-sidecar mode (default), full plugin set
+  #                       including the a2a/mcp/inference parsers.
+  #   * authbridge-envoy — envoy-sidecar mode, full plugin set, expects
+  #                       proxyInit's iptables setup.
+  #   * authbridge-lite  — proxy-sidecar shape, auth-only plugins
+  #                       (parsers dropped). For size-constrained deployments;
+  #                       not selected by default.
+  # Spiffe-helper is bundled inside each combined image and gated per
+  # workload by the SPIRE_ENABLED env var; it is no longer a separate
+  # sidecar. Client registration is operator-managed.
+  defaults:
+    images:
+      authbridge: ghcr.io/rossoctl/rossocortex/authbridge:v0.6.0-alpha.10
+      envoyProxy: ghcr.io/rossoctl/rossocortex/authbridge-envoy:v0.6.0-alpha.10
+      authbridgeLite: ghcr.io/rossoctl/rossocortex/authbridge-lite:v0.6.0-alpha.10
+      proxyInit: ghcr.io/rossoctl/rossocortex/proxy-init:v0.6.0-alpha.10
+
+# ------------------------------------------------------------------
+#  SPIFFE Configuration
+# ------------------------------------------------------------------
+# NOTE: Operator SPIFFE authentication is now configured under
+# operator-chart.spiffe.operatorAuth (see line 265 below).
+# This consolidation eliminates the duplicate rossoctlOperator.spiffeAuth
+# section that previously existed here.
+# ------------------------------------------------------------------
+spiffe:
+  # SPIFFE Identity Provider alias in Keycloak
+  idpAlias: "spire-spiffe"
+  # SPIRE OIDC Discovery Provider URL
+  oidcDiscoveryURL: "http://spire-spiffe-oidc-discovery-provider.zero-trust-workload-identity-manager.svc:8080"
+
+# Trust domain (used for SPIFFE IDs)
+spireTrustDomain: localtest.me
+
+# ------------------------------------------------------------------
+#  MCP Gateway Configuration
+# ------------------------------------------------------------------
+mcpGateway:
+  namespaces:
+    mcpSystem: mcp-system
+    gatewaySystem: gateway-system
+  # Hostname used for the Gateway listener on non-OpenShift (Kind) clusters.
+  hostname: 'mcp.127-0-0-1.sslip.io'
+  # On OpenShift, the Gateway listener hostname is auto-constructed from this
+  # domain to match the auto-generated Route hostname. Override in ocp_values.yaml.
+  openshiftDomain: ''
+
+# ------------------------------------------------------------------
+#  Phoenix Configuration
+# ------------------------------------------------------------------
+phoenix:
+  namespace: rossoctl-system
+  # Domain name for constructing service URLs (non-OpenShift only)
+  url: http://phoenix.localtest.me:8080
+  auth:
+    # Enable Keycloak OAuth2 authentication for Phoenix dashboard
+    enabled: true
+
+# ------------------------------------------------------------------
+#  Phoenix OAuth Secret Creator Configuration
+# ------------------------------------------------------------------
+phoenixOAuthSecret:
+  image: ghcr.io/rossoctl/rossoctl/phoenix-oauth-secret
+  tag: v0.7.0-alpha.5
+  # Keycloak client ID for Phoenix
+  clientId: phoenix
+  # Kubernetes secret name to store OAuth credentials
+  secretName: phoenix-oauth-secret
+  # When true, mount the in-cluster serviceaccount CA
+  # into the phoenix-oauth-secret job via the SSL_CERT_FILE environment variable.
+  useServiceAccountCA: true
+
+# ------------------------------------------------------------------
+#  MLflow Configuration
+# ------------------------------------------------------------------
+mlflow:
+  namespace: rossoctl-system
+  # Domain name for constructing service URLs (non-OpenShift only)
+  url: http://mlflow.localtest.me:8080
+  auth:
+    # Enable Keycloak OAuth2 authentication for MLflow
+    # Set to true in ocp_values.yaml for production deployments
+    enabled: false
+    # Kubernetes secret name containing OAuth credentials
+    secretName: mlflow-oauth-secret
+
+# ------------------------------------------------------------------
+#  MLflow OAuth Secret Creator Configuration
+# ------------------------------------------------------------------
+mlflowOAuthSecret:
+  image: ghcr.io/rossoctl/rossoctl/mlflow-oauth-secret
+  tag: v0.7.0-alpha.5
+  # Keycloak client ID for MLflow
+  clientId: mlflow
+  # Kubernetes secret name to store OAuth credentials
+  secretName: mlflow-oauth-secret
+  # When true, mount the in-cluster serviceaccount CA
+  # into the mlflow-oauth-secret job via the SSL_CERT_FILE environment variable.
+  useServiceAccountCA: true
+
+# ------------------------------------------------------------------
+#  Trace Analysis Configuration
+#  Deployed into rossoctl-system (alongside MLflow) when
+#  featureFlags.traceAnalysis is true. Backs the Observability
+#  "Trace Analysis" card; reachable at trace-analysis.<domainName>:8080.
+# ------------------------------------------------------------------
+traceAnalysis:
+  image:
+    repository: ghcr.io/rossoctl/trace-analysis
+    # TODO: external component (owner: Yoav Katz) not yet released. Feature is
+    # OFF by default (featureFlags.traceAnalysis=false), so this image is never
+    # pulled in a normal install. Placeholder version to satisfy the release
+    # pin-check (no floating tags); replace with a real published tag post-alpha.
+    tag: "0.0.0-unreleased"
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  # MLflow tracking endpoint the service reads traces from (in-cluster DNS).
+  mlflowTrackingUri: "http://mlflow:5000"
+  maxTraces: 50
+  # When enabled, turns on both: OAuth2 client-credentials auth to MLflow
+  # (mlflow-oidc-auth) and the Keycloak UI login gate. Both use credentials
+  # from secretName (the platform's mlflow-oauth-secret). Set false when
+  # Keycloak is not available in the cluster.
+  auth:
+    enabled: true
+    secretName: mlflow-oauth-secret
+  resources:
+    requests:
+      cpu: 50m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+
+# ------------------------------------------------------------------
+#  Spiffe/Spire configs
+# ------------------------------------------------------------------
+spire:
+  enabled: true

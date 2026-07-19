@@ -1,6 +1,6 @@
 # Kubernetes-Native Architecture for Dynamic Agent Composition
 
-*Extending Kagenti with on-demand, task-specific agent assembly from
+*Extending Rossoctl with on-demand, task-specific agent assembly from
 verified components — governed, observable, and least-privilege by design.
 Built on OpenShell's sandbox runtime for full workload isolation.*
 
@@ -171,7 +171,7 @@ Today's pod creation involves two components that must coordinate:
 the **agent-sandbox-controller** (kubernetes-sigs, watches Sandbox CRs and creates
 pods) and the **OpenShell compute driver** (injects supervisor init containers
 via gateway Unix socket). A known race condition exists where both create
-Services for the same pod (kagenti#1581). The composition controller must
+Services for the same pod (rossoctl#1581). The composition controller must
 orchestrate both and handle this coordination:
 
 ```mermaid
@@ -315,14 +315,14 @@ while OpenShell enforces the security boundary at the kernel level.
 ## Interaction: Session-Based Protocol
 
 All agent access — interactive (SSH/terminal) and programmatic (ACP WebSocket) —
-routes through the OpenShell gateway. The Kagenti backend bridges ACP WebSocket
+routes through the OpenShell gateway. The Rossoctl backend bridges ACP WebSocket
 to the gateway's `ExecSandbox` gRPC, providing a unified session layer with
 mTLS, credential injection, and audit logging:
 
 ```mermaid
 sequenceDiagram
     participant Client as Client<br/>(IDE, CLI, workflow)
-    participant Backend as Kagenti Backend<br/>(ACP WebSocket)
+    participant Backend as Rossoctl Backend<br/>(ACP WebSocket)
     participant GW as OpenShell Gateway<br/>(gRPC, mTLS, SQLite)
     participant CD as Compute Driver<br/>(Unix socket)
     participant Agent as Sandbox Pod<br/>(supervisor + agent)
@@ -350,9 +350,9 @@ Benefits:
 
 ---
 
-## How This Connects to Kagenti Today
+## How This Connects to Rossoctl Today
 
-Kagenti already has most of the building blocks:
+Rossoctl already has most of the building blocks:
 
 | Component | Exists Today | Extension for Dynamic Agents |
 |-----------|-------------|------------------------------|
@@ -363,7 +363,7 @@ Kagenti already has most of the building blocks:
 | **Agent Sandbox Controller** | Watches Sandbox CRs → creates pods (k8s-sigs) | Shared CRD for composition requests |
 | **ACP WebSocket (Backend)** | JSON-RPC 2.0 over WebSocket, ExecSandbox gRPC | Add sub-session support for orchestrator visibility |
 | **LiteLLM Proxy** | Model routing and translation | Inject per-agent model config via sidecar |
-| **Feature Flags** | `kagenti_feature_flag_*` | `kagenti_feature_flag_dynamic_composition` |
+| **Feature Flags** | `rossoctl_feature_flag_*` | `rossoctl_feature_flag_dynamic_composition` |
 | **Teleport Script** | Package context → sandbox | Extend to package arbitrary component sets |
 | **Helm Charts** | Static agent deployment | Add dynamic agent template with sidecar |
 
@@ -681,8 +681,8 @@ Dynamic composition and session management add new tiers:
 
 ---
 
-*This document extends the WIP design from the Kagenti team. Built on
-Kagenti's existing infrastructure — OpenShell (gateway, compute driver,
+*This document extends the WIP design from the Rossoctl team. Built on
+Rossoctl's existing infrastructure — OpenShell (gateway, compute driver,
 credentials driver, supervisor), Agent Sandbox Controller (k8s-sigs),
 ACP WebSocket bridge (ExecSandbox gRPC), LiteLLM, and the teleport MVP
 from PR #1498. Session backup/restore and cross-harness migration extend

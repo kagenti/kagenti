@@ -1,11 +1,11 @@
 ---
 name: test:playwright
-description: Write and review Playwright demo tests for Kagenti - markStep segments, assertions, selectors, narration alignment
+description: Write and review Playwright demo tests for Rossoctl - markStep segments, assertions, selectors, narration alignment
 ---
 
 # Write Playwright Demo Tests
 
-Write Playwright tests for recording narrated demo videos of the Kagenti platform.
+Write Playwright tests for recording narrated demo videos of the Rossoctl platform.
 
 ## When to Use
 
@@ -73,7 +73,7 @@ Keep `.catch()` ONLY for truly optional elements:
 - scrollIntoViewIfNeeded
 - waitForLoadState('networkidle')
 
-### 5. SPA navigation (Kagenti pages)
+### 5. SPA navigation (Rossoctl pages)
 
 Use sidebar clicks, NOT `page.goto()` — full reload loses Keycloak tokens:
 
@@ -102,7 +102,7 @@ fs.writeFileSync(tsFile, JSON.stringify(stepTimestamps, null, 2));
 
 ## Selector Patterns
 
-Read UI source (`kagenti/ui-v2/src/pages/`) to find correct selectors:
+Read UI source (`rossoctl/ui-v2/src/pages/`) to find correct selectors:
 
 | UI Pattern | Playwright Selector |
 |------------|-------------------|
@@ -147,7 +147,7 @@ Before recording, verify:
 - [ ] All `markStep()` calls outside conditionals
 - [ ] Every section has `expect()` assertion (not silent `.catch()`)
 - [ ] markStep names match narration `[section]` markers 1:1
-- [ ] SPA navigation for Kagenti pages (not `page.goto()`)
+- [ ] SPA navigation for Rossoctl pages (not `page.goto()`)
 - [ ] `demoClick()` used for cursor visibility (not `.click()`)
 - [ ] Timestamps written to `<name>-timestamps.json`
 - [ ] 10-second final pause

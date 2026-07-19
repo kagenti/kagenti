@@ -1,11 +1,11 @@
 # Skill Execution
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_07_skill_execution.py`
+> **Test file:** `rossoctl/tests/e2e/openshell/test_07_skill_execution.py`
 > **Tests:** 27 | **Pass:** 18 | **Skip:** 9 (Kind, fresh cluster)
 
 ## What This Tests
 
-Validates that agents can load and execute Kagenti skills (PR review, RCA, security review, code generation) using their respective skill loading mechanisms.
+Validates that agents can load and execute Rossoctl skills (PR review, RCA, security review, code generation) using their respective skill loading mechanisms.
 
 ## Architecture Under Test
 
@@ -56,7 +56,7 @@ sequenceDiagram
 
 #### test_skill_files__all__key_skills_exist
 
-- **What:** Key kagenti skills must exist in the repo
+- **What:** Key rossoctl skills must exist in the repo
 - **Asserts:** `github:pr-review`, `rca:ci`, `k8s:health`, `test:review` exist
 - **Debug points:** Skills directory path, missing skills
 - **Agent coverage:** ALL (repo-level check)
@@ -192,11 +192,11 @@ sequenceDiagram
 
 #### test_real_github_pr__claude_sdk_agent__fetches_and_reviews
 
-- **What:** Fetch a real PR diff from kagenti repo and review it
+- **What:** Fetch a real PR diff from rossoctl repo and review it
 - **Asserts:** Response length > 50 chars
 - **Debug points:** GitHub API response, diff length
 - **Agent coverage:** claude_sdk_agent
-- **PR:** kagenti/kagenti#1300 (via GitHub API)
+- **PR:** rossoctl/rossoctl#1300 (via GitHub API)
 - **Skip condition:** Cannot fetch PR diff (HTTP != 200)
 
 #### test_real_github_pr__adk_agent__fetches_and_reviews
@@ -204,7 +204,7 @@ sequenceDiagram
 - **What:** ADK agent reviews real GitHub PR
 - **Asserts:** Response length > 30 chars
 - **Agent coverage:** adk_agent
-- **PR:** kagenti/kagenti#1300
+- **PR:** rossoctl/rossoctl#1300
 
 #### test_rca_ci_logs__claude_sdk_agent__identifies_root_cause
 

@@ -1,6 +1,6 @@
-# Kagenti Claude Code Skills
+# Rossoctl Claude Code Skills
 
-Skills provide guided workflows for Claude Code to operate the Kagenti platform.
+Skills provide guided workflows for Claude Code to operate the Rossoctl platform.
 Each skill is a SKILL.md file that teaches Claude how to perform specific tasks
 with copy-pasteable commands and decision trees.
 
@@ -27,7 +27,7 @@ with copy-pasteable commands and decision trees.
 - **Parent skills** (e.g., `tdd`) auto-select the right sub-skill based on context
 - **Sandbox operations** (Kind/HyperShift hosted clusters) are auto-approved
 - **Management operations** (cluster create/destroy, AWS) require user approval
-- **Temp files** go to `/tmp/kagenti/<category>/`
+- **Temp files** go to `/tmp/rossoctl/<category>/`
 
 ## Workflow Diagrams
 
@@ -43,7 +43,7 @@ Only skill nodes are colored. Decision points, actions, and labels have no color
 | 🟣 Purple | Test |
 | 🟠 Orange | Git / Repo |
 | 🔷 Cyan | Kubernetes |
-| 🟤 Brown | Deploy / Kagenti |
+| 🟤 Brown | Deploy / Rossoctl |
 | ⚫ Gray | Skills Meta |
 | 🩷 Pink | GitHub |
 | 🔵 Indigo | HyperShift |
@@ -246,10 +246,10 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    DEPLOY([Deploy Kagenti]) --> TYPE{Platform?}
-    TYPE -->|Kind| KDEPLOY["kagenti:deploy"]:::deploy
-    TYPE -->|OpenShift| ODEPLOY["kagenti:deploy"]:::deploy
-    TYPE -->|HyperShift| HSDEPLOY["kagenti:operator"]:::deploy
+    DEPLOY([Deploy Rossoctl]) --> TYPE{Platform?}
+    TYPE -->|Kind| KDEPLOY["rossoctl:deploy"]:::deploy
+    TYPE -->|OpenShift| ODEPLOY["rossoctl:deploy"]:::deploy
+    TYPE -->|HyperShift| HSDEPLOY["rossoctl:operator"]:::deploy
 
     KDEPLOY --> HEALTH["k8s:health"]:::k8s
     ODEPLOY --> HEALTH
@@ -260,7 +260,7 @@ flowchart TD
     DEBUG -->|Pod issues| PODS["k8s:pods"]:::k8s
     DEBUG -->|Log analysis| LOGS["k8s:logs"]:::k8s
     DEBUG -->|Helm issues| HELM["helm:debug"]:::deploy
-    DEBUG -->|UI issues| UI["kagenti:ui-debug"]:::deploy
+    DEBUG -->|UI issues| UI["rossoctl:ui-debug"]:::deploy
     DEBUG -->|Auth issues| AUTH["auth:keycloak-*"]:::deploy
     DEBUG -->|Istio issues| ISTIO["istio:ambient-waypoint"]:::deploy
     DEBUG -->|Route issues| ROUTES["openshift:routes"]:::deploy
@@ -346,10 +346,10 @@ flowchart LR
 │   ├── k8s:logs
 │   ├── k8s:pods
 │   └── k8s:live-debugging
-├── kagenti/                        Platform management
-│   ├── kagenti:deploy
-│   ├── kagenti:operator
-│   └── kagenti:ui-debug
+├── rossoctl/                        Platform management
+│   ├── rossoctl:deploy
+│   ├── rossoctl:operator
+│   └── rossoctl:ui-debug
 ├── kind/                           Local Kind clusters
 │   └── kind:cluster
 ├── local/                          Local testing workflows
@@ -402,7 +402,7 @@ flowchart LR
 | HyperShift hosted cluster | Auto | Auto | N/A |
 | HyperShift management cluster | Auto | Approval | Approval |
 | AWS resources | Auto | Approval | Approval |
-| `/tmp/kagenti/` | Auto | Auto | Auto |
+| `/tmp/rossoctl/` | Auto | Auto | Auto |
 | Git operations | Auto | Auto | N/A |
 
 ## Maintaining This README

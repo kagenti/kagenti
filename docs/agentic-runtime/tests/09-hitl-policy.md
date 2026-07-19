@@ -1,6 +1,6 @@
 # HITL Policy
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_09_hitl_policy.py`
+> **Test file:** `rossoctl/tests/e2e/openshell/test_09_hitl_policy.py`
 > **Tests:** 3 | **Pass:** 2 | **Skip:** 1 (Kind, fresh cluster)
 
 ## What This Tests
@@ -116,7 +116,7 @@ network_policies:
       allow: true
       reason: "Internal cluster services"
     
-    - url: "litellm-proxy.kagenti-system.svc:4000"
+    - url: "litellm-proxy.rossoctl-system.svc:4000"
       allow: true
       reason: "LLM provider"
     

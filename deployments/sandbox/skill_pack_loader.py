@@ -1,5 +1,5 @@
 """
-Kagenti SkillPackLoader — Versioned skill-pack init container (Phase 6)
+Rossoctl SkillPackLoader — Versioned skill-pack init container (Phase 6)
 
 Clones skill packs from pinned git sources, verifies GPG signatures and
 content hashes, then copies skills into /workspace/.claude/skills/ where
@@ -9,11 +9,11 @@ Runs as an init container before the sandbox agent starts.
 
 Usage:
     # CLI
-    python skill_pack_loader.py --config /etc/kagenti/skill-packs.yaml --workspace /workspace
+    python skill_pack_loader.py --config /etc/rossoctl/skill-packs.yaml --workspace /workspace
 
     # Library
     from skill_pack_loader import SkillPackLoader
-    loader = SkillPackLoader("/etc/kagenti/skill-packs.yaml", "/workspace")
+    loader = SkillPackLoader("/etc/rossoctl/skill-packs.yaml", "/workspace")
     for pack in loader.get_default_packs():
         loader.load_pack(pack)
 """
@@ -244,7 +244,7 @@ def main():
     )
     parser.add_argument(
         "--config",
-        default="/etc/kagenti/skill-packs.yaml",
+        default="/etc/rossoctl/skill-packs.yaml",
         help="Path to skill-packs.yaml manifest",
     )
     parser.add_argument(

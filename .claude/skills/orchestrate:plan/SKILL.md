@@ -33,7 +33,7 @@ is Phase 1 — interactive brainstorming with the developer, no PRs.
 Scan report must exist:
 
 ```bash
-cat /tmp/kagenti/orchestrate/<target>/scan-report.md
+cat /tmp/rossoctl/orchestrate/<target>/scan-report.md
 ```
 
 ## Planning Process
@@ -78,7 +78,7 @@ Target 600-700 lines per PR. For each phase:
 
 ## Plan Output
 
-Save to `/tmp/kagenti/orchestrate/<target>/plan.md`:
+Save to `/tmp/rossoctl/orchestrate/<target>/plan.md`:
 
 ```markdown
 # Enhancement Plan: <target>
@@ -128,7 +128,7 @@ Save to `/tmp/kagenti/orchestrate/<target>/plan.md`:
 Initialize phase tracking:
 
 ```bash
-cat > /tmp/kagenti/orchestrate/<target>/phase-status.md << 'EOF'
+cat > /tmp/rossoctl/orchestrate/<target>/phase-status.md << 'EOF'
 # Phase Status: <target>
 
 | Phase | Status | PR | Date |

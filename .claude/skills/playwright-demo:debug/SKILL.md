@@ -33,13 +33,13 @@ python3 local_experiments/validate-alignment.py
 Screenshot the page to see actual DOM:
 
 ```bash
-cd kagenti/ui-v2 && NODE_PATH=node_modules node -e "
+cd rossoctl/ui-v2 && NODE_PATH=node_modules node -e "
 const { chromium } = require('@playwright/test');
 (async () => {
   const b = await chromium.launch();
   const p = await b.newPage({ ignoreHTTPSErrors: true });
   await p.goto('TARGET_URL', { waitUntil: 'networkidle', timeout: 30000 });
-  await p.screenshot({ path: '/tmp/kagenti/debug.png', fullPage: true });
+  await p.screenshot({ path: '/tmp/rossoctl/debug.png', fullPage: true });
   const els = await p.evaluate(() =>
     Array.from(document.querySelectorAll('a, button, [role=tab]')).map(e => ({
       tag: e.tagName, text: e.textContent?.trim()?.substring(0, 50), href: e.href
@@ -125,5 +125,5 @@ On invocation:
 ## Related Skills
 
 - `playwright-demo` — Main demo recording workflow
-- `kagenti:ui-debug` — Debug Kagenti UI issues
+- `rossoctl:ui-debug` — Debug Rossoctl UI issues
 - `k8s:health` — Check platform health

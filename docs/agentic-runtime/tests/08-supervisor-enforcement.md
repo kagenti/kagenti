@@ -1,6 +1,6 @@
 # Supervisor Enforcement
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_08_supervisor_enforcement.py`
+> **Test file:** `rossoctl/tests/e2e/openshell/test_08_supervisor_enforcement.py`
 > **Tests:** 11 | **Pass:** 11 | **Skip:** 0 (Kind, fresh cluster)
 
 ## What This Tests
@@ -214,7 +214,7 @@ data:
       endpoints:
         - url: "*.svc.cluster.local"
           allow: true
-        - url: "litellm-proxy.kagenti-system.svc"
+        - url: "litellm-proxy.rossoctl-system.svc"
           allow: true
   sandbox-policy.rego: |
     package openshell.sandbox

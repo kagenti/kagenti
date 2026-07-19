@@ -1,6 +1,6 @@
 # Workspace Persistence
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_10_workspace_persistence.py`
+> **Test file:** `rossoctl/tests/e2e/openshell/test_10_workspace_persistence.py`
 > **Tests:** 8 | **Pass:** 7 | **Skip:** 1 (Kind, fresh cluster)
 
 ## What This Tests
@@ -234,7 +234,7 @@ ALL_SANDBOX_TYPES = [
 
 | Agent Type | When Added | What's Needed |
 |------------|-----------|---------------|
-| Custom A2A agents | Phase 2 | Add PVC workspace to Deployment spec + Kagenti backend session store |
+| Custom A2A agents | Phase 2 | Add PVC workspace to Deployment spec + Rossoctl backend session store |
 | Shared workspaces | Phase 3 | ReadWriteMany PVC for multi-agent collaboration |
 | Workspace snapshots | Phase 3 | VolumeSnapshot API for session checkpoints |
 | Workspace templates | Phase 3 | PVC pre-populated with skills, tools, repos |

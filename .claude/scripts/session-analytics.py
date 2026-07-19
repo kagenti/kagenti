@@ -36,7 +36,7 @@ from pathlib import Path
 
 CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
-OUTPUT_BASE = Path("/tmp/kagenti/session")
+OUTPUT_BASE = Path("/tmp/rossoctl/session")
 
 # Pricing per 1M tokens (USD)
 MODEL_PRICING = {
@@ -3559,7 +3559,7 @@ def main():
         # Dashboard is generated as part of extract phase
         print("Dashboard is generated via --phase extract (produces CSV + MD + HTML)")
         print(
-            "Run: python3 session-analytics.py --phase extract --repo OWNER/NAME --output-dir /tmp/kagenti/session/"
+            "Run: python3 session-analytics.py --phase extract --repo OWNER/NAME --output-dir /tmp/rossoctl/session/"
         )
     else:
         print(f"ERROR: unknown phase '{args.phase}'", file=sys.stderr)

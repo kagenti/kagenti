@@ -1,6 +1,6 @@
 ---
 name: release
-description: Full release lifecycle for Kagenti — alpha, RC iteration loop, GA, and patch releases with multi-repo coordination
+description: Full release lifecycle for Rossoctl — alpha, RC iteration loop, GA, and patch releases with multi-repo coordination
 ---
 
 ```mermaid
@@ -24,9 +24,9 @@ flowchart TD
 > Follow this diagram as the workflow. The yellow loop (Phase 4) repeats until
 > the RC is stable. Reference `docs/releasing.md` for the full process.
 
-# Release Kagenti
+# Release Rossoctl
 
-Guided workflow for creating and stabilizing releases across the Kagenti
+Guided workflow for creating and stabilizing releases across the Rossoctl
 organization. Handles the multi-repo dependency order, RC iteration loop,
 cherry-pick coordination, and artifact verification.
 
@@ -78,29 +78,29 @@ Gather the current release landscape before making any changes.
 ### 1.1 Current tags across repos
 
 ```bash
-echo "=== kagenti/kagenti ==="
-gh release list --repo kagenti/kagenti --limit 5
+echo "=== rossoctl/rossoctl ==="
+gh release list --repo rossoctl/rossoctl --limit 5
 
-echo "=== kagenti/kagenti-extensions ==="
-gh release list --repo kagenti/kagenti-extensions --limit 5
+echo "=== rossoctl/rossocortex ==="
+gh release list --repo rossoctl/rossocortex --limit 5
 
-echo "=== kagenti/kagenti-operator ==="
-gh release list --repo kagenti/kagenti-operator --limit 5
+echo "=== rossoctl/operator ==="
+gh release list --repo rossoctl/operator --limit 5
 
-echo "=== kagenti/agent-examples ==="
-gh release list --repo kagenti/agent-examples --limit 5
+echo "=== rossoctl/examples ==="
+gh release list --repo rossoctl/examples --limit 5
 ```
 
 ### 1.2 Chart dependency versions
 
 ```bash
-grep -A2 'name: kagenti-' charts/kagenti/Chart.yaml
+grep -A2 'name: rossoctl-' charts/rossoctl/Chart.yaml
 ```
 
 ### 1.3 Image tags in values.yaml
 
 ```bash
-grep -n 'tag:' charts/kagenti/values.yaml charts/kagenti-deps/values.yaml
+grep -n 'tag:' charts/rossoctl/values.yaml charts/rossoctl-deps/values.yaml
 ```
 
 Flag any `tag: latest` entries — these must be pinned before any release.
@@ -120,13 +120,13 @@ Present the user with a summary built from live data:
 
 ```
 Current state:
-  kagenti:            <latest tag> | release branch: <exists/not>
-  kagenti-extensions: <latest tag> | release branch: <exists/not>
-  kagenti-operator:   <latest tag> | release branch: <exists/not>
+  rossoctl:            <latest tag> | release branch: <exists/not>
+  rossocortex: <latest tag> | release branch: <exists/not>
+  rossoctl-operator:   <latest tag> | release branch: <exists/not>
 
 Chart.yaml pins:
-  kagenti-webhook-chart: <version>
-  kagenti-operator-chart: <version>
+  rossoctl-webhook-chart: <version>
+  operator-chart: <version>
 
 Image tag issues:
   <N> images using tag: latest (must fix before RC/GA)
@@ -148,10 +148,10 @@ Image tag issues:
 All repos must be tagged in this order. Wait for CI to complete between each:
 
 ```
-1. kagenti/kagenti-operator     →  first
-2. kagenti/kagenti-extensions   →  second
-3. kagenti/agent-examples       →  third (if applicable)
-4. kagenti/kagenti              →  last (update Chart.yaml + values.yaml, then tag)
+1. rossoctl/operator     →  first
+2. rossoctl/rossocortex   →  second
+3. rossoctl/examples       →  third (if applicable)
+4. rossoctl/rossoctl              →  last (update Chart.yaml + values.yaml, then tag)
 ```
 
 ### 2.1 For Alpha (from `main`)
@@ -169,18 +169,18 @@ bash scripts/check-release-pins.sh
 ```
 
 - [ ] Tag dependency repos first (operator → extensions → agent-examples)
-- [ ] Update `charts/kagenti/Chart.yaml` with new sub-chart versions
-- [ ] Run `helm dependency update charts/kagenti/`
-- [ ] Commit, merge to main, then tag `kagenti/kagenti`
+- [ ] Update `charts/rossoctl/Chart.yaml` with new sub-chart versions
+- [ ] Run `helm dependency update charts/rossoctl/`
+- [ ] Commit, merge to main, then tag `rossoctl/rossoctl`
 
 - [ ] At least one RC validated via `release-validation.yaml` (Kind + HyperShift pass)
 - [ ] Minimum 1 week soak since last RC (recommended)
 - [ ] No open release-blocking issues
 - [ ] At least one maintainer sign-off
 - [ ] Dependency repos tagged with GA first
-- [ ] `charts/kagenti/Chart.yaml` updated with GA sub-chart versions
-- [ ] `helm dependency update charts/kagenti/` regenerates `Chart.lock`
-- [ ] **All image tags in `charts/kagenti/values.yaml` pinned to GA tag**
+- [ ] `charts/rossoctl/Chart.yaml` updated with GA sub-chart versions
+- [ ] `helm dependency update charts/rossoctl/` regenerates `Chart.lock`
+- [ ] **All image tags in `charts/rossoctl/values.yaml` pinned to GA tag**
 - [ ] Documentation reviewed and updated
 
 ### 2.2 For First RC (creates release branch)
@@ -199,8 +199,8 @@ The first RC marks feature freeze. This is when release branches are created.
    For each dependency repo that has changes since the last release:
 
    ```bash
-   gh repo clone kagenti/<repo-name> /tmp/kagenti-release/<repo-name>
-   cd /tmp/kagenti-release/<repo-name>
+   gh repo clone rossoctl/<repo-name> /tmp/rossoctl-release/<repo-name>
+   cd /tmp/rossoctl-release/<repo-name>
 
    # Verify CI
    gh run list --branch main --limit 3
@@ -219,7 +219,7 @@ The first RC marks feature freeze. This is when release branches are created.
 
    **ASK after each:** "Tag pushed for <repo>. CI running. Shall I verify artifacts and proceed to the next repo?"
 
-2. **Update kagenti/kagenti Chart.yaml** with new sub-chart RC versions
+2. **Update rossoctl/rossoctl Chart.yaml** with new sub-chart RC versions
 
 3. **Pin image tags and chart version:**
 
@@ -228,7 +228,7 @@ The first RC marks feature freeze. This is when release branches are created.
    bash scripts/check-release-pins.sh
    ```
 
-4. **Create the release branch in kagenti/kagenti:**
+4. **Create the release branch in rossoctl/rossoctl:**
 
    ```bash
    git checkout main
@@ -263,13 +263,13 @@ This is handled by [Phase 4: Stabilize](#phase-4-stabilize-rc-iteration-loop).
 ### 2.4 Tag a dependency repo (helper)
 
 ```bash
-REPO="kagenti/<repo-name>"
+REPO="rossoctl/<repo-name>"
 VERSION="<version>"
 
 # Clone clean
-rm -rf /tmp/kagenti-release/$(basename $REPO)
-gh repo clone $REPO /tmp/kagenti-release/$(basename $REPO)
-cd /tmp/kagenti-release/$(basename $REPO)
+rm -rf /tmp/rossoctl-release/$(basename $REPO)
+gh repo clone $REPO /tmp/rossoctl-release/$(basename $REPO)
+cd /tmp/rossoctl-release/$(basename $REPO)
 
 # Verify CI on the target branch
 gh run list --branch <main|release-X.Y> --limit 3
@@ -294,29 +294,29 @@ After tagging, verify that CI produced all expected artifacts.
 ### 3.1 GitHub Releases
 
 ```bash
-for repo in kagenti kagenti-extensions kagenti-operator; do
-  echo "=== kagenti/$repo ==="
-  gh release view <version> --repo kagenti/$repo --json tagName,isPrerelease,publishedAt 2>/dev/null || echo "  Not found"
+for repo in rossoctl rossocortex rossoctl-operator; do
+  echo "=== rossoctl/$repo ==="
+  gh release view <version> --repo rossoctl/$repo --json tagName,isPrerelease,publishedAt 2>/dev/null || echo "  Not found"
 done
 ```
 
 ### 3.2 Container images
 
 ```bash
-REGISTRY="ghcr.io/kagenti"
+REGISTRY="ghcr.io/rossoctl"
 VERSION="<version>"
 
-# kagenti/kagenti images
+# rossoctl/rossoctl images
 for img in ui-v2 backend ui-oauth-secret agent-oauth-secret api-oauth-secret; do
   echo -n "$img:$VERSION ... "
-  docker manifest inspect ghcr.io/kagenti/kagenti/$img:$VERSION >/dev/null 2>&1 \
+  docker manifest inspect ghcr.io/rossoctl/rossoctl/$img:$VERSION >/dev/null 2>&1 \
     && echo "OK" || echo "MISSING"
 done
 
-# kagenti-extensions images
+# rossocortex images
 for img in envoy-with-processor proxy-init client-registration; do
   echo -n "$img:$VERSION ... "
-  docker manifest inspect ghcr.io/kagenti/kagenti-extensions/$img:$VERSION >/dev/null 2>&1 \
+  docker manifest inspect ghcr.io/rossoctl/rossocortex/$img:$VERSION >/dev/null 2>&1 \
     && echo "OK" || echo "MISSING"
 done
 ```
@@ -324,17 +324,17 @@ done
 ### 3.3 Helm charts
 
 ```bash
-helm show chart oci://ghcr.io/kagenti/kagenti-extensions/kagenti-webhook-chart --version <chart-version> 2>/dev/null \
+helm show chart oci://ghcr.io/rossoctl/rossocortex/rossoctl-webhook-chart --version <chart-version> 2>/dev/null \
   && echo "webhook chart OK" || echo "webhook chart MISSING"
 
-helm show chart oci://ghcr.io/kagenti/kagenti-operator/kagenti-operator-chart --version <chart-version> 2>/dev/null \
+helm show chart oci://ghcr.io/rossoctl/operator/operator-chart --version <chart-version> 2>/dev/null \
   && echo "operator chart OK" || echo "operator chart MISSING"
 ```
 
 ### 3.4 Pre-release flag
 
 ```bash
-gh release view <version> --repo kagenti/kagenti --json isPrerelease --jq '.isPrerelease'
+gh release view <version> --repo rossoctl/rossoctl --json isPrerelease --jq '.isPrerelease'
 # Expected: true for alpha/RC, false for GA
 ```
 
@@ -343,7 +343,7 @@ gh release view <version> --repo kagenti/kagenti --json isPrerelease --jq '.isPr
 ```bash
 gh workflow run e2e-release-validation.yaml \
   -f version=<version> \
-  --repo kagenti/kagenti
+  --repo rossoctl/rossoctl
 ```
 
 **ASK:** "All artifacts verified. Is this RC ready for broader testing, or do
@@ -365,22 +365,22 @@ Discover PRs merged to `main` since the last RC that may need cherry-picking:
 ```bash
 # Get the date of the last RC
 LAST_RC="v0.6.0-rc.6"  # adjust to actual
-LAST_RC_DATE=$(gh release view $LAST_RC --repo kagenti/kagenti --json publishedAt --jq '.publishedAt')
+LAST_RC_DATE=$(gh release view $LAST_RC --repo rossoctl/rossoctl --json publishedAt --jq '.publishedAt')
 
-echo "=== PRs merged to kagenti/kagenti main since $LAST_RC ==="
-gh pr list --repo kagenti/kagenti --state merged --base main \
+echo "=== PRs merged to rossoctl/rossoctl main since $LAST_RC ==="
+gh pr list --repo rossoctl/rossoctl --state merged --base main \
   --search "merged:>$LAST_RC_DATE" --json number,title,labels,mergeCommit \
   --jq '.[] | "#\(.number) \(.title) [\(.mergeCommit.oid[:12])] labels:\([.labels[].name] | join(","))"'
 
 echo ""
-echo "=== PRs merged to kagenti/kagenti-extensions main since $LAST_RC ==="
-gh pr list --repo kagenti/kagenti-extensions --state merged --base main \
+echo "=== PRs merged to rossoctl/rossocortex main since $LAST_RC ==="
+gh pr list --repo rossoctl/rossocortex --state merged --base main \
   --search "merged:>$LAST_RC_DATE" --json number,title,mergeCommit \
   --jq '.[] | "#\(.number) \(.title) [\(.mergeCommit.oid[:12])]"'
 
 echo ""
-echo "=== PRs merged to kagenti/kagenti-operator main since $LAST_RC ==="
-gh pr list --repo kagenti/kagenti-operator --state merged --base main \
+echo "=== PRs merged to rossoctl/operator main since $LAST_RC ==="
+gh pr list --repo rossoctl/operator --state merged --base main \
   --search "merged:>$LAST_RC_DATE" --json number,title,mergeCommit \
   --jq '.[] | "#\(.number) \(.title) [\(.mergeCommit.oid[:12])]"'
 ```
@@ -388,7 +388,7 @@ gh pr list --repo kagenti/kagenti-operator --state merged --base main \
 Also check the [fix tracker](#rc-fix-tracking) for known pending items:
 
 ```bash
-cat /tmp/kagenti/release/<version>/rc-fixes.md 2>/dev/null || echo "No tracker yet — will create one."
+cat /tmp/rossoctl/release/<version>/rc-fixes.md 2>/dev/null || echo "No tracker yet — will create one."
 ```
 
 **ASK the release manager:**
@@ -396,15 +396,15 @@ cat /tmp/kagenti/release/<version>/rc-fixes.md 2>/dev/null || echo "No tracker y
 ```
 These PRs were merged since the last RC. Which should be included in the next RC?
 
-kagenti/kagenti:
+rossoctl/rossoctl:
   1. #1655 - fix(ocp): skip remote tag detection [bafe0d73]
   2. #1660 - fix(ui): dashboard crash on empty state [abc123]
   3. #1670 - chore(deps): bump go to 1.22 [def456]
 
-kagenti-extensions:
+rossocortex:
   4. #89 - fix(webhook): handle nil annotations [aaa111]
 
-kagenti-operator:
+rossoctl-operator:
   (none)
 
 Select PRs to cherry-pick (comma-separated numbers, e.g. "1,2,4"), or 'none':
@@ -417,19 +417,19 @@ For each selected fix, cherry-pick into the appropriate release branch.
 **Important rules (from SOP):**
 - All fixes MUST land on `main` first — never commit directly to a release branch
 - Always use `git cherry-pick -x` — the `-x` flag is **mandatory** for traceability
-- Follow dependency order: operator → extensions → kagenti
+- Follow dependency order: operator → extensions → rossoctl
 
 #### If fixes touch dependency repos (extensions or operator)
 
-**ASK:** "PR #89 is in kagenti-extensions. Does that repo have a release-X.Y
+**ASK:** "PR #89 is in rossocortex. Does that repo have a release-X.Y
 branch yet?"
 
 If no release branch exists for the dependency repo:
 
 ```bash
 # Create release branch in the dependency repo
-gh repo clone kagenti/kagenti-extensions /tmp/kagenti-release/kagenti-extensions
-cd /tmp/kagenti-release/kagenti-extensions
+gh repo clone rossoctl/rossocortex /tmp/rossoctl-release/rossocortex
+cd /tmp/rossoctl-release/rossocortex
 git checkout -b release-X.Y main
 git push origin release-X.Y
 ```
@@ -437,7 +437,7 @@ git push origin release-X.Y
 Then cherry-pick and tag:
 
 ```bash
-cd /tmp/kagenti-release/kagenti-extensions
+cd /tmp/rossoctl-release/rossocortex
 git checkout release-X.Y
 git pull origin release-X.Y
 git cherry-pick -x <merge-commit-sha>
@@ -449,10 +449,10 @@ git push origin vA.B.0-rc.N
 gh run watch
 ```
 
-**After dependency repo RC is tagged:** Update `charts/kagenti/Chart.yaml` in
-the kagenti release branch to reference the new dependency version.
+**After dependency repo RC is tagged:** Update `charts/rossoctl/Chart.yaml` in
+the rossoctl release branch to reference the new dependency version.
 
-#### Cherry-pick into kagenti/kagenti release branch
+#### Cherry-pick into rossoctl/rossoctl release branch
 
 Use the git workflow described in [Release Branch Git Workflow](#release-branch-git-workflow):
 
@@ -486,7 +486,7 @@ Once all cherry-picks are on the release branch(es) and CI passes:
 
 ```bash
 # Verify CI on release branch
-gh run list --repo kagenti/kagenti --branch release-X.Y --limit 3
+gh run list --repo rossoctl/rossoctl --branch release-X.Y --limit 3
 
 # Determine next RC number
 git tag --list 'vX.Y.0-rc.*' --sort=-v:refname | head -1
@@ -529,14 +529,14 @@ When the latest RC has soaked with no blocking issues.
 
    ```bash
    # For each dependency repo that had RC tags
-   cd /tmp/kagenti-release/<repo>
+   cd /tmp/rossoctl-release/<repo>
    git checkout release-X.Y
    git tag -s vA.B.0 -m "vA.B.0"
    git push origin vA.B.0
    gh run watch
    ```
 
-2. **Update kagenti Chart.yaml** with GA sub-chart versions
+2. **Update rossoctl Chart.yaml** with GA sub-chart versions
 
 3. **Pin image tags and chart version to GA:**
 
@@ -561,7 +561,7 @@ When the latest RC has soaked with no blocking issues.
 6. Mark the release as "Latest" if needed:
 
    ```bash
-   gh release edit vX.Y.0 --repo kagenti/kagenti --latest
+   gh release edit vX.Y.0 --repo rossoctl/rossoctl --latest
    ```
 
 ---
@@ -573,7 +573,7 @@ When the latest RC has soaked with no blocking issues.
 Auto-generated is sufficient:
 
 ```bash
-gh release edit <version> --repo kagenti/kagenti \
+gh release edit <version> --repo rossoctl/rossoctl \
   --notes "Alpha release — known issues: <list any>"
 ```
 
@@ -609,7 +609,7 @@ If dependency repos were also tagged, include them:
 
 ```bash
 gh workflow run release-validation.yaml -f ref=<version> \
-  -f dep_builds='[{"repo":"kagenti/kagenti-extensions","ref":"<ext-version>"}]'
+  -f dep_builds='[{"repo":"rossoctl/rossocortex","ref":"<ext-version>"}]'
 ```
 
 After triggering, show the run URL:
@@ -632,7 +632,7 @@ Check with: gh run list --workflow=release-validation.yaml --limit 5
 Include a testing checklist and changes since last RC:
 
 ```bash
-gh release edit <version> --repo kagenti/kagenti --notes-file /tmp/rc-notes.md
+gh release edit <version> --repo rossoctl/rossoctl --notes-file /tmp/rc-notes.md
 ```
 
 Template:
@@ -665,9 +665,9 @@ Full release notes with component compatibility table:
 
 | Component | Version |
 |-----------|---------|
-| kagenti (platform) | vX.Y.0 |
-| kagenti-extensions (webhook) | vA.B.0 |
-| kagenti-operator | vC.D.0 |
+| rossoctl (platform) | vX.Y.0 |
+| rossocortex (webhook) | vA.B.0 |
+| rossoctl-operator | vC.D.0 |
 | agent-examples | vE.F.0 |
 
 ## Upgrade Notes
@@ -685,8 +685,8 @@ For GA and significant RC releases:
 
 ```bash
 echo "Announce on:"
-echo "  - Slack: https://ibm.biz/kagenti-slack"
-echo "  - Mailing list: kagenti-maintainers@googlegroups.com"
+echo "  - Slack: https://ibm.biz/rossoctl-slack"
+echo "  - Mailing list: rossoctl-maintainers@googlegroups.com"
 ```
 
 ---
@@ -750,7 +750,7 @@ git cherry-pick -x <sha1>
 git push origin cherry-pick-<desc>
 
 # 4. Open PR targeting the release branch
-gh pr create --base release-X.Y --repo kagenti/kagenti \
+gh pr create --base release-X.Y --repo rossoctl/rossoctl \
   --title "fix: cherry-pick <description> for rc.N" \
   --body "Cherry-pick of #<original-PR> for the vX.Y.0-rc.N release."
 ```
@@ -770,9 +770,9 @@ gh pr create --base release-X.Y --repo kagenti/kagenti \
 When fixes span multiple repos, cherry-pick and tag in dependency order:
 
 ```
-1. kagenti-operator (if affected)     → cherry-pick, tag RC
-2. kagenti-extensions (if affected)   → cherry-pick, tag RC
-3. kagenti/kagenti                    → update Chart.yaml deps, cherry-pick fixes, tag RC
+1. rossoctl-operator (if affected)     → cherry-pick, tag RC
+2. rossocortex (if affected)   → cherry-pick, tag RC
+3. rossoctl/rossoctl                    → update Chart.yaml deps, cherry-pick fixes, tag RC
 ```
 
 ---
@@ -784,16 +784,16 @@ Between RCs, maintain a local tracking file to keep state across sessions.
 ### File location
 
 ```
-/tmp/kagenti/release/<version>/rc-fixes.md
+/tmp/rossoctl/release/<version>/rc-fixes.md
 ```
 
-Example: `/tmp/kagenti/release/v0.6.0/rc-fixes.md`
+Example: `/tmp/rossoctl/release/v0.6.0/rc-fixes.md`
 
 ### Create the tracker
 
 ```bash
-mkdir -p /tmp/kagenti/release/v0.6.0
-cat > /tmp/kagenti/release/v0.6.0/rc-fixes.md << 'EOF'
+mkdir -p /tmp/rossoctl/release/v0.6.0
+cat > /tmp/rossoctl/release/v0.6.0/rc-fixes.md << 'EOF'
 # v0.6.0 RC Fix Tracker
 
 ## Current RC: rc.1 (tagged YYYY-MM-DD)
@@ -810,8 +810,8 @@ cat > /tmp/kagenti/release/v0.6.0/rc-fixes.md << 'EOF'
 <!-- - [ ] PR #NNN - description -->
 
 ### Dependency repo fixes
-<!-- - [ ] kagenti-extensions PR #NN - description -->
-<!-- - [ ] kagenti-operator PR #NN - description -->
+<!-- - [ ] rossocortex PR #NN - description -->
+<!-- - [ ] rossoctl-operator PR #NN - description -->
 
 ## Previous RCs
 
@@ -832,7 +832,7 @@ After each stabilization cycle:
 The tracker provides the changelog between RCs:
 
 ```bash
-grep '^\- \[x\]' /tmp/kagenti/release/v0.6.0/rc-fixes.md
+grep '^\- \[x\]' /tmp/rossoctl/release/v0.6.0/rc-fixes.md
 ```
 
 ---

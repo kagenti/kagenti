@@ -8,9 +8,9 @@
 #   ./.github/scripts/hypershift/destroy-cluster.sh <cluster-suffix-or-full-name>
 #
 # EXAMPLES:
-#   ./.github/scripts/hypershift/destroy-cluster.sh ladas        # destroys kagenti-hypershift-custom-ladas
-#   ./.github/scripts/hypershift/destroy-cluster.sh pr529        # destroys kagenti-hypershift-custom-pr529
-#   ./.github/scripts/hypershift/destroy-cluster.sh kagenti-hypershift-custom-ladas  # full name
+#   ./.github/scripts/hypershift/destroy-cluster.sh ladas        # destroys rossoctl-hypershift-custom-ladas
+#   ./.github/scripts/hypershift/destroy-cluster.sh pr529        # destroys rossoctl-hypershift-custom-pr529
+#   ./.github/scripts/hypershift/destroy-cluster.sh rossoctl-hypershift-custom-ladas  # full name
 #
 
 set -euo pipefail
@@ -60,7 +60,7 @@ find_hypershift_automation() {
     fi
 
     # Worktree-aware: if we're in .worktrees/, look higher up
-    # e.g., /path/kagenti_hypershift_ci/.worktrees/feature -> /path/hypershift-automation
+    # e.g., /path/rossoctl_hypershift_ci/.worktrees/feature -> /path/hypershift-automation
     if [[ "$REPO_ROOT" == *"/.worktrees/"* ]]; then
         # Extract path before .worktrees
         local base_path="${REPO_ROOT%%/.worktrees/*}"
@@ -80,15 +80,15 @@ HYPERSHIFT_AUTOMATION_DIR=$(find_hypershift_automation)
 # Sanitized username for default cluster suffix
 SANITIZED_USER=$(echo "${USER:-local}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-10)
 
-# Find .env file - priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.kagenti-*
-MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+# Find .env file - priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.rossoctl-*
+MANAGED_BY_TAG="${MANAGED_BY_TAG:-rossoctl-hypershift-custom}"
 find_env_file() {
     if [ -f "$REPO_ROOT/.env.${MANAGED_BY_TAG}" ]; then
         echo "$REPO_ROOT/.env.${MANAGED_BY_TAG}"
     elif [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
         echo "$REPO_ROOT/.env.hypershift-ci"
     else
-        ls "$REPO_ROOT"/.env.kagenti-* 2>/dev/null | head -1
+        ls "$REPO_ROOT"/.env.rossoctl-* 2>/dev/null | head -1
     fi
 }
 

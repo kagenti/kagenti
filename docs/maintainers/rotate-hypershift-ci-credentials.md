@@ -24,16 +24,16 @@ The rotation process:
 Run the setup script with `--rotate` to delete old keys and create new ones:
 
 ```bash
-MANAGED_BY_TAG=kagenti-hypershift-ci \
+MANAGED_BY_TAG=rossoctl-hypershift-ci \
   ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh --rotate
 ```
 
 This creates:
-- AWS IAM users: `kagenti-hypershift-ci` (CI) and `kagenti-hypershift-ci-debug` (read-only)
-- AWS IAM role: `kagenti-hypershift-ci-role` (for hcp CLI)
-- Kubernetes service account: `kagenti-hypershift-ci` in namespace `kagenti-hypershift-ci`
-- Local file: `.env.kagenti-hypershift-ci` (credentials)
-- Kubeconfig: `~/.kube/kagenti-hypershift-ci-mgmt.kubeconfig`
+- AWS IAM users: `rossoctl-hypershift-ci` (CI) and `rossoctl-hypershift-ci-debug` (read-only)
+- AWS IAM role: `rossoctl-hypershift-ci-role` (for hcp CLI)
+- Kubernetes service account: `rossoctl-hypershift-ci` in namespace `rossoctl-hypershift-ci`
+- Local file: `.env.rossoctl-hypershift-ci` (credentials)
+- Kubeconfig: `~/.kube/rossoctl-hypershift-ci-mgmt.kubeconfig`
 
 **Output:**
 ```
@@ -69,7 +69,7 @@ Step 1: Testing AWS credentials locally...
 {
     "UserId": "AIDA6NU5MYLAKXXFVDBPD",
     "Account": "991393792704",
-    "Arn": "arn:aws:iam::991393792704:user/kagenti-hypershift-ci"
+    "Arn": "arn:aws:iam::991393792704:user/rossoctl-hypershift-ci"
 }
 
 ✅ AWS credentials verified successfully
@@ -161,13 +161,13 @@ If `gh secret set` fails:
 If the CI workflow fails after updating secrets:
 
 1. Check the workflow logs: `gh run view --log`
-2. Verify the AWS credentials work: `source .env.kagenti-hypershift-ci && aws sts get-caller-identity`
-3. Test kubeconfig: `kubectl --kubeconfig ~/.kube/kagenti-hypershift-ci-mgmt.kubeconfig get nodes`
+2. Verify the AWS credentials work: `source .env.rossoctl-hypershift-ci && aws sts get-caller-identity`
+3. Test kubeconfig: `kubectl --kubeconfig ~/.kube/rossoctl-hypershift-ci-mgmt.kubeconfig get nodes`
 
 ## Security Notes
 
-- The `.env.kagenti-hypershift-ci` file contains sensitive credentials and is gitignored
-- AWS IAM policies use tag-based scoping to limit permissions to `kagenti-hypershift-ci-*` resources
+- The `.env.rossoctl-hypershift-ci` file contains sensitive credentials and is gitignored
+- AWS IAM policies use tag-based scoping to limit permissions to `rossoctl-hypershift-ci-*` resources
 - The service account has cluster-scoped permissions for HyperShift operations
 - Credentials should be rotated whenever:
   - Moving to a new management cluster

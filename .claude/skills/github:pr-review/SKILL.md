@@ -1,6 +1,6 @@
 ---
 name: github:pr-review
-description: Automated PR review for Kagenti - conventions, security, CI status, inline comments
+description: Automated PR review for Rossoctl - conventions, security, CI status, inline comments
 ---
 
 ```mermaid
@@ -49,7 +49,7 @@ export REPO=<repo-name>
 ## When to Use
 
 - Reviewing a PR before approving or requesting changes
-- Checking a PR against Kagenti conventions before merge
+- Checking a PR against Rossoctl conventions before merge
 - Providing structured, inline feedback on PRs
 - Invoked as `/github:pr-review <PR-number>`
 
@@ -58,7 +58,7 @@ export REPO=<repo-name>
 PR diffs can be very large. **Always redirect diff output to files and analyze with subagents.**
 
 ```bash
-export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-review}"
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/rossoctl-review}"
 mkdir -p "$LOG_DIR"
 ```
 
@@ -169,7 +169,7 @@ silently skipped just because the diff was summarized.
 
 ## Phase 3: Review Checklist
 
-Apply Kagenti-specific review criteria **only for areas the PR touches**.
+Apply Rossoctl-specific review criteria **only for areas the PR touches**.
 
 > **Reminder**: When verifying version numbers, file paths, or code claims in the PR,
 > use `git show upstream/main:<file>` — never trust the local working tree without
@@ -201,7 +201,7 @@ Check against `repo:pr` conventions:
 | Summary section | Body contains `## Summary` |
 | Issue linking | `Fixes #N` or `Closes #N` if applicable (optional) |
 
-**Title prefix** must be one of (case-insensitive, per `kagenti/.github` `pr-verifier-required.yml`):
+**Title prefix** must be one of (case-insensitive, per `rossoctl/.github` `pr-verifier-required.yml`):
 `Build, Chore, CI, Docs, Feat, Fix, Perf, Refactor, Revert, Style, Test, Feature, Bug fix, Proposal, Breaking change, Other, Other/Misc`.
 
 This is **advisory only** — the title check is not a required/blocking status check, and only runs in repos that invoke `pr-verifier.yml`. Flag a non-conforming title as a **nit**, not a blocker. Do not flag it at all in repos that do not run the verifier workflow.
@@ -224,7 +224,7 @@ If the PR touches `charts/`, K8s manifests, or values files:
 | Check | What |
 |-------|------|
 | Chart lint | `helm lint` would pass |
-| Labels | Uses `kagenti.io/*` labels where appropriate |
+| Labels | Uses `rossoctl.io/*` labels where appropriate |
 | Resource limits | Containers have resource requests/limits |
 | Values | New values documented or self-explanatory |
 
@@ -509,7 +509,7 @@ Use the diff file for all analysis.
 
 ### Cross-repo reviews
 
-When verifying cross-repo dependency files (e.g. checking whether `kagenti-extensions`
+When verifying cross-repo dependency files (e.g. checking whether `rossocortex`
 already handles something being removed from `$OWNER/$REPO`), **always fetch directly
 from GitHub — never trust a local clone:**
 
