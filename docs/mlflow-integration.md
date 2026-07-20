@@ -1,7 +1,7 @@
 # MLflow Integration for LLM Observability
 
 This document describes deploying MLflow alongside Phoenix for LLM trace
-collection in Kagenti E2E tests. Note that Phoenix is an optional component
+collection in Rossoctl E2E tests. Note that Phoenix is an optional component
 (`components.phoenix.enabled`, default: false) and can be deployed independently of MLflow.
 
 ## Overview
@@ -53,7 +53,7 @@ Add MLflow as a second exporter in OTEL Collector:
 
 ## Components Added
 
-### 1. MLflow Helm Template (`charts/kagenti-deps/templates/mlflow.yaml`)
+### 1. MLflow Helm Template (`charts/rossoctl-deps/templates/mlflow.yaml`)
 
 Deploys MLflow tracking server with:
 - PostgreSQL backend (shared with Phoenix)
@@ -89,13 +89,13 @@ pipelines:
     exporters: [otlphttp/mlflow]
 ```
 
-### 3. MLflow OAuth Secret Generator (`kagenti/auth/mlflow-oauth-secret/`)
+### 3. MLflow OAuth Secret Generator (`rossoctl/auth/mlflow-oauth-secret/`)
 
 - `mlflow_oauth_secret.py` - Keycloak client registration
 - `requirements.txt` - python-keycloak, kubernetes dependencies
 - `Dockerfile` - container image for job
 
-### 4. E2E Test for MLflow (`kagenti/tests/e2e/common/test_mlflow_auth.py`)
+### 4. E2E Test for MLflow (`rossoctl/tests/e2e/common/test_mlflow_auth.py`)
 
 Verify weather agent traces appear in MLflow after E2E tests run.
 
@@ -128,28 +128,28 @@ Verify weather agent traces appear in MLflow after E2E tests run.
 
 ### Phase 2: OAuth2 Integration ✅ COMPLETE
 
-- [x] Create `kagenti/auth/mlflow-oauth-secret/` directory with:
+- [x] Create `rossoctl/auth/mlflow-oauth-secret/` directory with:
   - `mlflow_oauth_secret.py` - Keycloak client registration
   - `requirements.txt` - python-keycloak, kubernetes dependencies
   - `Dockerfile` - container image for job
 
-- [x] Create `charts/kagenti/templates/mlflow-oauth-secret-job.yaml`:
+- [x] Create `charts/rossoctl/templates/mlflow-oauth-secret-job.yaml`:
   - Register Keycloak client for MLflow (confidential client)
   - Create Kubernetes secret with OAuth credentials
   - RBAC for cross-namespace secret access
 
-- [x] Update `charts/kagenti-deps/templates/mlflow.yaml`:
+- [x] Update `charts/rossoctl-deps/templates/mlflow.yaml`:
   - Add init container to wait for OAuth secret
   - Inject OAuth environment variables from secret
   - Configure MLflow with mlflow-oidc-auth plugin
 
 - [x] Add values configuration to:
-  - `charts/kagenti/values.yaml` - MLflow OAuth secret creator config
-  - `charts/kagenti-deps/values.yaml` - MLflow auth settings
+  - `charts/rossoctl/values.yaml` - MLflow OAuth secret creator config
+  - `charts/rossoctl-deps/values.yaml` - MLflow auth settings
 
 ### Phase 3: E2E Tests ✅ COMPLETE
 
-- [x] Create `kagenti/tests/e2e/common/test_mlflow_auth.py`:
+- [x] Create `rossoctl/tests/e2e/common/test_mlflow_auth.py`:
   - Test MLflow accessible (200/401/302)
   - Test OAuth secret exists with required keys
   - Test authenticated access with Keycloak token
@@ -176,7 +176,7 @@ Verify weather agent traces appear in MLflow after E2E tests run.
 
 ## Pending: After Agent-Examples PR Merged
 
-- [ ] Revert Shipwright builds back to `kagenti/agent-examples` + `main`
+- [ ] Revert Shipwright builds back to `rossoctl/examples` + `main`
 - [ ] Build and push `mlflow-oauth-secret` container image to GHCR
 
 ## Authentication Options
@@ -205,5 +205,5 @@ OAuth approach. Install via pip in container command along with `psycopg[binary]
 - [MLflow Security Middleware](https://mlflow.org/docs/latest/self-hosting/security/network/)
 - [MLflow SSO Documentation](https://mlflow.org/docs/latest/self-hosting/security/sso/)
 - [mlflow-oidc-auth Plugin](https://pypi.org/project/mlflow-oidc-auth/)
-- [Phoenix OAuth PR #564](https://github.com/kagenti/kagenti/pull/564)
+- [Phoenix OAuth PR #564](https://github.com/rossoctl/rossoctl/pull/564)
 - [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)

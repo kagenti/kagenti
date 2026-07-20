@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
-# Build kagenti-operator image from source.
+# Build rossoctl-operator image from source.
 #
 # Environment:
-#   KAGENTI_OPERATOR_ROOT   Local clone (optional; clones from GitHub if unset)
-#   KAGENTI_OPERATOR_REF    Git ref to clone (default: main)
+#   ROSSOCTL_OPERATOR_ROOT   Local clone (optional; clones from GitHub if unset)
+#   ROSSOCTL_OPERATOR_REF    Git ref to clone (default: main)
 #   PLATFORM                "kind" or "ocp" (auto-detected if unset)
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
-log_step "20" "Build kagenti-operator image"
+log_step "20" "Build rossoctl-operator image"
 
 PLATFORM="${PLATFORM:-$(detect_platform)}"
-OPERATOR_REF="${KAGENTI_OPERATOR_REF:-main}"
-OP_ROOT="${KAGENTI_OPERATOR_ROOT:-}"
+OPERATOR_REF="${ROSSOCTL_OPERATOR_REF:-main}"
+OP_ROOT="${ROSSOCTL_OPERATOR_ROOT:-}"
 CLONE_DIR=""
 
 if [[ -z "$OP_ROOT" ]]; then
-  CLONE_DIR="${TMPDIR:-/tmp}/kagenti-operator-tx-e2e-$$"
-  log_info "Cloning kagenti-operator (ref: $OPERATOR_REF)"
+  CLONE_DIR="${TMPDIR:-/tmp}/rossoctl-operator-tx-e2e-$$"
+  log_info "Cloning rossoctl-operator (ref: $OPERATOR_REF)"
   git clone --depth 1 --single-branch --branch "$OPERATOR_REF" \
-    "https://github.com/kagenti/kagenti-operator.git" "$CLONE_DIR" 2>/dev/null || \
-  git clone "https://github.com/kagenti/kagenti-operator.git" "$CLONE_DIR" && \
+    "https://github.com/rossoctl/operator.git" "$CLONE_DIR" 2>/dev/null || \
+  git clone "https://github.com/rossoctl/operator.git" "$CLONE_DIR" && \
     (cd "$CLONE_DIR" && git checkout "$OPERATOR_REF")
   OP_ROOT="$CLONE_DIR"
 fi
 
-REGISTRY="ghcr.io/kagenti/kagenti-operator"
-IMG_NAME="kagenti-operator"
+REGISTRY="ghcr.io/rossoctl/operator"
+IMG_NAME="rossoctl-operator"
 
 log_info "Building $IMG_NAME from $OP_ROOT"
 
@@ -35,7 +35,7 @@ if [[ "$PLATFORM" == "kind" ]]; then
     -f "$OP_ROOT/Dockerfile" "$OP_ROOT"
 
   # Tag with pinned version from Chart.yaml subchart
-  PINNED_VER=$(grep -A5 'kagenti-operator-chart' "$REPO_ROOT/charts/kagenti/Chart.yaml" | grep 'version:' | head -1 | awk '{print $2}')
+  PINNED_VER=$(grep -A5 'operator-chart' "$REPO_ROOT/charts/rossoctl/Chart.yaml" | grep 'version:' | head -1 | awk '{print $2}')
   if [[ -n "$PINNED_VER" ]]; then
     docker tag "${REGISTRY}/${IMG_NAME}:latest" "${REGISTRY}/${IMG_NAME}:v${PINNED_VER}"
     kind load docker-image "${REGISTRY}/${IMG_NAME}:v${PINNED_VER}" --name "${KIND_CLUSTER_NAME:-kind}" 2>/dev/null || true
@@ -43,7 +43,7 @@ if [[ "$PLATFORM" == "kind" ]]; then
   kind load docker-image "${REGISTRY}/${IMG_NAME}:latest" --name "${KIND_CLUSTER_NAME:-kind}" 2>/dev/null || true
 
 elif [[ "$PLATFORM" == "ocp" ]]; then
-  BUILD_NS="kagenti-system"
+  BUILD_NS="rossoctl-system"
   oc new-build --name "tx-${IMG_NAME}" --binary --strategy docker \
     --to="image-registry.openshift-image-registry.svc:5000/${BUILD_NS}/${IMG_NAME}:latest" \
     -n "$BUILD_NS" 2>/dev/null || true
@@ -56,4 +56,4 @@ if [[ -n "$CLONE_DIR" && -d "$CLONE_DIR" ]]; then
   rm -rf "$CLONE_DIR"
 fi
 
-log_success "kagenti-operator image built"
+log_success "rossoctl-operator image built"

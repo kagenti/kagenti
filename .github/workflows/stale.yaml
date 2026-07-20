@@ -1,9 +1,9 @@
 # Stale Issue and PR Management
 #
 # Thin caller for the org-wide reusable stale workflow.
-# Configuration and defaults are managed centrally in kagenti/.github.
+# Configuration and defaults are managed centrally in rossoctl/.github.
 #
-# Reference: https://github.com/kagenti/.github/blob/main/.github/workflows/stale.yaml
+# Reference: https://github.com/rossoctl/.github/blob/main/.github/workflows/stale.yaml
 #
 name: Close Stale Issues and PRs
 
@@ -21,4 +21,4 @@ permissions:
 
 jobs:
   stale:
-    uses: kagenti/.github/.github/workflows/stale.yaml@99700ebe858a1bc566492b1de9aea6e764ee226f # 2026-05-05
+    uses: rossoctl/.github/.github/workflows/stale.yaml@99700ebe858a1bc566492b1de9aea6e764ee226f # 2026-05-05

@@ -2,11 +2,11 @@
 
 The `trace_analysis` feature adds a **Trace Analysis** card to the Observability
 page **and** deploys the backing `trace-analysis` component
-(`ghcr.io/kagenti/trace-analysis`) into `kagenti-system`. When the flag is on,
-the kagenti chart renders the Deployment/Service/Route automatically — no
+(`ghcr.io/rossoctl/trace-analysis`) into `rossoctl-system`. When the flag is on,
+the rossoctl chart renders the Deployment/Service/Route automatically — no
 separate install is required.
 
-Like all Kagenti features, it is gated behind a feature flag that is **off by
+Like all Rossoctl features, it is gated behind a feature flag that is **off by
 default** (see the Feature Flags section of [CLAUDE.md](../CLAUDE.md)).
 
 ## Build prerequisite: docker buildx
@@ -41,19 +41,19 @@ to `~/.docker/config.json` — the symlink above does the same thing and persist
 
 ```bash
 
- # 1. Start the Kagenti installation  
- kind delete cluster --name kagenti ; \
+ # 1. Start the Rossoctl installation  
+ kind delete cluster --name rossoctl ; \
   env CONTAINER_ENGINE=podman \
-  scripts/kind/setup-kagenti.sh --with-all --preload-images \
-  --kagenti-values deployments/envs/enable_trace_analysis.yaml ; \
+  scripts/kind/setup-rossoctl.sh --with-all --preload-images \
+  --rossoctl-values deployments/envs/enable_trace_analysis.yaml ; \
   .github/scripts/local-setup/show-services.sh
 
 # 2. While the installation is running (but after the cluster is created) ,  build and upload the image to the cluster
 
-cd /path/to/kagenti-trace-analysis
+cd /path/to/rossoctl-trace-analysis
 make TAG=latest build-load
 
-cd /path/to/kagenti
+cd /path/to/rossoctl
 make TAG=latest build-load-ui           
 
 

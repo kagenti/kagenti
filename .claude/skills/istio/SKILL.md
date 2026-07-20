@@ -1,6 +1,6 @@
 ---
 name: istio
-description: Istio service mesh patterns for Kagenti
+description: Istio service mesh patterns for Rossoctl
 ---
 
 # Istio Skills
@@ -25,7 +25,7 @@ In Istio Ambient mode:
 ### Enable Ambient for Namespace
 
 ```bash
-kubectl label namespace kagenti-system istio.io/dataplane-mode=ambient
+kubectl label namespace rossoctl-system istio.io/dataplane-mode=ambient
 ```
 
 ### Create Waypoint

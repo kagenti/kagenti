@@ -41,7 +41,7 @@ helm list -A --output table 2>/dev/null || echo "(helm not available)"
 # -------------------------------------------------------------------------
 _section "Container Images"
 
-for ns in kagenti-system keycloak team1 team2; do
+for ns in rossoctl-system keycloak team1 team2; do
     pods_json=$(kubectl get pods -n "$ns" -o json 2>/dev/null || echo '{"items":[]}')
     images=$(echo "$pods_json" | python3 -c '
 import sys, json
@@ -70,9 +70,9 @@ done
 # -------------------------------------------------------------------------
 # 4. Operator versions (if present)
 # -------------------------------------------------------------------------
-if kubectl get csv -n kagenti-system -o name 2>/dev/null | head -1 | grep -q .; then
-    _section "Operator CSVs (kagenti-system)"
-    kubectl get csv -n kagenti-system -o custom-columns=NAME:.metadata.name,VERSION:.spec.version,PHASE:.status.phase 2>/dev/null || true
+if kubectl get csv -n rossoctl-system -o name 2>/dev/null | head -1 | grep -q .; then
+    _section "Operator CSVs (rossoctl-system)"
+    kubectl get csv -n rossoctl-system -o custom-columns=NAME:.metadata.name,VERSION:.spec.version,PHASE:.status.phase 2>/dev/null || true
 fi
 
 # End collapsible group

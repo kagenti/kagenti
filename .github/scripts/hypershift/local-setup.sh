@@ -44,17 +44,17 @@ echo ""
 # 1. Load credentials
 # ============================================================================
 
-# Find .env file - priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.kagenti-*
-MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+# Find .env file - priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.rossoctl-*
+MANAGED_BY_TAG="${MANAGED_BY_TAG:-rossoctl-hypershift-custom}"
 find_env_file() {
     if [ -f "$REPO_ROOT/.env.${MANAGED_BY_TAG}" ]; then
         echo "$REPO_ROOT/.env.${MANAGED_BY_TAG}"
     elif [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
         echo "$REPO_ROOT/.env.hypershift-ci"
     else
-        # Find any .env.kagenti-* file
+        # Find any .env.rossoctl-* file
         local found
-        found=$(ls "$REPO_ROOT"/.env.kagenti-* 2>/dev/null | head -1)
+        found=$(ls "$REPO_ROOT"/.env.rossoctl-* 2>/dev/null | head -1)
         echo "${found:-}"
     fi
 }

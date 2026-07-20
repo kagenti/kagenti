@@ -4,12 +4,12 @@
 # Uses hypershift-automation ansible playbooks for cluster lifecycle management.
 #
 # BUILD:
-#   docker build -t ghcr.io/kagenti/hypershift-ci:latest .
+#   docker build -t ghcr.io/rossoctl/hypershift-ci:latest .
 #
 # USAGE:
 #   docker run -v ~/.pullsecret.json:/home/ci/.pullsecret.json \
 #     -e KUBECONFIG=/tmp/mgmt -e AWS_ACCESS_KEY_ID=... -e AWS_SECRET_ACCESS_KEY=... \
-#     ghcr.io/kagenti/hypershift-ci:latest \
+#     ghcr.io/rossoctl/hypershift-ci:latest \
 #     ansible-playbook site.yml -e create=true -e "additional_tags=ManagedBy=hypershift-ci" ...
 #
 # SECURITY: Container runs as non-root user (UID 1001) by default
@@ -109,5 +109,5 @@ ENTRYPOINT ["/bin/bash"]
 # Labels
 LABEL org.opencontainers.image.title="HyperShift CI"
 LABEL org.opencontainers.image.description="Container for HyperShift cluster lifecycle management in CI"
-LABEL org.opencontainers.image.source="https://github.com/kagenti/kagenti"
-LABEL org.opencontainers.image.vendor="Kagenti"
+LABEL org.opencontainers.image.source="https://github.com/rossoctl/rossoctl"
+LABEL org.opencontainers.image.vendor="Rossoctl"

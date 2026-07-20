@@ -18,32 +18,32 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 log_step "26" "Building platform images from source"
 
-NAMESPACE="kagenti-system"
+NAMESPACE="rossoctl-system"
 
 # ── Images to build ──
 # Format: image_ref|dockerfile_path|workload_type|workload_name
 # image_ref:      full image name:tag (parsed from values.yaml)
-# dockerfile_path: relative to $REPO_ROOT/kagenti/
+# dockerfile_path: relative to $REPO_ROOT/rossoctl/
 # workload_type:   deployment or job
 # workload_name:   Kubernetes resource name
 IMAGES=(
-    "ghcr.io/kagenti/kagenti/ui-v2:latest|ui-v2/Dockerfile|deployment|kagenti-ui"
-    "ghcr.io/kagenti/kagenti/backend:latest|backend/Dockerfile|deployment|kagenti-backend"
-    "ghcr.io/kagenti/kagenti/agent-oauth-secret:latest|auth/agent-oauth-secret/Dockerfile|job|kagenti-agent-oauth-secret-job"
+    "ghcr.io/rossoctl/rossoctl/ui-v2:latest|ui-v2/Dockerfile|deployment|rossoctl-ui"
+    "ghcr.io/rossoctl/rossoctl/backend:latest|backend/Dockerfile|deployment|rossoctl-backend"
+    "ghcr.io/rossoctl/rossoctl/agent-oauth-secret:latest|auth/agent-oauth-secret/Dockerfile|job|rossoctl-agent-oauth-secret-job"
 )
 
 if [ "$IS_OPENSHIFT" = "true" ]; then
     # ── OpenShift: delegate to the on-cluster build script ──
     # 37-build-platform-images.sh uses BuildConfig to build on the cluster.
     log_info "OpenShift detected — delegating to 37-build-platform-images.sh"
-    bash "$SCRIPT_DIR/../kagenti-operator/37-build-platform-images.sh"
+    bash "$SCRIPT_DIR/../operator/37-build-platform-images.sh"
     log_success "Platform images built via OpenShift BuildConfig"
     exit 0
 fi
 
 # ── Kind / vanilla Kubernetes: local build + kind load ──
-CLUSTER_NAME="${KIND_CLUSTER_NAME:-kagenti}"
-BUILD_CONTEXT="$REPO_ROOT/kagenti"
+CLUSTER_NAME="${KIND_CLUSTER_NAME:-rossoctl}"
+BUILD_CONTEXT="$REPO_ROOT/rossoctl"
 
 # Track deployments that need restart
 DEPLOYMENTS_TO_RESTART=()
@@ -88,11 +88,11 @@ if [ ${#DEPLOYMENTS_TO_RESTART[@]} -gt 0 ]; then
 fi
 
 # Re-trigger Jobs via Helm upgrade (recreates deleted jobs)
-helm upgrade kagenti "$REPO_ROOT/charts/kagenti" -n "$NAMESPACE" \
+helm upgrade rossoctl "$REPO_ROOT/charts/rossoctl" -n "$NAMESPACE" \
     --reuse-values --no-hooks || { log_error "Helm upgrade failed"; exit 1; }
 
 # Wait for agent-oauth-secret job to complete
-JOB_NAME="kagenti-agent-oauth-secret-job"
+JOB_NAME="rossoctl-agent-oauth-secret-job"
 if kubectl get job "$JOB_NAME" -n "$NAMESPACE" &>/dev/null; then
     log_info "Waiting for ${JOB_NAME} to complete..."
     kubectl wait --for=condition=complete "job/${JOB_NAME}" \

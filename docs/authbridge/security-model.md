@@ -29,7 +29,7 @@ on demand, for each specific outbound call.
 ### Who Trusts Whom
 
 ```
-End User ──trust──► Kagenti Platform ──trust──► Keycloak (IdP)
+End User ──trust──► Rossoctl Platform ──trust──► Keycloak (IdP)
                          │                           │
                          │ enforces                   │ issues tokens
                          ▼                           ▼
@@ -110,7 +110,7 @@ Agent's SPIFFE JWT-SVID                    Audience-scoped token
 
 Every agent pod receives a cryptographic identity without static secrets:
 
-- **SPIFFE ID format:** `spiffe://kagenti.io/ns/team1/sa/weather-agent`
+- **SPIFFE ID format:** `spiffe://rossoctl.io/ns/team1/sa/weather-agent`
 - **Issued by SPIRE:** Hardware-attested, automatically rotated
 - **Used for:** Authenticating to Keycloak for token exchange, mTLS in service mesh
 - **No secrets in pods:** No client_secret, no API key, no password — just a short-lived
@@ -185,8 +185,8 @@ cannot forge credentials (only the proxy has the workload identity to exchange t
 
 ## Further Reading
 
-- [Identity in Agentic Platforms: Enabling Secure Least-Privilege Access](https://medium.com/kagenti-the-agentic-platform/identity-in-agentic-platforms-enabling-secure-least-privilege-access-996527f1c983)
-- [Security in and around MCP, Part 2: MCP in Deployment](https://medium.com/kagenti-the-agentic-platform/security-in-and-around-mcp-part-2-mcp-in-deployment-65bdd0ba9dc6)
-- [Security in and around MCP, Part 3: MCP Server Identity](https://medium.com/kagenti-the-agentic-platform/security-in-and-around-mcp-part-3-mcp-server-identity-10d6768d96c1)
-- [Kagenti Identity Guide](../identity-guide.md)
-- [AuthBridge Architecture](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/README.md)
+- [Identity in Agentic Platforms: Enabling Secure Least-Privilege Access](https://medium.com/rossoctl-the-agentic-platform/identity-in-agentic-platforms-enabling-secure-least-privilege-access-996527f1c983)
+- [Security in and around MCP, Part 2: MCP in Deployment](https://medium.com/rossoctl-the-agentic-platform/security-in-and-around-mcp-part-2-mcp-in-deployment-65bdd0ba9dc6)
+- [Security in and around MCP, Part 3: MCP Server Identity](https://medium.com/rossoctl-the-agentic-platform/security-in-and-around-mcp-part-3-mcp-server-identity-10d6768d96c1)
+- [Rossoctl Identity Guide](../identity-guide.md)
+- [AuthBridge Architecture](https://github.com/rossoctl/rossocortex/blob/main/authbridge/README.md)

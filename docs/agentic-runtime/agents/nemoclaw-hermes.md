@@ -16,7 +16,7 @@ integrated via [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw). It provide
 an always-on gateway with support for Telegram, Discord, and Slack messaging
 platforms, plus an OpenAI-compatible API server.
 
-In the Kagenti PoC, Hermes runs as a standalone K8s Deployment built from the
+In the Rossoctl PoC, Hermes runs as a standalone K8s Deployment built from the
 upstream NemoClaw source (pinned to v0.0.28). The gateway binds to 127.0.0.1:15053
 internally; a socat bridge exposes it on 0.0.0.0:8642 for K8s Service access.
 
@@ -47,7 +47,7 @@ deployments/openshell/agents/nemoclaw-hermes/
 ```bash
 # Kind
 docker build -t nemoclaw-hermes:latest deployments/openshell/agents/nemoclaw-hermes/
-kind load docker-image nemoclaw-hermes:latest --name kagenti
+kind load docker-image nemoclaw-hermes:latest --name rossoctl
 kubectl apply -f deployments/openshell/agents/nemoclaw-hermes/deployment.yaml
 ```
 
@@ -66,7 +66,7 @@ The fulltest script (`openshell-full-test.sh`) builds and deploys automatically.
 | HITL approval | N/A | No supervisor |
 | Messaging platforms | Yes | Telegram, Discord, Slack |
 
-## 6. Kagenti Integration
+## 6. Rossoctl Integration
 
 ### 6.1 Communication Adapter
 

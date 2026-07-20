@@ -12,7 +12,7 @@ Root cause analysis workflow for failures on local Kind clusters.
 **All diagnostic commands MUST redirect output to files.**
 
 ```bash
-export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-rca}"
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/rossoctl-rca}"
 mkdir -p "$LOG_DIR"
 ```
 
@@ -41,7 +41,7 @@ kind get clusters 2>/dev/null
 - **Cluster exists AND this session owns it** → reuse it (skip creation, inspect directly)
 - **Cluster exists AND another session owns it** → **STOP**. Do not proceed. Inform the user:
   > A Kind cluster is already running (likely from another session).
-  > Options: (a) wait for that session to finish, (b) switch to `rca:ci` for log-only analysis, (c) explicitly destroy the existing cluster first with `kind delete cluster --name kagenti`.
+  > Options: (a) wait for that session to finish, (b) switch to `rca:ci` for log-only analysis, (c) explicitly destroy the existing cluster first with `kind delete cluster --name rossoctl`.
 
 To determine ownership: if the current task list or conversation created this cluster, it's yours. Otherwise assume another session owns it.
 
@@ -86,9 +86,9 @@ Deploy the cluster if not running:
 All kubectl output redirected to files:
 
 ```bash
-kubectl get pods -n kagenti-system > $LOG_DIR/pods-system.log 2>&1 && echo "OK" || echo "FAIL"
-kubectl get pods -n kagenti-system --field-selector=status.phase!=Running > $LOG_DIR/failed-pods.log 2>&1 && echo "OK" || echo "FAIL"
-kubectl get events -n kagenti-system --sort-by='.lastTimestamp' > $LOG_DIR/events.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl get pods -n rossoctl-system > $LOG_DIR/pods-system.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl get pods -n rossoctl-system --field-selector=status.phase!=Running > $LOG_DIR/failed-pods.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl get events -n rossoctl-system --sort-by='.lastTimestamp' > $LOG_DIR/events.log 2>&1 && echo "OK" || echo "FAIL"
 ```
 
 Use `Task(subagent_type='Explore')` with `Grep` to analyze the logs for errors.
@@ -96,8 +96,8 @@ Use `Task(subagent_type='Explore')` with `Grep` to analyze the logs for errors.
 ### Phase 3: Diagnose
 
 ```bash
-kubectl logs -n kagenti-system deployment/kagenti-ui --tail=50 > $LOG_DIR/ui.log 2>&1 && echo "OK" || echo "FAIL"
-kubectl logs -n kagenti-system deployment/ollama --tail=50 > $LOG_DIR/ollama.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl logs -n rossoctl-system deployment/rossoctl-ui --tail=50 > $LOG_DIR/ui.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl logs -n rossoctl-system deployment/ollama --tail=50 > $LOG_DIR/ollama.log 2>&1 && echo "OK" || echo "FAIL"
 kubectl get pods -n team1 > $LOG_DIR/pods-team1.log 2>&1 && echo "OK" || echo "FAIL"
 kubectl logs -n team1 deployment/weather-service --tail=50 > $LOG_DIR/agent.log 2>&1 && echo "OK" || echo "FAIL"
 ```
@@ -109,7 +109,7 @@ Use `Task(subagent_type='Explore')` with `Grep` to find errors in the log files.
 After fixing, re-run the specific failing test:
 
 ```bash
-uv run pytest kagenti/tests/e2e/ -v -k "test_name" > $LOG_DIR/retest.log 2>&1; echo "EXIT:$?"
+uv run pytest rossoctl/tests/e2e/ -v -k "test_name" > $LOG_DIR/retest.log 2>&1; echo "EXIT:$?"
 ```
 
 ### CVE Check Before Publishing Findings
@@ -144,6 +144,6 @@ If the issue can't be reproduced locally, escalate:
 - `tdd:kind` - TDD workflow on Kind
 - `kind:cluster` - Create/destroy Kind clusters
 - `k8s:pods` - Debug pod issues
-- `kagenti:ui-debug` - Debug UI issues (502, API, proxy)
+- `rossoctl:ui-debug` - Debug UI issues (502, API, proxy)
 - `cve:scan` - CVE scanning (check if root cause is a known CVE)
 - `cve:brainstorm` - Disclosure planning (if CVE found during RCA)

@@ -58,15 +58,15 @@ For fixing specific failing tests on a LIVE cluster. No full redeploy.
 3. **Run ONLY the failing tests:**
    ```bash
    OPENSHELL_LLM_AVAILABLE=true uv run pytest \
-     kagenti/tests/e2e/openshell/test_12_litellm_claude_sandbox.py \
+     rossoctl/tests/e2e/openshell/test_12_litellm_claude_sandbox.py \
      -v --tb=short -k "test_name_pattern" \
      > $LOG_DIR/quick-debug.log 2>&1; echo "EXIT:$?"
    ```
 4. **Check result** — if it passes, run a slightly broader set to check regressions:
    ```bash
    OPENSHELL_LLM_AVAILABLE=true uv run pytest \
-     kagenti/tests/e2e/openshell/test_12_litellm_claude_sandbox.py \
-     kagenti/tests/e2e/openshell/test_07_skill_execution.py \
+     rossoctl/tests/e2e/openshell/test_12_litellm_claude_sandbox.py \
+     rossoctl/tests/e2e/openshell/test_07_skill_execution.py \
      -v --tb=short -k "claude or litellm or waypoint" \
      > $LOG_DIR/quick-regression.log 2>&1; echo "EXIT:$?"
    ```
@@ -90,7 +90,7 @@ Quick debug (fix A) → Quick debug (fix B) → Commit → Full iteration → Ma
 | ID | Environment | How to run | Credentials |
 |----|-------------|-----------|-------------|
 | `kind` | Local Kind | `openshell-full-test.sh --skip-cluster-create --skip-cluster-destroy` | `.env.maas` |
-| `hcp` | Custom HyperShift | Same script with `--platform ocp`, uses `KUBECONFIG=~/clusters/hcp/<cluster>/auth/kubeconfig` | `.env.kagenti-hypershift-custom` + `.env.maas` |
+| `hcp` | Custom HyperShift | Same script with `--platform ocp`, uses `KUBECONFIG=~/clusters/hcp/<cluster>/auth/kubeconfig` | `.env.rossoctl-hypershift-custom` + `.env.maas` |
 | `ci-kind` | CI Kind | `/run-e2e-openshell` comment on PR | `OPENAI_API_KEY` GH secret |
 | `ci-hcp` | CI HyperShift | Same trigger, runs `e2e-openshell-hypershift.yaml` | `OPENAI_API_KEY` GH secret |
 
@@ -226,7 +226,7 @@ Run on each available environment. Use background tasks for independence.
 
 **Local Kind** (requires running Kind cluster with agents deployed):
 ```bash
-export LOG_DIR=/tmp/kagenti/tdd-iter<N> && mkdir -p $LOG_DIR
+export LOG_DIR=/tmp/rossoctl/tdd-iter<N> && mkdir -p $LOG_DIR
 .github/scripts/local-setup/openshell-full-test.sh \
   --skip-cluster-create --skip-cluster-destroy \
   > $LOG_DIR/kind-fulltest.log 2>&1; echo "EXIT:$?"
@@ -235,8 +235,8 @@ export LOG_DIR=/tmp/kagenti/tdd-iter<N> && mkdir -p $LOG_DIR
 **Custom HyperShift** (requires ospoc or similar cluster):
 ```bash
 cd /path/to/main/repo  # NOT worktree — credentials live here
-source .env.kagenti-hypershift-custom
-export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-ospoc/auth/kubeconfig
+source .env.rossoctl-hypershift-custom
+export KUBECONFIG=~/clusters/hcp/rossoctl-hypershift-custom-ospoc/auth/kubeconfig
 /path/to/worktree/.github/scripts/local-setup/openshell-full-test.sh \
   --platform ocp --skip-cluster-create --skip-cluster-destroy \
   > $LOG_DIR/hcp-fulltest.log 2>&1; echo "EXIT:$?"
@@ -295,7 +295,7 @@ Do NOT commit if tests regressed from previous iteration.
 
 ## Tracking File
 
-Maintain at `/tmp/kagenti/test-matrix-tracking.md` (or `docs/plans/` for persistence).
+Maintain at `/tmp/rossoctl/test-matrix-tracking.md` (or `docs/plans/` for persistence).
 
 Format:
 ```markdown

@@ -43,13 +43,13 @@ python3 .claude/scripts/session-analytics.py \
   --repo <OWNER/NAME> \
   --from-date <START_DATE> \
   --to-date <END_DATE> \
-  --output-dir /tmp/kagenti/session/
+  --output-dir /tmp/rossoctl/session/
 ```
 
 This will:
 1. Fetch session comments from all PRs/issues in the date range
 2. Parse session metrics from each comment
-3. Generate output files in `/tmp/kagenti/session/`:
+3. Generate output files in `/tmp/rossoctl/session/`:
    - `sessions.csv` - Raw session data in CSV format
    - `sessions.md` - Formatted Markdown report
    - `dashboard.html` - Interactive HTML dashboard
@@ -59,7 +59,7 @@ This will:
 After extraction completes, report the output file locations to the user:
 
 ```bash
-ls -la /tmp/kagenti/session/
+ls -la /tmp/rossoctl/session/
 ```
 
 Provide the full paths so the user can open or share the files.
@@ -72,27 +72,27 @@ Provide the full paths so the user can open or share the files.
 | `--repo` | Auto-detected from git remote | Yes | - |
 | `--from-date` | User-specified or default | No | 30 days ago |
 | `--to-date` | User-specified or default | No | Today |
-| `--output-dir` | Fixed | No | `/tmp/kagenti/session/` |
+| `--output-dir` | Fixed | No | `/tmp/rossoctl/session/` |
 
 ## Examples
 
 ```bash
 # Extract last 30 days (default)
 python3 .claude/scripts/session-analytics.py \
-  --phase extract --repo kagenti/kagenti \
-  --output-dir /tmp/kagenti/session/
+  --phase extract --repo rossoctl/rossoctl \
+  --output-dir /tmp/rossoctl/session/
 
 # Extract specific date range
 python3 .claude/scripts/session-analytics.py \
-  --phase extract --repo kagenti/kagenti \
+  --phase extract --repo rossoctl/rossoctl \
   --from-date 2025-01-01 --to-date 2025-01-31 \
-  --output-dir /tmp/kagenti/session/
+  --output-dir /tmp/rossoctl/session/
 
 # Extract all time
 python3 .claude/scripts/session-analytics.py \
-  --phase extract --repo kagenti/kagenti \
+  --phase extract --repo rossoctl/rossoctl \
   --from-date 2024-01-01 \
-  --output-dir /tmp/kagenti/session/
+  --output-dir /tmp/rossoctl/session/
 ```
 
 ## Output Files

@@ -13,9 +13,9 @@
 
 Pre-installed Claude Code CLI in the OpenShell base sandbox image. Claude Code
 is the **highest-value integration target** because it natively reads
-`.claude/skills/` — no prompt injection needed for kagenti skill execution.
+`.claude/skills/` — no prompt injection needed for rossoctl skill execution.
 Session transcripts are stored as JSONL files on disk, enabling rich session
-browsing via the Kagenti FileBrowser.
+browsing via the Rossoctl FileBrowser.
 
 ## 2. Architecture
 
@@ -26,7 +26,7 @@ graph LR
     SV --> CC["Claude Code CLI"]
     CC -->|"via supervisor proxy"| LLM["Anthropic API"]
     CC --> WS["/sandbox/<br/>(PVC workspace)"]
-    CC --> Skills[".claude/skills/<br/>(kagenti skills)"]
+    CC --> Skills[".claude/skills/<br/>(rossoctl skills)"]
     CC --> Sessions["~/.claude/projects/<br/>(JSONL transcripts)"]
 ```
 
@@ -83,7 +83,7 @@ kubectl set env statefulset/openshell-gateway -n openshell-system \
 
 ### Claude Code-Specific Features
 
-| Feature | Storage | Format | Kagenti Exposure |
+| Feature | Storage | Format | Rossoctl Exposure |
 |---------|---------|--------|-----------------|
 | **Session transcripts** | `~/.claude/projects/{uuid}.jsonl` | JSONL (append-only) | FileBrowser + SessionSidebar |
 | **Task system** | `~/.claude/tasks/` | JSON DAGs | SubSessionsPanel |
@@ -94,10 +94,10 @@ kubectl set env statefulset/openshell-gateway -n openshell-system \
 | **Tool calls** | Embedded in JSONL transcripts | Part objects | AgentLoopCard |
 | **Thinking blocks** | Embedded in JSONL transcripts | Content blocks | LoopDetail (collapsible) |
 
-## 6. Kagenti Integration
+## 6. Rossoctl Integration
 
 ### 6.1 Communication Adapter
-**ExecSandbox gRPC** (Phase 2) — Kagenti backend calls `ExecSandbox` RPC on the
+**ExecSandbox gRPC** (Phase 2) — Rossoctl backend calls `ExecSandbox` RPC on the
 OpenShell gateway to send prompts to Claude Code running in the sandbox.
 
 Alternative: **Terminal Adapter** (Phase 3) — WebSocket → SSH tunnel for
@@ -105,7 +105,7 @@ interactive browser-based terminal via xterm.js.
 
 ### 6.2 Session Management
 
-| Data | Storage | Survives Restart? | Kagenti Access |
+| Data | Storage | Survives Restart? | Rossoctl Access |
 |------|---------|-------------------|---------------|
 | Conversation transcript | `/sandbox/.claude/projects/*.jsonl` | Yes (PVC) | FileBrowser |
 | Task list | `/sandbox/.claude/tasks/` | Yes (PVC) | SubSessionsPanel |
@@ -115,7 +115,7 @@ interactive browser-based terminal via xterm.js.
 
 ### 6.3 Observable Events
 
-| Event | Source | Kagenti UI Component | Phase |
+| Event | Source | Rossoctl UI Component | Phase |
 |-------|--------|---------------------|-------|
 | Session transcript | JSONL on PVC | FileBrowser, SessionSidebar | Phase 2 |
 | Task creation/completion | `~/.claude/tasks/` | SubSessionsPanel | Phase 2 |
@@ -135,7 +135,7 @@ interactive browser-based terminal via xterm.js.
 | `/sandbox/.claude/projects/*.jsonl` | Session transcripts | Yes | JSONL → Markdown conversion |
 | `/sandbox/.claude/tasks/` | Task DAGs | Yes | JSON tree view |
 | `/sandbox/.claude/agent-memory/` | Persistent knowledge | Yes | Markdown rendering |
-| `/sandbox/.claude/skills/*/SKILL.md` | Kagenti skills | Yes | Markdown rendering |
+| `/sandbox/.claude/skills/*/SKILL.md` | Rossoctl skills | Yes | Markdown rendering |
 | `/sandbox/.claude/settings.json` | Permissions config | Yes | JSON syntax highlight |
 | `/sandbox/project/` | Agent-modified code | Yes | Full syntax highlight |
 
@@ -166,7 +166,7 @@ All supervisor protection layers are active in the base image:
 ## 9. Skill Execution
 
 Claude Code is the **highest-value skill target** because it natively reads
-`.claude/skills/` directories — no prompt injection needed. Kagenti skills
+`.claude/skills/` directories — no prompt injection needed. Rossoctl skills
 can be mounted into the sandbox workspace and Claude Code discovers them
 automatically.
 
@@ -252,18 +252,18 @@ see the `claude-*` model name and accept it.
 
 | Model | Supported | Notes |
 |-------|-----------|-------|
-| Mode 1: Kagenti Deployment | Not applicable | CLI agent, not a standalone service |
+| Mode 1: Rossoctl Deployment | Not applicable | CLI agent, not a standalone service |
 | Mode 2: Sandbox CR | **Current** | Gateway creates pod from base image |
 | Mode 2 + PVC | **Supported** | Workspace persists via PVC |
 | Mode 2 + dtach | **Planned** | Session survives CLI disconnect |
 
 ### A2A Adapter Design for Claude Code
 
-Claude Code is not an A2A service. To integrate with the Kagenti backend:
+Claude Code is not an A2A service. To integrate with the Rossoctl backend:
 
 ```mermaid
 graph TB
-    BE["Kagenti Backend"] -->|"ExecSandbox gRPC"| GW["OpenShell Gateway"]
+    BE["Rossoctl Backend"] -->|"ExecSandbox gRPC"| GW["OpenShell Gateway"]
     GW -->|"exec in pod"| SB["Sandbox Pod"]
     SB --> CC["claude -p 'prompt...'"]
     CC -->|"stdout"| SB

@@ -14,7 +14,7 @@ HyperShift clusters are expensive (real AWS infrastructure). To prevent resource
                                     ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  1. acquire.sh - Try to CREATE Lease (atomic, fails if exists)           │
-│     - Name: kagenti-ci-slot-<N> where N ∈ [0, MAX_SLOTS-1]               │
+│     - Name: rossoctl-ci-slot-<N> where N ∈ [0, MAX_SLOTS-1]               │
 │     - If created → slot acquired                                          │
 │     - If all exist → wait and retry, cleanup expired leases               │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -28,7 +28,7 @@ HyperShift clusters are expensive (real AWS infrastructure). To prevent resource
                                     │
                                     ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  3. Create cluster, deploy Kagenti, run E2E tests                        │
+│  3. Create cluster, deploy Rossoctl, run E2E tests                        │
 │     - ResourceQuota provides final safety net                             │
 └──────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -98,7 +98,7 @@ oc get resourcequota -n clusters
 | `SLOT_TIMEOUT` | `60` | Minutes to wait for slot |
 | `LEASE_DURATION_SECONDS` | `7200` | Lease TTL (2 hours) |
 | `NAMESPACE` | `clusters` | Namespace for Leases |
-| `LEASE_PREFIX` | `kagenti-ci-slot` | Prefix for Lease names |
+| `LEASE_PREFIX` | `rossoctl-ci-slot` | Prefix for Lease names |
 
 ## Why Kubernetes Leases?
 

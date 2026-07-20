@@ -52,7 +52,7 @@ For edits: always read the skill FIRST, then edit. Never overwrite without readi
 
 **IMPORTANT**: Use colon notation in directory names (e.g., `auth:my-skill/`). Required for Claude Code skill discovery.
 
-Categories: `auth`, `ci`, `genai`, `git`, `hypershift`, `istio`, `k8s`, `kagenti`, `kind`, `local`, `openshift`, `rca`, `skills`, `tdd`, `testing`
+Categories: `auth`, `ci`, `genai`, `git`, `hypershift`, `istio`, `k8s`, `rossoctl`, `kind`, `local`, `openshift`, `rca`, `skills`, `tdd`, `testing`
 
 ## Frontmatter
 
@@ -100,12 +100,12 @@ Claude Code auto-approves commands by matching the first token against `.claude/
 ```markdown
 Check pod status:
 ```bash
-kubectl get pods -n kagenti-system
+kubectl get pods -n rossoctl-system
 ```
 
 Check logs:
 ```bash
-kubectl logs -n kagenti-system deployment/mlflow
+kubectl logs -n rossoctl-system deployment/mlflow
 ```
 ```
 
@@ -115,7 +115,7 @@ For HyperShift, prefix each command individually:
 
 ```markdown
 ```bash
-KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-$CLUSTER/auth/kubeconfig kubectl get pods -n kagenti-system
+KUBECONFIG=~/clusters/hcp/rossoctl-hypershift-custom-$CLUSTER/auth/kubeconfig kubectl get pods -n rossoctl-system
 ```
 ```
 
@@ -125,10 +125,10 @@ Commands targeting management clusters or AWS need user approval anyway, so mult
 
 ### Temporary Files
 
-Skills that download logs, artifacts, or save analysis output should use `/tmp/kagenti/<skill-category>/` as the working directory:
+Skills that download logs, artifacts, or save analysis output should use `/tmp/rossoctl/<skill-category>/` as the working directory:
 
 ```bash
-mkdir -p /tmp/kagenti/rca
+mkdir -p /tmp/rossoctl/rca
 ```
 
 This path is auto-approved for read/write in `.claude/settings.json`.
@@ -184,7 +184,7 @@ Every workflow skill (tdd, rca, ci, etc.) MUST include a Task Tracking section. 
 <worktree> | <PR> | <plan-doc> | <topic> | <phase> | <task description>
 ```
 
-- **worktree**: git worktree name (e.g., `mlflow-ci`) or `kagenti` for main repo
+- **worktree**: git worktree name (e.g., `mlflow-ci`) or `rossoctl` for main repo
 - **PR**: PR reference (e.g., `PR#569`) or `none`
 - **plan-doc**: plan filename (e.g., `calm-toast.md`) or `ad-hoc` if no plan
 - **topic**: area of work (e.g., `Kind CI`, `MLflow init`, `CodeQL`)
@@ -194,7 +194,7 @@ Every workflow skill (tdd, rca, ci, etc.) MUST include a Task Tracking section. 
 Examples:
 - `mlflow-ci | PR#569 | calm-toast.md | MLflow init | Phase 2: Fix | Use parameterized SQL`
 - `mlflow-ci | PR#569 | ad-hoc | Kind CI | | Bind Ollama to 0.0.0.0`
-- `kagenti | none | calm-toast.md | skills | Step 1 | Create ci:status skill`
+- `rossoctl | none | calm-toast.md | skills | Step 1 | Create ci:status skill`
 
 ### Task Lifecycle
 
@@ -215,7 +215,7 @@ Examples:
 4. Status reporting - always show plan doc in task name:
    | # | Status | Task (includes plan doc) |
    |---|--------|-------------------------|
-   | #26 | in_progress | kagenti \| none \| calm-toast.md \| skills \| Create \| ci:status |
+   | #26 | in_progress | rossoctl \| none \| calm-toast.md \| skills \| Create \| ci:status |
    | #32 | completed | mlflow-ci \| PR#569 \| ad-hoc \| Kind CI \| Fix \| Ollama bind |
 ```
 

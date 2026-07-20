@@ -36,8 +36,8 @@ single PRs, fix CI blockers, and approve safe merges.
 Set these at the start of every session. All commands below use them.
 
 ```bash
-export OWNER=<org-or-user>       # e.g. kagenti
-export REPO=<repo-name>          # e.g. kagenti
+export OWNER=<org-or-user>       # e.g. rossoctl
+export REPO=<repo-name>          # e.g. rossoctl
 export LOG_DIR=/tmp/dependabot-triage/$REPO
 mkdir -p $LOG_DIR
 ```

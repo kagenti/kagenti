@@ -5,7 +5,7 @@ description: TDD workflow with HyperShift cluster - real-time debugging with ful
 
 # TDD-HyperShift Workflow
 
-Test-driven development workflow using hypershift-full-test.sh phases for Kagenti development.
+Test-driven development workflow using hypershift-full-test.sh phases for Rossoctl development.
 
 ## Context-Safe Execution (MANDATORY)
 
@@ -35,11 +35,11 @@ mkdir -p $LOG_DIR
 
 ```bash
 # WRONG:
-kubectl get pods -n kagenti-system
+kubectl get pods -n rossoctl-system
 kubectl logs -n team1 deployment/weather-service --tail=100
 
 # RIGHT:
-kubectl get pods -n kagenti-system > $LOG_DIR/pods.log 2>&1 && echo "OK: pods listed" || echo "FAIL (see $LOG_DIR/pods.log)"
+kubectl get pods -n rossoctl-system > $LOG_DIR/pods.log 2>&1 && echo "OK: pods listed" || echo "FAIL (see $LOG_DIR/pods.log)"
 kubectl logs -n team1 deployment/weather-service --tail=100 > $LOG_DIR/weather-logs.log 2>&1 && echo "OK" || echo "FAIL"
 # Only read the log file in a subagent if you need to analyze failures
 ```
@@ -82,7 +82,7 @@ oc start-build weather-tool -n team1 --follow > $LOG_DIR/build.log 2>&1; echo "E
 Before starting, check for an existing HyperShift cluster:
 
 ```bash
-ls ~/clusters/hcp/kagenti-hypershift-custom-*/auth/kubeconfig 2>/dev/null
+ls ~/clusters/hcp/rossoctl-hypershift-custom-*/auth/kubeconfig 2>/dev/null
 ```
 
 If no cluster exists, ask the user:
@@ -169,7 +169,7 @@ This gate runs once per session, not on every iteration.
 **Always run from main repo**, pointing to worktree scripts:
 
 ```bash
-export CLUSTER=mlflow WORKTREE=mlflow-ci MANAGED_BY_TAG=${MANAGED_BY_TAG:-kagenti-hypershift-custom}
+export CLUSTER=mlflow WORKTREE=mlflow-ci MANAGED_BY_TAG=${MANAGED_BY_TAG:-rossoctl-hypershift-custom}
 KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig \
   .worktrees/$WORKTREE/.github/scripts/local-setup/hypershift-full-test.sh $CLUSTER \
   --include-test [--pytest-filter "filter"]
@@ -184,11 +184,11 @@ KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig \
 Patch a ConfigMap, restart a pod, or update a deployment directly:
 
 ```bash
-KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig kubectl rollout restart deployment/otel-collector -n kagenti-system
+KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig kubectl rollout restart deployment/otel-collector -n rossoctl-system
 ```
 
 ```bash
-KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig kubectl rollout restart deployment/mlflow -n kagenti-system
+KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig kubectl rollout restart deployment/mlflow -n rossoctl-system
 ```
 
 ```bash
@@ -217,7 +217,7 @@ KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig \
 Or trigger a Shipwright BuildRun for the weather-service:
 
 ```bash
-KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig kubectl create -f .worktrees/$WORKTREE/kagenti/examples/agents/weather_agent_shipwright_buildrun.yaml
+KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig kubectl create -f .worktrees/$WORKTREE/rossoctl/examples/agents/weather_agent_shipwright_buildrun.yaml
 ```
 
 After rebuild, delete the pod to pick up the new image:
@@ -247,7 +247,7 @@ Only when the cluster itself is broken:
 
 ## Building Custom Images from Dependency Repos
 
-When debugging issues in agent-examples or kagenti-extensions, build custom images directly on the cluster using Shipwright/OpenShift Builds:
+When debugging issues in agent-examples or rossocortex, build custom images directly on the cluster using Shipwright/OpenShift Builds:
 
 ```bash
 # Point build spec to your fork/branch
@@ -256,11 +256,11 @@ When debugging issues in agent-examples or kagenti-extensions, build custom imag
 #   revision: your-branch
 
 # Apply and trigger build
-KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig kubectl apply -f .worktrees/$WORKTREE/kagenti/examples/agents/weather_agent_shipwright_build_ocp.yaml
+KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig kubectl apply -f .worktrees/$WORKTREE/rossoctl/examples/agents/weather_agent_shipwright_build_ocp.yaml
 ```
 
 ```bash
-KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig kubectl create -f .worktrees/$WORKTREE/kagenti/examples/agents/weather_agent_shipwright_buildrun.yaml
+KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig kubectl create -f .worktrees/$WORKTREE/rossoctl/examples/agents/weather_agent_shipwright_buildrun.yaml
 ```
 
 Watch the build:
@@ -291,10 +291,10 @@ KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig kubectl rollo
 ## Development Loop
 
 ```bash
-export CLUSTER=mlflow WORKTREE=mlflow-ci MANAGED_BY_TAG=${MANAGED_BY_TAG:-kagenti-hypershift-custom}
+export CLUSTER=mlflow WORKTREE=mlflow-ci MANAGED_BY_TAG=${MANAGED_BY_TAG:-rossoctl-hypershift-custom}
 
 # 1. Make changes in worktree
-vim .worktrees/$WORKTREE/kagenti/tests/e2e/common/test_mlflow_traces.py
+vim .worktrees/$WORKTREE/rossoctl/tests/e2e/common/test_mlflow_traces.py
 
 # 2. Run specific tests
 KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig \
@@ -307,12 +307,12 @@ KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig \
 ## Quick kubectl Commands
 
 ```bash
-export CLUSTER=mlflow MANAGED_BY_TAG=${MANAGED_BY_TAG:-kagenti-hypershift-custom}
+export CLUSTER=mlflow MANAGED_BY_TAG=${MANAGED_BY_TAG:-rossoctl-hypershift-custom}
 export KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig
 
 # Always redirect kubectl output to files
-kubectl get pods -n kagenti-system > $LOG_DIR/pods-system.log 2>&1 && echo "OK" || echo "FAIL"
-kubectl logs -n kagenti-system -l app=mlflow --tail=50 > $LOG_DIR/mlflow.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl get pods -n rossoctl-system > $LOG_DIR/pods-system.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl logs -n rossoctl-system -l app=mlflow --tail=50 > $LOG_DIR/mlflow.log 2>&1 && echo "OK" || echo "FAIL"
 kubectl get pods -n team1 > $LOG_DIR/pods-team1.log 2>&1 && echo "OK" || echo "FAIL"
 # Use Task(subagent_type='Explore') to read logs only when investigating failures
 ```
@@ -347,7 +347,7 @@ Once the issue is fixed with real-time debugging, return to `tdd:ci` for final C
 ## UI Tests
 
 For Playwright UI tests (login, navigation, agent chat), invoke `test:ui`.
-Set `KAGENTI_UI_URL` to the OpenShift route and run against the live cluster.
+Set `ROSSOCTL_UI_URL` to the OpenShift route and run against the live cluster.
 
 ## Session Reporting
 

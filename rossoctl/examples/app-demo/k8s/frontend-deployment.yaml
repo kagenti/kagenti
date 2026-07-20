@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-demo-frontend
+  namespace: rossoctl-system
+  labels:
+    app: app-demo
+    component: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-demo
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: app-demo
+        component: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: localhost/app-demo-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-demo-frontend
+  namespace: rossoctl-system
+  labels:
+    app: app-demo
+    component: frontend
+spec:
+  selector:
+    app: app-demo
+    component: frontend
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# pin-release-tags.sh — Pin all kagenti-built image tags to a release version.
+# pin-release-tags.sh — Pin all rossoctl-built image tags to a release version.
 #
-# Updates image tags across both charts/kagenti/ and charts/kagenti-deps/ so
+# Updates image tags across both charts/rossoctl/ and charts/rossoctl-deps/ so
 # that a tagged release checkout always pulls the correct images when installed
-# from source (via the setup-kagenti.sh installers).
+# from source (via the setup-rossoctl.sh installers).
 #
 # Usage:
 #   ./scripts/pin-release-tags.sh v0.6.0-rc.6
@@ -19,11 +19,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-KAGENTI_VALUES="$REPO_ROOT/charts/kagenti/values.yaml"
-KAGENTI_DEPS_VALUES="$REPO_ROOT/charts/kagenti-deps/values.yaml"
-# Only kagenti Chart.yaml is versioned here; kagenti-deps is a dependency chart
+ROSSOCTL_VALUES="$REPO_ROOT/charts/rossoctl/values.yaml"
+ROSSOCTL_DEPS_VALUES="$REPO_ROOT/charts/rossoctl-deps/values.yaml"
+# Only rossoctl Chart.yaml is versioned here; rossoctl-deps is a dependency chart
 # whose version is managed independently via its own release cadence.
-KAGENTI_CHART="$REPO_ROOT/charts/kagenti/Chart.yaml"
+ROSSOCTL_CHART="$REPO_ROOT/charts/rossoctl/Chart.yaml"
 
 DRY_RUN=false
 VERIFY_IMAGES=false
@@ -36,7 +36,7 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") VERSION [OPTIONS]
 
-Pin all kagenti-built container image tags to VERSION across both Helm charts.
+Pin all rossoctl-built container image tags to VERSION across both Helm charts.
 
 Arguments:
   VERSION             The release version tag (e.g., v0.6.0-rc.6, v0.7.0-alpha.1)
@@ -48,7 +48,7 @@ Options:
   --skip-chart-version   Do NOT update Chart.yaml version/appVersion
   -h, --help             Show this help message
 
-Images pinned (charts/kagenti/values.yaml):
+Images pinned (charts/rossoctl/values.yaml):
   - ui.frontend.tag
   - ui.backend.tag
   - uiOAuthSecret.tag
@@ -56,7 +56,7 @@ Images pinned (charts/kagenti/values.yaml):
   - apiOAuthSecret.tag
   - mlflowOAuthSecret.tag
 
-Images pinned (charts/kagenti-deps/values.yaml):
+Images pinned (charts/rossoctl-deps/values.yaml):
   - spiffeIdp.image.tag
 
 EOF
@@ -112,13 +112,13 @@ if ! command -v yq >/dev/null 2>&1; then
     exit 2
 fi
 
-if [[ ! -f "$KAGENTI_VALUES" ]]; then
-    echo "error: $KAGENTI_VALUES not found (run from repo root)" >&2
+if [[ ! -f "$ROSSOCTL_VALUES" ]]; then
+    echo "error: $ROSSOCTL_VALUES not found (run from repo root)" >&2
     exit 1
 fi
 
-if [[ ! -f "$KAGENTI_DEPS_VALUES" ]]; then
-    echo "error: $KAGENTI_DEPS_VALUES not found (run from repo root)" >&2
+if [[ ! -f "$ROSSOCTL_DEPS_VALUES" ]]; then
+    echo "error: $ROSSOCTL_DEPS_VALUES not found (run from repo root)" >&2
     exit 1
 fi
 
@@ -126,20 +126,20 @@ fi
 # Image registry and paths
 # ---------------------------------------------------------------------------
 
-REGISTRY="ghcr.io/kagenti/kagenti"
+REGISTRY="ghcr.io/rossoctl/rossoctl"
 
 # Map of yq paths to image names. These are ALL images built by this repo's
 # build.yaml CI workflow and must be kept in sync with the matrix there.
 #
 # Format: "values-file|yq-path|image-name"
 PINNABLE_IMAGES=(
-    "$KAGENTI_VALUES|.ui.frontend.tag|ui-v2"
-    "$KAGENTI_VALUES|.ui.backend.tag|backend"
-    "$KAGENTI_VALUES|.uiOAuthSecret.tag|ui-oauth-secret"
-    "$KAGENTI_VALUES|.agentOAuthSecret.tag|agent-oauth-secret"
-    "$KAGENTI_VALUES|.apiOAuthSecret.tag|api-oauth-secret"
-    "$KAGENTI_VALUES|.mlflowOAuthSecret.tag|mlflow-oauth-secret"
-    "$KAGENTI_DEPS_VALUES|.spiffeIdp.image.tag|spiffe-idp-setup"
+    "$ROSSOCTL_VALUES|.ui.frontend.tag|ui-v2"
+    "$ROSSOCTL_VALUES|.ui.backend.tag|backend"
+    "$ROSSOCTL_VALUES|.uiOAuthSecret.tag|ui-oauth-secret"
+    "$ROSSOCTL_VALUES|.agentOAuthSecret.tag|agent-oauth-secret"
+    "$ROSSOCTL_VALUES|.apiOAuthSecret.tag|api-oauth-secret"
+    "$ROSSOCTL_VALUES|.mlflowOAuthSecret.tag|mlflow-oauth-secret"
+    "$ROSSOCTL_DEPS_VALUES|.spiffeIdp.image.tag|spiffe-idp-setup"
 )
 
 # ---------------------------------------------------------------------------
@@ -239,12 +239,12 @@ if [[ "$SKIP_CHART_VERSION" != "true" ]]; then
     chart_ver="${CHART_VERSION#v}"
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        current_chart_ver=$(yq eval '.version' "$KAGENTI_CHART")
+        current_chart_ver=$(yq eval '.version' "$ROSSOCTL_CHART")
         printf '%s[DRY]%s  Chart.yaml version: %s → %s\n' "$YELLOW" "$NC" "$current_chart_ver" "$chart_ver"
         printf '%s[DRY]%s  Chart.yaml appVersion: → %s\n' "$YELLOW" "$NC" "$chart_ver"
     else
-        yq eval --arg v "$chart_ver" '.version = $v' -i "$KAGENTI_CHART"
-        yq eval --arg v "$chart_ver" '.appVersion = $v' -i "$KAGENTI_CHART"
+        yq eval --arg v "$chart_ver" '.version = $v' -i "$ROSSOCTL_CHART"
+        yq eval --arg v "$chart_ver" '.appVersion = $v' -i "$ROSSOCTL_CHART"
         printf '%s[PIN]%s  Chart.yaml version + appVersion → %s\n' "$GREEN" "$NC" "$chart_ver"
     fi
 fi

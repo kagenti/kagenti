@@ -1,21 +1,21 @@
 ---
 name: playwright-demo
-description: Record narrated demo videos of the Kagenti platform using Playwright and OpenAI TTS
+description: Record narrated demo videos of the Rossoctl platform using Playwright and OpenAI TTS
 ---
 
 # Playwright Demo Recording
 
-Record demo videos of the Kagenti platform with AI-generated voiceover narration.
+Record demo videos of the Rossoctl platform with AI-generated voiceover narration.
 
 ## When to Use
 
-- Creating a demo video of the Kagenti platform for presentations
+- Creating a demo video of the Rossoctl platform for presentations
 - Recording a walkthrough of a new feature with voiceover
 - Generating reproducible video documentation of platform workflows
 
 ## Prerequisites
 
-- HyperShift or Kind cluster with Kagenti deployed
+- HyperShift or Kind cluster with Rossoctl deployed
 - The `playwright-demos` worktree: `.worktrees/playwright-demos/`
 - `ffmpeg` and `ffprobe` installed
 - `OPENAI_API_KEY` in `.env` for narration (optional -- video-only without it)

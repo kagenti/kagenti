@@ -47,8 +47,8 @@ else
 fi
 
 echo ""
-echo "=== Kagenti Operator Logs (injection decisions, last 30 lines) ==="
-kubectl logs -n kagenti-system deployment/kagenti-controller-manager --tail=50 2>/dev/null | grep -E 'injection decision|inject|client-registration|credential|error|ERROR' | tail -30 || true
+echo "=== Rossoctl Operator Logs (injection decisions, last 30 lines) ==="
+kubectl logs -n rossoctl-system deployment/rossoctl-controller-manager --tail=50 2>/dev/null | grep -E 'injection decision|inject|client-registration|credential|error|ERROR' | tail -30 || true
 
 echo ""
 echo "=== Shipwright Build Status ==="

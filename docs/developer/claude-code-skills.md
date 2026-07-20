@@ -1,6 +1,6 @@
 # Claude Code Skills Development
 
-Guide for developing, maintaining, and improving Claude Code skills in the Kagenti repository.
+Guide for developing, maintaining, and improving Claude Code skills in the Rossoctl repository.
 
 ## Table of Contents
 

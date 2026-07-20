@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-Kagenti agents need per-conversation persistent workspaces where they can safely run shell commands (grep, sed, bash scripts), install Python packages, clone git repos, and manage data files. Each A2A `context_id` must have its own isolated workspace with controlled access to tools, packages, and network resources.
+Rossoctl agents need per-conversation persistent workspaces where they can safely run shell commands (grep, sed, bash scripts), install Python packages, clone git repos, and manage data files. Each A2A `context_id` must have its own isolated workspace with controlled access to tools, packages, and network resources.
 
 ## Architecture Overview
 
@@ -91,8 +91,8 @@ metadata:
   name: weather-agent-workspace
   namespace: team1
   labels:
-    kagenti.io/type: agent-workspace
-    kagenti.io/agent: weather-service
+    rossoctl.io/type: agent-workspace
+    rossoctl.io/agent: weather-service
 spec:
   accessModes:
     - ReadWriteMany
@@ -159,10 +159,10 @@ sequenceDiagram
 
 ### Metrics
 
-- `kagenti_context_workspace_bytes{context_id, agent, namespace}` - disk usage per context
-- `kagenti_workspace_pvc_usage_bytes{agent, namespace}` - total PVC usage
-- `kagenti_workspace_pvc_capacity_bytes{agent, namespace}` - PVC capacity
-- `kagenti_context_last_accessed_timestamp{context_id, agent, namespace}` - TTL tracking
+- `rossoctl_context_workspace_bytes{context_id, agent, namespace}` - disk usage per context
+- `rossoctl_workspace_pvc_usage_bytes{agent, namespace}` - total PVC usage
+- `rossoctl_workspace_pvc_capacity_bytes{agent, namespace}` - PVC capacity
+- `rossoctl_context_last_accessed_timestamp{context_id, agent, namespace}` - TTL tracking
 
 ## settings.json - Operation Control
 

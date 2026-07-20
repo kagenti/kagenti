@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Show Services Script - Display all Kagenti services, URLs, and credentials
+# Show Services Script - Display all Rossoctl services, URLs, and credentials
 #
 # Usage:
 #   ./.github/scripts/local-setup/show-services.sh [--verbose] [cluster-suffix]
@@ -58,7 +58,7 @@ detect_environment() {
 }
 
 setup_hypershift_kubeconfig() {
-    local managed_by_tag="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+    local managed_by_tag="${MANAGED_BY_TAG:-rossoctl-hypershift-custom}"
     local cluster_suffix="${CLUSTER_SUFFIX:-$USER}"
     local cluster_name="${managed_by_tag}-${cluster_suffix}"
     local kubeconfig_path="$HOME/clusters/hcp/${cluster_name}/auth/kubeconfig"
@@ -72,7 +72,7 @@ setup_hypershift_kubeconfig() {
 }
 
 get_cluster_name() {
-    local managed_by_tag="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+    local managed_by_tag="${MANAGED_BY_TAG:-rossoctl-hypershift-custom}"
     local cluster_suffix="${CLUSTER_SUFFIX:-$USER}"
     echo "${managed_by_tag}-${cluster_suffix}"
 }
@@ -99,8 +99,8 @@ case "$ENV_TYPE" in
 esac
 
 # Check platform
-if ! $CLI get namespace kagenti-system &> /dev/null; then
-    echo -e "${RED}Error: Platform not deployed (kagenti-system namespace not found)${NC}"
+if ! $CLI get namespace rossoctl-system &> /dev/null; then
+    echo -e "${RED}Error: Platform not deployed (rossoctl-system namespace not found)${NC}"
     exit 1
 fi
 
@@ -110,21 +110,21 @@ fi
 if [ "$ENV_TYPE" = "kind" ]; then
     DOMAIN_NAME="${DOMAIN_NAME:-localtest.me}"
     KEYCLOAK_URL="http://keycloak.${DOMAIN_NAME}:8080"
-    UI_URL="http://kagenti-ui.${DOMAIN_NAME}:8080"
+    UI_URL="http://rossoctl-ui.${DOMAIN_NAME}:8080"
     MLFLOW_URL="http://mlflow.${DOMAIN_NAME}:8080"
     PHOENIX_URL="http://phoenix.${DOMAIN_NAME}:8080"
     KIALI_URL="http://kiali.${DOMAIN_NAME}:8080"
-    API_URL="http://kagenti-api.${DOMAIN_NAME}:8080"
+    API_URL="http://rossoctl-api.${DOMAIN_NAME}:8080"
     AGENT_URL=""
     CONSOLE_URL=""
 else
     _route() { $CLI get route -n "$1" "$2" -o jsonpath='{.spec.host}' 2>/dev/null || echo ""; }
     KEYCLOAK_HOST=$(_route keycloak keycloak)
-    UI_HOST=$(_route kagenti-system kagenti-ui)
-    MLFLOW_HOST=$(_route kagenti-system mlflow)
-    PHOENIX_HOST=$(_route kagenti-system phoenix)
+    UI_HOST=$(_route rossoctl-system rossoctl-ui)
+    MLFLOW_HOST=$(_route rossoctl-system mlflow)
+    PHOENIX_HOST=$(_route rossoctl-system phoenix)
     KIALI_HOST=$(_route istio-system kiali)
-    API_HOST=$(_route kagenti-system kagenti-api)
+    API_HOST=$(_route rossoctl-system rossoctl-api)
     AGENT_HOST=$(_route team1 weather-service)
     CONSOLE_HOST=$(_route openshift-console console)
 
@@ -145,10 +145,10 @@ fi
 KC_ADMIN_USER=$($CLI get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
 KC_ADMIN_PASS=$($CLI get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
 
-# App user (kagenti realm) - for UI and MLflow login
-# Falls back to master realm credentials if kagenti-test-user secret doesn't exist
-APP_USER=$($CLI get secret -n keycloak kagenti-test-user -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "$KC_ADMIN_USER")
-APP_PASS=$($CLI get secret -n keycloak kagenti-test-user -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "$KC_ADMIN_PASS")
+# App user (rossoctl realm) - for UI and MLflow login
+# Falls back to master realm credentials if rossoctl-test-user secret doesn't exist
+APP_USER=$($CLI get secret -n keycloak rossoctl-test-user -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "$KC_ADMIN_USER")
+APP_PASS=$($CLI get secret -n keycloak rossoctl-test-user -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "$KC_ADMIN_PASS")
 
 KUBEADMIN_PASS=""
 if [ "$ENV_TYPE" = "hypershift" ]; then
@@ -164,20 +164,20 @@ fi
 if [ "$VERBOSE" = "false" ]; then
 
     echo ""
-    echo -e "${CYAN}Kagenti Services${NC} - ${CLUSTER_NAME}"
+    echo -e "${CYAN}Rossoctl Services${NC} - ${CLUSTER_NAME}"
     echo ""
 
     # Credentials
-    echo -e "${GREEN}Kagenti UI & MLflow:${NC}  ${APP_USER} / ${APP_PASS}  ${DIM}(kagenti realm)${NC}"
+    echo -e "${GREEN}Rossoctl UI & MLflow:${NC}  ${APP_USER} / ${APP_PASS}  ${DIM}(rossoctl realm)${NC}"
     echo -e "${GREEN}Keycloak Admin:${NC}       ${KC_ADMIN_USER} / ${KC_ADMIN_PASS}  ${DIM}(master realm)${NC}"
     if [ -n "$KUBEADMIN_PASS" ]; then
         echo -e "${GREEN}kubeadmin:${NC}            kubeadmin / ${KUBEADMIN_PASS}"
     fi
     echo ""
 
-    # Kagenti UI
+    # Rossoctl UI
     if [ -n "$UI_URL" ]; then
-        echo -e "${MAGENTA}Kagenti UI${NC}"
+        echo -e "${MAGENTA}Rossoctl UI${NC}"
         echo -e "  $(link "$UI_URL")"
         echo -e "  $(link "$UI_URL/agents/team1/weather-service" "$UI_URL/agents/team1/weather-service")  ${DIM}Chat with Weather Agent${NC}"
     fi
@@ -203,7 +203,7 @@ if [ "$VERBOSE" = "false" ]; then
     fi
 
     # Phoenix (only show if deployed)
-    if [ -n "$PHOENIX_URL" ] && $CLI get pods -n kagenti-system -l app=phoenix --no-headers 2>/dev/null | grep -q .; then
+    if [ -n "$PHOENIX_URL" ] && $CLI get pods -n rossoctl-system -l app=phoenix --no-headers 2>/dev/null | grep -q .; then
         echo -e "${MAGENTA}Phoenix${NC}"
         echo -e "  $(link "$PHOENIX_URL/projects/UHJvamVjdDox/spans" "$PHOENIX_URL/projects/UHJvamVjdDox/spans")  ${DIM}Trace Spans${NC}"
         echo -e "  $(link "$PHOENIX_URL/projects/UHJvamVjdDox/sessions" "$PHOENIX_URL/projects/UHJvamVjdDox/sessions")  ${DIM}Chat Sessions${NC}"
@@ -212,7 +212,7 @@ if [ "$VERBOSE" = "false" ]; then
     # Kiali
     if [ -n "$KIALI_URL" ]; then
         KIALI_GRAPH="traffic=ambient%2CambientTotal%2Cgrpc%2CgrpcRequest%2Chttp%2ChttpRequest%2Ctcp%2CtcpSent&graphType=versionedApp&duration=10800&refresh=60000&layout=dagre&badgeSecurity=true&animation=true&waypoints=true"
-        KIALI_NS="kagenti-system%2Cteam1%2Cteam2%2Ckeycloak%2Cistio-system%2Cistio-cni%2Cistio-ztunnel%2Ccert-manager%2Cgateway-system%2Cmcp-system%2Cdefault"
+        KIALI_NS="rossoctl-system%2Cteam1%2Cteam2%2Ckeycloak%2Cistio-system%2Cistio-cni%2Cistio-ztunnel%2Ccert-manager%2Cgateway-system%2Cmcp-system%2Cdefault"
         KIALI_TRAFFIC_URL="$KIALI_URL/console/graph/namespaces?${KIALI_GRAPH}&namespaces=${KIALI_NS}"
         echo -e "${MAGENTA}Kiali${NC}"
         echo -e "  $(link "$KIALI_URL" "$KIALI_URL")  ${DIM}Dashboard${NC}"
@@ -246,7 +246,7 @@ fi
 
 echo ""
 echo "========================================================================="
-echo "             Kagenti Platform Services & Credentials                    "
+echo "             Rossoctl Platform Services & Credentials                    "
 echo "========================================================================="
 echo ""
 
@@ -279,7 +279,7 @@ echo -e "${CYAN}        (Services using Keycloak - use credentials below)       
 echo "##########################################################################"
 echo ""
 
-echo -e "${GREEN}App Login (Kagenti UI & MLflow):${NC} ${YELLOW}(kagenti realm)${NC}"
+echo -e "${GREEN}App Login (Rossoctl UI & MLflow):${NC} ${YELLOW}(rossoctl realm)${NC}"
 echo "  Username: ${APP_USER}"
 echo "  Password: ${APP_PASS}"
 echo ""
@@ -296,13 +296,13 @@ echo -e "${BLUE}Status:${NC}       $KEYCLOAK_STATUS"
 if [ -n "$KEYCLOAK_URL" ]; then
     echo -e "${BLUE}Admin URL:${NC}    $(link "$KEYCLOAK_URL/admin")"
 fi
-echo -e "${BLUE}Realm:${NC}        kagenti"
+echo -e "${BLUE}Realm:${NC}        rossoctl"
 echo ""
 
 echo "---------------------------------------------------------------------------"
-echo -e "${MAGENTA}Kagenti UI (Web Dashboard)${NC}"
+echo -e "${MAGENTA}Rossoctl UI (Web Dashboard)${NC}"
 echo "---------------------------------------------------------------------------"
-UI_STATUS=$($CLI get pods -n kagenti-system -l app.kubernetes.io/name=kagenti-ui -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+UI_STATUS=$($CLI get pods -n rossoctl-system -l app.kubernetes.io/name=rossoctl-ui -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $UI_STATUS"
 if [ -n "$UI_URL" ]; then
     echo -e "${BLUE}URL:${NC}          $(link "$UI_URL")"
@@ -315,7 +315,7 @@ echo ""
 echo "---------------------------------------------------------------------------"
 echo -e "${MAGENTA}Backend API (Direct API Access)${NC}"
 echo "---------------------------------------------------------------------------"
-BACKEND_STATUS=$($CLI get pods -n kagenti-system -l app.kubernetes.io/name=kagenti-backend -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+BACKEND_STATUS=$($CLI get pods -n rossoctl-system -l app.kubernetes.io/name=rossoctl-backend -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $BACKEND_STATUS"
 if [ -n "${API_URL:-}" ]; then
     echo -e "${BLUE}URL:${NC}          $(link "$API_URL")"
@@ -328,7 +328,7 @@ echo ""
 echo "---------------------------------------------------------------------------"
 echo -e "${MAGENTA}MLflow (LLM Trace Backend)${NC}"
 echo "---------------------------------------------------------------------------"
-MLFLOW_STATUS=$($CLI get pods -n kagenti-system -l app=mlflow -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+MLFLOW_STATUS=$($CLI get pods -n rossoctl-system -l app=mlflow -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $MLFLOW_STATUS"
 if [ -n "$MLFLOW_URL" ]; then
     echo -e "${BLUE}URL:${NC}          $(link "$MLFLOW_URL")"
@@ -377,7 +377,7 @@ if [ "$ENV_TYPE" = "hypershift" ] || [ "$ENV_TYPE" = "openshift" ]; then
     if [ -n "$KIALI_URL" ]; then
         echo -e "${BLUE}URL:${NC}          $(link "$KIALI_URL")"
         KIALI_GRAPH="traffic=ambient%2CambientTotal%2Cgrpc%2CgrpcRequest%2Chttp%2ChttpRequest%2Ctcp%2CtcpSent&graphType=versionedApp&duration=10800&refresh=60000&layout=dagre&badgeSecurity=true&animation=true&waypoints=true"
-        KIALI_NS="kagenti-system%2Cteam1%2Cteam2%2Ckeycloak%2Cistio-system%2Cistio-cni%2Cistio-ztunnel%2Ccert-manager%2Cgateway-system%2Cmcp-system%2Cdefault"
+        KIALI_NS="rossoctl-system%2Cteam1%2Cteam2%2Ckeycloak%2Cistio-system%2Cistio-cni%2Cistio-ztunnel%2Ccert-manager%2Cgateway-system%2Cmcp-system%2Cdefault"
         echo -e "${BLUE}Quick links:${NC}"
         echo -e "  $(link "$KIALI_URL/console/graph/namespaces?${KIALI_GRAPH}&namespaces=${KIALI_NS}" "Traffic Graph (all namespaces)")"
     else
@@ -397,11 +397,11 @@ echo -e "${CYAN}                    (No authentication required)                
 echo "##########################################################################"
 echo ""
 
-if $CLI get pods -n kagenti-system -l app=phoenix --no-headers 2>/dev/null | grep -q .; then
+if $CLI get pods -n rossoctl-system -l app=phoenix --no-headers 2>/dev/null | grep -q .; then
 echo "---------------------------------------------------------------------------"
 echo -e "${MAGENTA}Phoenix (LLM Trace Visualization)${NC}"
 echo "---------------------------------------------------------------------------"
-PHOENIX_STATUS=$($CLI get pods -n kagenti-system -l app=phoenix -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+PHOENIX_STATUS=$($CLI get pods -n rossoctl-system -l app=phoenix -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $PHOENIX_STATUS"
 if [ -n "$PHOENIX_URL" ]; then
     echo -e "${BLUE}URL:${NC}          $(link "$PHOENIX_URL")"
@@ -424,7 +424,7 @@ if [ "$ENV_TYPE" = "kind" ]; then
     echo -e "${BLUE}Status:${NC}       $KIALI_STATUS"
     echo -e "${BLUE}URL:${NC}          $(link "$KIALI_URL")"
     KIALI_GRAPH="traffic=http%2ChttpRequest%2Ctcp%2CtcpSent&graphType=versionedApp&duration=10800&refresh=60000&layout=dagre&animation=true"
-    KIALI_NS="kagenti-system%2Cteam1%2Cteam2%2Ckeycloak%2Cistio-system%2Cgateway-system%2Cdefault"
+    KIALI_NS="rossoctl-system%2Cteam1%2Cteam2%2Ckeycloak%2Cistio-system%2Cgateway-system%2Cdefault"
     echo -e "${BLUE}Quick links:${NC}"
     echo -e "  $(link "$KIALI_URL/console/graph/namespaces?${KIALI_GRAPH}&namespaces=${KIALI_NS}" "Traffic Graph (all namespaces)")"
     echo -e "${BLUE}Auth:${NC}         None required (Kind mode)"
@@ -485,13 +485,13 @@ echo "##########################################################################
 echo ""
 
 echo "---------------------------------------------------------------------------"
-echo -e "${MAGENTA}Kagenti Operator${NC}"
+echo -e "${MAGENTA}Rossoctl Operator${NC}"
 echo "---------------------------------------------------------------------------"
-OPERATOR_STATUS=$($CLI get pods -n kagenti-system -l control-plane=controller-manager -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+OPERATOR_STATUS=$($CLI get pods -n rossoctl-system -l control-plane=controller-manager -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $OPERATOR_STATUS"
-echo -e "${BLUE}Namespace:${NC}    kagenti-system"
+echo -e "${BLUE}Namespace:${NC}    rossoctl-system"
 echo -e "${BLUE}Agents:${NC}       $CLI get agents -A"
-echo -e "${BLUE}Logs:${NC}         $CLI logs -n kagenti-system -l control-plane=controller-manager -f"
+echo -e "${BLUE}Logs:${NC}         $CLI logs -n rossoctl-system -l control-plane=controller-manager -f"
 echo ""
 
 echo "---------------------------------------------------------------------------"

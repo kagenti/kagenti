@@ -1,21 +1,21 @@
-# Kagenti Repository Tiers — Proposal
+# Rossoctl Repository Tiers — Proposal
 
 **Status:** Draft for review
 **Date:** 2026-06-03
-**Audience:** Kagenti maintainers (TL;DR + decisions); broader contributor community (full rationale)
+**Audience:** Rossoctl maintainers (TL;DR + decisions); broader contributor community (full rationale)
 
 ---
 
 ## TL;DR
 
-The Kagenti GitHub org has ~20 repos today with no visible distinction between
+The Rossoctl GitHub org has ~20 repos today with no visible distinction between
 production-ready projects and experiments. This proposal introduces a **two-tier
 model** — **Core** and **Incubator** — signaled through three reinforcing surfaces:
 
 1. **GitHub Custom Properties** (`tier=core|incubator`) — admin-controlled source of truth.
-2. **Topics** (`kagenti-core`, `kagenti-incubator`) — public, filterable from any repo page.
-3. **Curated index** in `kagenti/.github/profile/README.md` and
-   `kagenti/kagenti/docs/governance/repositories.md` — human-readable, kept in sync by automation.
+2. **Topics** (`rossoctl-core`, `rossoctl-incubator`) — public, filterable from any repo page.
+3. **Curated index** in `rossoctl/.github/profile/README.md` and
+   `rossoctl/rossoctl/docs/governance/repositories.md` — human-readable, kept in sync by automation.
 
 Tier changes are governed by a **lightweight checklist + maintainer vote** (7-day
 lazy consensus, simple majority of Core repo maintainers).
@@ -51,7 +51,7 @@ This proposal addresses three goals together:
 
 ## Non-goals
 
-- Splitting the Kagenti org into sub-orgs (e.g., `kagenti-labs`).
+- Splitting the Rossoctl org into sub-orgs (e.g., `rossoctl-labs`).
 - Renaming existing repositories (a separate, future decision).
 - Moving repository contents between repos.
 - Introducing a third tier (e.g., "sandbox") — kept to two for simplicity;
@@ -124,11 +124,11 @@ library** maintained alongside the platform:
 
 - A set of reusable GitHub Actions workflows (e.g., lint, security scan,
   container build, e2e against a Kind cluster) lives in
-  `kagenti/.github/.github/workflows/`, exposed as `workflow_call` reusables.
+  `rossoctl/.github/.github/workflows/`, exposed as `workflow_call` reusables.
   This is the org's special `.github` repo, and GitHub's tooling — reusable-
   workflow resolution and (where supported) org-level *required workflows* /
-  rulesets — recognizes workflows under that path, which a `kagenti/kagenti/.github/workflows/`
-  or standalone `kagenti/ci-workflows` location would not get for free.
+  rulesets — recognizes workflows under that path, which a `rossoctl/rossoctl/.github/workflows/`
+  or standalone `rossoctl/ci-workflows` location would not get for free.
   (Per @rubambiza on the PR thread.)
 - Incubator repos opt in by adding a one-line `uses:` reference in their own
   workflow file. They control which checks run and on what triggers.
@@ -172,10 +172,10 @@ maintainer-vote process load-bearing.
 **API access (verified against the GitHub REST docs):**
 
 - **Reading** property values is available to any org member:
-  `GET /orgs/kagenti/properties/values` returns every repo with its `tier`.
+  `GET /orgs/rossoctl/properties/values` returns every repo with its `tier`.
   So read-only automation (the reconciliation script below) needs only an
   org-member token — no admin rights.
-- **Writing** values (`PATCH /orgs/kagenti/properties/values`, ≤30 repos per
+- **Writing** values (`PATCH /orgs/rossoctl/properties/values`, ≤30 repos per
   call) and **defining the schema** require an **org admin** or a token with the
   fine-grained `custom_properties_org_values_editor` permission. Re-tiering is
   therefore admin-gated by construction, which is exactly the property we want.
@@ -183,7 +183,7 @@ maintainer-vote process load-bearing.
 This split is what keeps the model honest: anyone can *observe* the source of
 truth; only an org owner (acting on a passed vote) can *change* it.
 
-Queryable: `gh search repos --owner kagenti props:"tier:core"`.
+Queryable: `gh search repos --owner rossoctl props:"tier:core"`.
 
 Custom Properties feed into **org-level rulesets** (Phase 4), which is how the
 tier becomes more than a label.
@@ -192,8 +192,8 @@ tier becomes more than a label.
 
 Each repo gets one of:
 
-- `kagenti-core`
-- `kagenti-incubator`
+- `rossoctl-core`
+- `rossoctl-incubator`
 
 Topics carry the tier and nothing else. We deliberately **do not** add maturity
 hints (`stable`, `alpha`) on top of the tier: an Incubator repo commits to *no*
@@ -202,7 +202,7 @@ tier rather than refine it. (`archived` is conveyed by GitHub's built-in archive
 flag and the `tier=archived` Custom Property, not by a topic.)
 
 Topics are **publicly visible and filterable** (e.g.,
-`https://github.com/orgs/kagenti/repositories?q=topic:kagenti-core`).
+`https://github.com/orgs/rossoctl/repositories?q=topic:rossoctl-core`).
 They are uncontrolled (any maintainer can edit them on their repo), so they
 act as a public mirror of the source-of-truth Custom Property, not as the
 source of truth itself.
@@ -211,19 +211,19 @@ source of truth itself.
 
 Two locations, kept in sync:
 
-- `kagenti/.github/profile/README.md` — what shows on the org landing page at
-  `github.com/kagenti`. Two sections: "Core projects" and "Incubator projects."
-- `kagenti/kagenti/docs/governance/repositories.md` — same content, linked from
+- `rossoctl/.github/profile/README.md` — what shows on the org landing page at
+  `github.com/rossoctl`. Two sections: "Core projects" and "Incubator projects."
+- `rossoctl/rossoctl/docs/governance/repositories.md` — same content, linked from
   main repo docs, where contributors look.
 
 Each entry lists: repo name, one-line description, key topics, and link.
 
-A reconciliation script in `kagenti/automation` reads Custom Properties via the
+A reconciliation script in `rossoctl/automation` reads Custom Properties via the
 GitHub API, regenerates both index pages, and opens a PR if drift is detected.
 Runs weekly on a schedule and on the `repository.edited` webhook.
 
 The script is **read-only** against the org: it calls
-`GET /orgs/kagenti/properties/values` and opens a normal PR with the
+`GET /orgs/rossoctl/properties/values` and opens a normal PR with the
 regenerated index. Reading property values needs only an org-member token, so
 the script can run as a GitHub Action with a standard token — it does **not**
 need org-owner rights or an owner PAT. Writing/re-tiering stays a manual,
@@ -246,17 +246,17 @@ script binds them.
 
 ## First-Pass Classification
 
-The 17 public repos in the Kagenti org as of 2026-06-03:
+The 17 public repos in the Rossoctl org as of 2026-06-03:
 
 ### Core (6)
 
 | Repo | Rationale |
 |---|---|
-| `kagenti` | Main installer, UI, docs. The flagship; broad user surface. |
-| `kagenti-operator` | Lifecycle controller — production deployments depend on it. |
+| `rossoctl` | Main installer, UI, docs. The flagship; broad user surface. |
+| `rossoctl-operator` | Lifecycle controller — production deployments depend on it. |
 | `agent-examples` | Reference samples users copy from; examples are an API. |
 | `adk` | Agent Development Kit; explicitly a "Kit" with a contract to downstream developers. |
-| `kagenti-extensions` | Houses AuthBridge and related stable extensions. *(May be renamed to `kagenti-authbridge` in a future update — separate decision.)* |
+| `rossocortex` | Houses AuthBridge and related stable extensions. *(May be renamed to `rossoctl-authbridge` in a future update — separate decision.)* |
 | `.github` | Org profile and landing surface; Core by definition. |
 
 ### Incubator (9)
@@ -285,7 +285,7 @@ These are no longer active and should get the GitHub archive flag and
 
 ### Out of scope
 
-- Private repos (`kagenti-bundle-service`, `token-broket-service`) — to be tiered
+- Private repos (`rossoctl-bundle-service`, `token-broket-service`) — to be tiered
   when/if made public.
 
 ---
@@ -294,7 +294,7 @@ These are no longer active and should get the GitHub archive flag and
 
 ### Promotion (Incubator → Core)
 
-Initiated by a repo maintainer via PR to a tracking issue in `kagenti/kagenti`.
+Initiated by a repo maintainer via PR to a tracking issue in `rossoctl/rossoctl`.
 The PR must demonstrate the following checklist:
 
 - [ ] README clearly states scope and audience.
@@ -360,7 +360,7 @@ are in place.
 ### Phase 0 — Approve the proposal and verify feature availability
 
 Maintainer review and merge of this document, plus a **feature-availability
-check** against the kagenti org's current GitHub plan before any later phase
+check** against the rossoctl org's current GitHub plan before any later phase
 commits to a mechanism:
 
 - **Custom Properties** — confirm the org can define a schema and set values
@@ -385,20 +385,20 @@ the classification table. No renames, no content changes.
 
 ### Phase 2 — Stand up the index and shared CI workflows
 
-Update `kagenti/.github/profile/README.md` and create
-`kagenti/kagenti/docs/governance/repositories.md` with Core and Incubator
+Update `rossoctl/.github/profile/README.md` and create
+`rossoctl/rossoctl/docs/governance/repositories.md` with Core and Incubator
 sections. First edit done manually.
 
 In the same phase, publish the **shared CI workflow library** (lint, security
 scan, container build, e2e against Kind) as `workflow_call` reusables under
-`kagenti/.github/.github/workflows/`, with `docs/ci/shared-workflows.md`
+`rossoctl/.github/.github/workflows/`, with `docs/ci/shared-workflows.md`
 describing how Incubator repos opt in. **Output:** the org landing page and main docs reflect the tier
 model; Incubator maintainers have a clear, optional on-ramp to the same CI
 that Core uses.
 
 ### Phase 3 — Automate the index
 
-Add a reconciliation script to `kagenti/automation` that:
+Add a reconciliation script to `rossoctl/automation` that:
 
 1. Reads Custom Properties via the GitHub API.
 2. Regenerates both index pages.
@@ -436,7 +436,7 @@ own CI and policies.
 
 Separate proposal. Candidates discussed informally:
 
-- `kagenti-extensions` → `kagenti-authbridge`.
+- `rossocortex` → `rossoctl-authbridge`.
 - Prefixing incubator repos (e.g., `lab-`).
 
 Not part of this proposal. Listed here only to acknowledge it as a known
@@ -454,7 +454,7 @@ Topics + a curated README, no Custom Properties, no automation.
 tier), and the index decays without automation. The governance commitments in
 this proposal would not be enforceable.
 
-### C — Sub-org split (`kagenti` + `kagenti-labs`)
+### C — Sub-org split (`rossoctl` + `rossoctl-labs`)
 
 Move incubator repos to a separate organization.
 
@@ -470,7 +470,7 @@ These are not blockers for approval but should be tracked:
 
 1. **`ecosystem-guide`.** Currently classified as Incubator; could be Core if
    positioned as authoritative reference content. Defer to maintainer judgment.
-2. **Reconciliation script ownership.** Lives in `kagenti/automation`. @rubambiza
+2. **Reconciliation script ownership.** Lives in `rossoctl/automation`. @rubambiza
    has offered to own it and would like a co-owner; the script's `CODEOWNERS`
    entry should name both. Defaulting otherwise to the Core repo maintainer pool.
 

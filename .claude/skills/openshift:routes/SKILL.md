@@ -130,14 +130,14 @@ oc get ingresscontroller default -n openshift-ingress-operator -o jsonpath='{.st
 
 ## Common Patterns
 
-### Expose Kagenti UI
+### Expose Rossoctl UI
 
 ```bash
 # Create route for UI
-oc expose svc/kagenti-ui -n kagenti-system
+oc expose svc/rossoctl-ui -n rossoctl-system
 
 # Get URL
-echo "https://$(oc get route kagenti-ui -n kagenti-system -o jsonpath='{.spec.host}')"
+echo "https://$(oc get route rossoctl-ui -n rossoctl-system -o jsonpath='{.spec.host}')"
 ```
 
 ### Expose Agent Service

@@ -1,6 +1,6 @@
 # Project Maintainers
 
-The current Maintainers Group for the Kagenti Project consists of:
+The current Maintainers Group for the Rossoctl Project consists of:
 
 | Name | Employer | Responsibilities |
 | ---- | -------- | ---------------- |
@@ -24,6 +24,6 @@ The current Maintainers Group for the Kagenti Project consists of:
 ## Contact
 
 For general questions, feedback, or to reach the maintainer team:
-**kagenti-maintainers@googlegroups.com**
+**rossoctl-maintainers@googlegroups.com**
 
 See [the project Governance](GOVERNANCE.md) for how maintainers are selected and replaced.

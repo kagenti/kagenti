@@ -1,6 +1,6 @@
 ---
 name: docs:review
-description: AI-assisted documentation review for Kagenti PRs — structure, accuracy, links, conciseness
+description: AI-assisted documentation review for Rossoctl PRs — structure, accuracy, links, conciseness
 ---
 
 ```mermaid
@@ -15,7 +15,7 @@ flowchart TD
 
 # Documentation Review
 
-AI-assisted review of documentation changes in Kagenti PRs. Checks structure,
+AI-assisted review of documentation changes in Rossoctl PRs. Checks structure,
 accuracy, links, conciseness, and consistency against the `meta:write-docs` (planned)
 standards. Use alongside the automated `Docs CI` workflow (markdownlint, lychee)
 for comprehensive coverage.
@@ -39,7 +39,7 @@ for comprehensive coverage.
 ## Phase 1: Gather Changed Docs
 
 ```bash
-export LOG_DIR=/tmp/kagenti/docs-review/$PR_NUMBER
+export LOG_DIR=/tmp/rossoctl/docs-review/$PR_NUMBER
 mkdir -p $LOG_DIR
 
 # Get list of changed markdown files

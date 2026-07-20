@@ -72,7 +72,7 @@ git rebase --abort
 
 ## Sign All Commits After Rebase
 
-After rebasing, ensure all commits are signed (required by Kagenti):
+After rebasing, ensure all commits are signed (required by Rossoctl):
 
 ```bash
 git rebase --signoff HEAD~$(git rev-list --count upstream/main..HEAD)

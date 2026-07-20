@@ -4,7 +4,7 @@
 
 **Goal:** Add clickable links to the skillberry-store web UI (port 8002) for external skills in both the Import Skill form and the Skills catalog table.
 
-**Architecture:** Pure frontend. A `getSkillberryUiUrl` helper derives the UI URL from the stored API URL by substituting port 8002. The link appears below the skill name combobox in ImportSkillPage after a skill is selected, and as a Registry column in SkillCatalogPage for skillberry-sourced rows. All commands run from `kagenti/ui-v2/`.
+**Architecture:** Pure frontend. A `getSkillberryUiUrl` helper derives the UI URL from the stored API URL by substituting port 8002. The link appears below the skill name combobox in ImportSkillPage after a skill is selected, and as a Registry column in SkillCatalogPage for skillberry-sourced rows. All commands run from `rossoctl/ui-v2/`.
 
 **Tech Stack:** React 18, PatternFly 5, TypeScript, Vitest
 
@@ -14,22 +14,22 @@
 
 | File | Change |
 |------|--------|
-| `kagenti/ui-v2/src/utils/validation.ts` | Add `getSkillberryUiUrl` helper |
-| `kagenti/ui-v2/src/utils/validation.test.ts` | Add tests for `getSkillberryUiUrl` |
-| `kagenti/ui-v2/src/pages/ImportSkillPage.tsx` | Add link below Skill Name combobox |
-| `kagenti/ui-v2/src/pages/SkillCatalogPage.tsx` | Add Registry column with link |
+| `rossoctl/ui-v2/src/utils/validation.ts` | Add `getSkillberryUiUrl` helper |
+| `rossoctl/ui-v2/src/utils/validation.test.ts` | Add tests for `getSkillberryUiUrl` |
+| `rossoctl/ui-v2/src/pages/ImportSkillPage.tsx` | Add link below Skill Name combobox |
+| `rossoctl/ui-v2/src/pages/SkillCatalogPage.tsx` | Add Registry column with link |
 
 ---
 
 ### Task 1: `getSkillberryUiUrl` helper + tests
 
 **Files:**
-- Modify: `kagenti/ui-v2/src/utils/validation.ts`
-- Modify: `kagenti/ui-v2/src/utils/validation.test.ts`
+- Modify: `rossoctl/ui-v2/src/utils/validation.ts`
+- Modify: `rossoctl/ui-v2/src/utils/validation.test.ts`
 
 - [ ] **Step 1.1: Write the failing tests**
 
-Update the import at the top of `kagenti/ui-v2/src/utils/validation.test.ts`:
+Update the import at the top of `rossoctl/ui-v2/src/utils/validation.test.ts`:
 
 ```typescript
 import { isValidEnvVarName, isValidContainerImage, isValidImageTag, isValidUrl, getSkillberryUiUrl } from './validation';
@@ -71,7 +71,7 @@ Expected: `getSkillberryUiUrl is not a function`
 
 - [ ] **Step 1.3: Implement `getSkillberryUiUrl` in `validation.ts`**
 
-Append to `kagenti/ui-v2/src/utils/validation.ts`:
+Append to `rossoctl/ui-v2/src/utils/validation.ts`:
 
 ```typescript
 /**
@@ -101,7 +101,7 @@ Expected: all 4 `getSkillberryUiUrl` tests pass, no regressions.
 - [ ] **Step 1.5: Commit**
 
 ```bash
-git add kagenti/ui-v2/src/utils/validation.ts kagenti/ui-v2/src/utils/validation.test.ts
+git add rossoctl/ui-v2/src/utils/validation.ts rossoctl/ui-v2/src/utils/validation.test.ts
 git commit -s -m "feat(ui): add getSkillberryUiUrl helper to derive skillberry web UI link"
 ```
 
@@ -110,7 +110,7 @@ git commit -s -m "feat(ui): add getSkillberryUiUrl helper to derive skillberry w
 ### Task 2: Link below Skill Name combobox in ImportSkillPage
 
 **Files:**
-- Modify: `kagenti/ui-v2/src/pages/ImportSkillPage.tsx`
+- Modify: `rossoctl/ui-v2/src/pages/ImportSkillPage.tsx`
 
 - [ ] **Step 2.1: Add `getSkillberryUiUrl` to the import from `@/utils/validation`**
 
@@ -183,7 +183,7 @@ Expected: no errors.
 - [ ] **Step 2.4: Commit**
 
 ```bash
-git add kagenti/ui-v2/src/pages/ImportSkillPage.tsx
+git add rossoctl/ui-v2/src/pages/ImportSkillPage.tsx
 git commit -s -m "feat(ui): add View in skillberry-store link on skill name selection"
 ```
 
@@ -192,7 +192,7 @@ git commit -s -m "feat(ui): add View in skillberry-store link on skill name sele
 ### Task 3: Registry column in SkillCatalogPage
 
 **Files:**
-- Modify: `kagenti/ui-v2/src/pages/SkillCatalogPage.tsx`
+- Modify: `rossoctl/ui-v2/src/pages/SkillCatalogPage.tsx`
 
 - [ ] **Step 3.1: Add `getSkillberryUiUrl` import**
 
@@ -299,7 +299,7 @@ Expected: no new errors in either file.
 - [ ] **Step 3.6: Commit**
 
 ```bash
-git add kagenti/ui-v2/src/pages/SkillCatalogPage.tsx
+git add rossoctl/ui-v2/src/pages/SkillCatalogPage.tsx
 git commit -s -m "$(cat <<'EOF'
 feat(ui): add Registry column with skillberry UI link to skills catalog table
 

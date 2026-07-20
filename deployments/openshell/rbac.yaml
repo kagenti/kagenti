@@ -15,7 +15,7 @@ metadata:
   namespace: openshell-system
   labels:
     app.kubernetes.io/name: openshell-gateway
-    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/part-of: rossoctl
     app.kubernetes.io/component: openshell
 ---
 # ClusterRole: only for cluster-scoped resources (CRDs, namespaces)

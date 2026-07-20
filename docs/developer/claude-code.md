@@ -1,6 +1,6 @@
 # Claude Code Development Guide
 
-This guide covers using Claude Code skills for Kagenti development workflows, prerequisites, and productivity tips for safe and effective AI-assisted development.
+This guide covers using Claude Code skills for Rossoctl development workflows, prerequisites, and productivity tips for safe and effective AI-assisted development.
 
 ## Table of Contents
 
@@ -10,7 +10,7 @@ This guide covers using Claude Code skills for Kagenti development workflows, pr
 - [TDD Workflow](#tdd-workflow-tdd)
 - [RCA Workflow](#rca-workflow-rca)
 - [Other Useful Skills](#other-useful-skills)
-- [How Kagenti Makes Vibe Coding Safe](#how-kagenti-makes-vibe-coding-safe)
+- [How Rossoctl Makes Vibe Coding Safe](#how-rossoctl-makes-vibe-coding-safe)
 - [Productivity Tips](#productivity-tips)
 
 ## Prerequisites
@@ -184,14 +184,14 @@ HyperShift uses scoped credentials created during one-time setup:
 
 ```bash
 # One-time: create scoped AWS IAM user + OCP service account
-# (requires admin access, creates .env.kagenti-hypershift-custom)
+# (requires admin access, creates .env.rossoctl-hypershift-custom)
 ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh
 
 # Daily use: source the scoped credentials
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 
 # Hosted cluster kubeconfig is at:
-export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-$USER/auth/kubeconfig
+export KUBECONFIG=~/clusters/hcp/rossoctl-hypershift-custom-$USER/auth/kubeconfig
 ```
 
 The scoped credentials have limited permissions - they can create/destroy hosted clusters but cannot modify the management cluster or access other AWS resources.
@@ -218,7 +218,7 @@ echo "GitHub CLI: rotated"
 
 echo ""
 echo "=== Rotating HyperShift credentials ==="
-if [ -f .env.kagenti-hypershift-custom ]; then
+if [ -f .env.rossoctl-hypershift-custom ]; then
   # Re-run setup to create fresh IAM credentials
   ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh
   echo "HyperShift credentials: rotated"
@@ -235,7 +235,7 @@ kubectl cluster-info 2>/dev/null && echo "Kubernetes: connected" || echo "Kubern
 **Best practices:**
 - Rotate credentials periodically (monthly recommended)
 - Use scoped service accounts, never personal admin credentials
-- The `.env.kagenti-hypershift-custom` file is git-ignored - never commit it
+- The `.env.rossoctl-hypershift-custom` file is git-ignored - never commit it
 - Claude Code's `.claude/settings.json` defines what commands are auto-approved vs denied
 
 </details>
@@ -246,12 +246,12 @@ Start a Claude Code session from the repo root, then invoke skills as slash comm
 
 ```bash
 # Start Claude Code from the repo root
-cd kagenti/
+cd rossoctl/
 claude
 
 # Inside the Claude Code session, invoke skills:
-> /tdd https://github.com/kagenti/kagenti/issues/123
-> /rca https://github.com/kagenti/kagenti/actions/runs/12345
+> /tdd https://github.com/rossoctl/rossoctl/issues/123
+> /rca https://github.com/rossoctl/rossoctl/actions/runs/12345
 > /k8s:health
 > /git:worktree my-feature origin/my-feature-branch
 ```
@@ -288,7 +288,7 @@ The TDD skill has three entry points and auto-selects the right sub-skill based 
 ### Example: Fix a CI Failure from an Issue
 
 ```
-/tdd https://github.com/kagenti/kagenti/issues/123
+/tdd https://github.com/rossoctl/rossoctl/issues/123
 ```
 
 Claude Code will:
@@ -301,7 +301,7 @@ Claude Code will:
 ### Example: Fix a Failing PR
 
 ```
-/tdd https://github.com/kagenti/kagenti/pull/456
+/tdd https://github.com/rossoctl/rossoctl/pull/456
 ```
 
 Claude Code will:
@@ -362,7 +362,7 @@ The RCA skill systematically investigates failures. It auto-selects the right su
 ### Example: Investigate a CI Failure
 
 ```
-/rca https://github.com/kagenti/kagenti/actions/runs/12345
+/rca https://github.com/rossoctl/rossoctl/actions/runs/12345
 ```
 
 Claude Code will:
@@ -422,9 +422,9 @@ Create isolated worktrees for parallel development:
 /git:worktree my-feature origin/my-feature-branch
 ```
 
-## How Kagenti Makes Vibe Coding Safe
+## How Rossoctl Makes Vibe Coding Safe
 
-Vibe coding (letting AI write and ship code with minimal manual review) is risky without guardrails. The Kagenti repo uses a layered defense approach that makes Claude Code productive while preventing it from shipping bad code.
+Vibe coding (letting AI write and ship code with minimal manual review) is risky without guardrails. The Rossoctl repo uses a layered defense approach that makes Claude Code productive while preventing it from shipping bad code.
 
 ### Layer 1: Pre-commit Hooks (Instant Feedback)
 
@@ -481,7 +481,7 @@ This layered approach means you can let Claude Code iterate freely on implementa
 
 ## Productivity Tips
 
-These patterns have been refined over months of daily Claude Code usage on the Kagenti project.
+These patterns have been refined over months of daily Claude Code usage on the Rossoctl project.
 
 ### 1. Parallel Sessions with Git Worktrees
 
@@ -514,7 +514,7 @@ Claude Code can deploy, test, debug, and redeploy without affecting other work.
 When Claude Code writes and runs scripts, keep output minimal to avoid context pollution:
 
 - Log verbose output to files, return just the exit code
-- Use `> /tmp/kagenti/output.log 2>&1` for noisy commands
+- Use `> /tmp/rossoctl/output.log 2>&1` for noisy commands
 - Claude Code can read the log file if it needs details
 - Long outputs in context can cause Claude Code to crash or lose track
 
@@ -541,7 +541,7 @@ In the past, even a few strict checks in CI became a huge chore fast - developer
 The `/tdd` and `/rca` skills are designed to be resumable. Start a fresh Claude Code session, point it to a PR, issue, or doc, and it picks up where the previous session left off:
 
 ```
-/tdd https://github.com/kagenti/kagenti/pull/456
+/tdd https://github.com/rossoctl/rossoctl/pull/456
 ```
 
 State recovery works through existing infrastructure rather than session state:
@@ -565,7 +565,7 @@ Boris Cherny created Claude Code and shares workflow tips regularly:
 
 Key insights from his workflow:
 - Run 5+ Claude Code instances in parallel
-- Use slash commands for repetitive operations (like Kagenti's `/tdd`, `/rca`, `/commit`)
+- Use slash commands for repetitive operations (like Rossoctl's `/tdd`, `/rca`, `/commit`)
 - Give Claude a way to verify its work - feedback loops 2-3x the quality
 - For long-running tasks, use background agents or stop hooks
 

@@ -1,5 +1,5 @@
 """
-Kagenti Composable Sandbox Profile — name and manifest builder (Session F)
+Rossoctl Composable Sandbox Profile — name and manifest builder (Session F)
 
 Builds self-documenting agent names and K8s manifests from security layer toggles.
 Each layer is an independent toggle; the agent name suffix lists active layers.
@@ -206,9 +206,9 @@ class SandboxProfile:
         """Build common labels."""
         return {
             "app.kubernetes.io/name": self.name,
-            "app.kubernetes.io/part-of": "kagenti",
+            "app.kubernetes.io/part-of": "rossoctl",
             "app.kubernetes.io/component": "sandbox-agent",
-            "kagenti.io/security-profile": self.name.replace(
+            "rossoctl.io/security-profile": self.name.replace(
                 f"{self.base_agent}-", "", 1
             )
             if self.name != self.base_agent

@@ -37,21 +37,21 @@ class TestClaimStructure:
         assert labels["trigger-type"] == "cron"
         assert labels["trigger-skill"] == "rca:ci"
         assert labels["trigger-schedule"] == "0 2 * * *"
-        assert labels["app.kubernetes.io/part-of"] == "kagenti"
+        assert labels["app.kubernetes.io/part-of"] == "rossoctl"
 
     def test_webhook_claim_labels(self):
         trigger = SandboxTrigger(namespace="team2")
         claim = self._capture_claim(
             trigger.create_from_webhook,
             event_type="pull_request",
-            repo="kagenti/kagenti",
+            repo="rossoctl/rossoctl",
             branch="feat/x",
             pr_number=42,
         )
         labels = claim["metadata"]["labels"]
         assert labels["trigger-type"] == "webhook"
         assert labels["trigger-event"] == "pull_request"
-        assert labels["trigger-repo"] == "kagenti/kagenti"
+        assert labels["trigger-repo"] == "rossoctl/rossoctl"
         assert labels["trigger-pr"] == "42"
         assert claim["metadata"]["namespace"] == "team2"
 

@@ -42,7 +42,7 @@ deployments/openshell/agents/adk-agent/
 ```bash
 # Kind
 docker build -t adk-agent:latest deployments/openshell/agents/adk-agent/
-kind load docker-image adk-agent:latest --name kagenti
+kind load docker-image adk-agent:latest --name rossoctl
 
 # OCP (binary build)
 oc -n team1 new-build --binary --strategy=docker --name=adk-agent
@@ -60,7 +60,7 @@ kubectl apply -f deployments/openshell/agents/adk-agent/deployment.yaml
 | Tool calling | **Yes** | `review_pr` tool registered with LlmAgent |
 | Subagent delegation | **Yes** (ADK native) | ADK supports agents-as-tools, not yet used in PoC |
 | Memory/knowledge | **In-memory** | ADK SessionService tracks session state; lost on pod restart |
-| Skill execution | **Via prompt** | Kagenti skill markdown injected into LLM prompt |
+| Skill execution | **Via prompt** | Rossoctl skill markdown injected into LLM prompt |
 | HITL approval | **L0** | OPA policy mounted but not enforced without supervisor |
 
 ### ADK-Specific Features
@@ -76,7 +76,7 @@ kubectl apply -f deployments/openshell/agents/adk-agent/deployment.yaml
 | DatabaseSessionService | Yes | No | Persistent sessions (PostgreSQL/SQLite) |
 | Auto context windowing | Yes | Yes | Token budget management |
 
-## 6. Kagenti Integration
+## 6. Rossoctl Integration
 
 ### 6.1 Communication Adapter
 **A2A JSON-RPC** (already implemented). The ADK `to_a2a()` wrapper handles
@@ -88,11 +88,11 @@ persistent sessions, switch to `DatabaseSessionService` backed by
 PostgreSQL or SQLite.
 
 **Current:** In-memory (lost on restart)
-**Target:** DatabaseSessionService → Kagenti PostgreSQL
+**Target:** DatabaseSessionService → Rossoctl PostgreSQL
 
 ### 6.3 Observable Events
 
-| Event | Source | Kagenti UI Component | Phase |
+| Event | Source | Rossoctl UI Component | Phase |
 |-------|--------|---------------------|-------|
 | LLM request/response | ADK Event history | PromptInspector | Phase 2 |
 | Tool call (review_pr) | ADK function_call Event | EventsPanel | Phase 2 |
@@ -135,7 +135,7 @@ network_policies:
 
 ## 9. Skill Execution
 
-The ADK agent executes Kagenti skills by receiving the skill instructions
+The ADK agent executes Rossoctl skills by receiving the skill instructions
 as part of the A2A prompt. The test infrastructure reads skill markdown from
 `.claude/skills/<name>/SKILL.md` and embeds it in the `message/send` request.
 
@@ -200,7 +200,7 @@ kill %1
 
 | Model | Supported | Notes |
 |-------|-----------|-------|
-| Mode 1: Kagenti Deployment | **Current** | Standard Deployment + Service |
+| Mode 1: Rossoctl Deployment | **Current** | Standard Deployment + Service |
 | Mode 1 + Supervisor | Possible | Add supervisor; enables OPA enforcement |
 | Mode 2: Sandbox CR | Not applicable | Not a builtin CLI agent |
 
@@ -209,7 +209,7 @@ kill %1
 ADK's `ToolConfirmation` pattern natively supports HITL:
 1. Mark sensitive tools with `needsApproval: true`
 2. ADK pauses execution and snapshots `RunState`
-3. Kagenti backend receives pause event
+3. Rossoctl backend receives pause event
 4. `HitlApprovalCard` shown in UI
 5. Human approves/rejects
 6. ADK resumes from snapshot

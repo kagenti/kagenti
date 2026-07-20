@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../../../lib/logging.sh"
 
 NAMESPACE="clusters"
-LEASE_PREFIX="kagenti-ci-slot"
+LEASE_PREFIX="rossoctl-ci-slot"
 MAX_SLOTS="${MAX_SLOTS:-6}"  # Show up to 6 slots by default
 WATCH_MODE=false
 

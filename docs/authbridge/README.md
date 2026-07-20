@@ -114,11 +114,11 @@ See: [Security Model](security-model.md) for the full threat model and trust bou
 Deploy the weather agent demo with AuthBridge on a local Kind cluster:
 
 ```bash
-# 1. Deploy Kagenti with AuthBridge enabled
+# 1. Deploy Rossoctl with AuthBridge enabled
 ./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy
 
 # 2. Send a request to the weather agent — AuthBridge handles auth transparently
-curl -H "Authorization: Bearer $(python kagenti/examples/identity/get_token.py)" \
+curl -H "Authorization: Bearer $(python rossoctl/examples/identity/get_token.py)" \
   http://weather-agent.team1.svc:8000/run
 
 # 3. Check AuthBridge logs to see token exchange in action
@@ -141,15 +141,15 @@ For a progressive walkthrough: [Demos](demos.md)
 
 For deep implementation details:
 
-- [AuthBridge Binary README](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/cmd/README.md) — modes, YAML config, logging
-- [AuthBridge Architecture](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/README.md) — sequence diagrams, protocol flows
-- [AuthBridge Demos](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/README.md) — step-by-step demo instructions
+- [AuthBridge Binary README](https://github.com/rossoctl/rossocortex/blob/main/authbridge/cmd/README.md) — modes, YAML config, logging
+- [AuthBridge Architecture](https://github.com/rossoctl/rossocortex/blob/main/authbridge/README.md) — sequence diagrams, protocol flows
+- [AuthBridge Demos](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/README.md) — step-by-step demo instructions
 - [Identity Guide](../identity-guide.md) — platform-level SPIFFE/SPIRE and Keycloak architecture
 
 ## Blog Posts
 
-- [Identity in Agentic Platforms: Enabling Secure Least-Privilege Access](https://medium.com/kagenti-the-agentic-platform/identity-in-agentic-platforms-enabling-secure-least-privilege-access-996527f1c983)
-- [Security in and around MCP, Part 2: MCP in Deployment](https://medium.com/kagenti-the-agentic-platform/security-in-and-around-mcp-part-2-mcp-in-deployment-65bdd0ba9dc6)
-- [Security in and around MCP, Part 3: MCP Server Identity](https://medium.com/kagenti-the-agentic-platform/security-in-and-around-mcp-part-3-mcp-server-identity-10d6768d96c1)
-- [Introducing MCP Gateway in Kagenti](https://medium.com/kagenti-the-agentic-platform/introducing-mcp-gateway-in-kagenti-a-unified-front-door-for-your-mcp-servers-28db5b6ef62d)
-- [Hands-on with MCP Gateway](https://medium.com/kagenti-the-agentic-platform/hands-on-with-mcp-gateway-from-local-setup-to-agent-integration-in-kagenti-f9bd3b7cc334)
+- [Identity in Agentic Platforms: Enabling Secure Least-Privilege Access](https://medium.com/rossoctl-the-agentic-platform/identity-in-agentic-platforms-enabling-secure-least-privilege-access-996527f1c983)
+- [Security in and around MCP, Part 2: MCP in Deployment](https://medium.com/rossoctl-the-agentic-platform/security-in-and-around-mcp-part-2-mcp-in-deployment-65bdd0ba9dc6)
+- [Security in and around MCP, Part 3: MCP Server Identity](https://medium.com/rossoctl-the-agentic-platform/security-in-and-around-mcp-part-3-mcp-server-identity-10d6768d96c1)
+- [Introducing MCP Gateway in Rossoctl](https://medium.com/rossoctl-the-agentic-platform/introducing-mcp-gateway-in-rossoctl-a-unified-front-door-for-your-mcp-servers-28db5b6ef62d)
+- [Hands-on with MCP Gateway](https://medium.com/rossoctl-the-agentic-platform/hands-on-with-mcp-gateway-from-local-setup-to-agent-integration-in-rossoctl-f9bd3b7cc334)

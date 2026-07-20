@@ -17,28 +17,28 @@ metadata:
   name: claude-sdk-agent
   namespace: team1
   labels:
-    protocol.kagenti.io/a2a: ""
-    kagenti.io/framework: AnthropicSDK
-    kagenti.io/workload-type: deployment
+    protocol.rossoctl.io/a2a: ""
+    rossoctl.io/framework: AnthropicSDK
+    rossoctl.io/workload-type: deployment
     app.kubernetes.io/name: claude-sdk-agent
     app.kubernetes.io/managed-by: openshell
     app.kubernetes.io/component: agent
   annotations:
-    kagenti.io/description: "Code review agent (Anthropic SDK) supervised by OpenShell (PoC)"
-    openshell.kagenti.io/policy: claude-sdk-agent-policy
+    rossoctl.io/description: "Code review agent (Anthropic SDK) supervised by OpenShell (PoC)"
+    openshell.rossoctl.io/policy: claude-sdk-agent-policy
 spec:
   replicas: 1
   selector:
     matchLabels:
-      # kagenti.io/type label was removed due to VAP introduction.
+      # rossoctl.io/type label was removed due to VAP introduction.
       # Existing deployments must be deleted and re-applied.
       app.kubernetes.io/name: claude-sdk-agent
   template:
     metadata:
       labels:
-        kagenti.io/inject: disabled
-        protocol.kagenti.io/a2a: ""
-        kagenti.io/framework: AnthropicSDK
+        rossoctl.io/inject: disabled
+        protocol.rossoctl.io/a2a: ""
+        rossoctl.io/framework: AnthropicSDK
         app.kubernetes.io/name: claude-sdk-agent
     spec:
       securityContext:
@@ -116,14 +116,14 @@ metadata:
   name: claude-sdk-agent
   namespace: team1
   labels:
-    kagenti.io/type: agent
-    protocol.kagenti.io/a2a: ""
+    rossoctl.io/type: agent
+    protocol.rossoctl.io/a2a: ""
     app.kubernetes.io/name: claude-sdk-agent
     app.kubernetes.io/managed-by: openshell
 spec:
   type: ClusterIP
   selector:
-    kagenti.io/type: agent
+    rossoctl.io/type: agent
     app.kubernetes.io/name: claude-sdk-agent
   ports:
   - name: http
@@ -131,9 +131,9 @@ spec:
     targetPort: 8080
     protocol: TCP
 ---
-# 4. AgentRuntime CR — declares this deployment as a Kagenti-managed agent
-#    Requires the agent.kagenti.dev CRD to be installed (kagenti-operator).
-apiVersion: agent.kagenti.dev/v1alpha1
+# 4. AgentRuntime CR — declares this deployment as a Rossoctl-managed agent
+#    Requires the agent.rossoctl.dev CRD to be installed (rossoctl-operator).
+apiVersion: agent.rossoctl.dev/v1alpha1
 kind: AgentRuntime
 metadata:
   name: claude-sdk-agent

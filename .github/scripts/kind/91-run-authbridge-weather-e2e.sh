@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 # AuthBridge Weather (advanced) E2E — Keycloak token exchange + MCP inbound JWT
 #
-# Runs the verify flow from kagenti-extensions (authbridge/demos/weather-agent):
+# Runs the verify flow from rossocortex (authbridge/demos/weather-agent):
 #   deploy_and_verify_advanced.sh
 #
 # Prerequisites (same as platform E2E):
-#   - Kind cluster with Kagenti, Keycloak, team1, webhook + AuthBridge sidecars
+#   - Kind cluster with Rossoctl, Keycloak, team1, webhook + AuthBridge sidecars
 #   - jq, curl, python3, git
 #
 # Source tree:
-#   - Set KAGENTI_EXTENSIONS_ROOT to a local clone (faster, offline dev, or optional
-#     companion kagenti-extensions PR checkout in CI), or
-#   - Leave unset: this script shallow-clones kagenti/kagenti-extensions (see refs below).
+#   - Set ROSSOCTL_EXTENSIONS_ROOT to a local clone (faster, offline dev, or optional
+#     companion rossocortex PR checkout in CI), or
+#   - Leave unset: this script shallow-clones rossoctl/rossocortex (see refs below).
 #
 # Environment:
-#   KAGENTI_EXTENSIONS_ROOT   Path to kagenti-extensions repo (optional)
-#   KAGENTI_EXTENSIONS_GIT_URL  Clone URL (default: https://github.com/kagenti/kagenti-extensions.git)
-#   KAGENTI_EXTENSIONS_GIT_REF  Branch or tag (default: main). Pin in CI to a release tag once
+#   ROSSOCTL_EXTENSIONS_ROOT   Path to rossocortex repo (optional)
+#   ROSSOCTL_EXTENSIONS_GIT_URL  Clone URL (default: https://github.com/rossoctl/rossocortex.git)
+#   ROSSOCTL_EXTENSIONS_GIT_REF  Branch or tag (default: main). Pin in CI to a release tag once
 #     authbridge/demos/weather-agent is included; verify with: git ls-remote --tags URL
 #   NAMESPACE                 K8s namespace (default: team1)
-#   OPERATOR_NAMESPACE        Operator namespace where keycloak-admin-secret is located (default: kagenti-system)
+#   OPERATOR_NAMESPACE        Operator namespace where keycloak-admin-secret is located (default: rossoctl-system)
 #   SKIP_DEPLOY                 If 1, only run in-cluster verify (default: 0 = full deploy)
 #   WEATHER_TOOL_ROLLOUT_TIMEOUT / WEATHER_AGENT_ROLLOUT_TIMEOUT / WEATHER_TOOL_KC_CLIENT_SEC
 #   WEATHER_ADVANCED_PRUNE_LEGACY   Passed to deploy (default: 1 here — scale down wave-90 weather)
@@ -35,7 +35,7 @@ source "$SCRIPT_DIR/../lib/env-detect.sh"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/../lib/logging.sh"
 
-log_step "91" "AuthBridge Weather (advanced) E2E (kagenti-extensions)"
+log_step "91" "AuthBridge Weather (advanced) E2E (rossocortex)"
 
 if ! command -v jq &>/dev/null; then
     log_error "jq is required. Install jq or run from an environment with test deps."
@@ -43,12 +43,12 @@ if ! command -v jq &>/dev/null; then
 fi
 
 if ! command -v git &>/dev/null; then
-    log_error "git is required to fetch kagenti-extensions when KAGENTI_EXTENSIONS_ROOT is unset."
+    log_error "git is required to fetch rossocortex when ROSSOCTL_EXTENSIONS_ROOT is unset."
     exit 1
 fi
 
 export NAMESPACE="${NAMESPACE:-team1}"
-export OPERATOR_NAMESPACE="${OPERATOR_NAMESPACE:-kagenti-system}"
+export OPERATOR_NAMESPACE="${OPERATOR_NAMESPACE:-rossoctl-system}"
 
 if ! kubectl get namespace "$NAMESPACE" &>/dev/null; then
     log_error "Namespace $NAMESPACE not found. Deploy the platform first."
@@ -67,7 +67,7 @@ log_info "Preflight OK: keycloak-admin-secret present in $OPERATOR_NAMESPACE"
 # Sync keycloak-admin-secret to the agent namespace.
 # The client-registration sidecar (injected by the webhook) mounts this secret
 # from the pod's namespace. Since operator#321 the secret lives only in
-# kagenti-system, so we replicate it for sidecar compatibility.
+# rossoctl-system, so we replicate it for sidecar compatibility.
 if ! kubectl get secret keycloak-admin-secret -n "$NAMESPACE" &>/dev/null; then
     log_info "Syncing keycloak-admin-secret to $NAMESPACE for client-registration sidecar..."
     kubectl get secret keycloak-admin-secret -n "$OPERATOR_NAMESPACE" -o json \
@@ -76,7 +76,7 @@ if ! kubectl get secret keycloak-admin-secret -n "$NAMESPACE" &>/dev/null; then
     log_info "keycloak-admin-secret synced to $NAMESPACE"
 fi
 
-EXT_ROOT="${KAGENTI_EXTENSIONS_ROOT:-}"
+EXT_ROOT="${ROSSOCTL_EXTENSIONS_ROOT:-}"
 # Trim trailing slash so path joins are never authbridge//...
 if [[ -n "$EXT_ROOT" ]]; then
     EXT_ROOT="${EXT_ROOT%/}"
@@ -85,27 +85,27 @@ CLONE_DIR=""
 
 if [[ -n "$EXT_ROOT" ]]; then
     if [[ ! -f "$EXT_ROOT/authbridge/demos/weather-agent/deploy_and_verify_advanced.sh" ]]; then
-        log_error "KAGENTI_EXTENSIONS_ROOT is set but deploy_and_verify_advanced.sh not found at:"
+        log_error "ROSSOCTL_EXTENSIONS_ROOT is set but deploy_and_verify_advanced.sh not found at:"
         log_error "  $EXT_ROOT/authbridge/demos/weather-agent/"
         exit 1
     fi
-    log_info "Using KAGENTI_EXTENSIONS_ROOT: $EXT_ROOT"
+    log_info "Using ROSSOCTL_EXTENSIONS_ROOT: $EXT_ROOT"
 else
-    KAGENTI_EXTENSIONS_GIT_URL="${KAGENTI_EXTENSIONS_GIT_URL:-https://github.com/kagenti/kagenti-extensions.git}"
-    KAGENTI_EXTENSIONS_GIT_REF="${KAGENTI_EXTENSIONS_GIT_REF:-main}"
-    CLONE_DIR="${TMPDIR:-/tmp}/kagenti-extensions-authbridge-e2e-$$"
-    log_info "Cloning kagenti-extensions (ref: $KAGENTI_EXTENSIONS_GIT_REF) to $CLONE_DIR"
-    if ! git clone --depth 1 --single-branch --branch "$KAGENTI_EXTENSIONS_GIT_REF" \
-        "$KAGENTI_EXTENSIONS_GIT_URL" "$CLONE_DIR" 2>/dev/null; then
-        log_info "Shallow single-branch clone failed; trying full clone + checkout ($KAGENTI_EXTENSIONS_GIT_REF)"
-        git clone "$KAGENTI_EXTENSIONS_GIT_URL" "$CLONE_DIR" || {
-            log_error "git clone failed: $KAGENTI_EXTENSIONS_GIT_URL"
+    ROSSOCTL_EXTENSIONS_GIT_URL="${ROSSOCTL_EXTENSIONS_GIT_URL:-https://github.com/rossoctl/rossocortex.git}"
+    ROSSOCTL_EXTENSIONS_GIT_REF="${ROSSOCTL_EXTENSIONS_GIT_REF:-main}"
+    CLONE_DIR="${TMPDIR:-/tmp}/rossocortex-authbridge-e2e-$$"
+    log_info "Cloning rossocortex (ref: $ROSSOCTL_EXTENSIONS_GIT_REF) to $CLONE_DIR"
+    if ! git clone --depth 1 --single-branch --branch "$ROSSOCTL_EXTENSIONS_GIT_REF" \
+        "$ROSSOCTL_EXTENSIONS_GIT_URL" "$CLONE_DIR" 2>/dev/null; then
+        log_info "Shallow single-branch clone failed; trying full clone + checkout ($ROSSOCTL_EXTENSIONS_GIT_REF)"
+        git clone "$ROSSOCTL_EXTENSIONS_GIT_URL" "$CLONE_DIR" || {
+            log_error "git clone failed: $ROSSOCTL_EXTENSIONS_GIT_URL"
             exit 1
         }
-        (cd "$CLONE_DIR" && git checkout "$KAGENTI_EXTENSIONS_GIT_REF") || {
-            log_error "Could not checkout ref: $KAGENTI_EXTENSIONS_GIT_REF (branch or tag must exist on the remote)."
-            log_error "Fix: set KAGENTI_EXTENSIONS_GIT_REF to a valid ref (e.g. main), or KAGENTI_EXTENSIONS_ROOT to a local clone with authbridge/demos/weather-agent/."
-            log_error "List tags: git ls-remote --tags $KAGENTI_EXTENSIONS_GIT_URL | tail -5"
+        (cd "$CLONE_DIR" && git checkout "$ROSSOCTL_EXTENSIONS_GIT_REF") || {
+            log_error "Could not checkout ref: $ROSSOCTL_EXTENSIONS_GIT_REF (branch or tag must exist on the remote)."
+            log_error "Fix: set ROSSOCTL_EXTENSIONS_GIT_REF to a valid ref (e.g. main), or ROSSOCTL_EXTENSIONS_ROOT to a local clone with authbridge/demos/weather-agent/."
+            log_error "List tags: git ls-remote --tags $ROSSOCTL_EXTENSIONS_GIT_URL | tail -5"
             rm -rf "$CLONE_DIR"
             exit 1
         }
@@ -116,8 +116,8 @@ fi
 DEMO_DIR="$EXT_ROOT/authbridge/demos/weather-agent"
 if [[ ! -f "$DEMO_DIR/deploy_and_verify_advanced.sh" ]]; then
     log_error "deploy_and_verify_advanced.sh not found at $DEMO_DIR/"
-    log_error "This ref of kagenti-extensions does not include the AuthBridge weather advanced demo yet."
-    log_error "Use KAGENTI_EXTENSIONS_ROOT pointing at a tree that contains authbridge/demos/weather-agent/, or merge the demo to upstream and retry."
+    log_error "This ref of rossocortex does not include the AuthBridge weather advanced demo yet."
+    log_error "Use ROSSOCTL_EXTENSIONS_ROOT pointing at a tree that contains authbridge/demos/weather-agent/, or merge the demo to upstream and retry."
     exit 1
 fi
 if [[ ! -x "$DEMO_DIR/deploy_and_verify_advanced.sh" ]]; then
@@ -125,7 +125,7 @@ if [[ ! -x "$DEMO_DIR/deploy_and_verify_advanced.sh" ]]; then
 fi
 
 export SKIP_DEPLOY="${SKIP_DEPLOY:-0}"
-# See kagenti-extensions authbridge/demos/weather-agent/deploy_and_verify_advanced.sh for defaults
+# See rossocortex authbridge/demos/weather-agent/deploy_and_verify_advanced.sh for defaults
 # (align with spec.progressDeadlineSeconds: 1800 on the advanced Deployments).
 export WEATHER_TOOL_ROLLOUT_TIMEOUT="${WEATHER_TOOL_ROLLOUT_TIMEOUT:-1800s}"
 export WEATHER_AGENT_ROLLOUT_TIMEOUT="${WEATHER_AGENT_ROLLOUT_TIMEOUT:-1800s}"

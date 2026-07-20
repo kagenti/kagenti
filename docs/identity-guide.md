@@ -1,6 +1,6 @@
-# Kagenti Identity, Authentication, & Authorization Guide
+# Rossoctl Identity, Authentication, & Authorization Guide
 
-This comprehensive guide covers all aspects of identity, authentication, and authorization in the Kagenti platform. Kagenti implements a **Zero-Trust Architecture** that combines SPIFFE/SPIRE workload identity, OAuth2 token exchange, and Keycloak identity management to provide secure, scalable, and dynamic authentication for cloud-native AI agents.
+This comprehensive guide covers all aspects of identity, authentication, and authorization in the Rossoctl platform. Rossoctl implements a **Zero-Trust Architecture** that combines SPIFFE/SPIRE workload identity, OAuth2 token exchange, and Keycloak identity management to provide secure, scalable, and dynamic authentication for cloud-native AI agents.
 
 In practice, the Authorization Pattern within the Agentic Platform enables:
 
@@ -10,10 +10,10 @@ In practice, the Authorization Pattern within the Agentic Platform enables:
 
 ## 📚 Related Documentation
 
-- **[Kagenti Identity Overview](./2025-10.Kagenti-Identity.pdf)** - High-level architectural concepts
-- **[AuthBridge Component](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** - Complete end-to-end installation and demo with SPIFFE, Client Registration, and AuthProxy
-- **[Token Exchange Deep Dive](../kagenti/examples/identity/token_exchange.md)** - Detailed OAuth2 token exchange flows
-- **[Client Registration Examples](../kagenti/examples/identity/keycloak_token_exchange/README.md)** - Practical integration examples
+- **[Rossoctl Identity Overview](./2025-10.Rossoctl-Identity.pdf)** - High-level architectural concepts
+- **[AuthBridge Component](https://github.com/rossoctl/rossocortex/tree/main/authbridge)** - Complete end-to-end installation and demo with SPIFFE, Client Registration, and AuthProxy
+- **[Token Exchange Deep Dive](../rossoctl/examples/identity/token_exchange.md)** - Detailed OAuth2 token exchange flows
+- **[Client Registration Examples](../rossoctl/examples/identity/keycloak_token_exchange/README.md)** - Practical integration examples
 - **[Personas and Roles](../PERSONAS_AND_ROLES.md#23-security-and-identity-specialist)** - Security and identity specialist persona
 
 ---
@@ -22,7 +22,7 @@ In practice, the Authorization Pattern within the Agentic Platform enables:
 
 ### Zero-Trust Identity Foundation
 
-Kagenti's identity architecture is built on three core principles:
+Rossoctl's identity architecture is built on three core principles:
 
 1. **No Implicit Trust** - Every request requires explicit authentication and authorization
 2. **Least Privilege Access** - Users and workloads receive minimum necessary permissions
@@ -48,7 +48,7 @@ Kagenti's identity architecture is built on three core principles:
 
 ### SPIFFE Identity Format
 
-In Kagenti, workloads receive SPIFFE identities in the following format:
+In Rossoctl, workloads receive SPIFFE identities in the following format:
 
 ```console
 spiffe://{trust-domain}/ns/{namespace}/sa/{service-account}
@@ -82,7 +82,7 @@ SPIRE issues **SPIFFE Verifiable Identity Documents (SVIDs)** in two formats:
 ```json
 {
   "sub": "spiffe://localtest.me/ns/team/sa/slack-researcher",
-  "aud": "kagenti",
+  "aud": "rossoctl",
   "exp": 1735689600,
   "iat": 1735686000,
   "iss": "https://spire-server.spire.svc.cluster.local:8443"
@@ -127,7 +127,7 @@ kubectl exec -n team deployment/slack-researcher -- cat /opt/jwt_svid.token | \
 
 ## 🎫 Keycloak Identity Management
 
-### Keycloak Architecture in Kagenti
+### Keycloak Architecture in Rossoctl
 
 Keycloak serves as the central identity provider that:
 
@@ -150,7 +150,7 @@ Keycloak serves as the central identity provider that:
 
 | Client Type | Authentication | Purpose | Example |
 |-------------|----------------|---------|----------|
-| **Public Client** | No secret | Frontend applications | `kagenti-ui` |
+| **Public Client** | No secret | Frontend applications | `rossoctl-ui` |
 | **Confidential Client** | Client secret | Backend services | Traditional services |
 | **SPIFFE Client** | JWT SVID | Workload identity | `spiffe://localtest.me/ns/team/sa/slack-researcher` |
 
@@ -202,7 +202,7 @@ admin:
 # on kind:
 open http://keycloak.localtest.me:8080/admin/master/console/
 # on OpenShift:
-open "https://$(kubectl get route mcp-proxy -n kagenti-system -o jsonpath='{.status.ingress[0].host}')"
+open "https://$(kubectl get route mcp-proxy -n rossoctl-system -o jsonpath='{.status.ingress[0].host}')"
 
 # Get admin credentials from Kubernetes (if different)
 kubectl get secret keycloak-initial-admin -n keycloak -o go-template=\
@@ -215,7 +215,7 @@ kubectl get secret keycloak-initial-admin -n keycloak -o go-template=\
 
 ### Token Exchange Protocol (RFC 8693)
 
-Kagenti implements OAuth2 Token Exchange to enable secure token delegation across the agent ecosystem. This allows:
+Rossoctl implements OAuth2 Token Exchange to enable secure token delegation across the agent ecosystem. This allows:
 
 - User identity propagation through agent → tool chains
 - Least-privilege token scoping
@@ -223,13 +223,13 @@ Kagenti implements OAuth2 Token Exchange to enable secure token delegation acros
 
 ### Authentication Flow Stages
 
-> **📊 Diagrams**: The following sequence diagrams illustrate Kagenti's authentication flows. Each diagram is available as both PNG (for documentation) and SVG (for presentations) in the `docs/diagrams/images/` directory. The original Mermaid source files are preserved in collapsible sections below each diagram.
+> **📊 Diagrams**: The following sequence diagrams illustrate Rossoctl's authentication flows. Each diagram is available as both PNG (for documentation) and SVG (for presentations) in the `docs/diagrams/images/` directory. The original Mermaid source files are preserved in collapsible sections below each diagram.
 
 #### Stage 1: User Authentication
 
 ![User Authentication Flow](./diagrams/images/png/01-user-authentication-flow.png)
 
-*Figure 1: User Authentication Flow - Shows how users authenticate with Kagenti UI through Keycloak OIDC flow*
+*Figure 1: User Authentication Flow - Shows how users authenticate with Rossoctl UI through Keycloak OIDC flow*
 
 [View Mermaid Source Code](./diagrams/01-user-authentication-flow.mmd)
 
@@ -240,9 +240,9 @@ POST /realms/master/protocol/openid-connect/token
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=authorization_code
-&client_id=kagenti-ui
+&client_id=rossoctl-ui
 &code=<auth_code>
-&redirect_uri=http://kagenti-ui.localtest.me:8080/callback
+&redirect_uri=http://rossoctl-ui.localtest.me:8080/callback
 ```
 
 **Response:**
@@ -259,9 +259,9 @@ grant_type=authorization_code
 
 #### Stage 2: Keycloak Client Registration Flow (Operator-managed)
 
-Keycloak client registration is now handled by the kagenti-operator's ClientRegistrationReconciler controller. The controller:
-1. Reconciles AgentRuntime CRs and applies `kagenti.io/type: agent` or `tool` labels to target workloads
-2. Reads Keycloak admin credentials from the `keycloak-admin-secret` in the operator namespace (`kagenti-system`)
+Keycloak client registration is now handled by the rossoctl-operator's ClientRegistrationReconciler controller. The controller:
+1. Reconciles AgentRuntime CRs and applies `rossoctl.io/type: agent` or `tool` labels to target workloads
+2. Reads Keycloak admin credentials from the `keycloak-admin-secret` in the operator namespace (`rossoctl-system`)
 3. Uses the workload's SPIFFE ID as the client identifier
 4. Registers the client with Keycloak and creates a secret containing client credentials in the agent namespace
 
@@ -315,7 +315,7 @@ grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 {
   "sub": "user-123",
   "preferred_username": "slack-full-access-user",
-  "aud": "kagenti-ui",
+  "aud": "rossoctl-ui",
   "exp": 1735689600,
   "roles": ["slack-full-access", "slack-partial-access"]
 }
@@ -389,7 +389,7 @@ spec:
     filters:
     - type: ExtensionRef
       extensionRef:
-        group: kagenti.dev
+        group: rossoctl.dev
         kind: AuthFilter
         name: jwt-validator
     backendRefs:
@@ -442,7 +442,7 @@ def validate_request(request):
 {
   "sub": "user-123",
   "preferred_username": "slack-full-access-user",
-  "aud": "kagenti-ui",
+  "aud": "rossoctl-ui",
   "exp": 1735689600,
   "roles": ["slack-full-access", "slack-partial-access"]
 }
@@ -469,10 +469,10 @@ def validate_request(request):
 
 #### Operator-Managed Registration
 
-Keycloak client registration is handled automatically by the kagenti-operator's ClientRegistrationReconciler. When you deploy an agent or tool:
+Keycloak client registration is handled automatically by the rossoctl-operator's ClientRegistrationReconciler. When you deploy an agent or tool:
 
 1. **Create an AgentRuntime CR** targeting the workload with `spec.type: agent` or `spec.type: tool`
-2. **The operator reconciles** the AgentRuntime, applies the `kagenti.io/type` label to the target workload, and registers it with Keycloak using:
+2. **The operator reconciles** the AgentRuntime, applies the `rossoctl.io/type` label to the target workload, and registers it with Keycloak using:
    - Client ID pattern depends on whether SPIFFE is enabled:
      - **SPIFFE disabled**: `namespace/workload-name` (e.g., `team1/slack-researcher`)
      - **SPIFFE enabled**: `spiffe://trustdomain/ns/namespace/sa/serviceaccount` (e.g., `spiffe://localtest.me/ns/team1/sa/slack-researcher-sa`)
@@ -556,7 +556,7 @@ tool_response = requests.post(
 
 ## 🌉 AuthBridge Component
 
-The [AuthBridge Component](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge) provides a complete, hands-on implementation of Kagenti's identity and authorization patterns. It combines **Client Registration** and **AuthProxy** to demonstrate the full zero-trust authentication flow.
+The [AuthBridge Component](https://github.com/rossoctl/rossocortex/tree/main/authbridge) provides a complete, hands-on implementation of Rossoctl's identity and authorization patterns. It combines **Client Registration** and **AuthProxy** to demonstrate the full zero-trust authentication flow.
 
 ### What AuthBridge Demonstrates
 
@@ -621,7 +621,7 @@ The [AuthBridge Component](https://github.com/kagenti/kagenti-extensions/tree/ma
 
 | Component | Type | Purpose |
 |-----------|------|---------|
-| **Kagenti Operator** | Controller | Reconciles AgentRuntime CRs, applies `kagenti.io/type` labels to target workloads, registers them as OAuth clients in Keycloak, and creates credentials secrets in agent namespaces |
+| **Rossoctl Operator** | Controller | Reconciles AgentRuntime CRs, applies `rossoctl.io/type` labels to target workloads, registers them as OAuth clients in Keycloak, and creates credentials secrets in agent namespaces |
 | **SPIFFE Helper** | Container | (Optional, when SPIFFE enabled) Obtains SVID from SPIRE Agent for workload identity |
 | **Envoy + Go Processor (Ext Proc)** | Sidecar | Intercepts traffic in both directions: **inbound** — validates JWT (signature, expiration, issuer, optional audience) via JWKS, returns 401 for invalid tokens; **outbound** — exchanges tokens for target audience via Keycloak |
 
@@ -631,17 +631,17 @@ The [AuthBridge Component](https://github.com/kagenti/kagenti-extensions/tree/ma
 
 For step-by-step AuthBridge demos with real working examples, see:
 
-- **[AuthBridge Weather Demo](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge/demos/weather-agent)** — Complete end-to-end example showing token exchange between a weather agent and weather tool
-- **[AuthBridge Documentation](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** — Component documentation and additional examples
+- **[AuthBridge Weather Demo](https://github.com/rossoctl/rossocortex/tree/main/authbridge/demos/weather-agent)** — Complete end-to-end example showing token exchange between a weather agent and weather tool
+- **[AuthBridge Documentation](https://github.com/rossoctl/rossocortex/tree/main/authbridge)** — Component documentation and additional examples
 
 ### AuthBridge Documentation
 
 For complete documentation, see:
 
-- **[AuthBridge README](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** - Full demo instructions
-- **[AuthProxy](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** - Token validation and exchange proxy
+- **[AuthBridge README](https://github.com/rossoctl/rossocortex/tree/main/authbridge)** - Full demo instructions
+- **[AuthProxy](https://github.com/rossoctl/rossocortex/tree/main/authbridge)** - Token validation and exchange proxy
 
-> **Note**: The AuthBridge demo in kagenti-extensions includes client-registration components for demonstration purposes. In production Kagenti deployments, client registration is handled by the kagenti-operator controller.
+> **Note**: The AuthBridge demo in rossocortex includes client-registration components for demonstration purposes. In production Rossoctl deployments, client registration is handled by the rossoctl-operator controller.
 
 ---
 
@@ -917,8 +917,8 @@ http://keycloak.localtest.me:8080/admin/master/console/
 # Tornjak UI
 http://spire-tornjak-ui.localtest.me:8080/
 
-# Kagenti UI
-http://kagenti-ui.localtest.me:8080/
+# Rossoctl UI
+http://rossoctl-ui.localtest.me:8080/
 
 # MCP Gateway
 http://mcp-gateway.localtest.me:8080/mcp
@@ -952,7 +952,7 @@ spiffe://localtest.me/ns/team/sa/github-tool
 
 # Infrastructure
 spiffe://localtest.me/ns/gateway-system/sa/mcp-gateway
-spiffe://localtest.me/ns/kagenti-system/sa/kagenti-operator
+spiffe://localtest.me/ns/rossoctl-system/sa/operator
 ```
 
 Using OpenShift:
@@ -996,6 +996,6 @@ POST http://keycloak.keycloak.svc.cluster.local:8080/realms/master/protocol/open
 
 ### Community Resources
 
-- **[Kagenti GitHub Organization](https://github.com/orgs/kagenti/repositories)** - All project repositories
-- **[Kagenti Medium Publication](https://medium.com/kagenti-the-agentic-platform)** - Technical blog posts
+- **[Rossoctl GitHub Organization](https://github.com/orgs/rossoctl/repositories)** - All project repositories
+- **[Rossoctl Medium Publication](https://medium.com/rossoctl-the-agentic-platform)** - Technical blog posts
 - **[SPIFFE Community](https://spiffe.io/community/)** - SPIFFE/SPIRE community resources

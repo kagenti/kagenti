@@ -4,11 +4,11 @@
 
 **Goal:** Add external registry skill references — ConfigMaps that link to a remote skill registry — and fetch skill content into agent pods at startup via an `alpine:3` init container.
 
-**Architecture:** A new `kagenti.io/source=external` label distinguishes registry references (empty `data:`) from local skills (full content in `data:`). At agent creation, the backend computes `local_skills` and `external_skills` from `request.skills`, generates init container specs for external ones, then passes the results to the existing manifest builders via new optional parameters. A Kagenti-managed `kagenti-skill-fetcher-scripts` ConfigMap in each team namespace holds the per-registry shell scripts.
+**Architecture:** A new `rossoctl.io/source=external` label distinguishes registry references (empty `data:`) from local skills (full content in `data:`). At agent creation, the backend computes `local_skills` and `external_skills` from `request.skills`, generates init container specs for external ones, then passes the results to the existing manifest builders via new optional parameters. A Rossoctl-managed `rossoctl-skill-fetcher-scripts` ConfigMap in each team namespace holds the per-registry shell scripts.
 
 **Tech Stack:** Python 3.11 / FastAPI / Pydantic v2 / kubernetes-client / React 18 / PatternFly 5 / TypeScript
 
-**GitHub issue:** kagenti/kagenti#1691  
+**GitHub issue:** rossoctl/rossoctl#1691  
 **Design spec:** `docs/superpowers/specs/2026-05-27-external-skill-registries-design.md`
 
 ---
@@ -17,71 +17,71 @@
 
 | File | Change |
 |---|---|
-| `kagenti/backend/app/core/config.py` | Add `kagenti_feature_flag_external_skills` |
-| `kagenti/backend/app/core/constants.py` | Add 8 new skill registry constants |
-| `kagenti/backend/app/routers/config.py` | Add `externalSkills` to `FeatureFlagsResponse` |
-| `kagenti/backend/app/routers/skills.py` | New models, helpers, `POST /skills/external` endpoint |
-| `kagenti/backend/app/routers/agents.py` | New helpers, modified mount logic, init container injection |
-| `kagenti/backend/tests/test_skills.py` | Tests for new models and endpoint |
-| `kagenti/backend/tests/test_agents_external_skills.py` | New test file for agents helpers |
-| `kagenti/ui-v2/src/types/index.ts` | Extend `Skill`, add `ExternalSkillInfo`, `CreateExternalSkillRequest` |
-| `kagenti/ui-v2/src/services/api.ts` | Add `skillService.createExternal()` |
-| `kagenti/ui-v2/src/hooks/useFeatureFlags.ts` | Add `externalSkills` flag |
-| `kagenti/ui-v2/src/pages/SkillCatalogPage.tsx` | Add "External" badge |
-| `kagenti/ui-v2/src/pages/SkillDetailPage.tsx` | Registry info card for external skills |
-| `kagenti/ui-v2/src/pages/ImportSkillPage.tsx` | "From Registry" tab |
+| `rossoctl/backend/app/core/config.py` | Add `rossoctl_feature_flag_external_skills` |
+| `rossoctl/backend/app/core/constants.py` | Add 8 new skill registry constants |
+| `rossoctl/backend/app/routers/config.py` | Add `externalSkills` to `FeatureFlagsResponse` |
+| `rossoctl/backend/app/routers/skills.py` | New models, helpers, `POST /skills/external` endpoint |
+| `rossoctl/backend/app/routers/agents.py` | New helpers, modified mount logic, init container injection |
+| `rossoctl/backend/tests/test_skills.py` | Tests for new models and endpoint |
+| `rossoctl/backend/tests/test_agents_external_skills.py` | New test file for agents helpers |
+| `rossoctl/ui-v2/src/types/index.ts` | Extend `Skill`, add `ExternalSkillInfo`, `CreateExternalSkillRequest` |
+| `rossoctl/ui-v2/src/services/api.ts` | Add `skillService.createExternal()` |
+| `rossoctl/ui-v2/src/hooks/useFeatureFlags.ts` | Add `externalSkills` flag |
+| `rossoctl/ui-v2/src/pages/SkillCatalogPage.tsx` | Add "External" badge |
+| `rossoctl/ui-v2/src/pages/SkillDetailPage.tsx` | Registry info card for external skills |
+| `rossoctl/ui-v2/src/pages/ImportSkillPage.tsx` | "From Registry" tab |
 
 ---
 
 ## Task 1: Feature flag + constants
 
 **Files:**
-- Modify: `kagenti/backend/app/core/config.py` (after line 80, inside the feature flags block)
-- Modify: `kagenti/backend/app/core/constants.py` (after line 173, after `AGENT_ENDPOINT`)
-- Modify: `kagenti/backend/app/routers/config.py` (lines 27-78)
+- Modify: `rossoctl/backend/app/core/config.py` (after line 80, inside the feature flags block)
+- Modify: `rossoctl/backend/app/core/constants.py` (after line 173, after `AGENT_ENDPOINT`)
+- Modify: `rossoctl/backend/app/routers/config.py` (lines 27-78)
 
 - [ ] **Step 1.1: Add feature flag to config.py**
 
-In `kagenti/backend/app/core/config.py`, after line 80 (`kagenti_feature_flag_acp: bool = False`):
+In `rossoctl/backend/app/core/config.py`, after line 80 (`rossoctl_feature_flag_acp: bool = False`):
 
 ```python
-    kagenti_feature_flag_external_skills: bool = False  # External skill registry references
+    rossoctl_feature_flag_external_skills: bool = False  # External skill registry references
 ```
 
 - [ ] **Step 1.2: Add constants to constants.py**
 
-In `kagenti/backend/app/core/constants.py`, after the `AGENT_ENDPOINT` constant (line 173):
+In `rossoctl/backend/app/core/constants.py`, after the `AGENT_ENDPOINT` constant (line 173):
 
 ```python
 # External skill registry constants
-SKILL_SOURCE_LABEL = "kagenti.io/source"
+SKILL_SOURCE_LABEL = "rossoctl.io/source"
 SKILL_SOURCE_EXTERNAL = "external"
-SKILL_REGISTRY_TYPE_LABEL = "kagenti.io/registry-type"
-SKILL_REGISTRY_URL_ANNOTATION = "kagenti.io/registry-url"
-SKILL_REGISTRY_SKILL_NAME_ANNOTATION = "kagenti.io/registry-skill-name"
-SKILL_REGISTRY_SKILL_VERSION_ANNOTATION = "kagenti.io/registry-skill-version"
-SKILL_FETCHER_SCRIPTS_CM = "kagenti-skill-fetcher-scripts"
+SKILL_REGISTRY_TYPE_LABEL = "rossoctl.io/registry-type"
+SKILL_REGISTRY_URL_ANNOTATION = "rossoctl.io/registry-url"
+SKILL_REGISTRY_SKILL_NAME_ANNOTATION = "rossoctl.io/registry-skill-name"
+SKILL_REGISTRY_SKILL_VERSION_ANNOTATION = "rossoctl.io/registry-skill-version"
+SKILL_FETCHER_SCRIPTS_CM = "rossoctl-skill-fetcher-scripts"
 SKILL_FETCHER_IMAGE = "alpine:3"
 ```
 
 - [ ] **Step 1.3: Expose new flag in config.py router**
 
-In `kagenti/backend/app/routers/config.py`, add field to `FeatureFlagsResponse` (after line 35 `skills: bool = ...`):
+In `rossoctl/backend/app/routers/config.py`, add field to `FeatureFlagsResponse` (after line 35 `skills: bool = ...`):
 
 ```python
     externalSkills: bool = Field(description="External skill registry references")
 ```
 
-And in the `get_feature_flags` function body (after `skills=settings.kagenti_feature_flag_skills,`), add:
+And in the `get_feature_flags` function body (after `skills=settings.rossoctl_feature_flag_skills,`), add:
 
 ```python
-        externalSkills=settings.kagenti_feature_flag_external_skills,
+        externalSkills=settings.rossoctl_feature_flag_external_skills,
 ```
 
 - [ ] **Step 1.4: Verify the app starts**
 
 ```bash
-cd kagenti/backend
+cd rossoctl/backend
 uv run uvicorn app.main:app --reload &
 curl -s http://localhost:8000/api/config/features | python3 -m json.tool
 # Expected: JSON with "externalSkills": false
@@ -91,13 +91,13 @@ pkill -f uvicorn
 - [ ] **Step 1.5: Commit**
 
 ```bash
-git add kagenti/backend/app/core/config.py \
-        kagenti/backend/app/core/constants.py \
-        kagenti/backend/app/routers/config.py
+git add rossoctl/backend/app/core/config.py \
+        rossoctl/backend/app/core/constants.py \
+        rossoctl/backend/app/routers/config.py
 git commit -s -m "feat(skills): add external_skills feature flag and registry constants
 
-Adds kagenti_feature_flag_external_skills (default False) and 8 new
-constants for external skill registry support (kagenti/kagenti#1691).
+Adds rossoctl_feature_flag_external_skills (default False) and 8 new
+constants for external skill registry support (rossoctl/rossoctl#1691).
 
 Assisted-By: Claude Code <noreply@anthropic.com>"
 ```
@@ -107,12 +107,12 @@ Assisted-By: Claude Code <noreply@anthropic.com>"
 ## Task 2: skills.py — models, helpers, _is_external
 
 **Files:**
-- Modify: `kagenti/backend/app/routers/skills.py`
-- Modify: `kagenti/backend/tests/test_skills.py`
+- Modify: `rossoctl/backend/app/routers/skills.py`
+- Modify: `rossoctl/backend/tests/test_skills.py`
 
 - [ ] **Step 2.1: Write failing tests for new models and helpers**
 
-Add to `kagenti/backend/tests/test_skills.py`:
+Add to `rossoctl/backend/tests/test_skills.py`:
 
 ```python
 from app.routers.skills import (
@@ -221,14 +221,14 @@ class TestConfigmapToSkillSourceField:
 - [ ] **Step 2.2: Run tests to confirm they fail**
 
 ```bash
-cd kagenti/backend
+cd rossoctl/backend
 uv run pytest tests/test_skills.py::TestIsExternal tests/test_skills.py::TestConfigmapToExternalSkillInfo tests/test_skills.py::TestConfigmapToSkillSourceField -v 2>&1 | tail -20
 # Expected: ImportError or AttributeError — functions/classes don't exist yet
 ```
 
 - [ ] **Step 2.3: Add new models and helpers to skills.py**
 
-In `kagenti/backend/app/routers/skills.py`:
+In `rossoctl/backend/app/routers/skills.py`:
 
 **a) Add imports** at the top of the file (after existing imports):
 
@@ -314,7 +314,7 @@ def _configmap_to_external_skill_info(cm) -> ExternalSkillInfo:
 - [ ] **Step 2.4: Run tests to confirm they pass**
 
 ```bash
-cd kagenti/backend
+cd rossoctl/backend
 uv run pytest tests/test_skills.py::TestIsExternal tests/test_skills.py::TestConfigmapToExternalSkillInfo tests/test_skills.py::TestConfigmapToSkillSourceField -v 2>&1 | tail -20
 # Expected: 7 PASSED
 ```
@@ -322,7 +322,7 @@ uv run pytest tests/test_skills.py::TestIsExternal tests/test_skills.py::TestCon
 - [ ] **Step 2.5: Run full test suite to catch regressions**
 
 ```bash
-cd kagenti/backend
+cd rossoctl/backend
 uv run pytest tests/ -v 2>&1 | tail -30
 # Expected: all existing tests still pass
 ```
@@ -330,15 +330,15 @@ uv run pytest tests/ -v 2>&1 | tail -30
 - [ ] **Step 2.6: Commit**
 
 ```bash
-git add kagenti/backend/app/routers/skills.py \
-        kagenti/backend/tests/test_skills.py
+git add rossoctl/backend/app/routers/skills.py \
+        rossoctl/backend/tests/test_skills.py
 git commit -s -m "feat(skills): add ExternalSkillInfo model and _is_external helpers
 
 Adds ExternalSkillInfo Pydantic model, _is_external(), and
 _configmap_to_external_skill_info() helpers. Updates Skill model
 and _configmap_to_skill/_configmap_to_skill_detail to populate
 source/externalInfo fields for registry-reference ConfigMaps.
-Refs kagenti/kagenti#1691.
+Refs rossoctl/rossoctl#1691.
 
 Assisted-By: Claude Code <noreply@anthropic.com>"
 ```
@@ -348,12 +348,12 @@ Assisted-By: Claude Code <noreply@anthropic.com>"
 ## Task 3: skills.py — POST /skills/external endpoint
 
 **Files:**
-- Modify: `kagenti/backend/app/routers/skills.py`
-- Modify: `kagenti/backend/tests/test_skills.py`
+- Modify: `rossoctl/backend/app/routers/skills.py`
+- Modify: `rossoctl/backend/tests/test_skills.py`
 
 - [ ] **Step 3.1: Write failing test for create_external_skill endpoint**
 
-Add to `kagenti/backend/tests/test_skills.py`:
+Add to `rossoctl/backend/tests/test_skills.py`:
 
 ```python
 from unittest.mock import patch, MagicMock
@@ -378,8 +378,8 @@ class TestCreateExternalSkill:
         )
 
         with patch("app.routers.skills.get_kubernetes_service", return_value=mock_kube), \
-             patch("app.core.config.settings.kagenti_feature_flag_external_skills", True), \
-             patch("app.core.config.settings.kagenti_feature_flag_skills", True):
+             patch("app.core.config.settings.rossoctl_feature_flag_external_skills", True), \
+             patch("app.core.config.settings.rossoctl_feature_flag_skills", True):
             client = TestClient(_make_test_app())
             resp = client.post("/api/skills/external", json={
                 "name": "Code Review",
@@ -400,8 +400,8 @@ class TestCreateExternalSkill:
         """POST /api/skills/external returns 404 when feature flag is disabled."""
         mock_kube = MagicMock()
         with patch("app.routers.skills.get_kubernetes_service", return_value=mock_kube), \
-             patch("app.core.config.settings.kagenti_feature_flag_external_skills", False), \
-             patch("app.core.config.settings.kagenti_feature_flag_skills", True):
+             patch("app.core.config.settings.rossoctl_feature_flag_external_skills", False), \
+             patch("app.core.config.settings.rossoctl_feature_flag_skills", True):
             client = TestClient(_make_test_app())
             resp = client.post("/api/skills/external", json={
                 "name": "test",
@@ -416,7 +416,7 @@ class TestCreateExternalSkill:
 - [ ] **Step 3.2: Run test to confirm it fails**
 
 ```bash
-cd kagenti/backend
+cd rossoctl/backend
 uv run pytest tests/test_skills.py::TestCreateExternalSkill -v 2>&1 | tail -10
 # Expected: FAILED (404 Not Found or missing route)
 ```
@@ -448,7 +448,7 @@ async def create_external_skill(
     _: None = Depends(require_roles(ROLE_OPERATOR)),
 ) -> CreateSkillResponse:
     """Create an external skill registry reference (feature-flagged)."""
-    if not settings.kagenti_feature_flag_external_skills:
+    if not settings.rossoctl_feature_flag_external_skills:
         raise HTTPException(status_code=404, detail="Not Found")
 
     if not request.registryType:
@@ -460,7 +460,7 @@ async def create_external_skill(
         SKILL_SOURCE_LABEL: SKILL_SOURCE_EXTERNAL,
         SKILL_REGISTRY_TYPE_LABEL: request.registryType,
         APP_KUBERNETES_IO_NAME: resource_name,
-        APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
+        APP_KUBERNETES_IO_MANAGED_BY: ROSSOCTL_UI_CREATOR_LABEL,
     }
     if request.category:
         labels[SKILL_CATEGORY_LABEL] = request.category
@@ -503,12 +503,12 @@ async def create_external_skill(
     )
 ```
 
-Note: `APP_KUBERNETES_IO_NAME`, `APP_KUBERNETES_IO_MANAGED_BY`, `KAGENTI_UI_CREATOR_LABEL` are already imported in `skills.py` from `constants.py`. Add the new constants to the imports block at the top.
+Note: `APP_KUBERNETES_IO_NAME`, `APP_KUBERNETES_IO_MANAGED_BY`, `ROSSOCTL_UI_CREATOR_LABEL` are already imported in `skills.py` from `constants.py`. Add the new constants to the imports block at the top.
 
 - [ ] **Step 3.4: Run tests to confirm they pass**
 
 ```bash
-cd kagenti/backend
+cd rossoctl/backend
 uv run pytest tests/test_skills.py::TestCreateExternalSkill -v 2>&1 | tail -10
 # Expected: 2 PASSED
 ```
@@ -516,7 +516,7 @@ uv run pytest tests/test_skills.py::TestCreateExternalSkill -v 2>&1 | tail -10
 - [ ] **Step 3.5: Run full test suite**
 
 ```bash
-cd kagenti/backend
+cd rossoctl/backend
 uv run pytest tests/ -v 2>&1 | tail -30
 # Expected: all tests pass
 ```
@@ -524,14 +524,14 @@ uv run pytest tests/ -v 2>&1 | tail -30
 - [ ] **Step 3.6: Commit**
 
 ```bash
-git add kagenti/backend/app/routers/skills.py \
-        kagenti/backend/tests/test_skills.py
+git add rossoctl/backend/app/routers/skills.py \
+        rossoctl/backend/tests/test_skills.py
 git commit -s -m "feat(skills): add POST /skills/external endpoint
 
 Adds CreateExternalSkillRequest model and create_external_skill endpoint.
 Creates registry-reference ConfigMaps with empty data and registry
-metadata in annotations. Gated behind kagenti_feature_flag_external_skills.
-Refs kagenti/kagenti#1691.
+metadata in annotations. Gated behind rossoctl_feature_flag_external_skills.
+Refs rossoctl/rossoctl#1691.
 
 Assisted-By: Claude Code <noreply@anthropic.com>"
 ```
@@ -541,14 +541,14 @@ Assisted-By: Claude Code <noreply@anthropic.com>"
 ## Task 4: agents.py — external skill mount logic
 
 **Files:**
-- Modify: `kagenti/backend/app/routers/agents.py`
-- Create: `kagenti/backend/tests/test_agents_external_skills.py`
+- Modify: `rossoctl/backend/app/routers/agents.py`
+- Create: `rossoctl/backend/tests/test_agents_external_skills.py`
 
 The core change: 4 manifest builder functions (`_build_deployment_manifest`, `_build_statefulset_manifest`, `_build_job_manifest`, `_build_sandbox_manifest`) each call `_get_linked_skill_mounts(request)` at their top. We add new optional keyword parameters and a second call to get external skill data. `_get_linked_skill_mounts` gains a `skills_override` parameter to accept only local skills. `_build_env_vars` gains `ext_skill_paths` to combine local + external paths.
 
 - [ ] **Step 4.1: Write failing tests**
 
-Create `kagenti/backend/tests/test_agents_external_skills.py`:
+Create `rossoctl/backend/tests/test_agents_external_skills.py`:
 
 ```python
 # Copyright 2026 IBM Corp.
@@ -690,14 +690,14 @@ class TestGetExternalSkillData:
 - [ ] **Step 4.2: Run tests to confirm they fail**
 
 ```bash
-cd kagenti/backend
+cd rossoctl/backend
 uv run pytest tests/test_agents_external_skills.py -v 2>&1 | tail -15
 # Expected: ImportError — functions not yet defined
 ```
 
 - [ ] **Step 4.3: Add new helpers to agents.py**
 
-Add these functions to `kagenti/backend/app/routers/agents.py` **right after** the existing `_get_linked_skill_mounts` function (currently ending around line 2512):
+Add these functions to `rossoctl/backend/app/routers/agents.py` **right after** the existing `_get_linked_skill_mounts` function (currently ending around line 2512):
 
 First, update the imports at the top of agents.py to include new constants:
 
@@ -793,14 +793,14 @@ def _build_fetcher_scripts_data() -> Dict[str, str]:
 
 
 def _ensure_fetcher_scripts_cm(kube: "KubernetesService", namespace: str) -> None:
-    """Create or replace the kagenti-skill-fetcher-scripts ConfigMap in namespace."""
+    """Create or replace the rossoctl-skill-fetcher-scripts ConfigMap in namespace."""
     import kubernetes.client as k8s_client
 
     body = k8s_client.V1ConfigMap(
         metadata=k8s_client.V1ObjectMeta(
             name=SKILL_FETCHER_SCRIPTS_CM,
             namespace=namespace,
-            labels={"app.kubernetes.io/managed-by": "kagenti"},
+            labels={"app.kubernetes.io/managed-by": "rossoctl"},
         ),
         data=_build_fetcher_scripts_data(),
     )
@@ -1047,7 +1047,7 @@ In the `create_agent` function (line ~3214), find the existing feature flag chec
 
 ```python
     # Feature flag: reject skill linking if feature is disabled
-    if request.skills and not settings.kagenti_feature_flag_skills:
+    if request.skills and not settings.rossoctl_feature_flag_skills:
         raise HTTPException(...)
 ```
 
@@ -1061,7 +1061,7 @@ After this block, add:
     ext_volume_mounts: List[Dict[str, Any]] = []
     ext_skill_paths: List[str] = []
 
-    if request.skills and settings.kagenti_feature_flag_external_skills:
+    if request.skills and settings.rossoctl_feature_flag_external_skills:
         _ensure_fetcher_scripts_cm(kube, request.namespace)
         ext_init_containers, ext_volumes, ext_volume_mounts, ext_skill_paths = (
             _get_external_skill_data(kube, request.namespace, request.skills)
@@ -1092,7 +1092,7 @@ Apply the same for all 4 workload types. Also apply to the second set of manifes
 - [ ] **Step 4.8: Run tests to confirm new helpers pass**
 
 ```bash
-cd kagenti/backend
+cd rossoctl/backend
 uv run pytest tests/test_agents_external_skills.py -v 2>&1 | tail -20
 # Expected: all tests pass
 ```
@@ -1100,7 +1100,7 @@ uv run pytest tests/test_agents_external_skills.py -v 2>&1 | tail -20
 - [ ] **Step 4.9: Run full test suite**
 
 ```bash
-cd kagenti/backend
+cd rossoctl/backend
 uv run pytest tests/ -v 2>&1 | tail -30
 # Expected: all tests pass
 ```
@@ -1108,8 +1108,8 @@ uv run pytest tests/ -v 2>&1 | tail -30
 - [ ] **Step 4.10: Commit**
 
 ```bash
-git add kagenti/backend/app/routers/agents.py \
-        kagenti/backend/tests/test_agents_external_skills.py
+git add rossoctl/backend/app/routers/agents.py \
+        rossoctl/backend/tests/test_agents_external_skills.py
 git commit -s -m "feat(agents): inject init containers for external registry skills
 
 Adds _is_skill_external, _ensure_fetcher_scripts_cm,
@@ -1118,7 +1118,7 @@ Modifies _get_linked_skill_mounts and _build_env_vars to accept
 local_skills/ext_skill_paths overrides. Updates all 4 manifest
 builders and create_agent to split local vs. external skills and
 inject alpine:3 init containers for external skill fetching.
-Refs kagenti/kagenti#1691.
+Refs rossoctl/rossoctl#1691.
 
 Assisted-By: Claude Code <noreply@anthropic.com>"
 ```
@@ -1128,12 +1128,12 @@ Assisted-By: Claude Code <noreply@anthropic.com>"
 ## Task 5: Frontend — types and API service
 
 **Files:**
-- Modify: `kagenti/ui-v2/src/types/index.ts` (around line 411)
-- Modify: `kagenti/ui-v2/src/services/api.ts` (after line 1528)
+- Modify: `rossoctl/ui-v2/src/types/index.ts` (around line 411)
+- Modify: `rossoctl/ui-v2/src/services/api.ts` (after line 1528)
 
 - [ ] **Step 5.1: Update Skill type and add new types in types/index.ts**
 
-In `kagenti/ui-v2/src/types/index.ts`, after the `SkillLabels` interface (around line 407) add:
+In `rossoctl/ui-v2/src/types/index.ts`, after the `SkillLabels` interface (around line 407) add:
 
 ```typescript
 export interface ExternalSkillInfo {
@@ -1180,7 +1180,7 @@ export interface CreateExternalSkillRequest {
 
 - [ ] **Step 5.2: Add `externalSkills` to useFeatureFlags.ts**
 
-In `kagenti/ui-v2/src/hooks/useFeatureFlags.ts`, add to the `FeatureFlags` interface (after `admin: boolean`):
+In `rossoctl/ui-v2/src/hooks/useFeatureFlags.ts`, add to the `FeatureFlags` interface (after `admin: boolean`):
 
 ```typescript
   /** External skill registry references */
@@ -1201,7 +1201,7 @@ Add to the `validated` object in the `useEffect` (after `admin: data.admin === t
 
 - [ ] **Step 5.3: Add createExternal to skillService in api.ts**
 
-In `kagenti/ui-v2/src/services/api.ts`, inside `skillService` (after the `delete` method, before the closing `}`), add:
+In `rossoctl/ui-v2/src/services/api.ts`, inside `skillService` (after the `delete` method, before the closing `}`), add:
 
 ```typescript
   async createExternal(data: CreateExternalSkillRequest): Promise<CreateSkillResponse> {
@@ -1217,7 +1217,7 @@ Update the import of types in api.ts to include `CreateExternalSkillRequest` (fi
 - [ ] **Step 5.4: TypeScript compile check**
 
 ```bash
-cd kagenti/ui-v2
+cd rossoctl/ui-v2
 npx tsc --noEmit 2>&1 | head -30
 # Expected: no errors
 ```
@@ -1225,14 +1225,14 @@ npx tsc --noEmit 2>&1 | head -30
 - [ ] **Step 5.5: Commit**
 
 ```bash
-git add kagenti/ui-v2/src/types/index.ts \
-        kagenti/ui-v2/src/services/api.ts \
-        kagenti/ui-v2/src/hooks/useFeatureFlags.ts
+git add rossoctl/ui-v2/src/types/index.ts \
+        rossoctl/ui-v2/src/services/api.ts \
+        rossoctl/ui-v2/src/hooks/useFeatureFlags.ts
 git commit -s -m "feat(ui): add ExternalSkillInfo type and skillService.createExternal
 
 Extends Skill interface with optional source/externalInfo fields.
 Adds CreateExternalSkillRequest type and skillService.createExternal()
-API method. Refs kagenti/kagenti#1691.
+API method. Refs rossoctl/rossoctl#1691.
 
 Assisted-By: Claude Code <noreply@anthropic.com>"
 ```
@@ -1242,7 +1242,7 @@ Assisted-By: Claude Code <noreply@anthropic.com>"
 ## Task 6: Frontend — SkillCatalogPage badge
 
 **Files:**
-- Modify: `kagenti/ui-v2/src/pages/SkillCatalogPage.tsx`
+- Modify: `rossoctl/ui-v2/src/pages/SkillCatalogPage.tsx`
 
 - [ ] **Step 6.1: Add External badge to skill list rows**
 
@@ -1274,7 +1274,7 @@ Read the file to find the exact surrounding JSX structure before making this cha
 - [ ] **Step 6.2: TypeScript compile check**
 
 ```bash
-cd kagenti/ui-v2
+cd rossoctl/ui-v2
 npx tsc --noEmit 2>&1 | head -30
 # Expected: no errors
 ```
@@ -1282,12 +1282,12 @@ npx tsc --noEmit 2>&1 | head -30
 - [ ] **Step 6.3: Commit**
 
 ```bash
-git add kagenti/ui-v2/src/pages/SkillCatalogPage.tsx
+git add rossoctl/ui-v2/src/pages/SkillCatalogPage.tsx
 git commit -s -m "feat(ui): show External badge in skill catalog for registry skills
 
 External skills (source=external) display a blue 'External' badge
 next to their name in the skill catalog table.
-Refs kagenti/kagenti#1691.
+Refs rossoctl/rossoctl#1691.
 
 Assisted-By: Claude Code <noreply@anthropic.com>"
 ```
@@ -1297,7 +1297,7 @@ Assisted-By: Claude Code <noreply@anthropic.com>"
 ## Task 7: Frontend — SkillDetailPage registry info card
 
 **Files:**
-- Modify: `kagenti/ui-v2/src/pages/SkillDetailPage.tsx`
+- Modify: `rossoctl/ui-v2/src/pages/SkillDetailPage.tsx`
 
 - [ ] **Step 7.1: Add registry info card for external skills**
 
@@ -1358,7 +1358,7 @@ All PatternFly components used (`Card`, `CardTitle`, `CardBody`, `DescriptionLis
 - [ ] **Step 7.2: TypeScript compile check**
 
 ```bash
-cd kagenti/ui-v2
+cd rossoctl/ui-v2
 npx tsc --noEmit 2>&1 | head -30
 # Expected: no errors
 ```
@@ -1366,12 +1366,12 @@ npx tsc --noEmit 2>&1 | head -30
 - [ ] **Step 7.3: Commit**
 
 ```bash
-git add kagenti/ui-v2/src/pages/SkillDetailPage.tsx
+git add rossoctl/ui-v2/src/pages/SkillDetailPage.tsx
 git commit -s -m "feat(ui): show registry info card on external skill detail page
 
 For external skills, replaces the file tree with a Registry Information
 card showing type, URL, skill name, version, and a link to the registry.
-Refs kagenti/kagenti#1691.
+Refs rossoctl/rossoctl#1691.
 
 Assisted-By: Claude Code <noreply@anthropic.com>"
 ```
@@ -1381,14 +1381,14 @@ Assisted-By: Claude Code <noreply@anthropic.com>"
 ## Task 8: Frontend — ImportSkillPage "From Registry" tab
 
 **Files:**
-- Modify: `kagenti/ui-v2/src/pages/ImportSkillPage.tsx`
+- Modify: `rossoctl/ui-v2/src/pages/ImportSkillPage.tsx`
 
 - [ ] **Step 8.1: Read ImportSkillPage.tsx in full**
 
 Read the full file to understand the current form structure before modifying it.
 
 ```bash
-wc -l kagenti/ui-v2/src/pages/ImportSkillPage.tsx
+wc -l rossoctl/ui-v2/src/pages/ImportSkillPage.tsx
 # Then read the full file
 ```
 
@@ -1572,7 +1572,7 @@ Import `apiFetch` and `FeatureFlagsResponse` at the top if not already present.
 - [ ] **Step 8.3: TypeScript compile check**
 
 ```bash
-cd kagenti/ui-v2
+cd rossoctl/ui-v2
 npx tsc --noEmit 2>&1 | head -30
 # Expected: no errors (fix any type errors reported)
 ```
@@ -1580,13 +1580,13 @@ npx tsc --noEmit 2>&1 | head -30
 - [ ] **Step 8.4: Commit**
 
 ```bash
-git add kagenti/ui-v2/src/pages/ImportSkillPage.tsx
+git add rossoctl/ui-v2/src/pages/ImportSkillPage.tsx
 git commit -s -m "feat(ui): add From Registry tab to ImportSkillPage
 
 Adds a 'From Registry' tab (shown when externalSkills feature flag
 is enabled) with a form for registryType, URL, skill name, version,
 display name, description, and category. Submits to
-skillService.createExternal(). Refs kagenti/kagenti#1691.
+skillService.createExternal(). Refs rossoctl/rossoctl#1691.
 
 Assisted-By: Claude Code <noreply@anthropic.com>"
 ```
@@ -1598,7 +1598,7 @@ Assisted-By: Claude Code <noreply@anthropic.com>"
 - [ ] **Step 9.1: Run Python linter**
 
 ```bash
-cd kagenti/backend
+cd rossoctl/backend
 uv run pre-commit run --all-files 2>&1 | tail -30
 # Fix any reported issues, then re-run until clean
 ```
@@ -1606,7 +1606,7 @@ uv run pre-commit run --all-files 2>&1 | tail -30
 - [ ] **Step 9.2: Run frontend lint**
 
 ```bash
-cd kagenti/ui-v2
+cd rossoctl/ui-v2
 npm run lint 2>&1 | tail -30
 # Fix any ESLint issues reported
 ```
@@ -1614,7 +1614,7 @@ npm run lint 2>&1 | tail -30
 - [ ] **Step 9.3: Run backend tests one final time**
 
 ```bash
-cd kagenti/backend
+cd rossoctl/backend
 uv run pytest tests/ -v 2>&1 | tail -30
 # Expected: all tests pass
 ```
@@ -1628,18 +1628,18 @@ gh pr create \
   --title "feat(skills): external skill registry references (#1691)" \
   --base main \
   --head eranra:feat/external-skill-registries \
-  --repo kagenti/kagenti \
+  --repo rossoctl/rossoctl \
   --body "$(cat <<'EOF'
 ## Summary
 
-- Adds external skill registry references: lightweight ConfigMaps (`kagenti.io/source=external`) that point to a remote registry instead of embedding file content
+- Adds external skill registry references: lightweight ConfigMaps (`rossoctl.io/source=external`) that point to a remote registry instead of embedding file content
 - At agent pod startup, an `alpine:3` init container fetches the skill archive from the registry and mounts it at the same path as local skills — transparent to the agent
-- Registry-specific fetch scripts live in a `kagenti-skill-fetcher-scripts` ConfigMap (created lazily in each team namespace); adding a new registry type requires only a new shell script
-- Gated behind `kagenti_feature_flag_external_skills` (default: `False`)
+- Registry-specific fetch scripts live in a `rossoctl-skill-fetcher-scripts` ConfigMap (created lazily in each team namespace); adding a new registry type requires only a new shell script
+- Gated behind `rossoctl_feature_flag_external_skills` (default: `False`)
 
 ## Changes
 
-- `config.py` — new `kagenti_feature_flag_external_skills` flag
+- `config.py` — new `rossoctl_feature_flag_external_skills` flag
 - `constants.py` — 8 new skill registry constants
 - `config.py router` — exposes `externalSkills` in `/config/features`
 - `skills.py` — `ExternalSkillInfo` model, `_is_external()` helpers, `POST /skills/external` endpoint
@@ -1653,7 +1653,7 @@ gh pr create \
 
 ## Issue
 
-Closes kagenti/kagenti#1691
+Closes rossoctl/rossoctl#1691
 
 Assisted-By: Claude Code
 EOF

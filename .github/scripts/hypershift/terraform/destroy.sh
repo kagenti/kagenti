@@ -8,7 +8,7 @@
 #   ./.github/scripts/hypershift/terraform/destroy.sh <environment> <cluster-name>
 #
 # EXAMPLES:
-#   ./.github/scripts/hypershift/terraform/destroy.sh 4.20 kagenti-hypershift-custom-test
+#   ./.github/scripts/hypershift/terraform/destroy.sh 4.20 rossoctl-hypershift-custom-test
 #
 
 set -euo pipefail
@@ -30,8 +30,8 @@ if [ $# -lt 2 ]; then
     echo "Usage: $0 <environment> <cluster-name>" >&2
     echo "" >&2
     echo "Examples:" >&2
-    echo "  $0 4.20 kagenti-hypershift-custom-test" >&2
-    echo "  $0 4.20 kagenti-hypershift-ci-123" >&2
+    echo "  $0 4.20 rossoctl-hypershift-custom-test" >&2
+    echo "  $0 4.20 rossoctl-hypershift-ci-123" >&2
     exit 1
 fi
 

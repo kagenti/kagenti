@@ -1,8 +1,8 @@
 <!--coc-start-->
-The Code of Conduct serves as a set of rules used by the Kagenti community to establish a safe, respectful and inclusive environment.
+The Code of Conduct serves as a set of rules used by the Rossoctl community to establish a safe, respectful and inclusive environment.
 
-## Kagenti Community Code of Conduct
-The Kagenti Community abides by the CNCF Code of Conduct.
+## Rossoctl Community Code of Conduct
+The Rossoctl Community abides by the CNCF Code of Conduct.
 
 ## Contributor Code of Conduct
 

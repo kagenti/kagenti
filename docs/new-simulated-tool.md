@@ -1,8 +1,8 @@
 # Importing a Simulated Tool
 
 ## Overview
-A **simulated tool** is an MCP tool whose behavior Kagenti generates from an OpenAPI
-spec — no real backend, no hand-written MCP server. Kagenti runs a generic harness
+A **simulated tool** is an MCP tool whose behavior Rossoctl generates from an OpenAPI
+spec — no real backend, no hand-written MCP server. Rossoctl runs a generic harness
 image that reads your spec, generates a skill with an LLM, seeds an in-memory
 database, and serves the operations as MCP tools. Use it for demos, onboarding, and
 developing agents against a controlled, reproducible API before a real backend exists.
@@ -32,7 +32,7 @@ with a **SIMULATED** badge.
 ## Import via the seed script (demo/onboarding)
 Use the worked example for one-command seeding:
 ```
-./kagenti/examples/simulated-tools/tasks-api/seed.sh team1
+./rossoctl/examples/simulated-tools/tasks-api/seed.sh team1
 ```
 This creates the Tasks API simulated tool and waits until it is Ready, printing the
 `mcpUrl`. No real external backend is required.
@@ -57,4 +57,4 @@ flight returns `409`.
 
 ## Related documentation
 - [Importing a tool (image / source)](new-tool.md)
-- Worked example: `kagenti/examples/simulated-tools/tasks-api/`
+- Worked example: `rossoctl/examples/simulated-tools/tasks-api/`

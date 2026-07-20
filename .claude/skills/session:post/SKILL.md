@@ -95,11 +95,11 @@ gh pr view <PR_NUMBER> --json comments --jq '.comments[-1].body[:200]'
 ```bash
 # Auto-detect everything and post to PR
 python3 .claude/scripts/session-analytics.py \
-  --session-id abc123 --target pr --number 42 --repo kagenti/kagenti
+  --session-id abc123 --target pr --number 42 --repo rossoctl/rossoctl
 
 # Post to a specific issue instead
 python3 .claude/scripts/session-analytics.py \
-  --session-id abc123 --target issue --number 100 --repo kagenti/kagenti
+  --session-id abc123 --target issue --number 100 --repo rossoctl/rossoctl
 ```
 
 ## Related Skills

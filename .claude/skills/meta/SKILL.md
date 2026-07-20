@@ -11,11 +11,11 @@ Skills for continuous improvement of the skills system.
 
 | Skill | Description |
 |-------|-------------|
-| `meta:write-docs` | Guidelines and patterns for writing Kagenti documentation |
+| `meta:write-docs` | Guidelines and patterns for writing Rossoctl documentation |
 
 ## When to Use
 
-- **write-docs**: When creating or updating Kagenti documentation
+- **write-docs**: When creating or updating Rossoctl documentation
 
 ## Related Skills
 

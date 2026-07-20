@@ -6,8 +6,8 @@ metadata:
   namespace: team1
   labels:
     app.kubernetes.io/name: llm-budget-proxy
-    app.kubernetes.io/part-of: kagenti
-    app.kubernetes.io/managed-by: kagenti-e2e
+    app.kubernetes.io/part-of: rossoctl
+    app.kubernetes.io/managed-by: rossoctl-e2e
 spec:
   replicas: 1
   selector:
@@ -41,14 +41,14 @@ spec:
           protocol: TCP
         env:
         - name: LITELLM_URL
-          value: "http://litellm-proxy.kagenti-system.svc.cluster.local:4000"
+          value: "http://litellm-proxy.rossoctl-system.svc.cluster.local:4000"
         - name: PGPASSWORD
           valueFrom:
             secretKeyRef:
               name: postgres-sessions-secret
               key: password
         - name: DATABASE_URL
-          value: "postgresql://kagenti:$(PGPASSWORD)@postgres-sessions.team1.svc:5432/llm_budget"
+          value: "postgresql://rossoctl:$(PGPASSWORD)@postgres-sessions.team1.svc:5432/llm_budget"
         resources:
           requests:
             cpu: 50m
@@ -76,7 +76,7 @@ metadata:
   namespace: team1
   labels:
     app.kubernetes.io/name: llm-budget-proxy
-    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/part-of: rossoctl
 spec:
   type: ClusterIP
   selector:

@@ -12,7 +12,7 @@ description: Run E2E tests on HyperShift cluster
 **Test output MUST go to files.** Test runs produce hundreds of lines.
 
 ```bash
-export LOG_DIR=/tmp/kagenti/tdd/${WORKTREE:-$CLUSTER}
+export LOG_DIR=/tmp/rossoctl/tdd/${WORKTREE:-$CLUSTER}
 mkdir -p $LOG_DIR
 
 # Pattern: redirect test output
@@ -29,7 +29,7 @@ command > $LOG_DIR/test-run.log 2>&1; echo "EXIT:$?"
 ## Run All Tests
 
 ```bash
-KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-$CLUSTER/auth/kubeconfig \
+KUBECONFIG=~/clusters/hcp/rossoctl-hypershift-custom-$CLUSTER/auth/kubeconfig \
   ./.github/scripts/local-setup/hypershift-full-test.sh $CLUSTER --include-test \
   > $LOG_DIR/test-all.log 2>&1; echo "EXIT:$?"
 ```
@@ -37,7 +37,7 @@ KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-$CLUSTER/auth/kubeconfig \
 ## Run Specific Tests
 
 ```bash
-KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-$CLUSTER/auth/kubeconfig \
+KUBECONFIG=~/clusters/hcp/rossoctl-hypershift-custom-$CLUSTER/auth/kubeconfig \
   ./.github/scripts/local-setup/hypershift-full-test.sh $CLUSTER \
   --include-test --pytest-filter "test_agent or test_mlflow" \
   > $LOG_DIR/test-filtered.log 2>&1; echo "EXIT:$?"
@@ -46,7 +46,7 @@ KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-$CLUSTER/auth/kubeconfig \
 ## Run from Worktree
 
 ```bash
-KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-$CLUSTER/auth/kubeconfig \
+KUBECONFIG=~/clusters/hcp/rossoctl-hypershift-custom-$CLUSTER/auth/kubeconfig \
   .worktrees/$WORKTREE/.github/scripts/local-setup/hypershift-full-test.sh $CLUSTER \
   --include-test --pytest-filter "test_agent"
 ```

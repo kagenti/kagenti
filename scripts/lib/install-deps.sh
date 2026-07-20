@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Shared Kagenti dependency installers
+# Shared Rossoctl dependency installers
 # ============================================================================
 # Library of bash functions used by the Kind and vanilla-Kubernetes entry
-# points (scripts/kind/setup-kagenti.sh and scripts/k8s/setup-kagenti.sh).
+# points (scripts/kind/setup-rossoctl.sh and scripts/k8s/setup-rossoctl.sh).
 #
 # Functions install upstream third-party components onto an existing
 # Kubernetes cluster using kubectl/helm against the caller's KUBECONFIG.
@@ -22,10 +22,10 @@
 # ============================================================================
 
 # Guard against double-sourcing.
-if [[ "${__KAGENTI_INSTALL_DEPS_SH_SOURCED:-}" == "1" ]]; then
+if [[ "${__ROSSOCTL_INSTALL_DEPS_SH_SOURCED:-}" == "1" ]]; then
   return 0
 fi
-__KAGENTI_INSTALL_DEPS_SH_SOURCED=1
+__ROSSOCTL_INSTALL_DEPS_SH_SOURCED=1
 
 # ----------------------------------------------------------------------------
 # install_tekton

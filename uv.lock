@@ -1284,7 +1284,7 @@ wheels = [
 ]
 
 [[package]]
-name = "kagenti-project"
+name = "rossoctl-project"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

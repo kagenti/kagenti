@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Access UI Script - Provides access information for Kagenti UI
+# Access UI Script - Provides access information for Rossoctl UI
 # Usage: ./.github/scripts/kind/access-ui.sh
 
 set -euo pipefail
@@ -14,24 +14,24 @@ NC='\033[0m' # No Color
 
 echo ""
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║              Kagenti UI Access Information                    ║"
+echo "║              Rossoctl UI Access Information                    ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 
 # Check if platform is running
-if ! kubectl get namespace kagenti-system &> /dev/null; then
+if ! kubectl get namespace rossoctl-system &> /dev/null; then
     echo -e "${RED}✗ Platform not deployed${NC}"
     echo "  Run: ./.github/scripts/kind/deploy-platform.sh"
     exit 1
 fi
 
 # Check if UI is deployed
-if ! kubectl get deployment -n kagenti-system kagenti-ui &> /dev/null; then
-    echo -e "${YELLOW}⚠ Kagenti UI not deployed yet${NC}"
+if ! kubectl get deployment -n rossoctl-system rossoctl-ui &> /dev/null; then
+    echo -e "${YELLOW}⚠ Rossoctl UI not deployed yet${NC}"
     echo ""
     echo "The UI is deployed as part of the platform but may take a few minutes."
     echo "Check status with:"
-    echo "  kubectl get pods -n kagenti-system"
+    echo "  kubectl get pods -n rossoctl-system"
     echo ""
 fi
 
@@ -43,9 +43,9 @@ KEYCLOAK_STATUS=$(kubectl get pods -n keycloak -l app.kubernetes.io/name=keycloa
 KEYCLOAK_USER=$(kubectl get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
 KEYCLOAK_PASS=$(kubectl get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
 
-# Kagenti realm credentials for UI login (falls back to master realm)
-UI_USER=$(kubectl get secret -n keycloak kagenti-test-user -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "$KEYCLOAK_USER")
-UI_PASS=$(kubectl get secret -n keycloak kagenti-test-user -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "$KEYCLOAK_PASS")
+# Rossoctl realm credentials for UI login (falls back to master realm)
+UI_USER=$(kubectl get secret -n keycloak rossoctl-test-user -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "$KEYCLOAK_USER")
+UI_PASS=$(kubectl get secret -n keycloak rossoctl-test-user -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "$KEYCLOAK_PASS")
 
 DOMAIN_NAME="${DOMAIN_NAME:-localtest.me}"
 
@@ -58,12 +58,12 @@ echo "  Port-forward: kubectl port-forward -n keycloak svc/keycloak-service 8080
 echo ""
 
 # Get UI status
-UI_STATUS=$(kubectl get pods -n kagenti-system -l app=kagenti-ui -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
-echo -e "${BLUE}Kagenti UI:${NC}"
+UI_STATUS=$(kubectl get pods -n rossoctl-system -l app=rossoctl-ui -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+echo -e "${BLUE}Rossoctl UI:${NC}"
 echo "  Status:   $UI_STATUS"
-echo -e "  Login:    ${GREEN}${UI_USER} / ${UI_PASS}${NC}  (kagenti realm)"
-echo "  URL:      http://kagenti-ui.${DOMAIN_NAME}:8080"
-echo "  Port-forward: kubectl port-forward -n kagenti-system svc/http-istio 8080:80"
+echo -e "  Login:    ${GREEN}${UI_USER} / ${UI_PASS}${NC}  (rossoctl realm)"
+echo "  URL:      http://rossoctl-ui.${DOMAIN_NAME}:8080"
+echo "  Port-forward: kubectl port-forward -n rossoctl-system svc/http-istio 8080:80"
 echo ""
 
 # Get agent status
@@ -102,7 +102,7 @@ if [ -n "$UI_PF" ]; then
     echo "  $UI_PF"
 else
     echo -e "${YELLOW}⚠ UI port-forward is NOT running${NC}"
-    echo "  Start with: kubectl port-forward -n kagenti-system svc/http-istio 8080:80 &"
+    echo "  Start with: kubectl port-forward -n rossoctl-system svc/http-istio 8080:80 &"
 fi
 echo ""
 
@@ -120,19 +120,19 @@ echo "║                  Quick Actions                                ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 echo "Start all port-forwards:"
-echo "  kubectl port-forward -n kagenti-system svc/http-istio 8080:80 > /tmp/pf-ui.log 2>&1 &"
+echo "  kubectl port-forward -n rossoctl-system svc/http-istio 8080:80 > /tmp/pf-ui.log 2>&1 &"
 echo "  kubectl port-forward -n keycloak svc/keycloak-service 8081:8080 > /tmp/pf-keycloak.log 2>&1 &"
 echo ""
-echo "Access Kagenti UI:"
+echo "Access Rossoctl UI:"
 echo "  1. Ensure port-forward is running (see above)"
-echo "  2. Visit: http://kagenti-ui.${DOMAIN_NAME}:8080"
+echo "  2. Visit: http://rossoctl-ui.${DOMAIN_NAME}:8080"
 echo -e "  3. Login with: ${GREEN}${UI_USER} / ${UI_PASS}${NC}"
 echo ""
 echo "Troubleshooting 'Restart login cookie not found' error:"
 echo "  - Make sure port-forward is running on port 8080"
 echo "  - Try clearing browser cookies for ${DOMAIN_NAME}"
-echo "  - Access http://kagenti-ui.${DOMAIN_NAME}:8080 (not https)"
-echo "  - Check UI logs: kubectl logs -n kagenti-system deployment/kagenti-ui --tail=50"
+echo "  - Access http://rossoctl-ui.${DOMAIN_NAME}:8080 (not https)"
+echo "  - Check UI logs: kubectl logs -n rossoctl-system deployment/rossoctl-ui --tail=50"
 echo ""
 echo "View all pods:"
 echo "  kubectl get pods -A"

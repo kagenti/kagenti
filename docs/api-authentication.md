@@ -1,10 +1,10 @@
 # API Authentication
 
-This guide covers how to authenticate with the Kagenti API using OAuth2 bearer tokens.
+This guide covers how to authenticate with the Rossoctl API using OAuth2 bearer tokens.
 
 ## Overview
 
-The Kagenti API uses JWT bearer tokens for authentication. Tokens are issued by Keycloak and must be included in the `Authorization` header of API requests.
+The Rossoctl API uses JWT bearer tokens for authentication. Tokens are issued by Keycloak and must be included in the `Authorization` header of API requests.
 
 **Authentication flow options:**
 
@@ -17,18 +17,18 @@ This guide focuses on **Client Credentials Grant** for programmatic API access.
 
 ## Quick Start
 
-> **Prerequisite:** The `kagenti-api-oauth-secret` must exist before running these commands.
+> **Prerequisite:** The `rossoctl-api-oauth-secret` must exist before running these commands.
 > Enable it in your Helm values with `apiOAuthSecret.enabled: true` (see
 > [Using the Default Service Account](#using-the-default-service-account)), or
 > create your own Keycloak client and Kubernetes secret manually.
 
 ```bash
 # 1. Get credentials from the Kubernetes secret
-export CLIENT_ID=$(kubectl get secret kagenti-api-oauth-secret -n kagenti-system -o jsonpath='{.data.CLIENT_ID}' | base64 -d)
-export CLIENT_SECRET=$(kubectl get secret kagenti-api-oauth-secret -n kagenti-system -o jsonpath='{.data.CLIENT_SECRET}' | base64 -d)
-export TOKEN_ENDPOINT=$(kubectl get secret kagenti-api-oauth-secret -n kagenti-system -o jsonpath='{.data.TOKEN_ENDPOINT}' | base64 -d)
-export KEYCLOAK_URL=$(kubectl get secret kagenti-api-oauth-secret -n kagenti-system -o jsonpath='{.data.KEYCLOAK_URL}' | base64 -d)
-export KEYCLOAK_REALM=$(kubectl get secret kagenti-api-oauth-secret -n kagenti-system -o jsonpath='{.data.KEYCLOAK_REALM}' | base64 -d)
+export CLIENT_ID=$(kubectl get secret rossoctl-api-oauth-secret -n rossoctl-system -o jsonpath='{.data.CLIENT_ID}' | base64 -d)
+export CLIENT_SECRET=$(kubectl get secret rossoctl-api-oauth-secret -n rossoctl-system -o jsonpath='{.data.CLIENT_SECRET}' | base64 -d)
+export TOKEN_ENDPOINT=$(kubectl get secret rossoctl-api-oauth-secret -n rossoctl-system -o jsonpath='{.data.TOKEN_ENDPOINT}' | base64 -d)
+export KEYCLOAK_URL=$(kubectl get secret rossoctl-api-oauth-secret -n rossoctl-system -o jsonpath='{.data.KEYCLOAK_URL}' | base64 -d)
+export KEYCLOAK_REALM=$(kubectl get secret rossoctl-api-oauth-secret -n rossoctl-system -o jsonpath='{.data.KEYCLOAK_REALM}' | base64 -d)
 
 # 2. Obtain an access token
 TOKEN=$(curl -s -X POST "$TOKEN_ENDPOINT" \
@@ -38,43 +38,43 @@ TOKEN=$(curl -s -X POST "$TOKEN_ENDPOINT" \
 
 # 3. Call the API
 curl -H "Authorization: Bearer $TOKEN" \
-  https://kagenti-api.example.com/api/v1/agents
+  https://rossoctl-api.example.com/api/v1/agents
 ```
 
-> **Note:** The default `kagenti-api` client is automatically assigned the
-> `kagenti-operator` realm role (configurable via `apiOAuthSecret.serviceAccountRole`).
+> **Note:** The default `rossoctl-api` client is automatically assigned the
+> `rossoctl-operator` realm role (configurable via `apiOAuthSecret.serviceAccountRole`).
 > Tokens obtained with this client's credentials already include this role, so no
 > additional user-role mapping is needed for programmatic access.
 
 ## Roles and Permissions
 
-Kagenti uses Role-Based Access Control (RBAC) with three roles:
+Rossoctl uses Role-Based Access Control (RBAC) with three roles:
 
 | Role | Permissions | Typical Use |
 |------|-------------|-------------|
-| `kagenti-viewer` | Read-only access to all resources | Monitoring, dashboards |
-| `kagenti-operator` | Read + write access (create, update, delete) | CI/CD, automation |
-| `kagenti-admin` | Full access including admin operations | Platform administrators |
+| `rossoctl-viewer` | Read-only access to all resources | Monitoring, dashboards |
+| `rossoctl-operator` | Read + write access (create, update, delete) | CI/CD, automation |
+| `rossoctl-admin` | Full access including admin operations | Platform administrators |
 
 **Role hierarchy:** Higher roles inherit permissions from lower roles.
-- `kagenti-admin` includes all `kagenti-operator` permissions
-- `kagenti-operator` includes all `kagenti-viewer` permissions
+- `rossoctl-admin` includes all `rossoctl-operator` permissions
+- `rossoctl-operator` includes all `rossoctl-viewer` permissions
 
 ### Endpoint Permissions
 
 | Endpoint Pattern | Method | Required Role |
 |-----------------|--------|---------------|
-| `/api/v1/agents` | GET | `kagenti-viewer` |
-| `/api/v1/agents` | POST | `kagenti-operator` |
-| `/api/v1/agents/{namespace}/{name}` | DELETE | `kagenti-operator` |
-| `/api/v1/tools` | GET | `kagenti-viewer` |
-| `/api/v1/tools` | POST | `kagenti-operator` |
-| `/api/v1/tools/{namespace}/{name}` | DELETE | `kagenti-operator` |
-| `/api/v1/chat/*` | GET | `kagenti-viewer` |
-| `/api/v1/chat/*` | POST | `kagenti-operator` |
-| `/api/v1/namespaces` | GET | `kagenti-viewer` |
-| `/api/v1/config/dashboards` | GET | `kagenti-viewer` |
-| `/api/v1/auth/userinfo` | GET | `kagenti-viewer` |
+| `/api/v1/agents` | GET | `rossoctl-viewer` |
+| `/api/v1/agents` | POST | `rossoctl-operator` |
+| `/api/v1/agents/{namespace}/{name}` | DELETE | `rossoctl-operator` |
+| `/api/v1/tools` | GET | `rossoctl-viewer` |
+| `/api/v1/tools` | POST | `rossoctl-operator` |
+| `/api/v1/tools/{namespace}/{name}` | DELETE | `rossoctl-operator` |
+| `/api/v1/chat/*` | GET | `rossoctl-viewer` |
+| `/api/v1/chat/*` | POST | `rossoctl-operator` |
+| `/api/v1/namespaces` | GET | `rossoctl-viewer` |
+| `/api/v1/config/dashboards` | GET | `rossoctl-viewer` |
+| `/api/v1/auth/userinfo` | GET | `rossoctl-viewer` |
 
 **Public endpoints** (no authentication required):
 - `/api/v1/auth/config` - Auth configuration for frontend
@@ -84,29 +84,29 @@ Kagenti uses Role-Based Access Control (RBAC) with three roles:
 
 ### Using the Default Service Account
 
-Kagenti can provision a default `kagenti-api` service account for testing and development.
+Rossoctl can provision a default `rossoctl-api` service account for testing and development.
 This feature is disabled by default; set `enabled: true` to activate it:
 
 ```yaml
-# charts/kagenti/values.yaml (override)
+# charts/rossoctl/values.yaml (override)
 apiOAuthSecret:
   enabled: true  # default: false
-  clientId: kagenti-api
-  secretName: kagenti-api-oauth-secret
-  serviceAccountRole: kagenti-operator  # role assigned to the client's service account
+  clientId: rossoctl-api
+  secretName: rossoctl-api-oauth-secret
+  serviceAccountRole: rossoctl-operator  # role assigned to the client's service account
 ```
 
 The provisioning job automatically assigns the `serviceAccountRole` (default:
-`kagenti-operator`) to the client's service account in Keycloak. Because Client
+`rossoctl-operator`) to the client's service account in Keycloak. Because Client
 Credentials Grant tokens are **not tied to an end-user**, the token's roles come
 entirely from the client's service account. This means tokens obtained with
-these credentials will already carry `kagenti-operator` permissions without any
+these credentials will already carry `rossoctl-operator` permissions without any
 additional user-role mapping.
 
 **Retrieve credentials:**
 
 ```bash
-kubectl get secret kagenti-api-oauth-secret -n kagenti-system -o yaml
+kubectl get secret rossoctl-api-oauth-secret -n rossoctl-system -o yaml
 ```
 
 The secret contains:
@@ -153,7 +153,7 @@ Include the token in the `Authorization` header:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-  https://kagenti-api.example.com/api/v1/agents
+  https://rossoctl-api.example.com/api/v1/agents
 ```
 
 ### Python Example
@@ -189,7 +189,7 @@ def call_api(base_url, token, endpoint):
 
 # Usage
 token = get_token(TOKEN_ENDPOINT, CLIENT_ID, CLIENT_SECRET)
-agents = call_api("https://kagenti-api.example.com", token, "/api/v1/agents")
+agents = call_api("https://rossoctl-api.example.com", token, "/api/v1/agents")
 ```
 
 ## Error Responses
@@ -216,7 +216,7 @@ Returned when authenticated but lacking required role:
 
 ```json
 {
-  "detail": "Required role(s): kagenti-operator"
+  "detail": "Required role(s): rossoctl-operator"
 }
 ```
 
@@ -236,7 +236,7 @@ For production, create dedicated service accounts per client instead of sharing 
    - **Standard flow:** OFF
    - **Direct access grants:** OFF
 3. Save and go to **Credentials** tab to get the client secret
-4. Go to **Service account roles** tab and assign `kagenti-operator` or `kagenti-viewer`
+4. Go to **Service account roles** tab and assign `rossoctl-operator` or `rossoctl-viewer`
 
 ### Via Keycloak Admin API
 
@@ -258,8 +258,8 @@ curl -X POST "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients" \
 CLIENT_UUID=$(curl -s "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients?clientId=my-ci-pipeline" \
   -H "Authorization: Bearer $ADMIN_TOKEN" | jq -r '.[0].id')
 
-# Assign the kagenti-operator role
-ROLE=$(curl -s "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/roles/kagenti-operator" \
+# Assign the rossoctl-operator role
+ROLE=$(curl -s "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/roles/operator" \
   -H "Authorization: Bearer $ADMIN_TOKEN")
 
 SERVICE_ACCOUNT_ID=$(curl -s "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients/$CLIENT_UUID/service-account-user" \
@@ -275,7 +275,7 @@ curl -X POST "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/users/$SERVICE_ACCOUNT_
 
 ### Shared Credentials Warning
 
-The default `kagenti-api` client is a **shared credential** intended for testing and development only.
+The default `rossoctl-api` client is a **shared credential** intended for testing and development only.
 
 **Production anti-patterns to avoid:**
 - Multiple services sharing the same client credentials

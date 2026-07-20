@@ -2,9 +2,9 @@
 
 ## Pre-requisites
 
-When deploying a new agent, you may either deploy from source code or from a pre-existing container image. When deploying from source code, Kagenti will retrieve the source code from GitHub. Kagenti will build your agent by deploying the code into a container based up on the Dockerfile you provide. When deploying from an image, it is expected that the agent code already exists in the container image, so the GitHub retrieval of the code and its installation will be skipped.
+When deploying a new agent, you may either deploy from source code or from a pre-existing container image. When deploying from source code, Rossoctl will retrieve the source code from GitHub. Rossoctl will build your agent by deploying the code into a container based up on the Dockerfile you provide. When deploying from an image, it is expected that the agent code already exists in the container image, so the GitHub retrieval of the code and its installation will be skipped.
 
-Kagenti UI allows importing custom environment files. You need to provide the repository and the file name. This assumes the `main` branch only. What if you want to test a file from your branch prior to merging it to `main`?
+Rossoctl UI allows importing custom environment files. You need to provide the repository and the file name. This assumes the `main` branch only. What if you want to test a file from your branch prior to merging it to `main`?
 Here is a trick:
 
 * find the raw file location, e.g.: `https://raw.githubusercontent.com/maia-iyer/agent-examples/refs/heads/git_example_changes/a2a/git_issue_agent/.env.ollama`
@@ -13,13 +13,13 @@ Here is a trick:
 * then press import file
 
 If you can see the successfully imported value, you are all set!
-> **💡 New to Kagenti?** This guide is designed for **Agent Developers**. If you're unsure about your role or want to understand the broader ecosystem, check out our **[Personas and Roles Documentation](../PERSONAS_AND_ROLES.md#11-agent-developer)** first.
+> **💡 New to Rossoctl?** This guide is designed for **Agent Developers**. If you're unsure about your role or want to understand the broader ecosystem, check out our **[Personas and Roles Documentation](../PERSONAS_AND_ROLES.md#11-agent-developer)** first.
 
 ### Deploying from Source
 
 Before importing a new agent from source, ensure that:
 
-1. The agent code is hosted on GitHub and is accessible using the GitHub credentials provided [during the Kagenti installation](./install.md).
+1. The agent code is hosted on GitHub and is accessible using the GitHub credentials provided [during the Rossoctl installation](./install.md).
 2. The agent code is organized within a sub-directory of the Git repository (not in the root directory).
 3. The root of the subdirectory contains a Dockerfile.
 
@@ -29,7 +29,7 @@ Before importing a new agent from an existing Docker image, ensure that the Dock
 
 ## Agent Examples
 
-See the [Kagenti agent examples repo](https://github.com/kagenti/agent-examples) for a variety of agents and MCP tool examples.
+See the [Rossoctl agent examples repo](https://github.com/rossoctl/examples) for a variety of agents and MCP tool examples.
 
 ## Steps to Import a New Agent
 
@@ -37,7 +37,7 @@ To import a new agent into the platform, follow these steps:
 
 ### Step 1: Access the Import New Agent Section
 
-- Log in to the Kagenti UI.
+- Log in to the Rossoctl UI.
 * Navigate to the "Import New Agent" section.
 
 ### Step 2: Select the Namespace
@@ -51,13 +51,13 @@ To import a new agent into the platform, follow these steps:
 
 ### Using Secrets / ConfigMaps from .env files
 
-The Kagenti UI supports importing environment variables from a `.env` file. To safely reference Kubernetes Secrets or ConfigMaps from a `.env` file (instead of embedding secret plaintext), the `.env` value may contain a JSON object which will be interpreted as a structured environment entry and mapped to Kubernetes `valueFrom` entries in the agent's manifest.
+The Rossoctl UI supports importing environment variables from a `.env` file. To safely reference Kubernetes Secrets or ConfigMaps from a `.env` file (instead of embedding secret plaintext), the `.env` value may contain a JSON object which will be interpreted as a structured environment entry and mapped to Kubernetes `valueFrom` entries in the agent's manifest.
 
 Important notes:
 
 - JSON values must be quoted in the `.env` file so they survive shell parsing. Either single or double quotes are accepted.
 - If the JSON contains a `valueFrom` object it will be used as-is. A shorthand form is also supported: supplying `secretKeyRef` or `configMapKeyRef` at the top-level will be wrapped under `valueFrom` automatically.
-- The UI will NOT store secret plaintext in repository or ConfigMaps. When you reference a Secret via `secretKeyRef`, Kagenti will include a `valueFrom` reference in the generated Component but it will not create or populate the Kubernetes Secret for you — you must ensure the referenced Secret exists in the target namespace.
+- The UI will NOT store secret plaintext in repository or ConfigMaps. When you reference a Secret via `secretKeyRef`, Rossoctl will include a `valueFrom` reference in the generated Component but it will not create or populate the Kubernetes Secret for you — you must ensure the referenced Secret exists in the target namespace.
 - Invalid JSON will be left as a plain string and the UI will show a warning during import.
 
 Examples (in your `.env` file):
@@ -89,7 +89,7 @@ WEATHER_CONFIG='{"configMapKeyRef": {"name": "weather-config", "key": "settings"
 Migration notes
 
 - If you previously kept secrets as plaintext in your `.env` files, move them into Kubernetes Secrets and update the `.env` to reference them using the JSON examples above. Do not commit plaintext secrets to source control.
-- When editing existing `.env` entries in the Kagenti UI, you can toggle a variable to "Structured" and paste the JSON; the UI will validate the JSON. If you switch back to plain mode, structured data will be removed from the in-memory representation.
+- When editing existing `.env` entries in the Rossoctl UI, you can toggle a variable to "Structured" and paste the JSON; the UI will validate the JSON. If you switch back to plain mode, structured data will be removed from the in-memory representation.
 - Ensure the referenced Secrets/ConfigMaps are present in the target namespace before deploying; otherwise your agent pods will fail to resolve the environment values.
 
 **Quick Secret creation example**
@@ -110,7 +110,7 @@ Then in your `.env` file reference the Secret using JSON (note the single quotes
 OPENAI_API_KEY='{"valueFrom": {"secretKeyRef": {"name": "openai-secret", "key": "apikey"}}}'
 ```
 
-When Kagenti imports this `.env` entry it will add an env var to the generated Component manifest that uses `valueFrom.secretKeyRef` to pull the `apikey` from the `openai-secret` in the target namespace.
+When Rossoctl imports this `.env` entry it will add an env var to the generated Component manifest that uses `valueFrom.secretKeyRef` to pull the `apikey` from the `openai-secret` in the target namespace.
 
 
 ### Step 4: Select Deployment Method
@@ -133,7 +133,7 @@ When building from source, you can configure additional build options:
 
 ### Build Strategy
 
-Kagenti uses [Shipwright](https://shipwright.io) to build container images. The build strategy is automatically selected based on your registry:
+Rossoctl uses [Shipwright](https://shipwright.io) to build container images. The build strategy is automatically selected based on your registry:
 
 | Registry Type | Strategy | Description |
 |--------------|----------|-------------|
@@ -157,7 +157,7 @@ Press the "Build New Agent" button. You will be redirected to a **Build Progress
 - Source configuration details
 - Agent configuration that will be applied
 
-Once the build succeeds, Kagenti automatically:
+Once the build succeeds, Rossoctl automatically:
 1. Creates a Deployment + Service with the built image
 2. Creates an HTTPRoute for external access (if enabled, via "Enable external access to the agent endpoint" in the UI)
 3. Redirects you to the Agent detail page
@@ -174,7 +174,7 @@ If you encounter issues during agent deployment, you can troubleshoot by inspect
 
 ### Build Issues (Source Builds)
 
-When building from source, Kagenti creates Shipwright resources:
+When building from source, Rossoctl creates Shipwright resources:
 
 ```bash
 # Check Shipwright Build status
@@ -202,15 +202,15 @@ Common build issues:
 
 ```bash
 # Check Deployment status
-kubectl get deployments -n <namespace> -l kagenti.io/type=agent
+kubectl get deployments -n <namespace> -l rossoctl.io/type=agent
 kubectl describe deployment <agent-name> -n <namespace>
 
 # Check pod status and logs
-kubectl get pods -n <namespace> -l kagenti.io/type=agent,app.kubernetes.io/name=<agent-name>
+kubectl get pods -n <namespace> -l rossoctl.io/type=agent,app.kubernetes.io/name=<agent-name>
 kubectl logs -n <namespace> -l app.kubernetes.io/name=<agent-name>
 
 # Check Service status
-kubectl get services -n <namespace> -l kagenti.io/type=agent
+kubectl get services -n <namespace> -l rossoctl.io/type=agent
 ```
 
 By following these steps and troubleshooting tips, you can successfully import and deploy your new agent into the platform.

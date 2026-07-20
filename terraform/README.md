@@ -1,4 +1,4 @@
-# Terraform Infrastructure for Kagenti HyperShift
+# Terraform Infrastructure for Rossoctl HyperShift
 
 This directory contains Terraform configuration for deploying an OpenShift management cluster that will run HyperShift operator with MCE 2.10 for creating OpenShift 4.20.x hosted clusters.
 
@@ -36,7 +36,7 @@ cp terraform.tfvars.example terraform.tfvars
 vim terraform.tfvars
 
 # Set these values:
-#   cluster_name  = "kagenti-team"  # Choose your cluster name
+#   cluster_name  = "rossoctl-team"  # Choose your cluster name
 #   base_domain   = "example.com"   # Your Route53 domain
 #   ocp_version   = "4.20.11"       # OpenShift version
 ```
@@ -56,7 +56,7 @@ terraform apply  # Review plan, then approve
 **Step 6: Install MCE 2.10**
 ```bash
 # Set kubeconfig to your new management cluster
-export KUBECONFIG=~/openshift-clusters/kagenti-team/auth/kubeconfig
+export KUBECONFIG=~/openshift-clusters/rossoctl-team/auth/kubeconfig
 
 # Install MCE and HyperShift (5-10 minutes)
 ./scripts/install-mce.sh
@@ -83,15 +83,15 @@ After the management cluster is running, create a package for your team.
 This file contains AWS credentials and the management cluster kubeconfig:
 
 ```bash
-# Replace 'kagenti-team' with your cluster name
-cat > .env.kagenti-team <<EOF
+# Replace 'rossoctl-team' with your cluster name
+cat > .env.rossoctl-team <<EOF
 export AWS_ACCESS_KEY_ID="your-access-key-id"
 export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
 export AWS_REGION="us-east-1"
-export HCP_ROLE_NAME="kagenti-team-role"
-export MANAGED_BY_TAG="kagenti-team"
+export HCP_ROLE_NAME="rossoctl-team-role"
+export MANAGED_BY_TAG="rossoctl-team"
 export BASE_DOMAIN="example.com"
-export HYPERSHIFT_MGMT_KUBECONFIG_BASE64="$(base64 -w 0 ~/openshift-clusters/kagenti-team/auth/kubeconfig)"
+export HYPERSHIFT_MGMT_KUBECONFIG_BASE64="$(base64 -w 0 ~/openshift-clusters/rossoctl-team/auth/kubeconfig)"
 EOF
 ```
 
@@ -101,13 +101,13 @@ This file has the web console login:
 
 ```bash
 cat > credentials.txt <<EOF
-Management Cluster: kagenti-team.example.com
+Management Cluster: rossoctl-team.example.com
 OpenShift Version: 4.20.11
 MCE Version: 2.10.1
 
-Web Console: https://console-openshift-console.apps.kagenti-team.example.com
+Web Console: https://console-openshift-console.apps.rossoctl-team.example.com
 Username: kubeadmin
-Password: $(cat ~/openshift-clusters/kagenti-team/auth/kubeadmin-password)
+Password: $(cat ~/openshift-clusters/rossoctl-team/auth/kubeadmin-password)
 EOF
 ```
 
@@ -134,7 +134,7 @@ oc whoami
 
 ## Create Hosted Cluster
 ```bash
-cd ~/kagenti
+cd ~/rossoctl
 source /path/to/.env.<tag>
 ./.github/scripts/local-setup/hypershift-full-test.sh <suffix> --skip-cluster-destroy
 ```
@@ -169,7 +169,7 @@ The package includes:
 - `credentials.txt` with web console access
 - `README.md` with detailed setup instructions
 
-Team members source the `.env` file and use the existing kagenti scripts to create hosted clusters on the shared management cluster.
+Team members source the `.env` file and use the existing rossoctl scripts to create hosted clusters on the shared management cluster.
 
 ---
 
@@ -230,4 +230,4 @@ This Terraform configuration uses **MCE 2.10** which supports:
 - Management cluster: OpenShift 4.19, 4.20, 4.21
 - Hosted clusters: OpenShift 4.19, 4.20, 4.21
 
-**Current tested version: 4.20.11** (used by kagenti-team management cluster)
+**Current tested version: 4.20.11** (used by rossoctl-team management cluster)

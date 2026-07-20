@@ -37,7 +37,7 @@ submits reviews after user approval.
 
 ## Prerequisites
 
-- `scan-report.md` and `plan.md` exist in `/tmp/kagenti/orchestrate/<target>/`
+- `scan-report.md` and `plan.md` exist in `/tmp/rossoctl/orchestrate/<target>/`
 - Phases 2-6 are complete (or at least the phases that were planned)
 - PRs are open on the target repo
 
@@ -210,7 +210,7 @@ Update `phase-status.md` when complete:
 
 ```bash
 # Update phase-status.md
-sed -i '' 's/| review .*/| review | complete | -- | YYYY-MM-DD |/' /tmp/kagenti/orchestrate/<target>/phase-status.md
+sed -i '' 's/| review .*/| review | complete | -- | YYYY-MM-DD |/' /tmp/rossoctl/orchestrate/<target>/phase-status.md
 ```
 
 ## Related Skills

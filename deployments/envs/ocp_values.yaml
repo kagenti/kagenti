@@ -1,4 +1,4 @@
-# Kagenti minimal installation configuration for OpenShift
+# Rossoctl minimal installation configuration for OpenShift
 # Auth is enabled in this config
 #
 # Disable Kind cluster creation - we're deploying to an existing OpenShift cluster
@@ -9,7 +9,7 @@ create_kind_cluster: false
 # SPIRE/ZTWIM (Zero Trust Workload Identity Manager) requires OpenShift 4.19+
 #
 # If your cluster is running OCP < 4.19:
-#   - Set components.spire.enabled to 'false' in kagenti-deps section (line 36)
+#   - Set components.spire.enabled to 'false' in rossoctl-deps section (line 36)
 #   - The installer will auto-detect and disable SPIRE on older versions
 #   - See docs/ocp/openshift-install.md for upgrade instructions
 #
@@ -19,9 +19,9 @@ create_kind_cluster: false
 
 charts:
   ####################################################################
-  # kagenti-deps
+  # rossoctl-deps
   ####################################################################
-  kagenti-deps:
+  rossoctl-deps:
     enabled: true
     values:
       openshift: true
@@ -65,9 +65,9 @@ charts:
           enabled: true  # Require authentication for MLflow access
 
   ####################################################################
-  # kagenti
+  # rossoctl
   ####################################################################
-  kagenti:
+  rossoctl:
     enabled: true
     values:
       openshift: true
@@ -82,7 +82,7 @@ charts:
           enabled: true
         # Enable platformWebhook for SPIFFE identity injection
         # Works with ZTWIM operator on OCP 4.19+ via SpiffeCSIDriver
-        # Injects: spiffe-helper sidecar, kagenti-client-registration init container
+        # Injects: spiffe-helper sidecar, rossoctl-client-registration init container
         platformWebhook:
           enabled: true
         ui:
@@ -105,7 +105,7 @@ charts:
           defaultRegistryUrl: "image-registry.openshift-image-registry.svc:5000"
           shipwrightDefaultStrategy: "buildah"
       apiOAuthSecret:
-        enabled: true         # Create kagenti-api-oauth-secret for backend API auth
+        enabled: true         # Create rossoctl-api-oauth-secret for backend API auth
         useServiceAccountCA: true
       uiOAuthSecret:
         # for a OCP with self-signed certs for routes it should be true.
@@ -115,7 +115,7 @@ charts:
         url: http://keycloak-service.keycloak:8080
       # mcpGateway.openshiftDomain is set dynamically by the installer via:
       #   --set "mcpGateway.openshiftDomain=${DOMAIN}"
-      # See scripts/ocp/setup-kagenti.sh. Example: apps.kagenti1.kubestellar.org
+      # See scripts/ocp/setup-rossoctl.sh. Example: apps.rossoctl1.kubestellar.org
       agentNamespaces:
         - team1
         - team2
@@ -133,11 +133,11 @@ charts:
     enabled: true
 
   ####################################################################
-  # spire - On OpenShift, ZTWIM operator is used (configured in kagenti-deps)
+  # spire - On OpenShift, ZTWIM operator is used (configured in rossoctl-deps)
   # Helm-based SPIRE is automatically skipped on OpenShift
   ####################################################################
   spire:
-    enabled: false  # Helm SPIRE disabled; ZTWIM operator used via kagenti-deps
+    enabled: false  # Helm SPIRE disabled; ZTWIM operator used via rossoctl-deps
 
 ####################################################################
 # RHOAI (Red Hat OpenShift AI)

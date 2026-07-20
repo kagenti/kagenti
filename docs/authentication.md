@@ -1,6 +1,6 @@
 # Authentication Guide
 
-Kagenti supports two modes for how the operator and agent/tool workloads authenticate to Keycloak:
+Rossoctl supports two modes for how the operator and agent/tool workloads authenticate to Keycloak:
 
 | Mode | How operator authenticates | How agents authenticate | Requires |
 |---|---|---|---|
@@ -17,9 +17,9 @@ In this mode, the operator uses admin credentials to register Keycloak clients o
 
 ### How it works
 
-1. At install time, the `kagenti-agent-oauth-secret-job` Helm Job reads admin credentials from the `keycloak-initial-admin` Secret (managed by the RHBK operator) and creates a `kagenti-keycloak-client-secret` in each agent namespace with the per-workload OAuth2 client credentials.
+1. At install time, the `rossoctl-agent-oauth-secret-job` Helm Job reads admin credentials from the `keycloak-initial-admin` Secret (managed by the RHBK operator) and creates a `rossoctl-keycloak-client-secret` in each agent namespace with the per-workload OAuth2 client credentials.
 2. When the operator's `ClientRegistrationReconciler` detects a new agent/tool Deployment, it reads `keycloak-initial-admin` directly and uses those credentials to register an OAuth2 client in Keycloak.
-3. The operator stores the generated `client_id` and `client_secret` in a `kagenti-keycloak-client-credentials-*` Secret in the agent's namespace.
+3. The operator stores the generated `client_id` and `client_secret` in a `rossoctl-keycloak-client-credentials-*` Secret in the agent's namespace.
 4. AuthBridge reads the credential files from the mounted Secret and uses them for token exchange on outbound requests.
 
 ### Setup
@@ -44,15 +44,15 @@ keycloak:
 If the operator is failing to authenticate to Keycloak after a credential rotation, restart it so it re-reads `keycloak-initial-admin`:
 
 ```bash
-kubectl rollout restart deployment/kagenti-controller-manager -n kagenti-system
+kubectl rollout restart deployment/rossoctl-controller-manager -n rossoctl-system
 ```
 
 Verify the operator is authenticating successfully:
 
 ```bash
-POD=$(kubectl get pod -n kagenti-system -l control-plane=controller-manager \
+POD=$(kubectl get pod -n rossoctl-system -l control-plane=controller-manager \
   -o jsonpath='{.items[0].metadata.name}')
-kubectl logs -n kagenti-system $POD -c manager | grep -i "keycloak\|auth" | tail -5
+kubectl logs -n rossoctl-system $POD -c manager | grep -i "keycloak\|auth" | tail -5
 ```
 
 ---
@@ -107,23 +107,23 @@ Agent pod
 - SPIRE deployed (`--with-spire`)
 - `keycloak.publicUrl` set to the URL Keycloak uses as its OIDC issuer — check with:
   ```bash
-  curl http://keycloak.your-domain.com/realms/kagenti/.well-known/openid-configuration | jq .issuer
+  curl http://keycloak.your-domain.com/realms/rossoctl/.well-known/openid-configuration | jq .issuer
   ```
-- `kagenti-operator-chart:0.3.0-alpha.7` or later
+- `operator-chart:0.3.0-alpha.7` or later
 
 ### Enabling SPIFFE auth
 
-**Via `setup-kagenti.sh`:**
+**Via `setup-rossoctl.sh`:**
 
 ```bash
 # Operator SPIFFE auth only (agents still use client secrets)
-scripts/kind/setup-kagenti.sh --with-spire --enable-operator-spiffe-auth
+scripts/kind/setup-rossoctl.sh --with-spire --enable-operator-spiffe-auth
 
 # Agent/tool SPIFFE auth only (operator still uses admin credentials)
-scripts/kind/setup-kagenti.sh --with-spire --enable-agent-spiffe-auth
+scripts/kind/setup-rossoctl.sh --with-spire --enable-agent-spiffe-auth
 
 # Both — no provisioned credentials needed
-scripts/kind/setup-kagenti.sh --with-spire --enable-spiffe-auth
+scripts/kind/setup-rossoctl.sh --with-spire --enable-spiffe-auth
 ```
 
 Both flags fail immediately with a clear error if `--with-spire` is not set.
@@ -134,12 +134,12 @@ Both flags fail immediately with a clear error if `--with-spire` is not set.
 keycloak:
   publicUrl: "http://keycloak.your-domain.com"   # required
 
-kagenti-operator-chart:
+operator-chart:
   spiffe:
     enabled: true
     operatorAuth:
       enabled: true
-      bootstrapImage: "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest"
+      bootstrapImage: "ghcr.io/rossoctl/rossoctl/operator-spiffe-bootstrap:latest"
 
 authBridge:
   clientAuthType: "federated-jwt"
@@ -152,9 +152,9 @@ spire:
 ### Disabling SPIFFE auth (reverting to client secrets)
 
 ```bash
-scripts/kind/setup-kagenti.sh ... \
-  --kagenti-values <(cat <<'EOF'
-kagenti-operator-chart:
+scripts/kind/setup-rossoctl.sh ... \
+  --rossoctl-values <(cat <<'EOF'
+operator-chart:
   spiffe:
     enabled: false
     operatorAuth:
@@ -173,9 +173,9 @@ EOF
 
 ```bash
 # Operator mode
-POD=$(kubectl get pod -n kagenti-system -l control-plane=controller-manager \
+POD=$(kubectl get pod -n rossoctl-system -l control-plane=controller-manager \
   -o jsonpath='{.items[0].metadata.name}')
-kubectl logs -n kagenti-system $POD -c manager | grep -E "SPIFFE ID authentication enabled|Client registration controller enabled"
+kubectl logs -n rossoctl-system $POD -c manager | grep -E "SPIFFE ID authentication enabled|Client registration controller enabled"
 
 # Agent mode
 kubectl get configmap authbridge-config -n team1 -o jsonpath='{.data.CLIENT_AUTH_TYPE}'
@@ -185,20 +185,20 @@ kubectl get configmap authbridge-config -n team1 -o jsonpath='{.data.CLIENT_AUTH
 ### Check agent registration (client secrets mode)
 
 ```bash
-kubectl get secret -n team1 | grep kagenti-keycloak-client-credentials
+kubectl get secret -n team1 | grep rossoctl-keycloak-client-credentials
 # Expect one Secret per registered agent/tool workload
 ```
 
 ### Check agent registration (SPIFFE auth mode)
 
 ```bash
-kubectl get secret -n team1 | grep kagenti-keycloak-client-credentials
+kubectl get secret -n team1 | grep rossoctl-keycloak-client-credentials
 # Expect nothing — no credential Secrets are created
 
 # Verify the agent's SPIFFE ID was registered
-POD=$(kubectl get pod -n kagenti-system -l control-plane=controller-manager \
+POD=$(kubectl get pod -n rossoctl-system -l control-plane=controller-manager \
   -o jsonpath='{.items[0].metadata.name}')
-kubectl logs -n kagenti-system $POD -c manager | grep "operator client registration applied"
+kubectl logs -n rossoctl-system $POD -c manager | grep "operator client registration applied"
 # The "secret" field shows what the Secret name would be — but it is not created
 ```
 
@@ -210,10 +210,10 @@ AGENT_POD=$(kubectl get pod -n team1 -l app.kubernetes.io/name=<agent> \
 JWT_SVID=$(kubectl exec -n team1 $AGENT_POD -c authbridge-proxy -- cat /opt/jwt_svid.token)
 CLIENT_ID="spiffe://localtest.me/ns/team1/sa/<agent-serviceaccount>"
 
-kubectl run --rm -i --restart=Never verify --image=curlimages/curl -n kagenti-system \
+kubectl run --rm -i --restart=Never verify --image=curlimages/curl -n rossoctl-system \
   --env="JWT=$JWT_SVID" --env="CID=$CLIENT_ID" -- \
   sh -c 'curl -s -w "\nHTTP:%{http_code}" -X POST \
-    "http://keycloak-service.keycloak.svc:8080/realms/kagenti/protocol/openid-connect/token" \
+    "http://keycloak-service.keycloak.svc:8080/realms/rossoctl/protocol/openid-connect/token" \
     -H "Content-Type: application/x-www-form-urlencoded" \
     -d "grant_type=client_credentials&client_id=${CID}&client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-spiffe&client_assertion=${JWT}"' \
   | grep -E "HTTP:|access_token|error"
@@ -233,18 +233,18 @@ Fix: re-run the break-glass sync in the [manual sync](#manual-sync-break-glass) 
 
 Check both flags are set:
 ```bash
-helm get values kagenti -n kagenti-system | grep -A 5 "spiffe:"
+helm get values rossoctl -n rossoctl-system | grep -A 5 "spiffe:"
 # spiffe.enabled and spiffe.operatorAuth.enabled must both be true
 ```
 
 ### SPIFFE mode: pods stuck in `Init:0/1`
 
-Requires `kagenti-operator-chart:0.3.0-alpha.7` or later. Earlier versions still inject a credential volume mount in `federated-jwt` mode, causing pods to wait for a Secret that is never created.
+Requires `operator-chart:0.3.0-alpha.7` or later. Earlier versions still inject a credential volume mount in `federated-jwt` mode, causing pods to wait for a Secret that is never created.
 
 ### SPIFFE mode: bootstrap job failed
 
 ```bash
-kubectl logs -n keycloak job/kagenti-operator-client-bootstrap --tail=50
+kubectl logs -n keycloak job/rossoctl-operator-client-bootstrap --tail=50
 ```
 
 Most common cause: `keycloak.publicUrl` not set, resulting in an empty JWT audience string.
@@ -253,7 +253,7 @@ Most common cause: `keycloak.publicUrl` not set, resulting in an empty JWT audie
 
 Verify the audience matches Keycloak's issuer exactly:
 ```bash
-curl -s http://keycloak.localtest.me:8080/realms/kagenti/.well-known/openid-configuration | jq .issuer
+curl -s http://keycloak.localtest.me:8080/realms/rossoctl/.well-known/openid-configuration | jq .issuer
 ```
 
 The value must match `keycloak.publicUrl`. Using the in-cluster service address instead of the external URL is the most common cause of this error.

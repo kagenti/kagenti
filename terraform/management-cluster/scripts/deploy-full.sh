@@ -70,7 +70,7 @@ if [ -z "$TFVARS_FILE" ]; then
     log_error "Usage: $0 <tfvars-file> [--skip-mce]"
     echo ""
     echo "Examples:"
-    echo "  $0 terraform-kagenti-team.tfvars"
+    echo "  $0 terraform-rossoctl-team.tfvars"
     echo "  $0 --skip-mce terraform-420-test.tfvars"
     echo "  $0 terraform-420-test.tfvars --skip-mce"
     echo ""

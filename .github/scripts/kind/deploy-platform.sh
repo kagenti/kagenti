@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy Platform Script - Deploys Kagenti to Kind cluster
+# Deploy Platform Script - Deploys Rossoctl to Kind cluster
 # Mirrors GitHub Actions workflows by calling the same scripts
 # Usage: ./.github/scripts/kind/deploy-platform.sh
 
@@ -18,7 +18,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 echo ""
 echo "======================================================================="
-echo "   Kagenti Platform Local Deployment (Kagenti Operator)               "
+echo "   Rossoctl Platform Local Deployment (Rossoctl Operator)               "
 echo "======================================================================="
 echo ""
 echo -e "${CYAN}Calling the same scripts as CI workflow${NC}"
@@ -37,7 +37,7 @@ echo ""
 
 # Step 2: Run installer (wave 30)
 echo -e "${BLUE}[2/11] Running platform installer...${NC}"
-bash .github/scripts/kagenti-operator/30-run-installer.sh
+bash .github/scripts/operator/30-run-installer.sh
 echo ""
 
 # Step 3: Wait for platform ready (wave 40)
@@ -61,23 +61,23 @@ bash .github/scripts/common/70-configure-dockerhost.sh
 echo ""
 
 # ============================================================================
-# KAGENTI OPERATOR SPECIFIC STEPS
+# ROSSOCTL OPERATOR SPECIFIC STEPS
 # ============================================================================
 
-echo -e "${BLUE}[7/11] Waiting for kagenti-operator CRDs...${NC}"
-bash .github/scripts/kagenti-operator/41-wait-crds.sh
+echo -e "${BLUE}[7/11] Waiting for rossoctl-operator CRDs...${NC}"
+bash .github/scripts/operator/41-wait-crds.sh
 echo ""
 
 echo -e "${BLUE}[8/10] Applying pipeline-template-dev ConfigMap...${NC}"
 echo ""
 
 echo -e "${BLUE}[9/10] Building and deploying weather-tool...${NC}"
-bash .github/scripts/kagenti-operator/71-build-weather-tool.sh
-bash .github/scripts/kagenti-operator/72-deploy-weather-tool.sh
+bash .github/scripts/operator/71-build-weather-tool.sh
+bash .github/scripts/operator/72-deploy-weather-tool.sh
 echo ""
 
 echo -e "${BLUE}[10/10] Deploying weather-service Agent...${NC}"
-bash .github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+bash .github/scripts/operator/74-deploy-weather-agent.sh
 echo ""
 
 # ============================================================================
@@ -88,7 +88,7 @@ echo "======================================================================="
 echo "                     Deployment Complete                               "
 echo "======================================================================="
 echo ""
-kubectl get pods -A | grep -E "NAMESPACE|team1|kagenti-system|keycloak|ollama"
+kubectl get pods -A | grep -E "NAMESPACE|team1|rossoctl-system|keycloak|ollama"
 echo ""
 echo -e "${GREEN}Platform deployed successfully!${NC}"
 echo ""

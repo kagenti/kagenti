@@ -298,7 +298,7 @@ if $DEPLOY_AGENTS; then
   else
     # Kind: Set webhook to Ignore so agents deploy without AuthBridge
     log_warn "PoC: Setting webhook failurePolicy=Ignore (Kind only)"
-    kubectl get mutatingwebhookconfiguration -o name 2>/dev/null | grep kagenti | while read -r webhook; do
+    kubectl get mutatingwebhookconfiguration -o name 2>/dev/null | grep rossoctl | while read -r webhook; do
       kubectl patch "$webhook" --type='json' \
         -p='[{"op":"replace","path":"/webhooks/0/failurePolicy","value":"Ignore"}]' 2>/dev/null || true
     done
@@ -308,9 +308,9 @@ if $DEPLOY_AGENTS; then
   run_cmd kubectl create serviceaccount openshell-supervisor -n "$TENANT" \
     --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
 
-  # Create kagenti-skills ConfigMap
-  run_cmd kubectl create configmap kagenti-skills -n "$TENANT" \
-    --from-literal=skills.json='{"version":"1.0","source":"kagenti/.claude/skills/","skills":[{"name":"review","type":"claude-code-skill"},{"name":"rca","type":"claude-code-skill"},{"name":"k8s:health","type":"claude-code-skill"},{"name":"k8s:pods","type":"claude-code-skill"},{"name":"k8s:logs","type":"claude-code-skill"},{"name":"tdd:kind","type":"claude-code-skill"},{"name":"tdd:hypershift","type":"claude-code-skill"},{"name":"github:pr-review","type":"claude-code-skill"},{"name":"security-review","type":"claude-code-skill"}]}' \
+  # Create rossoctl-skills ConfigMap
+  run_cmd kubectl create configmap rossoctl-skills -n "$TENANT" \
+    --from-literal=skills.json='{"version":"1.0","source":"rossoctl/.claude/skills/","skills":[{"name":"review","type":"claude-code-skill"},{"name":"rca","type":"claude-code-skill"},{"name":"k8s:health","type":"claude-code-skill"},{"name":"k8s:pods","type":"claude-code-skill"},{"name":"k8s:logs","type":"claude-code-skill"},{"name":"tdd:kind","type":"claude-code-skill"},{"name":"tdd:hypershift","type":"claude-code-skill"},{"name":"github:pr-review","type":"claude-code-skill"},{"name":"security-review","type":"claude-code-skill"}]}' \
     --dry-run=client -o yaml | kubectl apply -f - 2>&1 | grep -v "^Warning:" || true
 
   # Apply agent manifests and policy ConfigMaps
@@ -352,7 +352,7 @@ if $DEPLOY_AGENTS; then
   if ! $DRY_RUN; then
     sleep 5
     log_info "Waiting for agent rollouts..."
-    for deploy in $(kubectl get deploy -n "$TENANT" -l kagenti.io/type=agent -o name 2>/dev/null); do
+    for deploy in $(kubectl get deploy -n "$TENANT" -l rossoctl.io/type=agent -o name 2>/dev/null); do
       case "$deploy" in
         *nemoclaw*) kubectl rollout status "$deploy" -n "$TENANT" --timeout=60s 2>/dev/null || \
                       log_warn "$deploy not ready (NemoClaw image pending)" ;;

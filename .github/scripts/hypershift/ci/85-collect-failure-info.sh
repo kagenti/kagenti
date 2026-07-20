@@ -7,7 +7,7 @@ set -euo pipefail
 # - MGMT_KUBECONFIG: Management cluster kubeconfig (for HostedCluster/NodePool info)
 # - KUBECONFIG: Hosted cluster kubeconfig (optional, for pod/event info)
 
-CLUSTER_NAME="${CLUSTER_NAME:-${MANAGED_BY_TAG:-kagenti-hypershift-ci}-${CLUSTER_SUFFIX:-}}"
+CLUSTER_NAME="${CLUSTER_NAME:-${MANAGED_BY_TAG:-rossoctl-hypershift-ci}-${CLUSTER_SUFFIX:-}}"
 MGMT_KUBECONFIG="${MGMT_KUBECONFIG:-}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 
@@ -60,8 +60,8 @@ if [ -n "${KUBECONFIG:-}" ] && [ -f "${KUBECONFIG:-}" ]; then
     oc get clusterversion 2>/dev/null || true
 
     echo ""
-    echo "=== Pods in kagenti-system ==="
-    oc get pods -n kagenti-system 2>/dev/null || echo "(namespace not found or cluster not reachable)"
+    echo "=== Pods in rossoctl-system ==="
+    oc get pods -n rossoctl-system 2>/dev/null || echo "(namespace not found or cluster not reachable)"
 
     echo ""
     echo "=== Pods in team1 ==="
@@ -102,18 +102,18 @@ if [ -n "${KUBECONFIG:-}" ] && [ -f "${KUBECONFIG:-}" ]; then
 
     echo ""
     echo "=== SPIFFE IdP Setup Job Logs ==="
-    SPIFFE_POD=$(oc get pods -n kagenti-system -l app=kagenti-spiffe-idp-setup --no-headers 2>/dev/null | head -1 | awk '{print $1}')
+    SPIFFE_POD=$(oc get pods -n rossoctl-system -l app=rossoctl-spiffe-idp-setup --no-headers 2>/dev/null | head -1 | awk '{print $1}')
     if [ -n "$SPIFFE_POD" ]; then
-        oc logs "$SPIFFE_POD" -n kagenti-system -c setup-spiffe-idp --tail=50 2>/dev/null || echo "(logs not available)"
+        oc logs "$SPIFFE_POD" -n rossoctl-system -c setup-spiffe-idp --tail=50 2>/dev/null || echo "(logs not available)"
         echo "Previous logs:"
-        oc logs "$SPIFFE_POD" -n kagenti-system -c setup-spiffe-idp --previous --tail=30 2>/dev/null || echo "(no previous logs)"
+        oc logs "$SPIFFE_POD" -n rossoctl-system -c setup-spiffe-idp --previous --tail=30 2>/dev/null || echo "(no previous logs)"
     else
         echo "(spiffe-idp-setup pod not found)"
     fi
 
     echo ""
-    echo "=== Kagenti Operator Logs (injection decisions, last 50 lines) ==="
-    oc logs -n kagenti-system deployment/kagenti-controller-manager --tail=50 2>/dev/null | grep -E 'injection decision|inject|client-registration|credential|error|ERROR' | tail -30 || echo "(not available)"
+    echo "=== Rossoctl Operator Logs (injection decisions, last 50 lines) ==="
+    oc logs -n rossoctl-system deployment/rossoctl-controller-manager --tail=50 2>/dev/null | grep -E 'injection decision|inject|client-registration|credential|error|ERROR' | tail -30 || echo "(not available)"
 
     echo ""
     echo "=== Weather Tool MCP Logs (last 30 lines) ==="
@@ -121,7 +121,7 @@ if [ -n "${KUBECONFIG:-}" ] && [ -f "${KUBECONFIG:-}" ]; then
 
     echo ""
     echo "=== OTEL Collector Errors (last 20 lines) ==="
-    oc logs -n kagenti-system deployment/otel-collector --tail=100 2>/dev/null | grep -iE "error|fail|warn" | tail -20 || echo "(none found)"
+    oc logs -n rossoctl-system deployment/otel-collector --tail=100 2>/dev/null | grep -iE "error|fail|warn" | tail -20 || echo "(none found)"
 
     echo ""
     echo "=== Recent Events ==="

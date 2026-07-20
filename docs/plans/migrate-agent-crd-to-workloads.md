@@ -3,17 +3,17 @@
 **Status:** ✅ Completed
 **Created:** 2026-01-23
 **Completed:** 2026-01-28
-**Target:** Kagenti UI v2.x
+**Target:** Rossoctl UI v2.x
 
 ## Executive Summary
 
-This document outlines the phased migration of the Kagenti UI from managing agents
-via the custom `Agent` CRD (processed by kagenti-operator) to directly creating
+This document outlines the phased migration of the Rossoctl UI from managing agents
+via the custom `Agent` CRD (processed by rossoctl-operator) to directly creating
 standard Kubernetes workloads (Deployments, Services, and eventually StatefulSets
 and Jobs).
 
 **Goals:**
-- Remove dependency on kagenti-operator for agent deployment
+- Remove dependency on rossoctl-operator for agent deployment
 - Use standard Kubernetes primitives for better portability
 - Maintain backward compatibility during transition
 - Enable future support for StatefulSets and Jobs
@@ -44,7 +44,7 @@ and Jobs).
 
 ```
 ┌─────────────┐     POST /agents     ┌─────────────────┐
-│  Kagenti UI │ ──────────────────▶  │ Backend (FastAPI)│
+│  Rossoctl UI │ ──────────────────▶  │ Backend (FastAPI)│
 └─────────────┘                      └────────┬────────┘
                                               │
                                               │ Creates Agent CRD
@@ -56,7 +56,7 @@ and Jobs).
                                               │ Watches Agent CRD
                                               ▼
                                      ┌─────────────────┐
-                                     │kagenti-operator │
+                                     │rossoctl-operator │
                                      └────────┬────────┘
                                               │
                                               │ Creates
@@ -70,20 +70,20 @@ and Jobs).
 
 ### Current Agent CRD Structure
 
-**File:** `kagenti/backend/app/routers/agents.py` (lines 1006-1136)
+**File:** `rossoctl/backend/app/routers/agents.py` (lines 1006-1136)
 
 ```yaml
-apiVersion: agent.kagenti.dev/v1alpha1
+apiVersion: agent.rossoctl.dev/v1alpha1
 kind: Agent
 metadata:
   name: <agent-name>
   namespace: <namespace>
   labels:
-    app.kubernetes.io/created-by: kagenti-ui
-    app.kubernetes.io/name: kagenti-operator
-    kagenti.io/type: agent
-    kagenti.io/protocol: <protocol>
-    kagenti.io/framework: <framework>
+    app.kubernetes.io/created-by: rossoctl-ui
+    app.kubernetes.io/name: rossoctl-operator
+    rossoctl.io/type: agent
+    rossoctl.io/protocol: <protocol>
+    rossoctl.io/framework: <framework>
 spec:
   description: "Agent description"
   replicas: 1
@@ -110,19 +110,19 @@ spec:
 
 | File | Purpose | Lines of Interest |
 |------|---------|-------------------|
-| `kagenti/backend/app/routers/agents.py` | Agent API endpoints | 1006-1136 (manifest), 262-299 (list) |
-| `kagenti/backend/app/services/kubernetes.py` | K8s API wrapper | 82-103 (list resources) |
-| `kagenti/backend/app/core/constants.py` | CRD/label constants | All |
+| `rossoctl/backend/app/routers/agents.py` | Agent API endpoints | 1006-1136 (manifest), 262-299 (list) |
+| `rossoctl/backend/app/services/kubernetes.py` | K8s API wrapper | 82-103 (list resources) |
+| `rossoctl/backend/app/core/constants.py` | CRD/label constants | All |
 
 ### Key Frontend Files
 
 | File | Purpose |
 |------|---------|
-| `kagenti/ui-v2/src/pages/AgentCatalogPage.tsx` | Agent listing |
-| `kagenti/ui-v2/src/pages/AgentDetailPage.tsx` | Agent details |
-| `kagenti/ui-v2/src/pages/ImportAgentPage.tsx` | Agent creation |
-| `kagenti/ui-v2/src/services/api.ts` | API client |
-| `kagenti/ui-v2/src/types/index.ts` | TypeScript types |
+| `rossoctl/ui-v2/src/pages/AgentCatalogPage.tsx` | Agent listing |
+| `rossoctl/ui-v2/src/pages/AgentDetailPage.tsx` | Agent details |
+| `rossoctl/ui-v2/src/pages/ImportAgentPage.tsx` | Agent creation |
+| `rossoctl/ui-v2/src/services/api.ts` | API client |
+| `rossoctl/ui-v2/src/types/index.ts` | TypeScript types |
 
 ---
 
@@ -132,7 +132,7 @@ spec:
 
 ```
 ┌─────────────┐     POST /agents     ┌─────────────────┐
-│  Kagenti UI │ ──────────────────▶  │ Backend (FastAPI)│
+│  Rossoctl UI │ ──────────────────▶  │ Backend (FastAPI)│
 └─────────────┘                      └────────┬────────┘
                                               │
                                               │ Creates directly
@@ -150,7 +150,7 @@ spec:
 
 ### Benefits
 
-1. **No operator dependency** - Agents work without kagenti-operator running
+1. **No operator dependency** - Agents work without rossoctl-operator running
 2. **Standard K8s primitives** - Better tooling support (kubectl, Lens, etc.)
 3. **Simpler debugging** - Direct inspection of Deployments/Services
 4. **Future flexibility** - Easy to add StatefulSets, Jobs, CronJobs
@@ -165,31 +165,31 @@ All agent workloads (Deployment, StatefulSet, Job) and their managed Pods MUST h
 
 | Label | Value | Purpose |
 |-------|-------|---------|
-| `kagenti.io/type` | `agent` | Identifies resource as a Kagenti agent |
+| `rossoctl.io/type` | `agent` | Identifies resource as a Rossoctl agent |
 | `app.kubernetes.io/name` | `<agent-name>` | Standard K8s app name label |
-| `kagenti.io/protocol` | `a2a` | Protocol type (a2a, mcp, etc.) |
+| `rossoctl.io/protocol` | `a2a` | Protocol type (a2a, mcp, etc.) |
 
 ### Recommended Labels
 
 | Label | Value | Purpose |
 |-------|-------|---------|
-| `app.kubernetes.io/managed-by` | `kagenti-ui` | Resource manager |
+| `app.kubernetes.io/managed-by` | `rossoctl-ui` | Resource manager |
 | `app.kubernetes.io/component` | `agent` | Component type |
-| `kagenti.io/framework` | `<framework>` | Framework (LangGraph, CrewAI, etc.) |
-| `kagenti.io/workload-type` | `deployment` | Workload type (deployment/statefulset/job) |
+| `rossoctl.io/framework` | `<framework>` | Framework (LangGraph, CrewAI, etc.) |
+| `rossoctl.io/workload-type` | `deployment` | Workload type (deployment/statefulset/job) |
 
 ### Label Selector for Agents
 
 To list all agents in a namespace:
 
 ```
-kagenti.io/type=agent
+rossoctl.io/type=agent
 ```
 
 To list all A2A agents:
 
 ```
-kagenti.io/type=agent,kagenti.io/protocol=a2a
+rossoctl.io/type=agent,rossoctl.io/protocol=a2a
 ```
 
 ---
@@ -202,7 +202,7 @@ kagenti.io/type=agent,kagenti.io/protocol=a2a
 
 #### 1.1 Add Kubernetes Core API Methods
 
-**File:** `kagenti/backend/app/services/kubernetes.py`
+**File:** `rossoctl/backend/app/services/kubernetes.py`
 
 Add new methods for core Kubernetes resources:
 
@@ -234,7 +234,7 @@ def delete_job(namespace: str, name: str) -> None
 
 #### 1.2 Update Constants
 
-**File:** `kagenti/backend/app/core/constants.py`
+**File:** `rossoctl/backend/app/core/constants.py`
 
 ```python
 # Workload types
@@ -243,21 +243,21 @@ WORKLOAD_TYPE_STATEFULSET = "statefulset"  # Future
 WORKLOAD_TYPE_JOB = "job"  # Future
 
 # Label keys
-LABEL_KAGENTI_TYPE = "kagenti.io/type"
-LABEL_KAGENTI_PROTOCOL = "kagenti.io/protocol"
-LABEL_KAGENTI_FRAMEWORK = "kagenti.io/framework"
-LABEL_KAGENTI_WORKLOAD_TYPE = "kagenti.io/workload-type"
+LABEL_ROSSOCTL_TYPE = "rossoctl.io/type"
+LABEL_ROSSOCTL_PROTOCOL = "rossoctl.io/protocol"
+LABEL_ROSSOCTL_FRAMEWORK = "rossoctl.io/framework"
+LABEL_ROSSOCTL_WORKLOAD_TYPE = "rossoctl.io/workload-type"
 LABEL_APP_NAME = "app.kubernetes.io/name"
 LABEL_MANAGED_BY = "app.kubernetes.io/managed-by"
 
 # Label values
 VALUE_TYPE_AGENT = "agent"
-VALUE_MANAGED_BY_UI = "kagenti-ui"
+VALUE_MANAGED_BY_UI = "rossoctl-ui"
 ```
 
 #### 1.3 Add Manifest Builders
 
-**File:** `kagenti/backend/app/routers/agents.py` (new functions)
+**File:** `rossoctl/backend/app/routers/agents.py` (new functions)
 
 ```python
 def _build_deployment_manifest(request: CreateAgentRequest, image: str) -> dict:
@@ -291,27 +291,27 @@ metadata:
   name: <agent-name>
   namespace: <namespace>
   labels:
-    kagenti.io/type: agent
-    kagenti.io/protocol: a2a
-    kagenti.io/framework: <framework>
-    kagenti.io/workload-type: deployment
+    rossoctl.io/type: agent
+    rossoctl.io/protocol: a2a
+    rossoctl.io/framework: <framework>
+    rossoctl.io/workload-type: deployment
     app.kubernetes.io/name: <agent-name>
-    app.kubernetes.io/managed-by: kagenti-ui
+    app.kubernetes.io/managed-by: rossoctl-ui
   annotations:
-    kagenti.io/description: "<description>"
-    kagenti.io/shipwright-build: "<build-name>"  # if built from source
+    rossoctl.io/description: "<description>"
+    rossoctl.io/shipwright-build: "<build-name>"  # if built from source
 spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: agent
+      rossoctl.io/type: agent
       app.kubernetes.io/name: <agent-name>
   template:
     metadata:
       labels:
-        kagenti.io/type: agent
-        kagenti.io/protocol: a2a
-        kagenti.io/framework: <framework>
+        rossoctl.io/type: agent
+        rossoctl.io/protocol: a2a
+        rossoctl.io/framework: <framework>
         app.kubernetes.io/name: <agent-name>
     spec:
       containers:
@@ -356,14 +356,14 @@ metadata:
   name: <agent-name>
   namespace: <namespace>
   labels:
-    kagenti.io/type: agent
-    kagenti.io/protocol: a2a
+    rossoctl.io/type: agent
+    rossoctl.io/protocol: a2a
     app.kubernetes.io/name: <agent-name>
-    app.kubernetes.io/managed-by: kagenti-ui
+    app.kubernetes.io/managed-by: rossoctl-ui
 spec:
   type: ClusterIP
   selector:
-    kagenti.io/type: agent
+    rossoctl.io/type: agent
     app.kubernetes.io/name: <agent-name>
   ports:
     - name: http
@@ -374,7 +374,7 @@ spec:
 
 #### 2.3 Update Agent Creation Endpoint
 
-**File:** `kagenti/backend/app/routers/agents.py`
+**File:** `rossoctl/backend/app/routers/agents.py`
 
 Modify `create_agent()` endpoint to:
 
@@ -405,14 +405,14 @@ async def create_agent(request: CreateAgentRequest):
 
 #### 2.4 Update Agent List Endpoint
 
-**File:** `kagenti/backend/app/routers/agents.py`
+**File:** `rossoctl/backend/app/routers/agents.py`
 
 Modify `list_agents()` to query Deployments instead of Agent CRD:
 
 ```python
 @router.get("/agents")
 async def list_agents(namespace: str):
-    label_selector = f"{LABEL_KAGENTI_TYPE}={VALUE_TYPE_AGENT}"
+    label_selector = f"{LABEL_ROSSOCTL_TYPE}={VALUE_TYPE_AGENT}"
 
     deployments = k8s.list_deployments(namespace, label_selector)
     # Future: Also list StatefulSets and Jobs with same selector
@@ -508,7 +508,7 @@ async def finalize_shipwright_build(namespace: str, name: str, request: Finalize
 
 #### 3.1 Update Type Definitions
 
-**File:** `kagenti/ui-v2/src/types/index.ts`
+**File:** `rossoctl/ui-v2/src/types/index.ts`
 
 ```typescript
 // Workload types
@@ -574,7 +574,7 @@ export interface CreateAgentRequest {
 
 #### 3.2 Update Agent Catalog Page
 
-**File:** `kagenti/ui-v2/src/pages/AgentCatalogPage.tsx`
+**File:** `rossoctl/ui-v2/src/pages/AgentCatalogPage.tsx`
 
 - Add workload type indicator (icon or badge)
 - Update status logic for Deployment conditions
@@ -582,7 +582,7 @@ export interface CreateAgentRequest {
 
 #### 3.3 Update Agent Detail Page
 
-**File:** `kagenti/ui-v2/src/pages/AgentDetailPage.tsx`
+**File:** `rossoctl/ui-v2/src/pages/AgentDetailPage.tsx`
 
 - Update status tab to show Deployment conditions
 - Show replica count and availability
@@ -591,7 +591,7 @@ export interface CreateAgentRequest {
 
 #### 3.4 Update Import Agent Page
 
-**File:** `kagenti/ui-v2/src/pages/ImportAgentPage.tsx`
+**File:** `rossoctl/ui-v2/src/pages/ImportAgentPage.tsx`
 
 - Add workload type selector (disabled for now, default to Deployment)
 - Update form submission to include `workloadType`
@@ -624,13 +624,13 @@ export interface CreateAgentRequest {
 
 #### 4.1 CLI Migration Script
 
-**File:** `kagenti/tools/migrate_agents.py`
+**File:** `rossoctl/tools/migrate_agents.py`
 
 A command-line tool for migrating Agent CRDs to Kubernetes Deployments.
 
 ##### Installation
 
-The script is included in the kagenti package. Ensure you have the kubernetes Python package installed:
+The script is included in the rossoctl package. Ensure you have the kubernetes Python package installed:
 
 ```bash
 pip install kubernetes
@@ -640,25 +640,25 @@ pip install kubernetes
 
 ```bash
 # Basic usage - list agents that can be migrated (dry-run by default)
-python -m kagenti.tools.migrate_agents --namespace <namespace>
+python -m rossoctl.tools.migrate_agents --namespace <namespace>
 
 # Dry-run migration (shows what would happen without making changes)
-python -m kagenti.tools.migrate_agents --namespace team1 --dry-run
+python -m rossoctl.tools.migrate_agents --namespace team1 --dry-run
 
 # Actually perform the migration
-python -m kagenti.tools.migrate_agents --namespace team1 --no-dry-run
+python -m rossoctl.tools.migrate_agents --namespace team1 --no-dry-run
 
 # Migrate and delete old Agent CRDs after successful migration
-python -m kagenti.tools.migrate_agents --namespace team1 --no-dry-run --delete-old
+python -m rossoctl.tools.migrate_agents --namespace team1 --no-dry-run --delete-old
 
 # Migrate a specific agent only
-python -m kagenti.tools.migrate_agents --namespace team1 --agent my-agent --no-dry-run
+python -m rossoctl.tools.migrate_agents --namespace team1 --agent my-agent --no-dry-run
 
 # Output results as JSON (useful for scripting)
-python -m kagenti.tools.migrate_agents --namespace team1 --json
+python -m rossoctl.tools.migrate_agents --namespace team1 --json
 
 # Verbose output for debugging
-python -m kagenti.tools.migrate_agents --namespace team1 -v
+python -m rossoctl.tools.migrate_agents --namespace team1 -v
 ```
 
 ##### Command-Line Options
@@ -688,15 +688,15 @@ Migrated Deployments include tracking annotations:
 
 ```yaml
 annotations:
-  kagenti.io/migrated-from: "agent-crd"
-  kagenti.io/migration-timestamp: "2026-01-23T10:30:00+00:00"
+  rossoctl.io/migrated-from: "agent-crd"
+  rossoctl.io/migration-timestamp: "2026-01-23T10:30:00+00:00"
 ```
 
 ##### Example Output
 
 ```
 ============================================================
-Kagenti Agent CRD Migration - DRY-RUN
+Rossoctl Agent CRD Migration - DRY-RUN
 ============================================================
 Namespace: team1
 Delete old CRDs: False
@@ -757,7 +757,7 @@ When using `--json`, the output follows this structure:
 
 #### 4.2 Backend Migration Endpoints
 
-**File:** `kagenti/backend/app/routers/agents.py`
+**File:** `rossoctl/backend/app/routers/agents.py`
 
 Three API endpoints are available for migration:
 
@@ -792,7 +792,7 @@ Migrates all Agent CRDs in a namespace with optional dry-run mode.
 
 #### 4.3 Backward Compatibility Period
 
-**File:** `kagenti/backend/app/core/config.py`
+**File:** `rossoctl/backend/app/core/config.py`
 
 During the migration period, the backend supports both Agent CRDs and Deployments via the `enable_legacy_agent_crd` setting:
 
@@ -803,7 +803,7 @@ enable_legacy_agent_crd: bool = True  # Set to False after full migration
 
 When enabled, the `list_agents` endpoint will:
 
-1. Query Deployments with `kagenti.io/type=agent` label
+1. Query Deployments with `rossoctl.io/type=agent` label
 2. Query Agent CRDs in the namespace
 3. Skip Agent CRDs that already have a corresponding Deployment (already migrated)
 4. Return a combined list of both Deployment-based and CRD-based agents
@@ -918,13 +918,13 @@ def _determine_workload_type(request: CreateAgentRequest) -> WorkloadType:
 
 ### New Permissions Required
 
-The Kagenti backend ServiceAccount needs additional permissions:
+The Rossoctl backend ServiceAccount needs additional permissions:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kagenti-backend
+  name: rossoctl-backend
 rules:
   # Existing permissions for CRDs...
 
@@ -956,9 +956,9 @@ rules:
 
 ### Helm Chart Updates
 
-**File:** `charts/kagenti/templates/ui.yaml`
+**File:** `charts/rossoctl/templates/ui.yaml`
 
-Update the RBAC rules for the kagenti-backend ServiceAccount.
+Update the RBAC rules for the rossoctl-backend ServiceAccount.
 
 ---
 
@@ -979,7 +979,7 @@ Update the RBAC rules for the kagenti-backend ServiceAccount.
 
 ### E2E Tests
 
-**File:** `kagenti/tests/e2e/`
+**File:** `rossoctl/tests/e2e/`
 
 - Full workflow: Import agent → Build → Deploy → Chat → Delete
 - Migration: Create Agent CRD → Migrate → Verify Deployment
@@ -1041,7 +1041,7 @@ USE_DEPLOYMENT_WORKLOADS = os.getenv("USE_DEPLOYMENT_WORKLOADS", "true").lower()
 1. **Should we support both Agent CRD and Deployments long-term?**
    - Recommendation: Deprecate Agent CRD after migration period
 
-2. **How to handle agents created by kagenti-operator?**
+2. **How to handle agents created by rossoctl-operator?**
    - They have associated Deployments already
    - Migration may need to transfer ownership
 

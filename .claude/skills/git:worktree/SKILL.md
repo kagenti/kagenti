@@ -71,10 +71,10 @@ git push -u origin feature-auth
 
 ```bash
 # Source environment
-source ~/.kagenti-hypershift-env.sh
+source ~/.rossoctl-hypershift-env.sh
 
 # Deploy from worktree to cluster
-KUBECONFIG=$HOSTED_KUBECONFIG scripts/ocp/setup-kagenti.sh
+KUBECONFIG=$HOSTED_KUBECONFIG scripts/ocp/setup-rossoctl.sh
 
 # Or use local-setup scripts
 ./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy
@@ -98,7 +98,7 @@ git branch -d feature-auth
 Keep worktrees organized:
 
 ```
-kagenti/                    # Main worktree (main branch)
+rossoctl/                    # Main worktree (main branch)
 ├── .worktrees/             # Feature worktrees
 │   ├── feature-auth/       # Auth feature
 │   ├── fix-keycloak/       # Bug fix
@@ -140,10 +140,10 @@ git worktree add .worktrees/my-feature -b my-feature main
 cd .worktrees/my-feature
 
 # Source environment (shared kubeconfig)
-source ~/.kagenti-hypershift-env.sh
+source ~/.rossoctl-hypershift-env.sh
 
 # Deploy to existing cluster
-KUBECONFIG=$HOSTED_KUBECONFIG scripts/ocp/setup-kagenti.sh
+KUBECONFIG=$HOSTED_KUBECONFIG scripts/ocp/setup-rossoctl.sh
 
 # Or create new cluster with this code
 ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy
@@ -203,4 +203,4 @@ git worktree prune
 - **tdd:ci**: CI-driven TDD workflow (auto-creates worktree from upstream/main for GH issues/PRs)
 - **kind:cluster**: Local Kind cluster management
 - **hypershift:cluster**: HyperShift cluster management
-- **kagenti:operator**: Deploy Kagenti platform
+- **rossoctl:operator**: Deploy Rossoctl platform

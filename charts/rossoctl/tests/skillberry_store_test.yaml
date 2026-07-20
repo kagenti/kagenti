@@ -1,0 +1,205 @@
+# Copyright 2025 IBM Corp.
+# Licensed under the Apache License, Version 2.0
+#
+# Render tests for the in-cluster skillberry-store skill registry.
+# See docs/superpowers/specs/2026-06-23-in-cluster-skillberry-store-autosync-design.md
+suite: skillberry-store in-cluster registry
+templates:
+  - templates/skillberry-store.yaml
+  - templates/skillberry-autosync-configmap.yaml
+# Pin the release name/namespace so .Release.Namespace resolves predictably.
+release:
+  name: rossoctl
+  namespace: rossoctl-system
+set:
+  # Kind path: avoids the mcp-gateway.yaml openshiftDomain requirement.
+  openshift: false
+tests:
+  - it: renders nothing when the component is disabled (default)
+    set:
+      components.skillberryStore.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders exactly 4 resources when enabled
+    set:
+      components.skillberryStore.enabled: true
+    template: templates/skillberry-store.yaml
+    asserts:
+      - hasDocuments:
+          count: 4
+
+  - it: renders the Deployment when enabled
+    set:
+      components.skillberryStore.enabled: true
+    template: templates/skillberry-store.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - isKind:
+          of: Deployment
+
+  - it: renders the Service when enabled
+    set:
+      components.skillberryStore.enabled: true
+    template: templates/skillberry-store.yaml
+    documentSelector:
+      path: kind
+      value: Service
+    asserts:
+      - isKind:
+          of: Service
+
+  - it: renders the PVC when enabled
+    set:
+      components.skillberryStore.enabled: true
+    template: templates/skillberry-store.yaml
+    documentSelector:
+      path: kind
+      value: PersistentVolumeClaim
+    asserts:
+      - isKind:
+          of: PersistentVolumeClaim
+
+  - it: renders the HTTPRoute when enabled
+    set:
+      components.skillberryStore.enabled: true
+    template: templates/skillberry-store.yaml
+    documentSelector:
+      path: kind
+      value: HTTPRoute
+    asserts:
+      - isKind:
+          of: HTTPRoute
+
+  - it: sets the default store image and SBS env on the Deployment
+    set:
+      components.skillberryStore.enabled: true
+    template: templates/skillberry-store.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/skillberry-ai/skillberry-store:0.2.0
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SBS_BASE_DIR
+            value: "/data"
+      # VITE_ALLOWED_HOSTS defaults to the gateway host derived from domain.
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: VITE_ALLOWED_HOSTS
+            value: skillberry-store.localtest.me
+
+  - it: honors a skillberryStore.allowedHosts override for VITE_ALLOWED_HOSTS
+    set:
+      components.skillberryStore.enabled: true
+      skillberryStore.allowedHosts: "true"
+    template: templates/skillberry-store.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: VITE_ALLOWED_HOSTS
+            value: "true"
+
+  - it: appends extraEnv entries to the store container
+    set:
+      components.skillberryStore.enabled: true
+      skillberryStore.extraEnv:
+        - name: SBS_LOG_LEVEL
+          value: "debug"
+        - name: SBS_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: skillberry-store-secrets
+              key: api-token
+    template: templates/skillberry-store.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      # Chart-managed vars stay present...
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ENABLE_UI
+            value: "true"
+      # ...and the custom literal + valueFrom vars are appended.
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SBS_LOG_LEVEL
+            value: "debug"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SBS_API_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: skillberry-store-secrets
+                key: api-token
+
+  - it: honors an image tag override
+    set:
+      components.skillberryStore.enabled: true
+      skillberryStore.image.tag: "0.2.1"
+    template: templates/skillberry-store.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/skillberry-ai/skillberry-store:0.2.1
+
+  - it: omits the PVC and uses emptyDir when persistence is disabled
+    set:
+      components.skillberryStore.enabled: true
+      skillberryStore.persistence.enabled: false
+    template: templates/skillberry-store.yaml
+    asserts:
+      # 4 docs minus the PVC == 3, proving the PVC was dropped.
+      - hasDocuments:
+          count: 3
+
+  - it: seeds the autosync ConfigMap with the in-cluster registry URL
+    set:
+      components.skillberryStore.enabled: true
+    template: templates/skillberry-autosync-configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: rossoctl-skill-autosync-config
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: data.enabled
+          value: "true"
+      - equal:
+          path: data["registry-type"]
+          value: skillberry
+      - equal:
+          path: data["registry-url"]
+          value: http://skillberry-store.rossoctl-system.svc.cluster.local:8000
+      - equal:
+          path: data["store-ui-url"]
+          value: http://skillberry-store.localtest.me:8080
+
+  - it: does not seed the autosync ConfigMap when autosync is disabled
+    set:
+      components.skillberryStore.enabled: true
+      skillberryStore.autosync.enabled: false
+    template: templates/skillberry-autosync-configmap.yaml
+    asserts:
+      - hasDocuments:
+          count: 0

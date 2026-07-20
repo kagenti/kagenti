@@ -15,7 +15,7 @@ can dump thousands of lines into context. ALL CI log analysis MUST happen in sub
 ```bash
 # Session-scoped log directory
 # Works in both Claude Code (local) and sandbox agent (container)
-export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-rca}"
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/rossoctl-rca}"
 mkdir -p "$LOG_DIR"
 ```
 
@@ -42,7 +42,7 @@ mkdir -p "$LOG_DIR"
 - Before using `tdd:ci` to iterate on fixes
 
 > **Auto-approved**: `gh` commands for downloading CI logs and artifacts are auto-approved.
-> Analysis output is saved to `/tmp/kagenti/rca/`.
+> Analysis output is saved to `/tmp/rossoctl/rca/`.
 
 ## RCA Workflow
 

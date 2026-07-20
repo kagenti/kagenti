@@ -37,8 +37,8 @@
 | agent-examples | 2 | 1 | |
 | agentic-control-plane | 1 | 0 | |
 | ecosystem-guide | 0 | 2 | |
-| kagenti | 2 | 2 | |
-| kagenti-operator | 2 | 0 | |
+| rossoctl | 2 | 2 | |
+| rossoctl-operator | 2 | 0 | |
 | pi | 0 | 607 | |
 | serverless-harness | 0 | 1 | |
 

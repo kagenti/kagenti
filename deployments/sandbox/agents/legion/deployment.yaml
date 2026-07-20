@@ -5,8 +5,8 @@ metadata:
   namespace: team1
   labels:
     app.kubernetes.io/name: sandbox-legion-platform
-    kagenti.io/framework: langgraph
-    kagenti.io/runtime: platform-base
+    rossoctl.io/framework: langgraph
+    rossoctl.io/runtime: platform-base
 spec:
   replicas: 1
   selector:
@@ -17,8 +17,8 @@ spec:
       labels:
         app: sandbox-legion-platform
         app.kubernetes.io/name: sandbox-legion-platform
-        kagenti.io/framework: langgraph
-        kagenti.io/runtime: platform-base
+        rossoctl.io/framework: langgraph
+        rossoctl.io/runtime: platform-base
     spec:
       securityContext:
         runAsNonRoot: true
@@ -52,9 +52,9 @@ spec:
               name: openai-secret
               key: apikey
         - name: CHECKPOINT_DB_URL
-          value: postgresql://kagenti:kagenti-sessions-dev@postgres-sessions.team1:5432/sessions?sslmode=disable
+          value: postgresql://rossoctl:rossoctl-sessions-dev@postgres-sessions.team1:5432/sessions?sslmode=disable
         - name: TASK_STORE_DB_URL
-          value: postgresql+psycopg://kagenti:kagenti-sessions-dev@postgres-sessions.team1:5432/sessions?sslmode=disable
+          value: postgresql+psycopg://rossoctl:rossoctl-sessions-dev@postgres-sessions.team1:5432/sessions?sslmode=disable
         - name: WORKSPACE_ROOT
           value: /workspace
         - name: CONFIG_ROOT

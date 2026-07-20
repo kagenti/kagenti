@@ -1,0 +1,443 @@
+# Global settings
+openshift: true
+
+# When true, the rossoctl-operator handles OTel collector bootstrap (ingress CA
+# trust and ConfigMap assembly) at startup via its OtelBootstrapRunnable. The
+# Helm-based otel-ingress-ca-job and inline otel-collector-config ConfigMap are
+# skipped. Set to true when the operator chart has otelBootstrap.enable: true.
+otelBootstrap:
+  operatorManaged: false
+# OpenShift version (e.g., "4.20.8") - if provided, skips cluster lookup for version detection
+# This is useful when helm diff/template can't access the cluster for lookups
+ocpVersion: ""
+# Set to true to skip ZTWIM operator installation even on OpenShift
+# Used when installing SPIRE via Helm charts (e.g., OCP < 4.19 where ZTWIM is not available)
+useSpireHelmChart: false
+
+domain: localtest.me
+
+# ------------------------------------------------------------------
+#   Enable or disable components here
+# ------------------------------------------------------------------
+components:
+  mcpInspector:
+    enabled: true
+  istio:
+    enabled: true
+  kiali:
+    enabled: true
+  keycloak:
+    enabled: true
+  metricsServer:
+    enabled: false
+  otel:
+    enabled: true
+  phoenix:
+    enabled: false
+  mlflow:
+    enabled: false
+  containerRegistry:
+    enabled: false
+  spire:
+    enabled: true
+  tekton:
+    enabled: true
+  shipwright:
+    enabled: true
+  certManager:
+    enabled: true
+  rhoai:
+    enabled: false
+  ingressGateway:
+    enabled: false
+
+common:
+  kubectlImage: "quay.io/kubestellar/kubectl:1.30.14"
+  postgresImage: "quay.io/fedora/postgresql-16"
+
+# ------------------------------------------------------------------
+#  Components Configurations
+# ------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------
+#  Keycloak Configuration
+# ------------------------------------------------------------------
+keycloak:
+  image:
+    repository: quay.io/keycloak/keycloak
+    tag: "26.5.2"
+  namespace: keycloak
+  # Set to false to disable the bundled PostgreSQL and run Keycloak in dev mode (H2 database)
+  database:
+    enabled: true
+    image:
+      repository: mirror.gcr.io/postgres
+      tag: "17"
+  # Extra environment variables to inject into the Keycloak container.
+  # Entries here override hardcoded defaults by name (see _helpers.tpl: rossoctl.keycloak.env).
+  # Example: override KC_HOSTNAME, add KC_LOG_LEVEL
+  # extraEnvVars:
+  #   - name: KC_HOSTNAME
+  #     value: "https://keycloak.example.com/"
+  #   - name: KC_LOG_LEVEL
+  #     value: "DEBUG"
+  auth:
+    adminUser: keycloakadmin
+    adminPassword: your-secret-password
+  # Secret containing Keycloak admin credentials (created by RHBK operator)
+  adminSecretName: keycloak-initial-admin
+  adminUsernameKey: username
+  adminPasswordKey: password
+  # Internal Keycloak URL for OAuth secret jobs
+  url: http://keycloak-service.keycloak:8080
+  publicUrl: http://keycloak.localtest.me:8080
+  realm: rossoctl
+  httpRoute:
+    annotations: {}
+    parentRefs:
+    - name: http
+      namespace: rossoctl-system
+    hostnames:
+      - "keycloak.localtest.me"
+      - "www.keycloak.localtest.me"
+    rules:
+    - matches:
+      - path:
+          type: PathPrefix
+          value: /
+
+# ------------------------------------------------------------------
+#  SPIFFE Identity Provider Setup Job Configuration
+#  (Only runs when SPIRE is enabled)
+# ------------------------------------------------------------------
+spiffeIdp:
+  # SPIFFE IdP setup job configuration
+  # NOTE: Job is NOT included in Helm chart to avoid race conditions
+  # - Installer creates job automatically after patching SPIRE ConfigMap
+  # - Standalone Helm users must create job manually (see docs)
+  image:
+    repository: ghcr.io/rossoctl/rossoctl/spiffe-idp-setup
+    tag: v0.7.0-alpha.5
+    pullPolicy: IfNotPresent
+
+
+# ------------------------------------------------------------------
+#  Istio Configuration
+# ------------------------------------------------------------------
+istio:
+  communityCharts:
+    enabled: false
+  namespace: "istio-system"
+  gatewayApiVersion: "v1.1.0"
+  cni:
+    profile: ambient
+    namespace: istio-cni
+  ztunnel:
+    namespace: istio-ztunnel
+  base: {}
+  istiod:
+    profile: ambient
+    namespace: '{{ .Values.istio.namespace | quote }}'
+  tracing:
+    randomSamplingPercentage: 100
+
+# ------------------------------------------------------------------
+#  OpenTelemetry Configuration
+# ------------------------------------------------------------------
+#
+# The collector config is assembled from:
+#   1. config           - base config (always included)
+#   2. defaultConfig    - auto-merged when no component pipelines are active
+#   3. phoenixConfig    - auto-merged when components.phoenix.enabled
+#   4. mlflowConfig     - auto-merged when components.mlflow.enabled
+#   5. mlflowAuthConfig - auto-merged when mlflow.auth.enabled
+#
+# Override any section via helm values merge, e.g.:
+#
+#   # Override phoenix filter rules (in phoenixConfig preset):
+#   otel.collector.phoenixConfig.processors.filter/phoenix:
+#     traces:
+#       span:
+#         - 'not(IsMatch(instrumentation_scope.name, "^openinference"))'
+#
+#   # Add a logs pipeline (in base config):
+#   otel.collector.config.service.pipelines.logs/app:
+#     receivers: [otlp]
+#     processors: [memory_limiter, batch]
+#     exporters: [debug]
+#
+#   # Disable a preset entirely:
+#   otel.collector.phoenixConfig: {}
+#
+# Note: helm deep-merges maps but REPLACES arrays. When overriding
+# a section that contains arrays (e.g. service.extensions, pipeline
+# receivers/processors/exporters), provide the full array.
+#
+otel:
+  # MLflow OTEL pipeline for externally managed MLflow (e.g. RHOAI DSC).
+  # Also activates when components.mlflow.enabled is true.
+  # TODO: Replace with a single mlflow.mode enum (none|managed|external).
+  mlflow:
+    enabled: false
+    workspace: "team1"     # RHOAI workspace namespace for x-mlflow-workspace header
+    experimentId: "1"      # MLflow experiment ID for x-mlflow-experiment-id header
+  collector:
+    image:
+      repository: otel/opentelemetry-collector-contrib
+      tag: "0.122.1"
+    service: otel-collector.rossoctl-system.svc.cluster.local
+    port: 4317
+
+    # Base collector configuration rendered as the ConfigMap base.yaml.
+    # Override any key via values files or --set flags.
+    config:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+      exporters:
+        debug:
+          verbosity: detailed
+      processors:
+        memory_limiter:
+          check_interval: 1s
+          limit_mib: 1000
+        batch: {}
+      extensions:
+        health_check: {}
+      service:
+        extensions: [health_check]
+        pipelines: {}
+    # Default pipeline preset - auto-merged when neither phoenix nor mlflow
+    # is enabled. Sends all traces to the debug exporter.
+    defaultConfig:
+      service:
+        pipelines:
+          traces/default:
+            receivers: [otlp]
+            processors: [memory_limiter, batch]
+            exporters: [debug]
+    # Component-specific config presets. Auto-merged into config when the
+    # corresponding component is enabled. Override to customize, or set
+    # to empty map {} to disable auto-merge for a specific component.
+    phoenixConfig:
+      exporters:
+        otlp/phoenix:
+          endpoint: phoenix:4317
+          tls:
+            insecure: true
+      processors:
+        transform/genai_to_openinference:
+          trace_statements:
+            - context: span
+              statements:
+                - >-
+                  set(attributes["llm.model_name"], attributes["gen_ai.request.model"])
+                  where attributes["gen_ai.request.model"] != nil
+                - >-
+                  set(attributes["llm.model_name"], attributes["gen_ai.response.model"])
+                  where attributes["gen_ai.response.model"] != nil and attributes["llm.model_name"] == nil
+                - >-
+                  set(attributes["llm.token_count.prompt"], attributes["gen_ai.usage.input_tokens"])
+                  where attributes["gen_ai.usage.input_tokens"] != nil
+                - >-
+                  set(attributes["llm.token_count.completion"], attributes["gen_ai.usage.output_tokens"])
+                  where attributes["gen_ai.usage.output_tokens"] != nil
+                - >-
+                  set(attributes["llm.token_count.total"],
+                  attributes["gen_ai.usage.input_tokens"] + attributes["gen_ai.usage.output_tokens"])
+                  where attributes["gen_ai.usage.input_tokens"] != nil
+                  and attributes["gen_ai.usage.output_tokens"] != nil
+                - >-
+                  set(attributes["llm.provider"], attributes["gen_ai.system"])
+                  where attributes["gen_ai.system"] != nil
+                - >-
+                  set(attributes["llm.system"], attributes["gen_ai.system"])
+                  where attributes["gen_ai.system"] != nil
+                - >-
+                  set(attributes["llm.invocation_parameters"],
+                  Concat(["{\"temperature\":", Concat([attributes["gen_ai.request.temperature"], "}"], "")], ""))
+                  where attributes["gen_ai.request.temperature"] != nil
+      service:
+        pipelines:
+          traces/phoenix:
+            receivers: [otlp]
+            processors: [memory_limiter, transform/genai_to_openinference, batch]
+            exporters: [otlp/phoenix]
+    mlflowConfig:
+      exporters:
+        otlphttp/mlflow:
+          # Default points to the in-cluster MLflow deployed by rossoctl-deps.
+          # For RHOAI (otel.mlflow.enabled=true), setup-rossoctl.sh overrides this
+          # with the MLflow CR gateway URL (status.url + /v1/traces). TLS is
+          # verified via the container's system CA pool (Let's Encrypt trusted by default).
+          traces_endpoint: http://mlflow:5000/v1/traces
+          tls:
+            insecure: true
+          headers:
+            x-mlflow-experiment-id: "0"
+          retry_on_failure:
+            enabled: true
+            initial_interval: 5s
+            max_interval: 30s
+            max_elapsed_time: 300s
+          sending_queue:
+            enabled: true
+            num_consumers: 2
+            queue_size: 1000
+      service:
+        pipelines:
+          traces/mlflow:
+            receivers: [otlp]
+            processors: [memory_limiter, batch]
+            exporters: [debug, otlphttp/mlflow]
+    # MLflow OAuth extension config - auto-merged when mlflow.auth.enabled
+    mlflowAuthConfig:
+      extensions:
+        oauth2client/mlflow:
+          client_id: ${env:MLFLOW_CLIENT_ID}
+          client_secret: ${env:MLFLOW_CLIENT_SECRET}
+          token_url: ${env:KEYCLOAK_TOKEN_URL}
+          scopes: ["openid"]
+          timeout: 10s
+      service:
+        extensions: [health_check, oauth2client/mlflow]
+    # RHOAI MLflow auth config - auto-merged when otel.mlflow.enabled && openshift.
+    # Uses the collector's ServiceAccount token for authentication against
+    # RHOAI MLflow's Kubernetes authorization plugin.
+    rhoaiMlflowAuthConfig:
+      exporters:
+        otlphttp/mlflow:
+          compression: none
+          retry_on_failure:
+            enabled: false
+          tls:
+            ca_file: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+      extensions:
+        bearertokenauth/mlflow:
+          filename: /var/run/secrets/kubernetes.io/serviceaccount/token
+      service:
+        extensions: [health_check, bearertokenauth/mlflow]
+
+httpGateway:
+  name: http
+  namespace: "rossoctl-system"
+# ------------------------------------------------------------------
+#  Shipwright / OpenShift Builds Configuration
+# ------------------------------------------------------------------
+shipwright:
+  namespace: openshift-builds
+  channel: latest
+
+# ------------------------------------------------------------------
+#  Cert Manager Configuration
+# ------------------------------------------------------------------
+certManager:
+  namespace: cert-manager-operator
+
+# ------------------------------------------------------------------
+#  RHOAI (Red Hat OpenShift AI) Configuration
+# ------------------------------------------------------------------
+rhoai:
+  namespace: redhat-ods-operator
+  channel: stable-3.4
+  installPlanApproval: Automatic
+
+# When true, skip servicemeshoperator3 Subscription creation (RHOAI provides it)
+rhoaiManagesServiceMesh: false
+
+# ------------------------------------------------------------------
+#  Spire Configuration
+# ------------------------------------------------------------------
+spire:
+  namespace: zero-trust-workload-identity-manager
+  trustDomain: localtest.me
+  # OLM channel for ZTWIM operator. Use "stable-v1" for OCP 4.20+, "tech-preview-v0.2" for OCP 4.19
+  channel: stable-v1
+
+containerRegistry:
+  namespace: cr-system
+  name: registry
+  replicaCount: 1
+  image:
+    repository: ghcr.io/distribution/distribution
+    tag: "3.0.0"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 5000
+    targetPort: 5000
+    # nodePort: 30500  # Set when type is NodePort
+
+  env:
+    otelTracesExporter: "none"
+    logLevel: "info"
+  # Resource defaults for the registry container
+  resources:
+    limits:
+      cpu: 150m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# ------------------------------------------------------------------
+#  Metrics Server Configuration
+# ------------------------------------------------------------------
+
+metricsServer:
+  insecure: true
+  namespace: kube-system
+
+# ------------------------------------------------------------------
+#  MCP inspector
+# ------------------------------------------------------------------
+
+mcpInspector:
+  image: ghcr.io/modelcontextprotocol/inspector
+  tag: 0.17.2
+  # Reverse-proxy sidecar that serves the Inspector UI and its proxy server on
+  # a single origin
+  nginxImage: mirror.gcr.io/nginx:1.27-alpine
+  # OpenShift Route timeout for the Inspector host. The proxy's SSE stream is
+  # long-lived, so this must exceed HAProxy's ~30s default.
+  routeTimeout: "1h"
+
+# ------------------------------------------------------------------
+#  Phoenix Configuration
+# ------------------------------------------------------------------
+phoenix:
+  image:
+    repository: arizephoenix/phoenix
+    tag: "version-8.32.1"
+  # Database backend: "postgres" (default) or "sqlite"
+  database:
+    type: postgres
+    # SQLite settings (used when type: sqlite)
+    # sqlite:
+    #   path: /mnt/data/phoenix.db
+  # Extra environment variables to inject into the Phoenix container
+  # extraEnvVars:
+  #   - name: PHOENIX_ENABLE_AUTH
+  #     value: "false"
+  auth:
+    # Enable Keycloak OAuth2 authentication for Phoenix dashboard
+    # Set to true in ocp_values.yaml for production deployments
+    enabled: false
+    secretName: phoenix-oauth-secret
+
+# ------------------------------------------------------------------
+#  MLflow Configuration
+# ------------------------------------------------------------------
+mlflow:
+  namespace: rossoctl-system
+  auth:
+    # Enable Keycloak OAuth2 authentication for MLflow
+    # Set to true in ocp_values.yaml for production deployments
+    enabled: false
+    secretName: mlflow-oauth-secret

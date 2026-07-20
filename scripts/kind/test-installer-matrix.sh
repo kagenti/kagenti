@@ -2,7 +2,7 @@
 # ============================================================================
 # KIND INSTALLER MATRIX TEST HARNESS
 # ============================================================================
-# Runs setup-kagenti.sh with multiple flag combinations (profiles), then
+# Runs setup-rossoctl.sh with multiple flag combinations (profiles), then
 # executes the pytest installer tests after each to verify correctness.
 #
 # Default: cleanup+reuse cluster between profiles (fastest).
@@ -21,9 +21,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
-CLUSTER_NAME="${CLUSTER_NAME:-kagenti-matrix}"
+CLUSTER_NAME="${CLUSTER_NAME:-rossoctl-matrix}"
 KIND_CONFIG="${KIND_CONFIG:-$REPO_ROOT/scripts/kind/kind-config-registry.yaml}"
-LOG_DIR="${LOG_DIR:-/tmp/kagenti/matrix}"
+LOG_DIR="${LOG_DIR:-/tmp/rossoctl/matrix}"
 FRESH_CLUSTER=false
 KEEP_CLUSTER=false
 SELECTED_PROFILES=""
@@ -67,8 +67,8 @@ while [[ $# -gt 0 ]]; do
       echo "                     Available: core, platform, observability, mesh, full"
       echo "  --fresh-cluster    Destroy+recreate Kind cluster per profile (slow but clean)"
       echo "  --keep-cluster     Don't destroy cluster at end (for debugging)"
-      echo "  --cluster-name N   Kind cluster name (default: kagenti-matrix)"
-      echo "  --log-dir DIR      Log directory (default: /tmp/kagenti/matrix)"
+      echo "  --cluster-name N   Kind cluster name (default: rossoctl-matrix)"
+      echo "  --log-dir DIR      Log directory (default: /tmp/rossoctl/matrix)"
       echo ""
       echo "Profiles:"
       echo "  core           No flags — core components only"
@@ -158,7 +158,7 @@ _destroy_cluster() {
 
 _cleanup_platform() {
   log_info "Cleaning up platform (helm uninstall)..."
-  "$SCRIPT_DIR/cleanup-kagenti.sh" --cluster-name "$CLUSTER_NAME" \
+  "$SCRIPT_DIR/cleanup-rossoctl.sh" --cluster-name "$CLUSTER_NAME" \
     > "$LOG_DIR/cleanup.log" 2>&1 || true
   log_success "Cleanup done"
 }
@@ -239,7 +239,7 @@ for profile in "${RUN_PROFILES[@]}"; do
     log_info "Installing (flags: ${flags:-none})..."
 
     # shellcheck disable=SC2086
-    if "$SCRIPT_DIR/setup-kagenti.sh" --skip-cluster --build-images --cluster-name "$CLUSTER_NAME" \
+    if "$SCRIPT_DIR/setup-rossoctl.sh" --skip-cluster --build-images --cluster-name "$CLUSTER_NAME" \
         $flags > "$install_log" 2>&1; then
       log_success "Install succeeded"
     else
@@ -263,7 +263,7 @@ for profile in "${RUN_PROFILES[@]}"; do
     fi
 
     if KIND_INSTALLER_FLAGS="$flags_for_env" \
-       uv run pytest "$REPO_ROOT/kagenti/tests/e2e/common/test_kind_installer.py" \
+       uv run pytest "$REPO_ROOT/rossoctl/tests/e2e/common/test_kind_installer.py" \
        -v --tb=short > "$test_log" 2>&1; then
       log_success "Tests passed"
     else

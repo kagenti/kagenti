@@ -10,11 +10,11 @@ description: Debug Helm chart issues - template rendering, value overrides, hook
 **Helm template output can be hundreds of lines.** Always redirect to files:
 
 ```bash
-export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-helm}"
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/rossoctl-helm}"
 mkdir -p "$LOG_DIR"
 
 # Redirect helm template output
-helm template kagenti charts/kagenti -n kagenti-system > $LOG_DIR/rendered.yaml 2>&1 && echo "OK" || echo "FAIL"
+helm template rossoctl charts/rossoctl -n rossoctl-system > $LOG_DIR/rendered.yaml 2>&1 && echo "OK" || echo "FAIL"
 # Analyze in subagent: Task(subagent_type='Explore') with Grep to find specific templates/values
 ```
 
@@ -30,19 +30,19 @@ helm template kagenti charts/kagenti -n kagenti-system > $LOG_DIR/rendered.yaml 
 Render templates locally without installing:
 
 ```bash
-helm template kagenti charts/kagenti -n kagenti-system -f charts/kagenti/.secrets.yaml
+helm template rossoctl charts/rossoctl -n rossoctl-system -f charts/rossoctl/.secrets.yaml
 ```
 
 Render a specific template:
 
 ```bash
-helm template kagenti charts/kagenti -n kagenti-system -s templates/ui-oauth-secret-job.yaml
+helm template rossoctl charts/rossoctl -n rossoctl-system -s templates/ui-oauth-secret-job.yaml
 ```
 
 Compare rendered output with what's deployed:
 
 ```bash
-helm get manifest kagenti -n kagenti-system
+helm get manifest rossoctl -n rossoctl-system
 ```
 
 ## Value Debugging
@@ -50,19 +50,19 @@ helm get manifest kagenti -n kagenti-system
 Show computed values:
 
 ```bash
-helm get values kagenti -n kagenti-system
+helm get values rossoctl -n rossoctl-system
 ```
 
 Show all values (including defaults):
 
 ```bash
-helm get values kagenti -n kagenti-system -a
+helm get values rossoctl -n rossoctl-system -a
 ```
 
 Show chart default values:
 
 ```bash
-helm show values charts/kagenti
+helm show values charts/rossoctl
 ```
 
 ## Release Debugging
@@ -70,13 +70,13 @@ helm show values charts/kagenti
 Check release status:
 
 ```bash
-helm status kagenti -n kagenti-system
+helm status rossoctl -n rossoctl-system
 ```
 
 Check release history:
 
 ```bash
-helm history kagenti -n kagenti-system
+helm history rossoctl -n rossoctl-system
 ```
 
 ## Hook Debugging
@@ -84,13 +84,13 @@ helm history kagenti -n kagenti-system
 Hooks run as Jobs. Check their status:
 
 ```bash
-kubectl get jobs -n kagenti-system
+kubectl get jobs -n rossoctl-system
 ```
 
 Check hook job logs:
 
 ```bash
-kubectl logs -n kagenti-system job/<hook-job-name>
+kubectl logs -n rossoctl-system job/<hook-job-name>
 ```
 
 ## Dependency Issues
@@ -98,28 +98,28 @@ kubectl logs -n kagenti-system job/<hook-job-name>
 Update chart dependencies:
 
 ```bash
-helm dependency update charts/kagenti
+helm dependency update charts/rossoctl
 ```
 
 List dependencies:
 
 ```bash
-helm dependency list charts/kagenti
+helm dependency list charts/rossoctl
 ```
 
 ## Common Issues
 
 | Issue | Cause | Fix |
 |-------|-------|-----|
-| `UPGRADE FAILED: another operation in progress` | Stale lock | `kubectl delete secret -n kagenti-system -l status=pending-upgrade` |
+| `UPGRADE FAILED: another operation in progress` | Stale lock | `kubectl delete secret -n rossoctl-system -l status=pending-upgrade` |
 | Template render error | Bad YAML indent | Use `helm template` to see exact error |
 | Values not applied | Wrong `-f` order | Later files override earlier ones |
 | Hook timeout | Job takes too long | Check job logs, increase timeout |
 
 ## Related Skills
 
-- `kagenti:deploy` - Platform deployment
-- `kagenti:operator` - Operator management
+- `rossoctl:deploy` - Platform deployment
+- `rossoctl:operator` - Operator management
 - `k8s:pods` - Debug pod issues from hook jobs
 - `rca:hypershift` - RCA when Helm issues cause test failures
 - `rca:kind` - RCA on local Kind cluster

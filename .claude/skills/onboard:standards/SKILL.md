@@ -1,17 +1,17 @@
 ---
 name: onboard:standards
-description: Apply kagenti-specific conventions to an onboarded repo - commit format, PR template, issue templates
+description: Apply rossoctl-specific conventions to an onboarded repo - commit format, PR template, issue templates
 ---
 
-# Onboard: Apply Kagenti Standards
+# Onboard: Apply Rossoctl Standards
 
-Apply kagenti-specific conventions to a repository linked via `onboard:link`.
+Apply rossoctl-specific conventions to a repository linked via `onboard:link`.
 
 ## Conventions
 
 ### 1. Commit message format
 
-Kagenti uses emoji prefixes and sign-off:
+Rossoctl uses emoji prefixes and sign-off:
 
 | Emoji | Type | Usage |
 |-------|------|-------|
@@ -113,7 +113,7 @@ git -C .repos/<repo-name> add .github/
 ```
 
 ```bash
-git -C .repos/<repo-name> commit -s -m "✨ Add kagenti PR and issue templates"
+git -C .repos/<repo-name> commit -s -m "✨ Add rossoctl PR and issue templates"
 ```
 
 ```bash
@@ -123,7 +123,7 @@ git -C .repos/<repo-name> push -u origin orchestrate/onboard-standards
 ### Step 4: Create PR
 
 ```bash
-gh pr create --repo org/repo --title "Add kagenti project conventions" --body "Applies kagenti standards: commit format, PR template, issue templates, branch naming."
+gh pr create --repo org/repo --title "Add rossoctl project conventions" --body "Applies rossoctl standards: commit format, PR template, issue templates, branch naming."
 ```
 
 ### Step 5: Update inventory

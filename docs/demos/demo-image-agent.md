@@ -2,24 +2,24 @@
 
 This document provides detailed steps for running the **Image Agent** proof-of-concept (PoC) demo.
 
-In this demo, we will use the Kagenti UI to import and deploy both the **Image Service Agent** and the **Image Tool**.
+In this demo, we will use the Rossoctl UI to import and deploy both the **Image Service Agent** and the **Image Tool**.
 During deployment, we'll configure the **A2A protocol** for managing agent calls and **MCP** for enabling communication between the agent and the image tool.
 
 Once deployed, we will query the agent using a natural language prompt. The agent will then invoke the tool and return the image data as a response.
 
-This demo illustrates how Kagenti manages the lifecycle of all required components: agents, tools, protocols, and runtime infrastructure.
+This demo illustrates how Rossoctl manages the lifecycle of all required components: agents, tools, protocols, and runtime infrastructure.
 
 Here's a breakdown of the sections:
 - In [**Set Up**](#set-up), you'll run a script to rebuild and roll out the UI image 
-- In [**Import New Agent**](#import-new-agent), you'll build and deploy the [`image_service`](https://github.com/kagenti/agent-examples/tree/main/a2a/image_service) agent.
-- In [**Import New Tool**](#import-new-tool), you'll build and deploy the [`image_tool`](https://github.com/kagenti/agent-examples/tree/main/mcp/image_tool) tool.
+- In [**Import New Agent**](#import-new-agent), you'll build and deploy the [`image_service`](https://github.com/rossoctl/examples/tree/main/a2a/image_service) agent.
+- In [**Import New Tool**](#import-new-tool), you'll build and deploy the [`image_tool`](https://github.com/rossoctl/examples/tree/main/mcp/image_tool) tool.
 - In [**Validate the Deployment**](#validate-the-deployment), you'll verify that all components are running and operational.
 - In [**Chat with the Image Agent**](#chat-with-the-image-agent), you'll interact with the agent and confirm it responds correctly with randomly generated images.
 
 > **Prerequisites:**
-> Ensure you've completed the Kagenti platform setup as described in the [Installation](./demos.md#installation) section.
+> Ensure you've completed the Rossoctl platform setup as described in the [Installation](./demos.md#installation) section.
 
-You should also open the Agent Platform Demo Dashboard as instructed in the [Connect to the Kagenti UI](./demos.md#connect-to-the-kagenti-ui) section.
+You should also open the Agent Platform Demo Dashboard as instructed in the [Connect to the Rossoctl UI](./demos.md#connect-to-the-rossoctl-ui) section.
 
 ---
 
@@ -27,17 +27,17 @@ You should also open the Agent Platform Demo Dashboard as instructed in the [Con
 
 To deploy the Image Agent:
 
-1. Navigate to [Import New Agent](http://kagenti-ui.localtest.me:8080/Import_New_Agent#import-new-agent) in the Kagenti UI.
+1. Navigate to [Import New Agent](http://rossoctl-ui.localtest.me:8080/Import_New_Agent#import-new-agent) in the Rossoctl UI.
 2. In the **Select Namespace to Deploy Agent** drop-down, choose the `<namespace>` where you'd like to deploy the agent. (These namespaces are defined in your `.env` file.)
 3. Under **Environment Variables**, configure LLM settings using one of these methods:
    - Click **Import .env File** and import `.env.openai` or `.env.ollama` from the agent examples repo, **or**
    - Manually add env vars: `LLM_API_BASE`, `LLM_API_KEY`, and `LLM_MODEL` (see [Using Local Models](../local-models.md) for values)
 4. In the **Agent Source Repository URL** field, use the default:
-   <https://github.com/kagenti/agent-examples>
+   <https://github.com/rossoctl/examples>
    Or use a custom repository accessible using the GitHub ID specified in your `.env` file.
 5. For **Git Branch or Tag**, use the default `main` branch (or select another as needed).
 6. Set **Protocol** to `a2a`.
-7. Under [**Specify Source Subfolder**](http://kagenti-ui.localtest.me:8080/Import_New_Agent#specify-source-subfolder):
+7. Under [**Specify Source Subfolder**](http://rossoctl-ui.localtest.me:8080/Import_New_Agent#specify-source-subfolder):
    - Click `Select from examples`
    - Choose: `a2a/image_service`
 8. Click **Build & Deploy New Agent** to deploy.
@@ -50,11 +50,11 @@ To deploy the Image Agent:
 
 To deploy the Image Tool using Shipwright:
 
-1. Navigate to [Import New Tool](http://kagenti-ui.localtest.me:8080/Import_New_Tool#import-new-tool) in the UI.
+1. Navigate to [Import New Tool](http://rossoctl-ui.localtest.me:8080/Import_New_Tool#import-new-tool) in the UI.
 1. Select the same `<namespace>` as used for the agent.
 1. Select "Build from source" as the deployment method.
 1. Use the same source repository:
-   <https://github.com/kagenti/agent-examples>
+   <https://github.com/rossoctl/examples>
 1. Choose the `main` branch or your preferred branch.
 1. Set **Select Protocol** to `streamable_http`.
 1. Under **Specify Source Subfolder**:
@@ -86,7 +86,7 @@ To verify that both the agent and tool are running:
 
    ```console
    installer$ kubectl logs -f deployment/image-service -n <your-ns>
-   Defaulted container "image-service" out of: image-service, kagenti-client-registration (init)
+   Defaulted container "image-service" out of: image-service, rossoctl-client-registration (init)
    INFO:     Started server process [18]
    INFO:     Waiting for application startup.
    INFO:     Application startup complete.
@@ -96,7 +96,7 @@ To verify that both the agent and tool are running:
    For the tool:
    ```console
    installer$ kubectl logs -f deployment/image-tool -n <your-ns>
-   Defaulted container "image-tool" out of: image-tool, kagenti-client-registration (init)
+   Defaulted container "image-tool" out of: image-tool, rossoctl-client-registration (init)
    INFO:     Started server process [19]
    INFO:     Waiting for application startup.
    INFO:     Application startup complete.
@@ -111,9 +111,9 @@ To verify that both the agent and tool are running:
 
 Once the deployment is complete, you can run the demo:
 
-1. Navigate to the **Agent Catalog** in the Kagenti UI.
+1. Navigate to the **Agent Catalog** in the Rossoctl UI.
 2. Select the same `<namespace>` used during the agent deployment.
-3. Under [**Available Agents in <namespace>**](http://kagenti-ui.localtest.me:8080/Agent_Catalog#available-agents-in-kagenti-system), select `image-service` and click **View Details**.
+3. Under [**Available Agents in <namespace>**](http://rossoctl-ui.localtest.me:8080/Agent_Catalog#available-agents-in-rossoctl-system), select `image-service` and click **View Details**.
 4. Scroll to the bottom of the page. In the input field labeled *Say something to the agent...*, enter:
 
    ```console

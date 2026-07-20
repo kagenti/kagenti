@@ -43,13 +43,13 @@ Review test quality to ensure tests actually catch failures.
 Search for anti-patterns in test files:
 
 ```bash
-grep -rn "assert True\|assert False\|@pytest.mark.skip\|@pytest.mark.xfail\|pass$" kagenti/tests/
+grep -rn "assert True\|assert False\|@pytest.mark.skip\|@pytest.mark.xfail\|pass$" rossoctl/tests/
 ```
 
 Search for weak assertions:
 
 ```bash
-grep -rn "is not None\|!= None\|assert .*>" kagenti/tests/ | grep -v "# ok"
+grep -rn "is not None\|!= None\|assert .*>" rossoctl/tests/ | grep -v "# ok"
 ```
 
 ## Related Skills

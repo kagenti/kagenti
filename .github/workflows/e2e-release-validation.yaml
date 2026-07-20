@@ -7,8 +7,8 @@ on:
         description: 'Release tag to validate (e.g. v0.6.0-alpha.5)'
         required: true
         type: string
-      kagenti_extensions_ref:
-        description: 'kagenti-extensions git ref for AuthBridge E2E (consumed by .github/scripts/kind/91-run-authbridge-weather-e2e.sh when cloning the demo). Typically pin this to the matching release tag.'
+      rossoctl_extensions_ref:
+        description: 'rossocortex git ref for AuthBridge E2E (consumed by .github/scripts/kind/91-run-authbridge-weather-e2e.sh when cloning the demo). Typically pin this to the matching release tag.'
         required: false
         type: string
         default: 'main'
@@ -28,8 +28,8 @@ permissions:
 env:
   K8S_VERSION: '1.35.0'
   # Consumed by .github/scripts/kind/91-run-authbridge-weather-e2e.sh when it
-  # clones kagenti-extensions for the AuthBridge weather demo.
-  KAGENTI_EXTENSIONS_GIT_REF: ${{ inputs.kagenti_extensions_ref }}
+  # clones rossocortex for the AuthBridge weather demo.
+  ROSSOCTL_EXTENSIONS_GIT_REF: ${{ inputs.rossoctl_extensions_ref }}
 
 jobs:
   # -----------------------------------------------------------------------
@@ -120,8 +120,8 @@ jobs:
       - name: Create secrets for bash installer
         run: bash .github/scripts/common/20-create-secrets-bash.sh
 
-      - name: Install Kagenti platform (bash installer)
-        run: bash scripts/kind/setup-kagenti.sh --with-all --build-images
+      - name: Install Rossoctl platform (bash installer)
+        run: bash scripts/kind/setup-rossoctl.sh --with-all --build-images
 
       - name: Wait for platform and reduce Kuadrant resources
         run: bash .github/scripts/common/40-wait-platform-ready.sh
@@ -135,17 +135,17 @@ jobs:
       - name: Configure dockerhost service for Kind
         run: bash .github/scripts/common/70-configure-dockerhost.sh
 
-      - name: Wait for kagenti-operator CRDs to be established
-        run: bash .github/scripts/kagenti-operator/41-wait-crds.sh
+      - name: Wait for rossoctl-operator CRDs to be established
+        run: bash .github/scripts/operator/41-wait-crds.sh
 
       - name: Build weather-tool image
-        run: bash .github/scripts/kagenti-operator/71-build-weather-tool.sh
+        run: bash .github/scripts/operator/71-build-weather-tool.sh
 
       - name: Deploy weather-tool via Deployment + Service
-        run: bash .github/scripts/kagenti-operator/72-deploy-weather-tool.sh
+        run: bash .github/scripts/operator/72-deploy-weather-tool.sh
 
       - name: Deploy weather-service Agent
-        run: bash .github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+        run: bash .github/scripts/operator/74-deploy-weather-agent.sh
 
       - name: Verify deployment health
         run: |
@@ -171,7 +171,7 @@ jobs:
 
       - name: Run backend E2E tests
         if: success()
-        run: bash .github/scripts/kagenti-operator/90-run-e2e-tests.sh
+        run: bash .github/scripts/operator/90-run-e2e-tests.sh
 
       - name: Free capacity for AuthBridge weather (scale baseline weather)
         if: success()
@@ -209,7 +209,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: playwright-report-${{ inputs.version }}
-          path: kagenti/ui-v2/playwright-report/
+          path: rossoctl/ui-v2/playwright-report/
           retention-days: 30
 
       - name: Collect logs on failure

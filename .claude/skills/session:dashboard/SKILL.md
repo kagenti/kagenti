@@ -37,7 +37,7 @@ The dashboard is generated as part of the extract phase:
 python3 .claude/scripts/session-analytics.py \
   --phase extract \
   --repo <OWNER/NAME> \
-  --output-dir /tmp/kagenti/session/
+  --output-dir /tmp/rossoctl/session/
 ```
 
 This generates all output files including the `dashboard.html`.
@@ -45,7 +45,7 @@ This generates all output files including the `dashboard.html`.
 ### Step 3: Verify the Dashboard
 
 ```bash
-ls -la /tmp/kagenti/session/dashboard.html
+ls -la /tmp/rossoctl/session/dashboard.html
 ```
 
 ### Step 4: Open in Browser
@@ -54,10 +54,10 @@ Attempt to open the dashboard in the default browser:
 
 ```bash
 # macOS
-open /tmp/kagenti/session/dashboard.html
+open /tmp/rossoctl/session/dashboard.html
 
 # Linux
-xdg-open /tmp/kagenti/session/dashboard.html 2>/dev/null || echo "Open manually: /tmp/kagenti/session/dashboard.html"
+xdg-open /tmp/rossoctl/session/dashboard.html 2>/dev/null || echo "Open manually: /tmp/rossoctl/session/dashboard.html"
 ```
 
 If the browser cannot be opened (e.g., headless environment), report the file path so the user can open it manually.
@@ -77,7 +77,7 @@ The HTML dashboard typically includes:
 |-----------|--------|----------|---------|
 | `--phase` | Always `extract` | Yes | - |
 | `--repo` | Auto-detected from git remote | Yes | - |
-| `--output-dir` | Fixed | No | `/tmp/kagenti/session/` |
+| `--output-dir` | Fixed | No | `/tmp/rossoctl/session/` |
 | `--from-date` | Optional date range start | No | 30 days ago |
 | `--to-date` | Optional date range end | No | Today |
 
@@ -86,13 +86,13 @@ The HTML dashboard typically includes:
 ```bash
 # Generate dashboard for last 30 days
 python3 .claude/scripts/session-analytics.py \
-  --phase extract --repo kagenti/kagenti \
-  --output-dir /tmp/kagenti/session/
+  --phase extract --repo rossoctl/rossoctl \
+  --output-dir /tmp/rossoctl/session/
 
 # Generate and open
 python3 .claude/scripts/session-analytics.py \
-  --phase extract --repo kagenti/kagenti \
-  --output-dir /tmp/kagenti/session/ && open /tmp/kagenti/session/dashboard.html
+  --phase extract --repo rossoctl/rossoctl \
+  --output-dir /tmp/rossoctl/session/ && open /tmp/rossoctl/session/dashboard.html
 ```
 
 ## Related Skills

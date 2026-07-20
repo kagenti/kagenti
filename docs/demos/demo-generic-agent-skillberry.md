@@ -1,17 +1,17 @@
 # Generic Agent + Summarizer Skill via Skillberry Store
 
-This guide explains how to use Kagenti's external skill registry support to:
+This guide explains how to use Rossoctl's external skill registry support to:
 
 1. publish the example [`summarizer`](../agent-examples/skills/summarizer) skill to a running [skillberry-store](https://github.ibm.com/skillberry/skillberry-store) instance,
-2. register the skill in Kagenti as an **external skill reference** pointing to that registry,
+2. register the skill in Rossoctl as an **external skill reference** pointing to that registry,
 3. import the example [`generic_agent`](../agent-examples/a2a/generic_agent) and link the external skill,
 4. and verify in chat that the skill is fetched from the registry at agent startup and used correctly.
 
-This flow differs from the [local skill demo](./demo-generic-agent-skill.md): the skill files are never uploaded into Kagenti. Instead, Kagenti stores only a pointer (URL + metadata) to the skillberry-store instance. When the agent pod starts, an init container fetches the skill archive from the registry and mounts it at the same path that a local skill would occupy. The agent runtime is unaware of the difference.
+This flow differs from the [local skill demo](./demo-generic-agent-skill.md): the skill files are never uploaded into Rossoctl. Instead, Rossoctl stores only a pointer (URL + metadata) to the skillberry-store instance. When the agent pod starts, an init container fetches the skill archive from the registry and mounts it at the same path that a local skill would occupy. The agent runtime is unaware of the difference.
 
 ## Two ways to provide the registry
 
-You can point Kagenti at the skillberry-store in one of two ways:
+You can point Rossoctl at the skillberry-store in one of two ways:
 
 1. **In-cluster store (simplest).** `--with-skills` deploys a skillberry-store
    pod inside the cluster and **auto-enables autosync against it** — no external
@@ -21,7 +21,7 @@ You can point Kagenti at the skillberry-store in one of two ways:
    `SKILLBERRY_STORE_IMAGE` / `SKILLBERRY_STORE_TAG` env vars (default tag `0.2.0`).
    With this path, skip the external-instance prerequisites below and publish your
    skill to the in-cluster store (its API is reachable in-cluster at
-   `http://skillberry-store.kagenti-system.svc.cluster.local:8000`).
+   `http://skillberry-store.rossoctl-system.svc.cluster.local:8000`).
    skillberry-store's plugins — which **manage** the skills in the store
    (creating, evaluating, optimizing, deduplicating, and security-scanning them)
    — call an LLM and read their configuration from environment variables on the
@@ -36,18 +36,18 @@ You can point Kagenti at the skillberry-store in one of two ways:
 
 ## What this demo shows
 
-- The skill content lives in an external skillberry-store registry, not in a Kagenti ConfigMap.
-- Kagenti holds a lightweight **external skill reference** (a ConfigMap with `kagenti.io/source=external`) instead of the full skill content.
+- The skill content lives in an external skillberry-store registry, not in a Rossoctl ConfigMap.
+- Rossoctl holds a lightweight **external skill reference** (a ConfigMap with `rossoctl.io/source=external`) instead of the full skill content.
 - At agent pod startup, an `alpine:3` init container fetches the skill from the registry and mounts it under `/app/skills/`.
 - The agent's `SKILL_FOLDERS` env var is populated automatically, as in the local flow.
 - From the agent's perspective the skill is identical to a locally imported skill.
 
 ## Prerequisites
 
-### Kagenti
+### Rossoctl
 
-- Kagenti is installed and the UI is reachable, as described in [`docs/install.md`](../install.md).
-- You have access to a Kagenti-enabled namespace, for example `team1`.
+- Rossoctl is installed and the UI is reachable, as described in [`docs/install.md`](../install.md).
+- You have access to a Rossoctl-enabled namespace, for example `team1`.
 - The cluster can build example agents from GitHub.
 - You have LLM credentials ready for the generic agent (`LLM_MODEL`, `LLM_API_BASE`, `LLM_API_KEY`).
 - **Both** `featureFlags.skills` and `featureFlags.externalSkills` must be enabled.
@@ -55,20 +55,20 @@ You can point Kagenti at the skillberry-store in one of two ways:
   When using the Kind setup script, use `--with-skills` (enables both flags and auto-enables backend and UI):
 
   ```bash
-  scripts/kind/setup-kagenti.sh --with-skills --with-builds
+  scripts/kind/setup-rossoctl.sh --with-skills --with-builds
   ```
 
   To also build images from source:
 
   ```bash
-  scripts/kind/setup-kagenti.sh --with-skills --with-builds --build-images --skip-cluster
+  scripts/kind/setup-rossoctl.sh --with-skills --with-builds --build-images --skip-cluster
   ```
 
   When using the Ansible installer, add to your values file:
 
   ```yaml
   charts:
-    kagenti:
+    rossoctl:
       values:
         featureFlags:
           skills: true
@@ -78,11 +78,11 @@ You can point Kagenti at the skillberry-store in one of two ways:
   When enabling on an already-running cluster with Helm:
 
   ```bash
-  helm upgrade kagenti ./charts/kagenti/ \
+  helm upgrade rossoctl ./charts/rossoctl/ \
     --reuse-values \
     --set featureFlags.skills=true \
     --set featureFlags.externalSkills=true \
-    -n kagenti-system
+    -n rossoctl-system
   ```
 
 ### Skillberry store
@@ -91,17 +91,17 @@ You can point Kagenti at the skillberry-store in one of two ways:
   - **UI**: `http://localhost:8002/`
   - **FastAPI / REST API**: `http://localhost:8000/`
 - You have credentials or access to publish a skill to that instance (follow skillberry-store's own [onboarding documentation](https://github.com/skillberry-ai/skillberry-store/blob/main/README.md) and [CLI guide](https://github.com/skillberry-ai/skillberry-store/blob/main/docs/cli.md)).
-- **Kind cluster note**: the `sbs` CLI and `curl` commands in this guide run from your workstation and use `http://localhost:8000`. However, the registry URL you register in Kagenti (Step 2) is fetched by an init container running **inside** the Kind cluster — it cannot reach `localhost` on the host. Use `http://host.docker.internal:8000` (Docker Desktop / WSL2) or your host's LAN IP (e.g. `http://192.168.1.10:8000`) for that field.
+- **Kind cluster note**: the `sbs` CLI and `curl` commands in this guide run from your workstation and use `http://localhost:8000`. However, the registry URL you register in Rossoctl (Step 2) is fetched by an init container running **inside** the Kind cluster — it cannot reach `localhost` on the host. Use `http://host.docker.internal:8000` (Docker Desktop / WSL2) or your host's LAN IP (e.g. `http://192.168.1.10:8000`) for that field.
 - **Private/LAN registry note (SSRF allow-list)**: the backend validates registry URLs and rejects ones that resolve to private/internal addresses (RFC-1918, loopback, link-local) to prevent SSRF. A LAN IP like `192.168.1.10` or an in-cluster `*.svc` name is private, so you must explicitly allow it via the `SKILL_REGISTRY_ALLOWED_HOSTS` setting (comma-separated hostnames, IPs, or CIDRs). Empty by default — public registries need no configuration. Set it one of these ways:
-  - **Kind installer**: pass `--skill-registry-allowed-hosts "192.168.1.10"` (accepts a comma-separated list / CIDRs) to `scripts/kind/setup-kagenti.sh`.
+  - **Kind installer**: pass `--skill-registry-allowed-hosts "192.168.1.10"` (accepts a comma-separated list / CIDRs) to `scripts/kind/setup-rossoctl.sh`.
   - **Helm**: set `ui.backend.skillRegistryAllowedHosts` (e.g. `"192.168.1.10"` or `"192.168.0.0/16"`).
-  - **Existing deployment**: set the `SKILL_REGISTRY_ALLOWED_HOSTS` env var on the backend and restart, e.g. `kubectl set env deploy/kagenti-backend -n kagenti-system SKILL_REGISTRY_ALLOWED_HOSTS=192.168.1.10`.
+  - **Existing deployment**: set the `SKILL_REGISTRY_ALLOWED_HOSTS` env var on the backend and restart, e.g. `kubectl set env deploy/rossoctl-backend -n rossoctl-system SKILL_REGISTRY_ALLOWED_HOSTS=192.168.1.10`.
 
 ## Repositories and paths used in this demo
 
 | Resource | Value |
 |---|---|
-| Example agent repository | `https://github.com/kagenti/agent-examples` |
+| Example agent repository | `https://github.com/rossoctl/examples` |
 | Skill source path | `skills/summarizer` |
 | Agent source path | `a2a/generic_agent` |
 | Skillberry UI | `http://localhost:8002/` |
@@ -115,7 +115,7 @@ You can point Kagenti at the skillberry-store in one of two ways:
 Clone the agent-examples repository and locate the summarizer skill:
 
 ```bash
-git clone https://github.com/kagenti/agent-examples
+git clone https://github.com/rossoctl/examples
 cd agent-examples/skills/summarizer
 ls
 # SKILL.md  (and any additional files)
@@ -160,11 +160,11 @@ unzip -l /tmp/test-summarizer.zip
 # Expected: summarizer/SKILL.md and other skill files listed
 ```
 
-## Step 2: Register the external skill reference in the Kagenti UI
+## Step 2: Register the external skill reference in the Rossoctl UI
 
-The Kagenti UI "From Registry" tab creates a lightweight ConfigMap that points to your skillberry-store instance. **No skill content is uploaded.**
+The Rossoctl UI "From Registry" tab creates a lightweight ConfigMap that points to your skillberry-store instance. **No skill content is uploaded.**
 
-1. Open the Kagenti UI.
+1. Open the Rossoctl UI.
 2. Navigate to **Skills**.
 3. Click **Import Skill**.
 4. Select the **From Registry** tab.
@@ -206,7 +206,7 @@ If you prefer the API:
 
 ```bash
 # Use the URL reachable from inside the Kind cluster, not localhost
-curl -s -X POST "${KAGENTI_URL}/api/v1/skills/external" \
+curl -s -X POST "${ROSSOCTL_URL}/api/v1/skills/external" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${TOKEN}" \
   -d '{
@@ -229,7 +229,7 @@ curl -s -X POST "${KAGENTI_URL}/api/v1/skills/external" \
 4. Leave **Deployment Method** as **Build from Source**.
 5. In **Git Repository URL**, use:
 
-   `https://github.com/kagenti/agent-examples`
+   `https://github.com/rossoctl/examples`
 
 6. In **Git Branch or Tag**, use `main`.
 7. In **Select Agent**, choose **Generic Agent**.
@@ -249,7 +249,7 @@ In the **Environment Variables** section, provide the LLM configuration:
 - `LLM_API_BASE`
 - `LLM_API_KEY`
 
-Do not set `SKILL_FOLDERS` manually. Kagenti sets it automatically based on the linked skills, regardless of whether they are local or external registry references.
+Do not set `SKILL_FOLDERS` manually. Rossoctl sets it automatically based on the linked skills, regardless of whether they are local or external registry references.
 
 ## Step 5: Link the external summarizer skill to the agent
 
@@ -258,7 +258,7 @@ In the **Linked Skills** section of the import form:
 1. Find the `summarizer` skill (marked **External**) in the list.
 2. Enable the checkbox for `summarizer`.
 
-Kagenti records the skill linkage. At agent pod startup, an `alpine:3` init container will:
+Rossoctl records the skill linkage. At agent pod startup, an `alpine:3` init container will:
 
 1. fetch `<registry-url>/skills/summarizer/export-anthropic` (the URL registered in Step 2, e.g. `http://host.docker.internal:8000/skills/summarizer/export-anthropic`),
 2. extract the archive to `/app/skills/summarizer/`,
@@ -315,7 +315,7 @@ Use your summarizer skill to summarize the following project update into:
 4. and 3 clear action items.
 
 Project update:
-During the last two sprints, the platform team completed the first end-to-end integration between the Kagenti UI and the example generic agent. The team also imported the summarizer skill into the namespace and linked it to the agent during the UI import flow. Initial testing showed that the agent can accept long-form text and respond with a concise structured summary. However, several follow-up items remain: the team needs to improve documentation, verify the build flow in a fresh namespace, and confirm that the agent card correctly displays linked skills after deployment. There is also an open concern that users may forget to provide the required LLM environment variables, which leads to startup failures that are not always obvious from the UI alone. If the remaining validation passes, the team plans to use this demo in the next stakeholder walkthrough to show how Kagenti can manage both reusable skills and example agents through the same UI.
+During the last two sprints, the platform team completed the first end-to-end integration between the Rossoctl UI and the example generic agent. The team also imported the summarizer skill into the namespace and linked it to the agent during the UI import flow. Initial testing showed that the agent can accept long-form text and respond with a concise structured summary. However, several follow-up items remain: the team needs to improve documentation, verify the build flow in a fresh namespace, and confirm that the agent card correctly displays linked skills after deployment. There is also an open concern that users may forget to provide the required LLM environment variables, which leads to startup failures that are not always obvious from the UI alone. If the remaining validation passes, the team plans to use this demo in the next stakeholder walkthrough to show how Rossoctl can manage both reusable skills and example agents through the same UI.
 ```
 
 ## Expected result
@@ -324,10 +324,10 @@ A successful response should be a structured summary, not a free-form essay.
 
 ```text
 Executive summary:
-The team successfully connected the Kagenti UI, the generic agent, and the summarizer skill, and now needs to complete validation and documentation before using the flow in a stakeholder demo.
+The team successfully connected the Rossoctl UI, the generic agent, and the summarizer skill, and now needs to complete validation and documentation before using the flow in a stakeholder demo.
 
 Key points:
-- The team completed an end-to-end integration between the Kagenti UI and the generic agent.
+- The team completed an end-to-end integration between the Rossoctl UI and the generic agent.
 - The summarizer skill was registered from the skillberry-store and linked during agent import.
 - Initial testing showed the agent can summarize long-form text into a concise structure.
 - Documentation and fresh-namespace validation are still pending.
@@ -375,7 +375,7 @@ For a live demo:
 The tab is hidden when `featureFlags.externalSkills` is false. Verify both flags are enabled:
 
 ```bash
-kubectl get deployment kagenti-backend -n kagenti-system \
+kubectl get deployment rossoctl-backend -n rossoctl-system \
   -o jsonpath='{.spec.template.spec.containers[0].env}' \
   | python3 -m json.tool | grep -A1 "FEATURE_FLAG_SKILLS\|FEATURE_FLAG_EXTERNAL"
 ```
@@ -383,11 +383,11 @@ kubectl get deployment kagenti-backend -n kagenti-system \
 If either flag shows `"false"`, enable both with:
 
 ```bash
-helm upgrade kagenti ./charts/kagenti/ \
+helm upgrade rossoctl ./charts/rossoctl/ \
   --reuse-values \
   --set featureFlags.skills=true \
   --set featureFlags.externalSkills=true \
-  -n kagenti-system
+  -n rossoctl-system
 ```
 
 Wait for the pods to restart, then refresh the page. If you deployed with the Kind setup script, use `--with-skills` on the next run.
@@ -415,7 +415,7 @@ Common causes:
 
 Check that:
 
-- the feature flags `KAGENTI_FEATURE_FLAG_SKILLS` and `KAGENTI_FEATURE_FLAG_EXTERNAL_SKILLS` are both true,
+- the feature flags `ROSSOCTL_FEATURE_FLAG_SKILLS` and `ROSSOCTL_FEATURE_FLAG_EXTERNAL_SKILLS` are both true,
 - the external skill reference was created in the same namespace as the agent,
 - and the skill appears in the skill catalog before opening the agent import form.
 
@@ -441,8 +441,8 @@ Check that:
 
 | | [Local skill demo](./demo-generic-agent-skill.md) | This demo |
 |---|---|---|
-| Skill content stored in | Kagenti ConfigMap (`data:` field) | skillberry-store archive |
-| Kagenti ConfigMap type | `kagenti.io/source` absent (local) | `kagenti.io/source=external` |
+| Skill content stored in | Rossoctl ConfigMap (`data:` field) | skillberry-store archive |
+| Rossoctl ConfigMap type | `rossoctl.io/source` absent (local) | `rossoctl.io/source=external` |
 | Skill content visible in UI | File tree on skill detail page | Registry information card |
 | Skill catalog badge | None | **External** |
 | Pod skill delivery | ConfigMap volume mount | `alpine:3` init container fetch |

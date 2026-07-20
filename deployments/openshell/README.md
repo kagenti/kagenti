@@ -1,6 +1,6 @@
 # OpenShell PoC — Quick Start
 
-Deploy OpenShell + Kagenti Operator with 3 test agents on Kind or HyperShift.
+Deploy OpenShell + Rossoctl Operator with 3 test agents on Kind or HyperShift.
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ PATH="/opt/homebrew/opt/helm@3/bin:$PATH" \
   --skip-cluster-destroy
 ```
 
-This creates a Kind cluster, installs Kagenti platform (headless), deploys
+This creates a Kind cluster, installs Rossoctl platform (headless), deploys
 OpenShell Gateway, builds and deploys 4 agents, and runs 52 E2E tests.
 
 ### Iterate on existing cluster
@@ -64,7 +64,7 @@ kubectl exec -n team1 deploy/weather-agent-supervised -- cat /proc/1/cmdline | t
 
 ```bash
 # Source HyperShift credentials
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 
 # Deploy (creates cluster + installs everything)
 PATH="/opt/homebrew/opt/helm@3/bin:$PATH" \
@@ -72,7 +72,7 @@ PATH="/opt/homebrew/opt/helm@3/bin:$PATH" \
   --platform ocp --skip-cluster-destroy ospoc
 
 # Or on existing cluster
-export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-ospoc/auth/kubeconfig
+export KUBECONFIG=~/clusters/hcp/rossoctl-hypershift-custom-ospoc/auth/kubeconfig
 PATH="/opt/homebrew/opt/helm@3/bin:$PATH" \
   .worktrees/stream1-sandbox-agent/.github/scripts/local-setup/openshell-full-test.sh \
   --platform ocp --skip-cluster-create --skip-cluster-destroy
@@ -94,7 +94,7 @@ PATH="/opt/homebrew/opt/helm@3/bin:$PATH" \
 |-----------|-----------|-------|
 | OpenShell Gateway | `openshell-system` | `ghcr.io/nvidia/openshell/gateway:latest` |
 | Sandbox CRD Controller | `agent-sandbox-system` | upstream |
-| Weather Agent | `team1` | `ghcr.io/kagenti/agent-examples/weather_service:latest` |
+| Weather Agent | `team1` | `ghcr.io/rossoctl/examples/weather_service:latest` |
 | Weather Agent (supervised) | `team1` | Local build (supervisor + weather) |
 | ADK Agent | `team1` | Local build (Kind) or Shipwright (OCP) |
 | Claude SDK Agent | `team1` | Local build (Kind) or Shipwright (OCP) |
@@ -104,14 +104,14 @@ PATH="/opt/homebrew/opt/helm@3/bin:$PATH" \
 ```bash
 # Run all tests (from main repo root)
 OPENSHELL_LLM_AVAILABLE=true uv run pytest \
-  .worktrees/stream1-sandbox-agent/kagenti/tests/e2e/openshell/ -v --timeout=120
+  .worktrees/stream1-sandbox-agent/rossoctl/tests/e2e/openshell/ -v --timeout=120
 
 # Run specific test file
-uv run pytest .worktrees/stream1-sandbox-agent/kagenti/tests/e2e/openshell/test_weather_agent.py -v
+uv run pytest .worktrees/stream1-sandbox-agent/rossoctl/tests/e2e/openshell/test_weather_agent.py -v
 
 # Run with Kind cluster kubeconfig
 KUBECONFIG=~/.kube/config uv run pytest \
-  .worktrees/stream1-sandbox-agent/kagenti/tests/e2e/openshell/ -v
+  .worktrees/stream1-sandbox-agent/rossoctl/tests/e2e/openshell/ -v
 ```
 
 ### Test Categories
@@ -135,10 +135,10 @@ KUBECONFIG=~/.kube/config uv run pytest \
 | `--platform kind\|ocp` | Auto-detected, or force platform |
 | `--skip-cluster-create` | Reuse existing cluster |
 | `--skip-cluster-destroy` | Keep cluster for debugging |
-| `--skip-install` | Skip Kagenti platform install |
+| `--skip-install` | Skip Rossoctl platform install |
 | `--skip-agents` | Skip agent deployment |
 | `--skip-test` | Skip E2E tests |
-| `--cluster-name NAME` | Kind cluster name (default: kagenti) |
+| `--cluster-name NAME` | Kind cluster name (default: rossoctl) |
 | `[suffix]` | HyperShift cluster suffix (positional) |
 
 ## Architecture

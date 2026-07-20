@@ -63,15 +63,15 @@ What was provided?
 
 ### Route logic
 
-1. **`/orchestrate <repo-path>`** -- If the path points to a git repository, derive the target name from the directory basename. Check `/tmp/kagenti/orchestrate/<target>/` for existing state. If no scan report exists, invoke `orchestrate:scan`. If scan exists but no plan, invoke `orchestrate:plan`. If both exist, determine the next incomplete phase and invoke it.
+1. **`/orchestrate <repo-path>`** -- If the path points to a git repository, derive the target name from the directory basename. Check `/tmp/rossoctl/orchestrate/<target>/` for existing state. If no scan report exists, invoke `orchestrate:scan`. If scan exists but no plan, invoke `orchestrate:plan`. If both exist, determine the next incomplete phase and invoke it.
 
 2. **`/orchestrate <phase>`** -- Validate that `scan-report.md` and `plan.md` exist for the current target. If missing, instruct the user to run `/orchestrate <repo-path>` first. Otherwise invoke the requested phase skill directly (e.g., `orchestrate:precommit`).
 
-3. **`/orchestrate status`** -- List all directories under `/tmp/kagenti/orchestrate/`, read each target's `phase-status.md`, and display a summary table showing target name, current phase, and completion percentage.
+3. **`/orchestrate status`** -- List all directories under `/tmp/rossoctl/orchestrate/`, read each target's `phase-status.md`, and display a summary table showing target name, current phase, and completion percentage.
 
 ## Phase Status Tracking
 
-All orchestration state is persisted under `/tmp/kagenti/orchestrate/<target>/`:
+All orchestration state is persisted under `/tmp/rossoctl/orchestrate/<target>/`:
 
 | File | Purpose |
 |------|---------|
@@ -154,5 +154,5 @@ git clone git@github.com:org/repo.git .repos/repo-name
 
 | Skill | Description |
 |-------|-------------|
-| `onboard:link` | Link a newly-orchestrated repo to Kagenti |
+| `onboard:link` | Link a newly-orchestrated repo to Rossoctl |
 | `onboard:standards` | Apply organizational standards and conventions |

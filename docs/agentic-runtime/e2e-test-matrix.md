@@ -1,6 +1,6 @@
 # OpenShell E2E Test Matrix
 
-> Back to [main doc](openshell-integration.md) | Tests: `kagenti/tests/e2e/openshell/`
+> Back to [main doc](openshell-integration.md) | Tests: `rossoctl/tests/e2e/openshell/`
 
 ## Agents
 
@@ -63,7 +63,7 @@ Per-model: `llama-scout-17b` + `deepseek-r1` (both via LiteMaaS).
 | HITL: Network egress | P | — |
 | Audit logging | — | S¹ (Claude Code, OpenCode) |
 
-**Tier 5: Backend API (via kagenti-backend A2A proxy)**
+**Tier 5: Backend API (via rossoctl-backend A2A proxy)**
 
 Tests go through the backend at `/api/v1/chat/{ns}/{agent}/send|stream`.
 One port-forward to the backend replaces per-agent port-forwards.
@@ -121,7 +121,7 @@ MVP targets Claude Code only. OpenCode teleport planned as extension.
 | S⁶ | No LLM capability (weather) or not deployed | ~10 | By design |
 | S⁷ | NemoClaw gateway protocol (not A2A) | ~8 | NemoClaw adapter in backend |
 | S⁸ | LLM returned empty response (llama-scout-17b ~17% flake) | ~3 | Skip guard, track as flaky |
-| S⁹ | Agents lack `kagenti.io/type=agent` label | 1 | Label alignment |
+| S⁹ | Agents lack `rossoctl.io/type=agent` label | 1 | Label alignment |
 
 ## Flaky Tests
 
@@ -164,7 +164,7 @@ Comment `/run-e2e-openshell` on a PR to trigger both:
 - **OpenShell PoC (HyperShift)** — `e2e-openshell-hypershift.yaml` (~45 min, creates ephemeral cluster)
 
 The Kind workflow also auto-triggers on `pull_request` for paths under
-`deployments/openshell/**` and `kagenti/tests/e2e/openshell/**`.
+`deployments/openshell/**` and `rossoctl/tests/e2e/openshell/**`.
 
 ### Local
 
@@ -176,11 +176,11 @@ The Kind workflow also auto-triggers on `pull_request` for paths under
 .github/scripts/local-setup/openshell-full-test.sh --skip-cluster-create --skip-cluster-destroy
 
 # Full deploy + test on HyperShift
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 .github/scripts/local-setup/openshell-full-test.sh --platform ocp --skip-cluster-destroy ostest
 
 # Direct pytest (no deploy, existing cluster)
 export OPENSHELL_LLM_AVAILABLE=true OPENSHELL_LLM_MODELS="llama-scout-17b,deepseek-r1"
 export OPENSHELL_NEMOCLAW_ENABLED=true OPENSHELL_GATEWAY_NAMESPACE=team1
-uv run pytest kagenti/tests/e2e/openshell/ -v --timeout=300
+uv run pytest rossoctl/tests/e2e/openshell/ -v --timeout=300
 ```

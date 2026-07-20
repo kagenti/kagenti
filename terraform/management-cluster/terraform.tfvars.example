@@ -17,4 +17,4 @@ master_instance_type  = "m6i.xlarge"   # 4 vCPU, 16 GB RAM
 worker_instance_type  = "m6i.2xlarge"  # 8 vCPU, 32 GB RAM (for HyperShift)
 
 # Tagging
-managed_by_tag = "kagenti-hypershift-mgmt"
+managed_by_tag = "rossoctl-hypershift-mgmt"
