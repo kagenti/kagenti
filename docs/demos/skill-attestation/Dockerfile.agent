@@ -1,0 +1,21 @@
+# Stand-in "weather agent" for the gate-only skill-attestation demo.
+#
+# We are NOT running the real LLM weather agent here — this demo proves the
+# skill-integrity GATE, not the agent's behaviour. This image just bakes the
+# skill collection at /app (exactly like the real weather-service image does,
+# per the design PDF: "Bakes skill files at /app") and, when it finally runs,
+# prints a line proving the gate released it, then idles so the pod stays Ready.
+#
+# The skill files copied in here are the SAME bytes the gate will hash. Whatever
+# digest skill-hash computes over /app becomes the trusted digest we pin.
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+WORKDIR /app
+# Build context is the exported skill collection (see run.sh prepare_skills):
+# README.md, Dockerfile, src/weather_service/ at the context root.
+COPY . /app/
+
+# Non-root, mirrors the real agent image (USER 1001).
+USER 1001
+
+CMD ["/bin/sh", "-c", "echo '[agent] skill-integrity gate passed — weather agent starting'; exec sleep infinity"]
