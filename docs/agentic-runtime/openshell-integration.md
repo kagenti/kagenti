@@ -1,8 +1,8 @@
-# OpenShell Integration with Kagenti
+# OpenShell Integration with Rossoctl
 
-> **Status:** PoC validated ([PR #1300](https://github.com/kagenti/kagenti/pull/1300)) — MVP in progress ([epic #1363](https://github.com/kagenti/kagenti/issues/1363))
+> **Status:** PoC validated ([PR #1300](https://github.com/rossoctl/rossoctl/pull/1300)) — MVP in progress ([epic #1363](https://github.com/rossoctl/rossoctl/issues/1363))
 > **Source:** [NVIDIA/OpenShell](https://github.com/NVIDIA/OpenShell) (Apache 2.0)
-> **Design doc:** [openshell-mvp.md](https://github.com/kagenti/kagenti/pull/1364) (gateway-per-tenant architecture)
+> **Design doc:** [openshell-mvp.md](https://github.com/rossoctl/rossoctl/pull/1364) (gateway-per-tenant architecture)
 
 ---
 
@@ -10,12 +10,12 @@
 
 [OpenShell](https://github.com/NVIDIA/OpenShell) is a sandbox runtime for autonomous AI agents
 providing kernel-level isolation (Landlock, seccomp, network namespaces) with OPA/Rego policy
-enforcement and zero-secret credential isolation. Kagenti integrates OpenShell to provide
+enforcement and zero-secret credential isolation. Rossoctl integrates OpenShell to provide
 agent process isolation alongside its existing platform services (identity, budget, observability).
 
 ## 2. Current PoC Architecture
 
-The PoC deploys OpenShell (upstream, with K8s compute driver) alongside Kagenti Operator.
+The PoC deploys OpenShell (upstream, with K8s compute driver) alongside Rossoctl Operator.
 No UI or Backend API — E2E tests call agents directly via A2A.
 
 ```mermaid
@@ -29,8 +29,8 @@ graph TB
         KD["K8s Compute Driver"]
     end
 
-    subgraph kagenti_ns["kagenti-system"]
-        OP["Kagenti Operator"]
+    subgraph rossoctl_ns["rossoctl-system"]
+        OP["Rossoctl Operator"]
         LLM["LiteLLM :4000"]
         KC["Keycloak"]
     end
@@ -62,18 +62,18 @@ graph TB
 |-----------|-----------|---------|
 | OpenShell Gateway | `openshell-system` | Sandbox control plane |
 | K8s Compute Driver | `openshell-system` | Creates sandbox pods via K8s API |
-| Kagenti Operator | `kagenti-system` | AgentRuntime CRs, webhook injection |
+| Rossoctl Operator | `rossoctl-system` | AgentRuntime CRs, webhook injection |
 | Keycloak | `keycloak` | OIDC provider |
 | SPIRE | `spire-system` | Workload identity (SPIFFE) |
 | Istio Ambient | `istio-system` | mTLS mesh |
-| LiteLLM | `kagenti-system` | LLM model routing |
+| LiteLLM | `rossoctl-system` | LLM model routing |
 | Budget Proxy | `team1` | LLM token budget enforcement |
 | PostgreSQL | `team1` | Sessions + budget databases |
 
 ## 2b. MVP Target Architecture
 
-> **Epic:** [#1363](https://github.com/kagenti/kagenti/issues/1363) — Gateway-per-Tenant on Kind + OpenShift
-> **Design doc:** [PR #1364](https://github.com/kagenti/kagenti/pull/1364)
+> **Epic:** [#1363](https://github.com/rossoctl/rossoctl/issues/1363) — Gateway-per-Tenant on Kind + OpenShift
+> **Design doc:** [PR #1364](https://github.com/rossoctl/rossoctl/pull/1364)
 
 The MVP replaces the single shared gateway with **gateway-per-tenant** isolation,
 adds OIDC authentication via Keycloak, cert-manager TLS, session persistence (dtach),
@@ -96,29 +96,29 @@ Cluster
 
 | PoC (PR #1300) | MVP (#1363) | Issue |
 |---|---|---|
-| Single gateway in `openshell-system` | Gateway-per-tenant | [#1358](https://github.com/kagenti/kagenti/issues/1358) |
-| `--disable-tls --disable-gateway-auth` | cert-manager TLS + Keycloak OIDC | [#1357](https://github.com/kagenti/kagenti/issues/1357) |
-| Kustomize manifests | `charts/openshell/` Helm chart | [#1358](https://github.com/kagenti/kagenti/issues/1358) |
-| Monolithic fulltest script | Layered scripts (build, deploy-shared, deploy-tenant) | [#1361](https://github.com/kagenti/kagenti/issues/1361) |
-| In-process K8s compute driver | Out-of-process Go driver (forked) | [#1354](https://github.com/kagenti/kagenti/issues/1354) |
-| No credential driver | Keycloak credentials driver | [#1355](https://github.com/kagenti/kagenti/issues/1355) |
-| No session persistence | dtach via init container | [#1354](https://github.com/kagenti/kagenti/issues/1354) |
+| Single gateway in `openshell-system` | Gateway-per-tenant | [#1358](https://github.com/rossoctl/rossoctl/issues/1358) |
+| `--disable-tls --disable-gateway-auth` | cert-manager TLS + Keycloak OIDC | [#1357](https://github.com/rossoctl/rossoctl/issues/1357) |
+| Kustomize manifests | `charts/openshell/` Helm chart | [#1358](https://github.com/rossoctl/rossoctl/issues/1358) |
+| Monolithic fulltest script | Layered scripts (build, deploy-shared, deploy-tenant) | [#1361](https://github.com/rossoctl/rossoctl/issues/1361) |
+| In-process K8s compute driver | Out-of-process Go driver (forked) | [#1354](https://github.com/rossoctl/rossoctl/issues/1354) |
+| No credential driver | Keycloak credentials driver | [#1355](https://github.com/rossoctl/rossoctl/issues/1355) |
+| No session persistence | dtach via init container | [#1354](https://github.com/rossoctl/rossoctl/issues/1354) |
 | No headless mode | AgentTask CRD + controller | Design doc §7 |
 
 ### Forked Repos
 
 | Upstream | Fork | Changes |
 |---|---|---|
-| [NVIDIA/OpenShell](https://github.com/NVIDIA/OpenShell) | [kagenti/openshell](https://github.com/kagenti/openshell) | `--compute-driver-socket` + `--credentials-driver-socket` flags, OIDC (PR #935) |
-| [openshell-driver-openshift](https://github.com/zanetworker/openshell-driver-openshift) | [kagenti/openshell-driver-openshift](https://github.com/kagenti/openshell-driver-openshift) | Namespace flag, tenant labels, scoped RBAC, dtach |
-| New | [kagenti/openshell-credentials-keycloak](https://github.com/kagenti/openshell-credentials-keycloak) | OAuth2 client_credentials via Keycloak (~500 lines Go) |
+| [NVIDIA/OpenShell](https://github.com/NVIDIA/OpenShell) | [rossoctl/openshell](https://github.com/rossoctl/openshell) | `--compute-driver-socket` + `--credentials-driver-socket` flags, OIDC (PR #935) |
+| [openshell-driver-openshift](https://github.com/zanetworker/openshell-driver-openshift) | [rossoctl/openshell-driver-openshift](https://github.com/rossoctl/openshell-driver-openshift) | Namespace flag, tenant labels, scoped RBAC, dtach |
+| New | [rossoctl/openshell-credentials-keycloak](https://github.com/rossoctl/openshell-credentials-keycloak) | OAuth2 client_credentials via Keycloak (~500 lines Go) |
 
 ## 3. Agent Deployment Tiers
 
 > **Detail:** [sandboxing-models.md](sandboxing-models.md) | **Per-agent:** [agents/](agents/README.md)
 > **Open questions:** [questions.md](questions.md) Q1.1 — 3-tier architecture, Q2.3 — credential models, Q8.1 — port bridge
 
-Kagenti supports three deployment tiers for agents, from simplest to most secure.
+Rossoctl supports three deployment tiers for agents, from simplest to most secure.
 The upgrade path is additive — Tier 3 agents work today and can be upgraded to
 Tier 2/1 incrementally without breaking existing functionality.
 
@@ -130,7 +130,7 @@ Tier 2/1 incrementally without breaking existing functionality.
 
 The three tiers coexist in the same namespace:
 
-### Mode 1: Custom Agents (Kagenti-managed)
+### Mode 1: Custom Agents (Rossoctl-managed)
 
 Custom A2A agents deployed as K8s Deployments. Used for production agents
 with custom code, frameworks (LangGraph, ADK), and A2A protocol.
@@ -139,7 +139,7 @@ with custom code, frameworks (LangGraph, ADK), and A2A protocol.
 graph LR
     Wizard["Wizard / kubectl"] -->|"creates"| Dep["Deployment + Service"]
     Dep --> Pod1["Agent Pod<br/>(custom image)"]
-    OP1["Kagenti Operator"] -->|"AgentRuntime CR"| Pod1
+    OP1["Rossoctl Operator"] -->|"AgentRuntime CR"| Pod1
 ```
 
 - **Image:** Custom Dockerfile per agent
@@ -183,8 +183,8 @@ graph TB
         KD3["K8s Compute Driver"]
     end
 
-    subgraph kagenti_ns2["kagenti-system"]
-        OP3["Kagenti Operator"]
+    subgraph rossoctl_ns2["rossoctl-system"]
+        OP3["Rossoctl Operator"]
     end
 
     subgraph agent_ns2["team1"]
@@ -240,35 +240,35 @@ headers entirely and injects backend API keys from the gateway's credential stor
 
 ## 6. Target Architecture (Phase 2)
 
-Phase 2 introduces Kagenti as an OpenShell compute driver, implementing the
+Phase 2 introduces Rossoctl as an OpenShell compute driver, implementing the
 `ComputeDriver` gRPC interface ([PR #817](https://github.com/NVIDIA/OpenShell/pull/817),
-merged). OpenShell gateway manages sandbox lifecycle; Kagenti provisions pods
+merged). OpenShell gateway manages sandbox lifecycle; Rossoctl provisions pods
 with platform infrastructure (Budget Proxy, AgentRuntime CR, workspace PVC).
 
 ```mermaid
 graph TB
     subgraph gw["OpenShell Gateway"]
         G["Gateway"]
-        KCD["Kagenti Compute Driver"]
+        KCD["Rossoctl Compute Driver"]
         G -->|"ComputeDriver gRPC"| KCD
     end
 
-    subgraph kagenti["Kagenti Platform"]
+    subgraph rossoctl["Rossoctl Platform"]
         KCD -->|"creates"| Pod["Agent Pod<br/>(supervisor entrypoint<br/>+ Budget Proxy config)"]
-        BE["Kagenti Backend"] -->|"A2A"| Pod
+        BE["Rossoctl Backend"] -->|"A2A"| Pod
     end
 ```
 
 ### AuthBridge Integration (Phase 3)
 
-Kagenti's [AuthBridge](../authbridge-combined-sidecar.md) and the OpenShell
+Rossoctl's [AuthBridge](../authbridge-combined-sidecar.md) and the OpenShell
 supervisor are complementary security layers that cannot currently coexist in
 the same pod. AuthBridge provides inbound JWT validation, outbound token
 exchange, and SPIFFE identity. The supervisor provides Landlock, seccomp,
 netns, and OPA egress filtering.
 
 **Current PoC:** Supervised agents disable AuthBridge injection
-(`kagenti.io/inject: disabled`) because the supervisor's network namespace
+(`rossoctl.io/inject: disabled`) because the supervisor's network namespace
 breaks AuthBridge's iptables-based traffic interception.
 
 **Phase 3 target:** Combine both layers. See
@@ -281,9 +281,9 @@ for open questions.
 OpenShell is being rearchitected via [RFC 0001](https://github.com/NVIDIA/OpenShell/pull/836)
 into a composable, driver-based system with four pluggable subsystems:
 
-| Subsystem | Purpose | Kagenti Mapping |
+| Subsystem | Purpose | Rossoctl Mapping |
 |-----------|---------|-----------------|
-| **Compute** | Sandbox lifecycle (K8s, Podman, VM) | Kagenti as compute driver (phase 2) |
+| **Compute** | Sandbox lifecycle (K8s, Podman, VM) | Rossoctl as compute driver (phase 2) |
 | **Credentials** | Secret resolution (Vault, K8s Secrets) | Delivers secrets to supervisor proxy |
 | **Control-plane identity** | User/operator auth (mTLS, OIDC) | Keycloak OIDC |
 | **Sandbox identity** | Workload identity (SPIFFE) | SPIRE |
@@ -417,9 +417,9 @@ patching. On a clean run with stable rollouts: 0 failures on both platforms.
 | Builtin sandboxes | 5 | Sandbox CR CRUD, base image, Claude/OpenCode sandbox creation |
 | Sandbox lifecycle | 4 | List, create, delete, gateway processing |
 
-## 12. Phase 2: Kagenti Backend and UI Integration
+## 12. Phase 2: Rossoctl Backend and UI Integration
 
-Phase 2 connects OpenShell sandboxes to the Kagenti management plane. The backend
+Phase 2 connects OpenShell sandboxes to the Rossoctl management plane. The backend
 API and UI provide session management, observability, and lifecycle control that
 the OpenShell gateway does not have.
 
@@ -427,14 +427,14 @@ the OpenShell gateway does not have.
 
 ```mermaid
 graph TB
-    subgraph ui["Kagenti UI"]
+    subgraph ui["Rossoctl UI"]
         SC["SandboxPage"]
         AC["AgentChat"]
         FB["FileBrowser"]
         OP["ObservabilityPage"]
     end
 
-    subgraph backend["Kagenti Backend"]
+    subgraph backend["Rossoctl Backend"]
         API["FastAPI routes"]
         SS["Session Store<br/>(PostgreSQL)"]
         API -->|"stores"| SS
@@ -470,7 +470,7 @@ graph TB
 
 ### A2A adapters per agent type
 
-Each agent type needs a different adapter in the Kagenti backend to enable
+Each agent type needs a different adapter in the Rossoctl backend to enable
 unified session management via the UI:
 
 | Agent Type | Backend Adapter | How it works |
@@ -481,13 +481,13 @@ unified session management via the UI:
 
 ### Session persistence architecture
 
-**Context lives in the Kagenti backend, not in the agent.** This is the key
+**Context lives in the Rossoctl backend, not in the agent.** This is the key
 architectural insight: agents can be stateless because the backend manages
 conversation history.
 
 | Data | Where it lives | Survives pod restart? |
 |------|---------------|----------------------|
-| Conversation history | Kagenti backend PostgreSQL | Yes |
+| Conversation history | Rossoctl backend PostgreSQL | Yes |
 | Workspace files (code, configs) | PVC mounted at `/workspace` | Yes |
 | Agent in-memory state | Pod memory | No — lost on restart |
 | Agent process (dtach socket) | Pod filesystem | No — lost on restart |
@@ -498,18 +498,18 @@ sandbox with the same PVC and replaying context from PostgreSQL.
 
 ### What PR #1318 contributes
 
-[PR #1318](https://github.com/kagenti/kagenti/pull/1318) adds Sandbox CR support
-to the Kagenti backend router (`agents.py`):
+[PR #1318](https://github.com/rossoctl/rossoctl/pull/1318) adds Sandbox CR support
+to the Rossoctl backend router (`agents.py`):
 - `_build_sandbox_manifest()` — creates Sandbox CRs with `spec.podTemplate` layout
 - `_is_sandbox_ready()` — status helpers for Sandbox CR state
 - Sandbox as 4th workload type in `list_agents`, `get_agent`, `delete_agent`, `create_agent`
 
-This enables the Kagenti UI (SandboxWizard, SandboxPage) to create and manage
+This enables the Rossoctl UI (SandboxWizard, SandboxPage) to create and manage
 OpenShell sandboxes through the same API used for Deployment-backed agents.
 
-### What the Kagenti UI already provides (OpenShell has none)
+### What the Rossoctl UI already provides (OpenShell has none)
 
-| Capability | Kagenti UI Component | OpenShell Status |
+| Capability | Rossoctl UI Component | OpenShell Status |
 |-----------|---------------------|-----------------|
 | Sandbox creation wizard | `SandboxWizard` | CLI only |
 | Session graph visualization | `SessionGraphPage`, `TopologyGraphView` | Not available |

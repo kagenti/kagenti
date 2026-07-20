@@ -46,7 +46,7 @@ The skill accepts one of two starting points plus optional configuration:
 Invocation examples:
 
 ```
-/design:review Migrate the Kagenti installer from Ansible/Helm to a Kubernetes Operator
+/design:review Migrate the Rossoctl installer from Ansible/Helm to a Kubernetes Operator
 /design:review docs/architecture/operator-migration.md
 /design:review --rounds 3 Design an authentication gateway for multi-tenant agents
 /design:review docs/rfc/007-observability.md --rounds 7 --focus "Day-2 operations, cost"
@@ -317,11 +317,11 @@ On invocation:
 Example tasks:
 
 ```
-kagenti | operator-migration | design:review | Research | Explore codebase and current installer
-kagenti | operator-migration | design:review | Round 1  | Initial proposal + critique
-kagenti | operator-migration | design:review | Round 2  | Revise for RBAC + security
-kagenti | operator-migration | design:review | Round 3  | Address productization constraints
-kagenti | operator-migration | design:review | Export   | Generate DOCX document
+rossoctl | operator-migration | design:review | Research | Explore codebase and current installer
+rossoctl | operator-migration | design:review | Round 1  | Initial proposal + critique
+rossoctl | operator-migration | design:review | Round 2  | Revise for RBAC + security
+rossoctl | operator-migration | design:review | Round 3  | Address productization constraints
+rossoctl | operator-migration | design:review | Export   | Generate DOCX document
 ```
 
 Update task status as each round completes. Create new tasks when the human reviewer adds constraints that require research.

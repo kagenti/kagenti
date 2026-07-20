@@ -1,6 +1,6 @@
 ---
 name: local
-description: Local development and testing workflows for Kagenti. Full test suites for Kind and HyperShift.
+description: Local development and testing workflows for Rossoctl. Full test suites for Kind and HyperShift.
 ---
 
 # Local Development Skills
@@ -42,7 +42,7 @@ Skills for local development and testing workflows.
 1. Make code changes
 2. Run `kind-full-test.sh` or individual scripts
 3. Check logs with `kubectl logs`
-4. Access UI at http://kagenti-ui.localtest.me:8080
+4. Access UI at http://rossoctl-ui.localtest.me:8080
 
 ## Related Documentation
 

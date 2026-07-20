@@ -1,6 +1,6 @@
 # Windows Development with WSL
 
-Kagenti requires **WSL (Windows Subsystem for Linux)** for development on Windows. Native Windows development is not supported due to Linux-specific filesystem conventions (e.g., colons in skill folder names).
+Rossoctl requires **WSL (Windows Subsystem for Linux)** for development on Windows. Native Windows development is not supported due to Linux-specific filesystem conventions (e.g., colons in skill folder names).
 
 ## Prerequisites
 
@@ -18,11 +18,11 @@ Always clone the repository into your WSL home directory — **never** onto a Wi
 # Open WSL terminal (e.g., Ubuntu)
 cd ~
 mkdir -p projects && cd projects
-git clone https://github.com/kagenti/kagenti.git
-cd kagenti
+git clone https://github.com/rossoctl/rossoctl.git
+cd rossoctl
 ```
 
-> **Why not `/mnt/c/`?** Windows drives mounted in WSL enforce Windows filename restrictions. Characters like `:` (used in Kagenti skill folder names) are forbidden on Windows filesystems. The WSL-native filesystem (`~/`) supports all Linux-valid characters.
+> **Why not `/mnt/c/`?** Windows drives mounted in WSL enforce Windows filename restrictions. Characters like `:` (used in Rossoctl skill folder names) are forbidden on Windows filesystems. The WSL-native filesystem (`~/`) supports all Linux-valid characters.
 
 ### 2. IDE integration
 
@@ -31,7 +31,7 @@ cd kagenti
 Install the [WSL Extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-wsl), then from your WSL terminal:
 
 ```bash
-cd ~/projects/kagenti
+cd ~/projects/rossoctl
 code .
 ```
 
@@ -42,7 +42,7 @@ VS Code opens with full access to the Linux filesystem, terminal, and extensions
 Cursor supports WSL via the same Remote - WSL extension. Open from the WSL terminal:
 
 ```bash
-cd ~/projects/kagenti
+cd ~/projects/rossoctl
 cursor .
 ```
 
@@ -51,7 +51,7 @@ cursor .
 Run Claude Code from the WSL terminal inside the cloned repo:
 
 ```bash
-cd ~/projects/kagenti
+cd ~/projects/rossoctl
 claude
 ```
 
@@ -65,11 +65,11 @@ This error means you cloned onto a Windows drive. Fix:
 
 ```bash
 # Remove the broken clone
-rm -rf /mnt/c/Users/YourName/kagenti
+rm -rf /mnt/c/Users/YourName/rossoctl
 
 # Clone into the Linux filesystem instead
 cd ~/projects
-git clone https://github.com/kagenti/kagenti.git
+git clone https://github.com/rossoctl/rossoctl.git
 ```
 
 ### Slow file operations

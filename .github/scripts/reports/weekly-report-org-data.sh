@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Gather weekly report data across all kagenti org repos
+# Gather weekly report data across all rossoctl org repos
 # Usage: ./weekly-report-org-data.sh [days] [org]
-# Output: Per-repo JSON in /tmp/kagenti/github/data/<repo>/ + org-summary.json
+# Output: Per-repo JSON in /tmp/rossoctl/github/data/<repo>/ + org-summary.json
 
 set -euo pipefail
 
 DAYS="${1:-7}"
-ORG="${2:-kagenti}"
-BASE_DIR="/tmp/kagenti/github/data"
+ORG="${2:-rossoctl}"
+BASE_DIR="/tmp/rossoctl/github/data"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 mkdir -p "$BASE_DIR"

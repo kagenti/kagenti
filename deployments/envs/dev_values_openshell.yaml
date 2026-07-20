@@ -1,12 +1,12 @@
-# Kagenti OpenShell PoC configuration
+# Rossoctl OpenShell PoC configuration
 #
 # Purpose: Minimal platform footprint for OpenShell Gateway testing.
 # Enables: Gateway API, cert-manager, Istio (ambient), Keycloak, SPIRE,
-#          Kagenti Operator, LiteLLM, container registry.
+#          Rossoctl Operator, LiteLLM, container registry.
 # Disables: UI, Backend API, Shipwright, Tekton, Phoenix, Kiali.
 
 ####################################################################
-# kagenti-deps
+# rossoctl-deps
 ####################################################################
 gatewayApi:
   enabled: true
@@ -24,9 +24,9 @@ shipwright:
 
 charts:
   ####################################################################
-  # kagenti-deps
+  # rossoctl-deps
   ####################################################################
-  kagenti-deps:
+  rossoctl-deps:
     enabled: true
     values:
       openshift: false
@@ -54,9 +54,9 @@ charts:
           enabled: false
 
   ####################################################################
-  # kagenti
+  # rossoctl
   ####################################################################
-  kagenti:
+  rossoctl:
     enabled: true
     values:
       openshift: false

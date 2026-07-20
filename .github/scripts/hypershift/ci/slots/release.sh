@@ -13,7 +13,7 @@ set -uo pipefail
 
 SLOT_ID="${1:-}"
 NAMESPACE="clusters"
-LEASE_PREFIX="kagenti-ci-slot"  # Namespaced prefix to avoid conflicts
+LEASE_PREFIX="rossoctl-ci-slot"  # Namespaced prefix to avoid conflicts
 CLUSTER_SUFFIX="${CLUSTER_SUFFIX:-}"
 
 # If no slot_id provided, try to find slot by CLUSTER_SUFFIX
@@ -21,7 +21,7 @@ if [[ -z "$SLOT_ID" ]] && [[ -n "$CLUSTER_SUFFIX" ]]; then
     echo "No slot ID provided, searching for slot with CLUSTER_SUFFIX: $CLUSTER_SUFFIX"
 
     # Find lease with matching holderIdentity (format: CLUSTER_SUFFIX:RUN_ID)
-    MATCHING_LEASE=$(oc get leases -n "$NAMESPACE" -l app=kagenti-ci \
+    MATCHING_LEASE=$(oc get leases -n "$NAMESPACE" -l app=rossoctl-ci \
         -o jsonpath='{range .items[*]}{.metadata.name}|{.spec.holderIdentity}{"\n"}{end}' 2>/dev/null | \
         grep "^${LEASE_PREFIX}-.*|${CLUSTER_SUFFIX}:" | head -1 | cut -d'|' -f1 || echo "")
 

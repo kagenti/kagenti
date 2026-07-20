@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-demo-backend
+  namespace: rossoctl-system
+  labels:
+    app: app-demo
+    component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-demo
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: app-demo
+        component: backend
+    spec:
+      containers:
+        - name: backend
+          image: localhost/app-demo-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: app-demo-config
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-demo-backend
+  namespace: rossoctl-system
+  labels:
+    app: app-demo
+    component: backend
+spec:
+  selector:
+    app: app-demo
+    component: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP

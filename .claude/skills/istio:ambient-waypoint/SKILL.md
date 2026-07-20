@@ -43,7 +43,7 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
   name: mlflow-waypoint
-  namespace: kagenti-system
+  namespace: rossoctl-system
   labels:
     istio.io/waypoint-for: service
 spec:
@@ -68,7 +68,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: mlflow
-  namespace: kagenti-system
+  namespace: rossoctl-system
   labels:
     istio.io/use-waypoint: mlflow-waypoint
 spec:
@@ -87,7 +87,7 @@ apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: mlflow-traces-from-otel
-  namespace: kagenti-system
+  namespace: rossoctl-system
 spec:
   targetRefs:
     - kind: Service
@@ -98,7 +98,7 @@ spec:
     - from:
         - source:
             principals:
-              - "cluster.local/ns/kagenti-system/sa/otel-collector"
+              - "cluster.local/ns/rossoctl-system/sa/otel-collector"
       to:
         - operation:
             methods: ["POST"]
@@ -119,7 +119,7 @@ apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: mlflow-api-access
-  namespace: kagenti-system
+  namespace: rossoctl-system
 spec:
   targetRefs:
     - kind: Service
@@ -131,7 +131,7 @@ spec:
     - from:
         - source:
             principals:
-              - "cluster.local/ns/kagenti-system/sa/otel-collector"
+              - "cluster.local/ns/rossoctl-system/sa/otel-collector"
       to:
         - operation:
             methods: ["POST"]
@@ -141,7 +141,7 @@ spec:
     - from:
         - source:
             principals:
-              - "cluster.local/ns/kagenti-system/sa/kagenti-ui"
+              - "cluster.local/ns/rossoctl-system/sa/rossoctl-ui"
       to:
         - operation:
             methods: ["GET", "POST"]
@@ -159,7 +159,7 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
   name: mlflow-waypoint
-  namespace: kagenti-system
+  namespace: rossoctl-system
   labels:
     istio.io/waypoint-for: service
 spec:
@@ -174,7 +174,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: mlflow
-  namespace: kagenti-system
+  namespace: rossoctl-system
   labels:
     istio.io/use-waypoint: mlflow-waypoint
 spec:
@@ -188,7 +188,7 @@ apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: mlflow-traces-from-otel
-  namespace: kagenti-system
+  namespace: rossoctl-system
 spec:
   targetRefs:
     - kind: Service
@@ -199,7 +199,7 @@ spec:
     - from:
         - source:
             principals:
-              - "cluster.local/ns/kagenti-system/sa/otel-collector"
+              - "cluster.local/ns/rossoctl-system/sa/otel-collector"
       to:
         - operation:
             methods: ["POST"]
@@ -212,24 +212,24 @@ spec:
 
 1. Check waypoint is running:
 ```bash
-kubectl get pods -n kagenti-system -l gateway.networking.k8s.io/gateway-name=mlflow-waypoint
+kubectl get pods -n rossoctl-system -l gateway.networking.k8s.io/gateway-name=mlflow-waypoint
 ```
 
 2. Check service has waypoint label:
 ```bash
-kubectl get svc mlflow -n kagenti-system -o yaml | grep waypoint
+kubectl get svc mlflow -n rossoctl-system -o yaml | grep waypoint
 ```
 
 3. Check principal format:
 ```bash
-istioctl proxy-config secret <pod> -n kagenti-system
+istioctl proxy-config secret <pod> -n rossoctl-system
 ```
 
 ### Waypoint Not Processing Traffic
 
 1. Verify ambient mode is enabled:
 ```bash
-kubectl get namespace kagenti-system -o yaml | grep ambient
+kubectl get namespace rossoctl-system -o yaml | grep ambient
 ```
 
 2. Check ztunnel logs:

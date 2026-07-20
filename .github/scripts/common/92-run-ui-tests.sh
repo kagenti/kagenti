@@ -26,7 +26,7 @@ if [ "$NODE_MAJOR" -lt "$MIN_NODE_MAJOR" ]; then
 fi
 log_info "Using Node.js $(node --version)"
 
-cd "$REPO_ROOT/kagenti/ui-v2"
+cd "$REPO_ROOT/rossoctl/ui-v2"
 
 # Install npm dependencies
 log_info "Installing npm dependencies..."
@@ -37,31 +37,31 @@ log_info "Installing Playwright browsers..."
 npx playwright install --with-deps chromium
 
 # Auto-detect UI URL based on environment
-if [ -z "${KAGENTI_UI_URL:-}" ]; then
+if [ -z "${ROSSOCTL_UI_URL:-}" ]; then
     if [ "$IS_OPENSHIFT" = "true" ]; then
         # OpenShift/HyperShift: use the route
-        KAGENTI_UI_URL="https://$(oc get route kagenti-ui -n kagenti-system -o jsonpath='{.spec.host}' 2>/dev/null)"
-        log_info "Detected OpenShift UI URL: $KAGENTI_UI_URL"
+        ROSSOCTL_UI_URL="https://$(oc get route rossoctl-ui -n rossoctl-system -o jsonpath='{.spec.host}' 2>/dev/null)"
+        log_info "Detected OpenShift UI URL: $ROSSOCTL_UI_URL"
     else
         # Kind: build URL from DOMAIN_NAME configmap (not hardcoded)
-        DOMAIN=$(kubectl get configmap kagenti-ui-config -n kagenti-system -o jsonpath='{.data.DOMAIN_NAME}' 2>/dev/null || echo "localtest.me")
-        KAGENTI_UI_URL="http://kagenti-ui.${DOMAIN}:8080"
-        log_info "Detected Kind UI URL: $KAGENTI_UI_URL"
+        DOMAIN=$(kubectl get configmap rossoctl-ui-config -n rossoctl-system -o jsonpath='{.data.DOMAIN_NAME}' 2>/dev/null || echo "localtest.me")
+        ROSSOCTL_UI_URL="http://rossoctl-ui.${DOMAIN}:8080"
+        log_info "Detected Kind UI URL: $ROSSOCTL_UI_URL"
     fi
 fi
-export KAGENTI_UI_URL
+export ROSSOCTL_UI_URL
 
-# Auto-detect Keycloak credentials from kagenti-test-user secret (kagenti realm).
+# Auto-detect Keycloak credentials from rossoctl-test-user secret (rossoctl realm).
 # Falls back to keycloak-initial-admin (master realm) for backwards compatibility.
 if [ -z "${KEYCLOAK_USER:-}" ]; then
-    KC_USER=$(kubectl get secret kagenti-test-user -n keycloak -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null \
+    KC_USER=$(kubectl get secret rossoctl-test-user -n keycloak -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null \
         || kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null \
         || echo "admin")
     export KEYCLOAK_USER="$KC_USER"
     log_info "Keycloak user: $KC_USER"
 fi
 if [ -z "${KEYCLOAK_PASSWORD:-}" ]; then
-    KC_PASS=$(kubectl get secret kagenti-test-user -n keycloak -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null \
+    KC_PASS=$(kubectl get secret rossoctl-test-user -n keycloak -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null \
         || kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null \
         || echo "admin")
     export KEYCLOAK_PASSWORD="$KC_PASS"
@@ -90,7 +90,7 @@ CI=true npx playwright test --reporter=list,html "${GREP_ARGS[@]}" 2>&1 || {
     log_error "Playwright UI tests failed"
 
     if [ -d playwright-report ]; then
-        log_info "Playwright report available in kagenti/ui-v2/playwright-report/"
+        log_info "Playwright report available in rossoctl/ui-v2/playwright-report/"
     fi
     exit 1
 }

@@ -1,10 +1,10 @@
-# Gitleaks configuration for Kagenti HyperShift CI
+# Gitleaks configuration for Rossoctl HyperShift CI
 # See: https://github.com/gitleaks/gitleaks
 #
 # SECURITY POLICY: Scan ALL files, only allow specific patterns
 # Do NOT exclude paths - docs and policies can contain accidental secrets
 
-title = "Kagenti Gitleaks Configuration"
+title = "Rossoctl Gitleaks Configuration"
 
 [allowlist]
   description = "Allowlisted patterns - STRICT: only explicit placeholders allowed"

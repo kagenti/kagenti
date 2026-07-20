@@ -1,0 +1,278 @@
+{{- if and .Values.components.keycloak.enabled (not .Values.openshift) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-service
+  namespace: {{ .Values.keycloak.namespace }}
+  labels:
+  {{- include "rossoctl.labels" . | nindent 4 }}
+    app: keycloak
+spec:
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: http
+      name: http
+  selector:
+    app: keycloak
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    {{- include "rossoctl.labels" . | nindent 4 }}
+    app: keycloak
+  name: keycloak-discovery
+  namespace: {{ .Values.keycloak.namespace }}
+spec:
+  selector:
+    app: keycloak
+  clusterIP: None
+  type: ClusterIP
+---
+apiVersion: apps/v1
+# Use a stateful setup to ensure that for a rolling update Pods are restarted with a rolling strategy one-by-one.
+# This prevents losing in-memory information stored redundantly in two Pods.
+kind: StatefulSet
+metadata:
+  name: keycloak
+  labels:
+    {{- include "rossoctl.labels" . | nindent 4 }}
+    app: keycloak
+  namespace: {{ .Values.keycloak.namespace }}
+spec:
+  serviceName: keycloak-discovery
+  # Run with one replica to save resources, or with two replicas to allow for rolling updates for configuration changes
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: {{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag }}
+          args: [{{ if .Values.keycloak.database.enabled }}"start"{{ else }}"start-dev"{{ end }}, "--import-realm"]
+          env:
+            {{- include "rossoctl.mergeEnvVars" (dict "defaults" (include "rossoctl.keycloak.defaultEnv" . | fromYamlArray) "overrides" .Values.keycloak.extraEnvVars) | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /health/started
+              port: 9000
+            periodSeconds: 30
+            timeoutSeconds: 60
+            failureThreshold: 600
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 9000
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1500Mi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          volumeMounts:
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+      volumes:
+        - name: realm-import
+          configMap:
+            name: keycloak-realm-import
+{{- if .Values.keycloak.database.enabled }}
+---
+# This is deployment of PostgreSQL with an ephemeral storage for testing: Once the Pod stops, the data is lost.
+# For a production setup, replace it with a database setup that persists your data.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: {{ .Values.keycloak.namespace }}
+  labels:
+    {{- include "rossoctl.labels" . | nindent 4 }}
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.keycloak.database.image.repository }}:{{ .Values.keycloak.database.image.tag }}
+          env:
+            - name: POSTGRES_USER
+              value: "keycloak"
+            - name: POSTGRES_PASSWORD
+              value: "keycloak"
+            - name: POSTGRES_DB
+              value: "keycloak"
+            - name: POSTGRES_LOG_STATEMENT
+              value: "all"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"
+          ports:
+            - name: postgres
+              containerPort: 5432
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    {{- include "rossoctl.labels" . | nindent 4 }}
+    app: postgres
+  namespace: {{ .Values.keycloak.namespace }}
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
+{{- end }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-initial-admin
+  namespace: {{ .Values.keycloak.namespace }}
+  labels:
+    {{- include "rossoctl.labels" . | nindent 4 }}
+    app: keycloak
+data:
+  password: YWRtaW4=
+  username: YWRtaW4=
+type: kubernetes.io/basic-auth
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: keycloak
+  namespace: {{ .Values.keycloak.namespace }}
+  labels:
+    {{- include "rossoctl.labels" . | nindent 4 }}
+  {{- with .Values.keycloak.httpRoute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- with .Values.keycloak.httpRoute.parentRefs }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.keycloak.httpRoute.hostnames }}
+  hostnames:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.keycloak.httpRoute.rules }}
+    - {{- with .matches }}
+        matches:
+          {{- toYaml . | nindent 12 }}
+      {{- end }}
+      {{- with .filters }}
+        filters:
+          {{- toYaml . | nindent 12 }}
+      {{- end }}
+        backendRefs:
+          - name: keycloak-service
+            port: 8080
+            weight: 1
+    {{- end }}
+{{- end}}
+
+{{/*
+Default env vars for the Keycloak container.
+extraEnvVars with the same name override these defaults.
+*/}}
+{{- define "rossoctl.keycloak.defaultEnv" -}}
+- name: KC_FEATURES
+  # token-exchange + admin-fine-grained-authz are required by the token-exchange
+  # E2E suite (realm/FGAP setup). Enabling them on the platform Keycloak lets the
+  # suite reuse it instead of standing up a second, colliding Keycloak on Kind.
+  value: "client-auth-federated:v1,spiffe:v1,token-exchange,admin-fine-grained-authz:v1"
+- name: KC_BOOTSTRAP_ADMIN_USERNAME
+  value: "admin"
+- name: KC_BOOTSTRAP_ADMIN_PASSWORD
+  value: "admin"
+- name: KC_PROXY_HEADERS
+  value: "forwarded"
+- name: KC_HTTP_ENABLED
+  value: "true"
+- name: KC_HOSTNAME_STRICT
+  value: "false"
+- name: KC_HOSTNAME
+  value: {{ .Values.keycloak.publicUrl | default (printf "http://keycloak.%s:8080/" .Values.domain) | quote }}
+- name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
+  value: "true"
+- name: KC_HEALTH_ENABLED
+  value: "true"
+- name: KC_CACHE
+  value: "ispn"
+- name: POD_IP
+  valueFrom:
+    fieldRef:
+      fieldPath: status.podIP
+- name: JAVA_OPTS_APPEND
+  value: "-Djgroups.bind.address=$(POD_IP)"
+{{- if .Values.keycloak.database.enabled }}
+- name: KC_DB_URL_DATABASE
+  value: "keycloak"
+- name: KC_DB_URL_HOST
+  value: "postgres"
+- name: KC_DB
+  value: "postgres"
+- name: KC_DB_PASSWORD
+  value: "keycloak"
+- name: KC_DB_USERNAME
+  value: "keycloak"
+- name: KC_DB_URL_PROPERTIES
+  value: "?sslmode=disable"
+- name: KC_DB_POOL_INITIAL_SIZE
+  value: "5"
+- name: KC_DB_POOL_MIN_SIZE
+  value: "5"
+- name: KC_DB_POOL_MAX_SIZE
+  value: "20"
+{{- end }}
+{{- end -}}

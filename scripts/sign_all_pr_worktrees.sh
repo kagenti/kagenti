@@ -13,7 +13,7 @@
 #   # Sign multiple
 #   ./scripts/sign_all_pr_worktrees.sh pr-k2-skills pr-k5-deploy pr-k6-types
 #
-#   # Sign all kagenti PR worktrees
+#   # Sign all rossoctl PR worktrees
 #   ./scripts/sign_all_pr_worktrees.sh pr-k{1-infra,2-skills,3a-sessiondb,3b-routes,3c-sidecars,4-budget,5-deploy,6-types,6a-sandbox-ui,6b-graph,6c-support-ui,6d-pages,7-uitests,8-e2etests,10-cleanup} pr-feature-flags
 #
 #   # Sign agent-examples worktrees

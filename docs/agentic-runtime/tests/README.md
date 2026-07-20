@@ -53,13 +53,13 @@ Each test doc includes:
 
 ```bash
 # All tests
-uv run pytest kagenti/tests/e2e/openshell/ -v --timeout=300
+uv run pytest rossoctl/tests/e2e/openshell/ -v --timeout=300
 
 # Single category
-uv run pytest kagenti/tests/e2e/openshell/test_01_platform_health.py -v
+uv run pytest rossoctl/tests/e2e/openshell/test_01_platform_health.py -v
 
 # With debug logging
-uv run pytest kagenti/tests/e2e/openshell/ -v --log-cli-level=INFO
+uv run pytest rossoctl/tests/e2e/openshell/ -v --log-cli-level=INFO
 
 # Skip destructive tests
 export OPENSHELL_DESTRUCTIVE_TESTS=false

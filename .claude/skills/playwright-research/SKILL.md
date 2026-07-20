@@ -32,10 +32,10 @@ write Playwright demo tests, validate them, and manage the video lifecycle.
 Read these files to inventory current UI:
 
 ```
-kagenti/ui-v2/src/App.tsx          # Routes
-kagenti/ui-v2/src/pages/           # Page components
-kagenti/ui-v2/src/components/      # Shared components
-kagenti/ui-v2/src/services/        # API layer
+rossoctl/ui-v2/src/App.tsx          # Routes
+rossoctl/ui-v2/src/pages/           # Page components
+rossoctl/ui-v2/src/components/      # Shared components
+rossoctl/ui-v2/src/services/        # API layer
 ```
 
 Compare against `.worktrees/playwright-demos/TODO_VIDEOS.md`.
@@ -43,7 +43,7 @@ Compare against `.worktrees/playwright-demos/TODO_VIDEOS.md`.
 ## Phase 2: Change Detection
 
 ```bash
-git diff --name-only HEAD~10 -- kagenti/ui-v2/src/
+git diff --name-only HEAD~10 -- rossoctl/ui-v2/src/
 ```
 
 File-to-video mapping in `TODO_VIDEOS.md` section 10 identifies affected demos.
@@ -71,7 +71,7 @@ When a component changes, check:
 Every test MUST:
 - Call `markStep()` OUTSIDE conditional blocks
 - Use `expect()` assertions at every section (not silent `.catch()`)
-- Use SPA sidebar clicks for Kagenti pages (not `page.goto()`)
+- Use SPA sidebar clicks for Rossoctl pages (not `page.goto()`)
 - Use `demoClick()` for visible cursor movement
 - Write timestamps to `<test-name>-timestamps.json`
 - Have 10s final pause

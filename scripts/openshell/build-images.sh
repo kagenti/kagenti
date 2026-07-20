@@ -4,7 +4,7 @@
 # ============================================================================
 # Builds OpenShell images locally and optionally loads them into a Kind cluster.
 # This script is for LOCAL DEVELOPMENT ONLY — production deployments pull
-# pre-built images from ghcr.io/kagenti/.
+# pre-built images from ghcr.io/rossoctl/.
 #
 # Usage:
 #   scripts/openshell/build-images.sh                    # Build all images
@@ -27,9 +27,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 REPOS_DIR="${OPENSHELL_REPOS_DIR:-$REPO_ROOT/../}"
 
 # Image names (match ghcr.io paths for tag compatibility)
-GATEWAY_IMAGE="ghcr.io/kagenti/openshell/gateway"
-COMPUTE_DRIVER_IMAGE="ghcr.io/kagenti/openshell-driver-openshift/compute-driver"
-CREDENTIALS_DRIVER_IMAGE="ghcr.io/kagenti/openshell-credentials-keycloak/credentials-driver"
+GATEWAY_IMAGE="ghcr.io/rossoctl/openshell/gateway"
+COMPUTE_DRIVER_IMAGE="ghcr.io/rossoctl/openshell-driver-openshift/compute-driver"
+CREDENTIALS_DRIVER_IMAGE="ghcr.io/rossoctl/openshell-credentials-keycloak/credentials-driver"
 
 TAG="${OPENSHELL_IMAGE_TAG:-local}"
 
@@ -108,7 +108,7 @@ build_gateway() {
     local src="$REPOS_DIR/OpenShell"
     if [[ ! -d "$src" ]]; then
         echo "ERROR: Gateway source not found at $src" >&2
-        echo "Clone it: git clone https://github.com/kagenti/OpenShell.git -b mvp-v2 $src" >&2
+        echo "Clone it: git clone https://github.com/rossoctl/OpenShell.git -b mvp-v2 $src" >&2
         return 1
     fi
     echo "Building gateway image: $GATEWAY_IMAGE:$TAG"
@@ -121,7 +121,7 @@ build_compute_driver() {
     local src="$REPOS_DIR/openshell-driver-openshift"
     if [[ ! -d "$src" ]]; then
         echo "ERROR: Compute driver source not found at $src" >&2
-        echo "Clone it: git clone https://github.com/kagenti/openshell-driver-openshift.git -b mvp $src" >&2
+        echo "Clone it: git clone https://github.com/rossoctl/openshell-driver-openshift.git -b mvp $src" >&2
         return 1
     fi
     echo "Building compute driver image: $COMPUTE_DRIVER_IMAGE:$TAG"
@@ -134,7 +134,7 @@ build_credentials_driver() {
     local src="$REPOS_DIR/openshell-credentials-keycloak"
     if [[ ! -d "$src" ]]; then
         echo "ERROR: Credentials driver source not found at $src" >&2
-        echo "Clone it: git clone https://github.com/kagenti/openshell-credentials-keycloak.git $src" >&2
+        echo "Clone it: git clone https://github.com/rossoctl/openshell-credentials-keycloak.git $src" >&2
         return 1
     fi
     echo "Building credentials driver image: $CREDENTIALS_DRIVER_IMAGE:$TAG"

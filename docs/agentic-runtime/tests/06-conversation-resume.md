@@ -1,6 +1,6 @@
 # Conversation Resume
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_06_conversation_resume.py`
+> **Test file:** `rossoctl/tests/e2e/openshell/test_06_conversation_resume.py`
 > **Tests:** 5 | **Pass:** 0 | **Skip:** 5 (Kind, fresh cluster)
 
 ## What This Tests
@@ -70,7 +70,7 @@ sequenceDiagram
   - OPENSHELL_DESTRUCTIVE_TESTS != true (kills active port-forwards)
   - Agent is stateless (no contextId)
   - Agent returns but context lost (in-memory only)
-  - TODO: PVC-backed session checkpoint + Kagenti backend restore
+  - TODO: PVC-backed session checkpoint + Rossoctl backend restore
 
 ### test_restart__weather_supervised__kubectl_exec
 
@@ -111,7 +111,7 @@ These tests are destructive (kill pods, break port-forwards) and are disabled by
 export OPENSHELL_DESTRUCTIVE_TESTS=true
 
 # Run only conversation resume tests
-uv run pytest kagenti/tests/e2e/openshell/test_06_conversation_resume.py -v
+uv run pytest rossoctl/tests/e2e/openshell/test_06_conversation_resume.py -v
 ```
 
 Why disabled by default:
@@ -125,7 +125,7 @@ Why disabled by default:
 | Capability | Current State | Future State | Blocker |
 |------------|--------------|--------------|---------|
 | A2A agents respond after restart | ✅ PASS | ✅ PASS | None |
-| Context preserved after restart | ⏭️ SKIP (lost) | ✅ PASS | PVC-backed checkpointer + Kagenti backend |
+| Context preserved after restart | ⏭️ SKIP (lost) | ✅ PASS | PVC-backed checkpointer + Rossoctl backend |
 | PVC data persists | ✅ PASS | ✅ PASS | None (works today for builtin sandboxes) |
 | Supervised agent multi-turn | ⏭️ SKIP (netns) | ✅ PASS | ExecSandbox gRPC adapter |
 
@@ -179,7 +179,7 @@ def _cleanup_sandbox(name: str, pvc: str, ns: str = AGENT_NS):
 |------------|-----------|---------------|
 | `openshell_claude` | Phase 2 | PVC `/workspace/.claude/` with session history |
 | `openshell_opencode` | Phase 2 | PVC `/workspace/` with conversation logs |
-| Custom A2A agents | Phase 2 | Kagenti backend session store (PostgreSQL + checkpointer) |
+| Custom A2A agents | Phase 2 | Rossoctl backend session store (PostgreSQL + checkpointer) |
 | Supervised agents | Phase 2 | ExecSandbox gRPC + backend session store |
 
 ## Common Failure Modes

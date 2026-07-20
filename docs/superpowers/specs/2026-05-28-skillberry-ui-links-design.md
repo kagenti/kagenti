@@ -23,7 +23,7 @@ Returns `''` on malformed input; callers guard with a truthiness check.
 
 ## New Helper
 
-**File:** `kagenti/ui-v2/src/utils/validation.ts`
+**File:** `rossoctl/ui-v2/src/utils/validation.ts`
 
 ```typescript
 export const getSkillberryUiUrl = (registryUrl: string, skillName: string): string => {
@@ -37,7 +37,7 @@ export const getSkillberryUiUrl = (registryUrl: string, skillName: string): stri
 };
 ```
 
-**Tests:** `kagenti/ui-v2/src/utils/validation.test.ts`
+**Tests:** `rossoctl/ui-v2/src/utils/validation.test.ts`
 
 - Port 8000 → 8002 with skill name in path
 - No port in URL → port 8002 appended
@@ -46,7 +46,7 @@ export const getSkillberryUiUrl = (registryUrl: string, skillName: string): stri
 
 ## ImportSkillPage
 
-**File:** `kagenti/ui-v2/src/pages/ImportSkillPage.tsx`
+**File:** `rossoctl/ui-v2/src/pages/ImportSkillPage.tsx`
 
 After the Skill Name `FormGroup` (below the combobox), add a conditional link:
 
@@ -61,7 +61,7 @@ This gives the user immediate confirmation that the selected skill is reachable 
 
 ## SkillCatalogPage
 
-**File:** `kagenti/ui-v2/src/pages/SkillCatalogPage.tsx`
+**File:** `rossoctl/ui-v2/src/pages/SkillCatalogPage.tsx`
 
 Add a **Registry** column as the rightmost column in the skills table.
 
@@ -80,9 +80,9 @@ Data available on `Skill`:
 
 | File | Change |
 |------|--------|
-| `kagenti/ui-v2/src/utils/validation.ts` | Add `getSkillberryUiUrl` |
-| `kagenti/ui-v2/src/utils/validation.test.ts` | Add tests for `getSkillberryUiUrl` |
-| `kagenti/ui-v2/src/pages/ImportSkillPage.tsx` | Add link below skill name combobox |
-| `kagenti/ui-v2/src/pages/SkillCatalogPage.tsx` | Add Registry column with link |
+| `rossoctl/ui-v2/src/utils/validation.ts` | Add `getSkillberryUiUrl` |
+| `rossoctl/ui-v2/src/utils/validation.test.ts` | Add tests for `getSkillberryUiUrl` |
+| `rossoctl/ui-v2/src/pages/ImportSkillPage.tsx` | Add link below skill name combobox |
+| `rossoctl/ui-v2/src/pages/SkillCatalogPage.tsx` | Add Registry column with link |
 
 No backend changes. No new component files.

@@ -2,7 +2,7 @@
 
 > **[Historical — Ansible installer removed]** This design doc references the Ansible installer
 > (`deployments/ansible/`) which has been removed. The cert-manager Helm resources are in place;
-> the cacerts transformation step is now handled by the OCP installer (`scripts/ocp/setup-kagenti.sh`).
+> the cacerts transformation step is now handled by the OCP installer (`scripts/ocp/setup-rossoctl.sh`).
 
 **Date:** 2026-03-08
 **Status:** Approved
@@ -10,8 +10,8 @@
 
 ## Problem
 
-When RHOAI 3.x is installed alongside Kagenti, two Istio control planes exist:
-- `default` (Kagenti, ambient mode) in `istio-system`
+When RHOAI 3.x is installed alongside Rossoctl, two Istio control planes exist:
+- `default` (Rossoctl, ambient mode) in `istio-system`
 - `openshift-gateway` (RHOAI, gateway-only) in `openshift-ingress`
 
 Both istiods create `istio-ca-root-cert` ConfigMaps in watched namespaces using
@@ -41,13 +41,13 @@ Key properties:
 cert-manager
   |
   +- SelfSigned ClusterIssuer: istio-mesh-root-selfsigned
-  |     +- Certificate: istio-mesh-root-ca (in kagenti-system)
+  |     +- Certificate: istio-mesh-root-ca (in rossoctl-system)
   |           +- Secret: istio-mesh-root-ca-secret
   |
   +- CA ClusterIssuer: istio-mesh-ca (uses istio-mesh-root-ca-secret)
   |     |
   |     +- Certificate: istio-cacerts-default (in istio-system)
-  |     |     +- Secret: cacerts <- Kagenti istiod reads this
+  |     |     +- Secret: cacerts <- Rossoctl istiod reads this
   |     |
   |     +- Certificate: istio-cacerts-openshift-gateway (in openshift-ingress)
   |           +- Secret: cacerts <- RHOAI istiod reads this
@@ -78,11 +78,11 @@ to map these to Istio's expected key names using cert-manager's
 ## Files
 
 ### New
-- `charts/kagenti-deps/templates/rhoai-shared-trust.yaml`
+- `charts/rossoctl-deps/templates/rhoai-shared-trust.yaml`
 
 ### Modified
-- `deployments/ansible/roles/kagenti_installer/tasks/05_install_rhoai.yaml`
-- `deployments/ansible/roles/kagenti_installer/tasks/main.yml`
+- `deployments/ansible/roles/rossoctl_installer/tasks/05_install_rhoai.yaml`
+- `deployments/ansible/roles/rossoctl_installer/tasks/main.yml`
 
 ## References
 

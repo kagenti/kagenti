@@ -27,7 +27,7 @@ def tmp_workspace(tmp_path):
 
     # Create sources.json
     (workspace / "sources.json").write_text(
-        '{"allowed_remotes": ["https://github.com/kagenti/*"], '
+        '{"allowed_remotes": ["https://github.com/rossoctl/*"], '
         '"denied_remotes": ["https://github.com/evil-org/*"], '
         '"resource_limits": {"max_repos": 3}}\n'
     )

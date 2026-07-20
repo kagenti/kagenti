@@ -9,7 +9,7 @@
 #
 # Defaults to the 'prepull-cache' namespace to avoid conflicts with Helm-managed
 # namespaces (team1, team2). deploy-shared.sh passes --namespace team1 explicitly
-# after the Kagenti Helm install has already created it with proper labels.
+# after the Rossoctl Helm install has already created it with proper labels.
 #
 # Usage:
 #   scripts/openshell/prepull-images.sh                    # Pull all images (ns: prepull-cache)

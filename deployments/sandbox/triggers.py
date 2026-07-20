@@ -1,23 +1,23 @@
 """
-Kagenti Sandbox Triggers — Autonomous sandbox creation (Phase 7, C17)
+Rossoctl Sandbox Triggers — Autonomous sandbox creation (Phase 7, C17)
 
 Creates SandboxClaim resources from trigger events:
 - Cron: scheduled tasks (nightly CI health, weekly reports)
 - Webhook: GitHub PR events, issue comments with /agent command
 - Alert: PagerDuty/Prometheus alerts for incident response
 
-This module provides the trigger logic. Integration with the Kagenti backend
+This module provides the trigger logic. Integration with the Rossoctl backend
 FastAPI app adds the HTTP endpoints.
 
 Usage:
     from triggers import SandboxTrigger
-    trigger = SandboxTrigger(namespace="team1", template="kagenti-agent-sandbox")
+    trigger = SandboxTrigger(namespace="team1", template="rossoctl-agent-sandbox")
 
     # Cron trigger
     trigger.create_from_cron(skill="rca:ci", schedule="0 2 * * *")
 
     # Webhook trigger (GitHub PR)
-    trigger.create_from_webhook(event_type="pull_request", repo="kagenti/kagenti", branch="feat/x")
+    trigger.create_from_webhook(event_type="pull_request", repo="rossoctl/rossoctl", branch="feat/x")
 
     # Alert trigger
     trigger.create_from_alert(alert_name="PodCrashLoop", cluster="prod")
@@ -35,7 +35,7 @@ class SandboxTrigger:
     def __init__(
         self,
         namespace: str = "team1",
-        template: str = "kagenti-agent-sandbox",
+        template: str = "rossoctl-agent-sandbox",
         ttl_hours: int = 2,
     ):
         self.namespace = namespace
@@ -60,7 +60,7 @@ class SandboxTrigger:
                 "name": name,
                 "namespace": self.namespace,
                 "labels": {
-                    "app.kubernetes.io/part-of": "kagenti",
+                    "app.kubernetes.io/part-of": "rossoctl",
                     "app.kubernetes.io/component": "sandbox-trigger",
                     **labels,
                 },
@@ -161,6 +161,6 @@ if __name__ == "__main__":
     # Dry-run test (doesn't create real resources)
     print("Trigger examples (dry-run):")
     print(f"  Cron:    cron-rca-ci-abc123")
-    print(f"  Webhook: gh-kagenti-kagenti-def456")
+    print(f"  Webhook: gh-rossoctl-rossoctl-def456")
     print(f"  Alert:   alert-podcrashloop-789abc")
     print(f"\nFastAPI integration: POST /api/v1/sandbox/trigger")

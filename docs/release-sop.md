@@ -1,6 +1,6 @@
 # Release Management SOP
 
-Standard Operating Procedure for releasing Kagenti, aligned with CNCF project
+Standard Operating Procedure for releasing Rossoctl, aligned with CNCF project
 conventions (Kubernetes, Helm, ArgoCD).
 
 > **Related:** [docs/releasing.md](releasing.md) contains the procedural step-by-step
@@ -175,12 +175,12 @@ The `-x` flag is mandatory — it creates traceability between main and the back
 
 ## 5. Multi-Repo Dependency Order
 
-Kagenti spans multiple repositories. Tags must be created in dependency order:
+Rossoctl spans multiple repositories. Tags must be created in dependency order:
 
 ```
-1. kagenti/kagenti-operator      →  tag, wait for CI
-2. kagenti/kagenti-extensions    →  tag, wait for CI
-3. kagenti/kagenti               →  update Chart.yaml + values.yaml, tag
+1. rossoctl/operator      →  tag, wait for CI
+2. rossoctl/rossocortex    →  tag, wait for CI
+3. rossoctl/rossoctl               →  update Chart.yaml + values.yaml, tag
 ```
 
 **Between each step:** Verify container images and Helm charts are published before proceeding to the next repository.
@@ -201,8 +201,8 @@ tagging.
 bash scripts/pin-release-tags.sh v0.6.0-rc.6
 ```
 
-This updates tags across both `charts/kagenti/values.yaml` and
-`charts/kagenti-deps/values.yaml`. See [docs/releasing.md — Pinning Image
+This updates tags across both `charts/rossoctl/values.yaml` and
+`charts/rossoctl-deps/values.yaml`. See [docs/releasing.md — Pinning Image
 Tags](releasing.md#pinning-image-tags-before-release) for details.
 
 **Validate before tagging:**
@@ -212,14 +212,14 @@ bash scripts/check-release-pins.sh
 ```
 
 This validates both charts for `tag: latest` entries and detects tag drift
-between `kagenti-deps` and the main platform chart.
+between `rossoctl-deps` and the main platform chart.
 
 ### Currently Automated (via existing `build.yaml` workflows)
 
 | Step | Trigger | Output |
 |------|---------|--------|
-| Container image build + push | Tag push (`v*`) | Images on `ghcr.io/kagenti/` |
-| Helm chart package + push (with tag pinning) | Tag push (`v*`) | OCI charts on `ghcr.io/kagenti/` |
+| Container image build + push | Tag push (`v*`) | Images on `ghcr.io/rossoctl/` |
+| Helm chart package + push (with tag pinning) | Tag push (`v*`) | OCI charts on `ghcr.io/rossoctl/` |
 | GitHub Release creation | Tag push (`v*`) | Release with auto-generated changelog |
 | Pre-release flag | GoReleaser `prerelease: auto` | `-alpha`/`-rc` tags marked as pre-release |
 | Pin validation (`ci-release-pins.yaml`) | PR touching `charts/` | Summary on all PRs; hard gate on `release/*` branches |
@@ -243,10 +243,10 @@ between `kagenti-deps` and the main platform chart.
 - [ ] CI green on `main`
 - [ ] Tag dependency repos in order (operator → extensions)
 - [ ] Verify images/charts published for each
-- [ ] Update `Chart.yaml` + `values.yaml` in `kagenti/kagenti`
+- [ ] Update `Chart.yaml` + `values.yaml` in `rossoctl/rossoctl`
 - [ ] Pin all image tags (no `latest`)
-- [ ] Run `helm dependency update charts/kagenti/`
-- [ ] Tag `kagenti/kagenti`
+- [ ] Run `helm dependency update charts/rossoctl/`
+- [ ] Tag `rossoctl/rossoctl`
 - [ ] Verify GitHub Release is Pre-release
 
 ### RC

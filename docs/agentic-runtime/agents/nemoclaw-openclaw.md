@@ -16,7 +16,7 @@ integrated via [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw). It provide
 a gateway-based AI assistant with a plugin ecosystem, workspace management, and
 extension support.
 
-In the Kagenti PoC, OpenClaw runs as a standalone K8s Deployment built from npm
+In the Rossoctl PoC, OpenClaw runs as a standalone K8s Deployment built from npm
 (pinned to v2026.4.9). The gateway binds to 127.0.0.1:18789 internally; a socat
 bridge exposes it on 0.0.0.0:8080 for K8s Service access.
 
@@ -48,7 +48,7 @@ deployments/openshell/agents/nemoclaw-openclaw/
 ```bash
 # Kind
 docker build -t nemoclaw-openclaw:latest deployments/openshell/agents/nemoclaw-openclaw/
-kind load docker-image nemoclaw-openclaw:latest --name kagenti
+kind load docker-image nemoclaw-openclaw:latest --name rossoctl
 kubectl apply -f deployments/openshell/agents/nemoclaw-openclaw/deployment.yaml
 ```
 
@@ -67,7 +67,7 @@ The fulltest script (`openshell-full-test.sh`) builds and deploys automatically.
 | HITL approval | N/A | No supervisor |
 | Plugin ecosystem | Yes | npm-based extension system |
 
-## 6. Kagenti Integration
+## 6. Rossoctl Integration
 
 ### 6.1 Communication Adapter
 

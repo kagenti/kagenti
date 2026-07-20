@@ -6,9 +6,9 @@ from cold storage, and migrate across agent harnesses — built on the
 
 ---
 
-## How This Connects to Kagenti Today
+## How This Connects to Rossoctl Today
 
-Kagenti already has most of the building blocks for session management:
+Rossoctl already has most of the building blocks for session management:
 
 | Component | Exists Today | Extension for Session Management |
 |-----------|-------------|----------------------------------|
@@ -26,7 +26,7 @@ Kagenti already has most of the building blocks for session management:
 ## Teleport: Context Packaging and Remote Execution
 
 Teleport packages local Claude Code context (CLAUDE.md, skills, settings)
-into a Kagenti OpenShell sandbox and executes prompts remotely with full
+into a Rossoctl OpenShell sandbox and executes prompts remotely with full
 isolation (Landlock, seccomp, network namespace, OPA policy).
 
 ### Two Modes
@@ -43,7 +43,7 @@ The sandbox never sees real API keys. LiteLLM virtual keys provide the
 security boundary:
 
 ```
-litellm-proxy-secret (kagenti-system)     ← real MaaS/Vertex API keys
+litellm-proxy-secret (rossoctl-system)     ← real MaaS/Vertex API keys
          │
     LiteLLM Proxy (translates + routes)
          │

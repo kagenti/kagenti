@@ -62,7 +62,7 @@ class Configuration(BaseSettings):
     llm_api_base: str = "http://localhost:11434/v1"
     llm_api_key: str = "dummy"
     workspace_root: str = "/workspace"
-    checkpoint_db_url: str = "postgresql://kagenti:kagenti@localhost:5432/kagenti_checkpoints"
+    checkpoint_db_url: str = "postgresql://rossoctl:rossoctl@localhost:5432/rossoctl_checkpoints"
     context_ttl_days: int = 7
 ```
 
@@ -1342,23 +1342,23 @@ git commit -s -m "feat: add A2A agent server with workspace integration"
 ## Task 8: Create Kubernetes deployment manifests
 
 **Files:**
-- Create: `kagenti/examples/agents/sandbox_agent_deployment.yaml`
-- Create: `kagenti/examples/agents/sandbox_agent_pvc.yaml`
-- Create: `kagenti/examples/agents/sandbox_agent_service.yaml`
-- Reference: `kagenti/examples/agents/weather_service_deployment.yaml`
+- Create: `rossoctl/examples/agents/sandbox_agent_deployment.yaml`
+- Create: `rossoctl/examples/agents/sandbox_agent_pvc.yaml`
+- Create: `rossoctl/examples/agents/sandbox_agent_service.yaml`
+- Reference: `rossoctl/examples/agents/weather_service_deployment.yaml`
 
 **Step 1: Create the RWX PVC manifest**
 
 ```yaml
-# kagenti/examples/agents/sandbox_agent_pvc.yaml
+# rossoctl/examples/agents/sandbox_agent_pvc.yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: sandbox-agent-workspace
   namespace: team1
   labels:
-    kagenti.io/type: agent-workspace
-    kagenti.io/agent: sandbox-agent
+    rossoctl.io/type: agent-workspace
+    rossoctl.io/agent: sandbox-agent
 spec:
   accessModes:
     - ReadWriteMany
@@ -1375,34 +1375,34 @@ spec:
 **Step 2: Create the Deployment manifest**
 
 ```yaml
-# kagenti/examples/agents/sandbox_agent_deployment.yaml
+# rossoctl/examples/agents/sandbox_agent_deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: sandbox-agent
   namespace: team1
   labels:
-    kagenti.io/type: agent
-    kagenti.io/protocol: a2a
-    kagenti.io/framework: LangGraph
-    kagenti.io/workload-type: deployment
+    rossoctl.io/type: agent
+    rossoctl.io/protocol: a2a
+    rossoctl.io/framework: LangGraph
+    rossoctl.io/workload-type: deployment
     app.kubernetes.io/name: sandbox-agent
-    app.kubernetes.io/managed-by: kagenti-e2e
+    app.kubernetes.io/managed-by: rossoctl-e2e
     app.kubernetes.io/component: agent
   annotations:
-    kagenti.io/description: "Sandbox agent with per-context workspace isolation"
+    rossoctl.io/description: "Sandbox agent with per-context workspace isolation"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: agent
+      rossoctl.io/type: agent
       app.kubernetes.io/name: sandbox-agent
   template:
     metadata:
       labels:
-        kagenti.io/type: agent
-        kagenti.io/protocol: a2a
-        kagenti.io/framework: LangGraph
+        rossoctl.io/type: agent
+        rossoctl.io/protocol: a2a
+        rossoctl.io/framework: LangGraph
         app.kubernetes.io/name: sandbox-agent
     spec:
       containers:
@@ -1417,7 +1417,7 @@ spec:
         - name: WORKSPACE_ROOT
           value: "/workspace"
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
-          value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+          value: "http://otel-collector.rossoctl-system.svc.cluster.local:8335"
         - name: LLM_API_BASE
           value: "http://dockerhost:11434/v1"
         - name: LLM_API_KEY
@@ -1451,18 +1451,18 @@ spec:
 **Step 3: Create the Service manifest**
 
 ```yaml
-# kagenti/examples/agents/sandbox_agent_service.yaml
+# rossoctl/examples/agents/sandbox_agent_service.yaml
 apiVersion: v1
 kind: Service
 metadata:
   name: sandbox-agent
   namespace: team1
   labels:
-    kagenti.io/type: agent
+    rossoctl.io/type: agent
     app.kubernetes.io/name: sandbox-agent
 spec:
   selector:
-    kagenti.io/type: agent
+    rossoctl.io/type: agent
     app.kubernetes.io/name: sandbox-agent
   ports:
   - port: 8000
@@ -1474,7 +1474,7 @@ spec:
 **Step 4: Commit**
 
 ```bash
-git add kagenti/examples/agents/sandbox_agent_deployment.yaml kagenti/examples/agents/sandbox_agent_pvc.yaml kagenti/examples/agents/sandbox_agent_service.yaml
+git add rossoctl/examples/agents/sandbox_agent_deployment.yaml rossoctl/examples/agents/sandbox_agent_pvc.yaml rossoctl/examples/agents/sandbox_agent_service.yaml
 git commit -s -m "feat: add sandbox agent Kubernetes manifests with RWX PVC"
 ```
 

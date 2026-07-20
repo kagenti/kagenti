@@ -1,20 +1,20 @@
-# Kagenti CI configuration for HyperShift ephemeral clusters
+# Rossoctl CI configuration for HyperShift ephemeral clusters
 # Based on ocp_values.yaml but disables components not installed on CI clusters:
 #   - Shipwright (requires OpenShift Builds operator)
 #   - Kiali (not installed on ephemeral clusters)
 #
 # RHOAI and MLflow are enabled — the RHOAI operator is installed via OLM
-# Subscription (kagenti-deps) and MLflow is provisioned via deferred Step 3c
-# in setup-kagenti.sh. The DSC explicitly disables all other RHOAI components
+# Subscription (rossoctl-deps) and MLflow is provisioned via deferred Step 3c
+# in setup-rossoctl.sh. The DSC explicitly disables all other RHOAI components
 # to avoid heavy default installs on CI.
 #
-# This config is used by KAGENTI_CONFIG_FILE in E2E tests to correctly
+# This config is used by ROSSOCTL_CONFIG_FILE in E2E tests to correctly
 # skip tests for features that are not present on the cluster.
 
 create_kind_cluster: false
 
 charts:
-  kagenti-deps:
+  rossoctl-deps:
     enabled: true
     values:
       openshift: true
@@ -50,7 +50,7 @@ charts:
         auth:
           enabled: false
 
-  kagenti:
+  rossoctl:
     enabled: true
     values:
       openshift: true
@@ -74,7 +74,7 @@ charts:
         phoenix:
           enabled: false
       # Enable tool workload sidecar injection for token-exchange E2E tests
-      kagenti-operator-chart:
+      operator-chart:
         featureGates:
           injectTools: true
       mlflow:

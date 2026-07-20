@@ -1,4 +1,4 @@
-# Kagenti Installation on OpenShift
+# Rossoctl Installation on OpenShift
 
 ## Requirements
 
@@ -12,19 +12,19 @@
 Clone the repository, check out a release, and run the installer:
 
 ```shell
-git clone https://github.com/kagenti/kagenti.git
-cd kagenti
+git clone https://github.com/rossoctl/rossoctl.git
+cd rossoctl
 git checkout v0.6.0   # replace with desired version
 
-./scripts/ocp/setup-kagenti.sh --kagenti-repo . --with-all
+./scripts/ocp/setup-rossoctl.sh --rossoctl-repo . --with-all
 ```
 
-This installs the full Kagenti stack (SPIRE, cert-manager, Keycloak, Istio, operator, UI, MCP Gateway, Kiali, Builds, Kuadrant) and prints access information at the end.
+This installs the full Rossoctl stack (SPIRE, cert-manager, Keycloak, Istio, operator, UI, MCP Gateway, Kiali, Builds, Kuadrant) and prints access information at the end.
 
 ### Access the UI
 
 ```shell
-echo "https://$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.status.ingress[0].host}')"
+echo "https://$(kubectl get route rossoctl-ui -n rossoctl-system -o jsonpath='{.status.ingress[0].host}')"
 ```
 
 Keycloak credentials:
@@ -38,10 +38,10 @@ kubectl get secret keycloak-initial-admin -n keycloak \
 
 ### Auto-clone (no local repo)
 
-The installer auto-clones `main` to `~/.cache/kagenti` when `--kagenti-repo` is omitted:
+The installer auto-clones `main` to `~/.cache/rossoctl` when `--rossoctl-repo` is omitted:
 
 ```shell
-./scripts/ocp/setup-kagenti.sh --with-all
+./scripts/ocp/setup-rossoctl.sh --with-all
 ```
 
 ### Core only (no optional components)
@@ -49,30 +49,30 @@ The installer auto-clones `main` to `~/.cache/kagenti` when `--kagenti-repo` is 
 Installs SPIRE, cert-manager, Keycloak, Istio, operator, UI, and MCP Gateway:
 
 ```shell
-./scripts/ocp/setup-kagenti.sh --kagenti-repo .
+./scripts/ocp/setup-rossoctl.sh --rossoctl-repo .
 ```
 
 ### Skip MLflow
 
 ```shell
-./scripts/ocp/setup-kagenti.sh --kagenti-repo . --skip-mlflow
+./scripts/ocp/setup-rossoctl.sh --rossoctl-repo . --skip-mlflow
 ```
 
 ### Selective optional components
 
 ```shell
 # Only Kiali + Prometheus
-./scripts/ocp/setup-kagenti.sh --kagenti-repo . --with-kiali
+./scripts/ocp/setup-rossoctl.sh --rossoctl-repo . --with-kiali
 
 # Only Tekton/OpenShift Builds
-./scripts/ocp/setup-kagenti.sh --kagenti-repo . --with-builds
+./scripts/ocp/setup-rossoctl.sh --rossoctl-repo . --with-builds
 ```
 
 ### Custom operator image (development)
 
 ```shell
-./scripts/ocp/setup-kagenti.sh --kagenti-repo . \
-  --operator-image quay.io/myuser/kagenti-operator:dev
+./scripts/ocp/setup-rossoctl.sh --rossoctl-repo . \
+  --operator-image quay.io/myuser/operator:dev
 ```
 
 ### Dry run
@@ -80,15 +80,15 @@ Installs SPIRE, cert-manager, Keycloak, Istio, operator, UI, and MCP Gateway:
 Preview what commands would execute without running them:
 
 ```shell
-./scripts/ocp/setup-kagenti.sh --kagenti-repo . --with-all --dry-run
+./scripts/ocp/setup-rossoctl.sh --rossoctl-repo . --with-all --dry-run
 ```
 
 ### Flag Reference
 
 | Flag | Description |
 |------|-------------|
-| `--kagenti-repo PATH\|URL` | Local path or GitHub URL (default: auto-clone `main`) |
-| `--realm REALM` | Keycloak realm (default: `kagenti`) |
+| `--rossoctl-repo PATH\|URL` | Local path or GitHub URL (default: auto-clone `main`) |
+| `--realm REALM` | Keycloak realm (default: `rossoctl`) |
 | `--keycloak-namespace NS` | Keycloak namespace (default: `keycloak`) |
 | `--skip-ovn-patch` | Skip OVN gateway routing patch (operator logs a warning at startup if not applied) |
 | `--skip-mcp-gateway` | Skip MCP Gateway |
@@ -99,7 +99,7 @@ Preview what commands would execute without running them:
 | `--with-kuadrant` | Enable Kuadrant (auto-enables MCP Gateway) |
 | `--with-all` | Enable all optional components |
 | `--with-agent-sandbox` | Install agent-sandbox controller |
-| `--operator-repo PATH` | Local path to kagenti-operator repo |
+| `--operator-repo PATH` | Local path to rossoctl-operator repo |
 | `--operator-image IMG:TAG` | Custom operator image |
 | `--mcp-gateway-version VER` | MCP Gateway chart version (default: `0.5.1`) |
 | `--show-secrets` | Print Keycloak credentials to stdout |
@@ -115,7 +115,7 @@ There are three ways to get agent images for the demo: using pre-built images (r
 
 This is the fastest way to get started. The required images are already built and hosted on the GitHub Container Registry.
 
-1. You can find all the necessary images here: **[kagenti/agent-examples Packages](https://github.com/orgs/kagenti/packages?repo_name=agent-examples)**
+1. You can find all the necessary images here: **[rossoctl/examples Packages](https://github.com/orgs/rossoctl/packages?repo_name=agent-examples)**
 2. No image building or secret configuration is required. You can proceed directly to the **"Verifying in the UI"** section.
 
 ---
@@ -130,7 +130,7 @@ When the installer is run with the `--with-builds` flag, the OpenShift internal 
 - Installer run with the `--with-builds` flag:
 
   ```bash
-  ./scripts/ocp/setup-kagenti.sh --with-builds
+  ./scripts/ocp/setup-rossoctl.sh --with-builds
   ```
 
 #### How it works
@@ -146,7 +146,7 @@ The `--with-builds` flag automatically:
 
 Once installed with `--with-builds`:
 
-1. Navigate to **Agents** or **Tools** in the Kagenti UI
+1. Navigate to **Agents** or **Tools** in the Rossoctl UI
 2. Click **Import** and select **Build from Source**
 3. Provide the git repository URL (and branch/path if needed)
 4. The build runs in-cluster using Shipwright, pushing the image to the internal registry
@@ -220,23 +220,23 @@ export DOMAIN=apps.$(kubectl get dns cluster -o jsonpath='{.spec.baseDomain}')
 ```shell
 # Determine latest version
 LATEST_TAG=$(git ls-remote --tags --sort="v:refname" \
-  https://github.com/kagenti/kagenti.git | tail -n1 | sed 's|.*refs/tags/v||; s/\^{}//')
+  https://github.com/rossoctl/rossoctl.git | tail -n1 | sed 's|.*refs/tags/v||; s/\^{}//')
 
 # 1. Dependencies (SPIRE, cert-manager, Keycloak, Istio)
-helm install kagenti-deps oci://ghcr.io/kagenti/kagenti/kagenti-deps \
+helm install rossoctl-deps oci://ghcr.io/rossoctl/rossoctl/rossoctl-deps \
   --version $LATEST_TAG \
-  -n kagenti-system --create-namespace \
+  -n rossoctl-system --create-namespace \
   --set spire.trustDomain=${DOMAIN}
 
 # 2. MCP Gateway
-helm install mcp-gateway oci://ghcr.io/kagenti/charts/mcp-gateway \
+helm install mcp-gateway oci://ghcr.io/rossoctl/charts/mcp-gateway \
   --namespace mcp-system --create-namespace \
   --version 0.5.1
 
-# 3. Kagenti platform
-helm install kagenti oci://ghcr.io/kagenti/kagenti/kagenti \
+# 3. Rossoctl platform
+helm install rossoctl oci://ghcr.io/rossoctl/rossoctl/rossoctl \
   --version $LATEST_TAG \
-  -n kagenti-system \
+  -n rossoctl-system \
   -f .secrets.yaml \
   --set agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa \
   --set uiOAuthSecret.useServiceAccountCA=false \
@@ -248,30 +248,30 @@ helm install kagenti oci://ghcr.io/kagenti/kagenti/kagenti \
 ### Option B: From Local Repository
 
 ```shell
-git clone https://github.com/kagenti/kagenti.git && cd kagenti
+git clone https://github.com/rossoctl/rossoctl.git && cd rossoctl
 
 # Prepare secrets
-cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
+cp charts/rossoctl/.secrets_template.yaml charts/rossoctl/.secrets.yaml
 # Edit .secrets.yaml with your API keys
 
 # Update chart dependencies
-helm dependency update ./charts/kagenti-deps/
-helm dependency update ./charts/kagenti/
+helm dependency update ./charts/rossoctl-deps/
+helm dependency update ./charts/rossoctl/
 
 # 1. Dependencies
-helm install kagenti-deps ./charts/kagenti-deps/ \
-  -n kagenti-system --create-namespace \
+helm install rossoctl-deps ./charts/rossoctl-deps/ \
+  -n rossoctl-system --create-namespace \
   --set spire.trustDomain=${DOMAIN} --wait
 
 # 2. MCP Gateway
-helm install mcp-gateway oci://ghcr.io/kagenti/charts/mcp-gateway \
+helm install mcp-gateway oci://ghcr.io/rossoctl/charts/mcp-gateway \
   --namespace mcp-system --create-namespace \
   --version 0.5.1
 
-# 3. Kagenti platform
-helm upgrade --install kagenti ./charts/kagenti/ \
-  -n kagenti-system \
-  -f ./charts/kagenti/.secrets.yaml \
+# 3. Rossoctl platform
+helm upgrade --install rossoctl ./charts/rossoctl/ \
+  -n rossoctl-system \
+  -f ./charts/rossoctl/.secrets.yaml \
   --set agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa \
   --set uiOAuthSecret.useServiceAccountCA=false \
   --set agentOAuthSecret.useServiceAccountCA=false
@@ -289,32 +289,32 @@ helm upgrade --install kagenti ./charts/kagenti/ \
 
 ## Cleanup
 
-Remove all Kagenti components from the cluster:
+Remove all Rossoctl components from the cluster:
 
 ```shell
-./scripts/ocp/cleanup-kagenti.sh
+./scripts/ocp/cleanup-rossoctl.sh
 ```
 
 Add `--yes` or `-y` to skip the confirmation prompt (useful for CI):
 
 ```shell
-./scripts/ocp/cleanup-kagenti.sh --yes
+./scripts/ocp/cleanup-rossoctl.sh --yes
 ```
 
 The cleanup script removes:
 
-- Helm releases: `kagenti`, `mcp-gateway`, `kagenti-deps`
-- Namespaces: `kagenti-system`, `mcp-system`, `gateway-system`, `keycloak`, `istio-cni`, `istio-system`, `istio-ztunnel`, `openshift-builds`, `zero-trust-workload-identity-manager`, `cert-manager-operator`, `cert-manager`, `team1`, `team2`
+- Helm releases: `rossoctl`, `mcp-gateway`, `rossoctl-deps`
+- Namespaces: `rossoctl-system`, `mcp-system`, `gateway-system`, `keycloak`, `istio-cni`, `istio-system`, `istio-ztunnel`, `openshift-builds`, `zero-trust-workload-identity-manager`, `cert-manager-operator`, `cert-manager`, `team1`, `team2`
 - Istio shared-trust ClusterIssuers and Certificates
 
 ## RHOAI MLflow Integration
 
-When Red Hat OpenShift AI (RHOAI) is installed, Kagenti can use RHOAI's managed
+When Red Hat OpenShift AI (RHOAI) is installed, Rossoctl can use RHOAI's managed
 MLflow instance for LLM trace collection instead of deploying its own.
 
 ### Enabling RHOAI MLflow
 
-Enable the integration by passing these values to `setup-kagenti.sh` (or the
+Enable the integration by passing these values to `setup-rossoctl.sh` (or the
 equivalent Helm overrides):
 
 ```yaml
@@ -331,13 +331,13 @@ otel:
     experimentId: "1"     # target experiment (created automatically)
 ```
 
-The installer (`scripts/ocp/setup-kagenti.sh`) automatically:
+The installer (`scripts/ocp/setup-rossoctl.sh`) automatically:
 
 1. Waits for the RHOAI MLflow CR to become ready
 2. Grants the OTEL collector ServiceAccount `mlflow-edit` in the workspace namespace
 3. Creates the target experiment via the MLflow REST API
 4. Deploys an OAuth proxy with browser SSO for the MLflow dashboard
-5. Adds a "MLflow" link to the Kagenti UI sidebar
+5. Adds a "MLflow" link to the Rossoctl UI sidebar
 
 ### Authentication
 
@@ -421,8 +421,8 @@ If another operator (e.g. OpenShift Pipelines) manages cert-manager, skip it:
 
 ```shell
 # With the installer
-./scripts/ocp/setup-kagenti.sh --kagenti-repo .  # installer auto-detects
+./scripts/ocp/setup-rossoctl.sh --rossoctl-repo .  # installer auto-detects
 
 # With Helm (manual)
-helm install kagenti-deps ... --set components.certManager.enabled=false
+helm install rossoctl-deps ... --set components.certManager.enabled=false
 ```

@@ -23,5 +23,5 @@ output/
 *.pem
 *_rsa
 *_ed25519
-.env.kagenti-*
+.env.rossoctl-*
 .env.hypershift-ci

@@ -16,7 +16,7 @@ if not models_py.exists():
 
 src = models_py.read_text()
 
-if "kagenti patch" in src:
+if "rossoctl patch" in src:
     print("Already patched")
     exit(0)
 
@@ -34,12 +34,12 @@ def _load_custom_providers():
 
 '''
 
-patch = '''    # --- kagenti patch: custom_providers model resolution (#34500) ---
+patch = '''    # --- rossoctl patch: custom_providers model resolution (#34500) ---
     custom = _load_custom_providers()
     for cp in custom:
         if cp.get("name") == normalized:
             return cp.get("models", [])
-    # --- end kagenti patch ---
+    # --- end rossoctl patch ---
 '''
 
 # Insert helper AFTER all imports (find the first function def)

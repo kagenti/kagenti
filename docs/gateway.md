@@ -1,6 +1,6 @@
 # MCP Gateway instructions
 
-[MCP Gateway](https://github.com/kagenti/mcp-gateway) components are installed as part of the Kagenti installation process
+[MCP Gateway](https://github.com/rossoctl/mcp-gateway) components are installed as part of the Rossoctl installation process
 unless the user has explicitly opted out of it, such as via `--skip-install mcp_gateway`. This document describes how
 
 - An MCP server can be registered with the Gateway
@@ -34,7 +34,7 @@ mcp-controller-666f8cf9bf-dcpbc      1/1     Running   0          30h
 
 ### Register Weather MCP Server
 
-The Weather Service Tool can be installed using the Kagenti UI [as usual](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/weather-agent/demo-ui.md#step-3-import-the-weather-tool-via-kagenti-ui). Once it is
+The Weather Service Tool can be installed using the Rossoctl UI [as usual](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui.md#step-3-import-the-weather-tool-via-rossoctl-ui). Once it is
 installed, to register it with the Gateway, create an [`HTTPRoute`](https://gateway-api.sigs.k8s.io/reference/api-types/httproute/):
 
 ```
@@ -84,7 +84,7 @@ in a different namespace, adjust accordingly.
 
 ### Connect the Weather Service Agent to the Gateway
 
-To connect the Weather Service Agent, install it using the Kagenti UI as usual.
+To connect the Weather Service Agent, install it using the Rossoctl UI as usual.
 However, we need to define a new environment variable so the Agent can access
 various tools managed by the Gateway. Namely, we need to set `MCP_URL` to
 `http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080/mcp`.
@@ -118,7 +118,7 @@ kubectl delete pod -n <namespace> -l app.kubernetes.io/name=weather-service
 Once the Gateway implementation has stabilized, `MCP_URL` will be set to this
 value by default, so we do not need to set this environment variable for every
 agent. To check if the weather service is working, simply use the chatbot
-exposed by the Weather Service Agent to query for weather information. Instructions for chatting with the agent can be referred to [here](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/weather-agent/demo-ui.md#step-7-chat-via-kagenti-ui).
+exposed by the Weather Service Agent to query for weather information. Instructions for chatting with the agent can be referred to [here](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui.md#step-7-chat-via-rossoctl-ui).
 
 ### Limitations
 
@@ -144,13 +144,13 @@ The Slack tool can be installed as usual.
 
 ### Keycloak Setup
 
-Make sure to run `kagenti/demo-setup/keycloak-config/slack/set_up_slack_demo.py` only after the Slack Agent and Tool are installed.
+Make sure to run `rossoctl/demo-setup/keycloak-config/slack/set_up_slack_demo.py` only after the Slack Agent and Tool are installed.
 
 Now, we need to obtain an access token the MCP Broker can use to initialize with the Slack MCP server to list available tools.
 
-In the Kagenti UI, login to Keycloak admin console with credentials from `.github/scripts/local-setup/show-services.sh`, and then perform the following steps:
+In the Rossoctl UI, login to Keycloak admin console with credentials from `.github/scripts/local-setup/show-services.sh`, and then perform the following steps:
 - Go to Clients
-- Go to `kagenti` client which should open settings
+- Go to `rossoctl` client which should open settings
 - Under Settings > Capability Config and enable Direct access grants
 - Hit Save
 - Now Under Credentials tab, obtain the Client Secret and save it to the local variable `CLIENT_SECRET`
@@ -166,7 +166,7 @@ kubectl -n keycloak port-forward service/keycloak 8080:8080
 
 In another terminal that has `CLIENT_SECRET` set, run:
 ```
-export ACCESS_TOKEN=`curl -sX POST -H "Content-Type: application/x-www-form-urlencoded"     -d "client_secret=$CLIENT_SECRET"     -d "grant_type=password"     -d "client_id=kagenti" -d "username=$USERNAME" -d "password=$PASSWORD"        "http://localhost:8080/realms/master/protocol/openid-connect/token" | jq -r .access_token`
+export ACCESS_TOKEN=`curl -sX POST -H "Content-Type: application/x-www-form-urlencoded"     -d "client_secret=$CLIENT_SECRET"     -d "grant_type=password"     -d "client_id=rossoctl" -d "username=$USERNAME" -d "password=$PASSWORD"        "http://localhost:8080/realms/master/protocol/openid-connect/token" | jq -r .access_token`
 echo $ACCESS_TOKEN
 ```
 
@@ -243,7 +243,7 @@ status:
 ### Validation
 
 To check if the Slack Agent is able to connect to the Slack tools via the MCP
-Gateway, one way is to open the Kagenti UI and open the chatbot that is
+Gateway, one way is to open the Rossoctl UI and open the chatbot that is
 connected to the Slack Agent. A query such as "List all the Slack channels" should
 give the expected results.
 

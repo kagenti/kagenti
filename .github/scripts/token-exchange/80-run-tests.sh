@@ -52,7 +52,7 @@ fi
 # the CI workflow before this script runs. See e2e-kind.yaml / e2e-hypershift.yaml.
 
 # Determine test strictness based on provider
-TEST_DIR="$REPO_ROOT/kagenti/tests/e2e/token_exchange"
+TEST_DIR="$REPO_ROOT/rossoctl/tests/e2e/token_exchange"
 PYTEST_ARGS=(-v --tb=short --junitxml="$REPO_ROOT/test-results/token-exchange-${KEYCLOAK_PROVIDER}.xml")
 
 if [[ "$KEYCLOAK_PROVIDER" == "rhbk" ]]; then

@@ -28,7 +28,7 @@ updates:
 
   # Python (backend) — FastAPI backend dependencies
   - package-ecosystem: pip
-    directory: /kagenti/backend
+    directory: /rossoctl/backend
     schedule:
       interval: weekly
     labels:
@@ -55,7 +55,7 @@ updates:
 
   # npm (UI) — React frontend dependencies
   - package-ecosystem: npm
-    directory: /kagenti/ui-v2
+    directory: /rossoctl/ui-v2
     schedule:
       interval: weekly
     labels:
@@ -93,7 +93,7 @@ updates:
 
   # Go (TUI) — Go module dependencies
   - package-ecosystem: gomod
-    directory: /kagenti/tui
+    directory: /rossoctl/tui
     schedule:
       interval: weekly
     labels:
@@ -119,7 +119,7 @@ updates:
 
   # Docker — application images
   - package-ecosystem: docker
-    directory: /kagenti/backend
+    directory: /rossoctl/backend
     schedule:
       interval: weekly
     labels:
@@ -131,7 +131,7 @@ updates:
         update-types: [major]
 
   - package-ecosystem: docker
-    directory: /kagenti/ui-v2
+    directory: /rossoctl/ui-v2
     schedule:
       interval: weekly
     labels:
@@ -143,7 +143,7 @@ updates:
         update-types: [major]
 
   - package-ecosystem: docker
-    directory: /kagenti/auth/agent-oauth-secret
+    directory: /rossoctl/auth/agent-oauth-secret
     schedule:
       interval: weekly
     labels:
@@ -155,7 +155,7 @@ updates:
         update-types: [major]
 
   - package-ecosystem: docker
-    directory: /kagenti/auth/api-oauth-secret
+    directory: /rossoctl/auth/api-oauth-secret
     schedule:
       interval: weekly
     labels:
@@ -167,7 +167,7 @@ updates:
         update-types: [major]
 
   - package-ecosystem: docker
-    directory: /kagenti/auth/mlflow-oauth-secret
+    directory: /rossoctl/auth/mlflow-oauth-secret
     schedule:
       interval: weekly
     labels:
@@ -179,7 +179,7 @@ updates:
         update-types: [major]
 
   - package-ecosystem: docker
-    directory: /kagenti/auth/ui-oauth-secret
+    directory: /rossoctl/auth/ui-oauth-secret
     schedule:
       interval: weekly
     labels:

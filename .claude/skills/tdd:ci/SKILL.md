@@ -35,7 +35,7 @@ Iterative development workflow using CI as the test environment. Commit changes,
 ```bash
 # Session-scoped log directory — use worktree/repo name to avoid collisions
 # For parallel worktree sessions, pre-set LOG_DIR to a unique path
-export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-tdd}"
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/rossoctl-tdd}"
 mkdir -p "$LOG_DIR"
 ```
 
@@ -49,7 +49,7 @@ gh run view <run-id> --log-failed > $LOG_DIR/ci-failed.log 2>&1; echo "EXIT:$?"
 # Local checks — redirect output
 make lint > $LOG_DIR/lint.log 2>&1 && echo "OK: lint passed" || echo "FAIL (see $LOG_DIR/lint.log)"
 pre-commit run --all-files > $LOG_DIR/precommit.log 2>&1 && echo "OK: pre-commit passed" || echo "FAIL (see $LOG_DIR/precommit.log)"
-uv run pytest kagenti/tests/ -v --ignore=kagenti/tests/e2e > $LOG_DIR/unit-tests.log 2>&1 && echo "OK: tests passed" || echo "FAIL (see $LOG_DIR/unit-tests.log)"
+uv run pytest rossoctl/tests/ -v --ignore=rossoctl/tests/e2e > $LOG_DIR/unit-tests.log 2>&1 && echo "OK: tests passed" || echo "FAIL (see $LOG_DIR/unit-tests.log)"
 ```
 
 ### Log Analysis Rule
@@ -173,7 +173,7 @@ developed against the latest upstream code, not against a local feature branch.
 ### Example: Clear fix
 
 ```
-/tdd:ci https://github.com/kagenti/kagenti/issues/652
+/tdd:ci https://github.com/rossoctl/rossoctl/issues/652
 
 -> Fetch upstream main
 -> No existing worktree for #652
@@ -188,7 +188,7 @@ developed against the latest upstream code, not against a local feature branch.
 ### Example: Unclear approach — post questions and wait
 
 ```
-/tdd:ci https://github.com/kagenti/kagenti/issues/678
+/tdd:ci https://github.com/rossoctl/rossoctl/issues/678
 
 -> Fetch upstream main, create worktree
 -> Phase 0b: Research reveals two possible causes
@@ -196,11 +196,11 @@ developed against the latest upstream code, not against a local feature branch.
      "## Investigation
       I found two potential root causes:
       1. Keycloak redirect URL mismatch — backend uses external URL for JWKS
-      2. Role mapping — admin role not mapped to kagenti-admin
+      2. Role mapping — admin role not mapped to rossoctl-admin
 
       ## Questions
       - Should the backend use an in-cluster URL for JWKS, or fix DNS?
-      - Is the admin→kagenti-admin role mapping intentional?
+      - Is the admin→rossoctl-admin role mapping intentional?
 
       Waiting for clarification before proceeding."
 -> STOP — wait for issue author to respond
@@ -212,7 +212,7 @@ developed against the latest upstream code, not against a local feature branch.
 ### Example: Multiple approaches — present options
 
 ```
-/tdd:ci https://github.com/kagenti/kagenti/issues/700
+/tdd:ci https://github.com/rossoctl/rossoctl/issues/700
 
 -> Research reveals the fix can go two ways
 -> Post to issue:
@@ -329,7 +329,7 @@ Run local validation before pushing (redirect output to files):
 ```bash
 make lint > $LOG_DIR/lint.log 2>&1 && echo "OK: lint" || echo "FAIL: lint (see $LOG_DIR/lint.log)"
 pre-commit run --all-files > $LOG_DIR/precommit.log 2>&1 && echo "OK: pre-commit" || echo "FAIL: pre-commit (see $LOG_DIR/precommit.log)"
-uv run pytest kagenti/tests/ -v --ignore=kagenti/tests/e2e > $LOG_DIR/unit-tests.log 2>&1 && echo "OK: tests" || echo "FAIL: tests (see $LOG_DIR/unit-tests.log)"
+uv run pytest rossoctl/tests/ -v --ignore=rossoctl/tests/e2e > $LOG_DIR/unit-tests.log 2>&1 && echo "OK: tests" || echo "FAIL: tests (see $LOG_DIR/unit-tests.log)"
 ```
 
 **Fix any failures before pushing.** On failure, use `Task(subagent_type='Explore')` to read the log file.
@@ -428,7 +428,7 @@ gh pr view <pr-number> --json reviews,comments --jq '.reviews[] | "\(.author.log
 ```
 
 ```bash
-gh api repos/kagenti/kagenti/pulls/<pr-number>/comments --jq '.[] | "#\(.id) @\(.user.login) [\(.path):\(.line)] \(.body[:100])"'
+gh api repos/rossoctl/rossoctl/pulls/<pr-number>/comments --jq '.[] | "#\(.id) @\(.user.login) [\(.path):\(.line)] \(.body[:100])"'
 ```
 
 ### For each review comment, determine:
@@ -492,7 +492,7 @@ After **3+ failed CI iterations**, consider switching to `tdd:hypershift` for re
 ```bash
 # Check if cluster exists for current worktree
 WORKTREE=$(basename "${WORKSPACE_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}")
-ls ~/clusters/hcp/kagenti-hypershift-custom-*/auth/kubeconfig 2>/dev/null
+ls ~/clusters/hcp/rossoctl-hypershift-custom-*/auth/kubeconfig 2>/dev/null
 ```
 
 ### Decision Tree
@@ -521,7 +521,7 @@ If user approves cluster creation:
 
 ```bash
 # Create cluster (max 5 char suffix)
-KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-<suffix>/auth/kubeconfig \
+KUBECONFIG=~/clusters/hcp/rossoctl-hypershift-custom-<suffix>/auth/kubeconfig \
   ./.github/scripts/local-setup/hypershift-full-test.sh <suffix> \
   --include-cluster-create --skip-cluster-destroy
 ```

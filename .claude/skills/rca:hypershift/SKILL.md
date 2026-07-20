@@ -31,7 +31,7 @@ logs, configmap dumps, and secret inspection. ALL output MUST go to files.
 
 ```bash
 # Session-scoped log directory
-export LOG_DIR=/tmp/kagenti/rca/${WORKTREE:-$CLUSTER}
+export LOG_DIR=/tmp/rossoctl/rca/${WORKTREE:-$CLUSTER}
 mkdir -p $LOG_DIR
 ```
 
@@ -64,7 +64,7 @@ mkdir -p $LOG_DIR
 
 Set cluster context:
 ```bash
-export CLUSTER=<suffix> MANAGED_BY_TAG=${MANAGED_BY_TAG:-kagenti-hypershift-custom}
+export CLUSTER=<suffix> MANAGED_BY_TAG=${MANAGED_BY_TAG:-rossoctl-hypershift-custom}
 export KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig
 ```
 
@@ -118,9 +118,9 @@ Find problem pods:
 kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
 ```
 
-Check kagenti-system namespace:
+Check rossoctl-system namespace:
 ```bash
-kubectl get pods -n kagenti-system
+kubectl get pods -n rossoctl-system
 ```
 
 Check team1 namespace:
@@ -137,19 +137,19 @@ kubectl get events -A --sort-by='.lastTimestamp' | tail -30
 
 Namespace events:
 ```bash
-kubectl get events -n kagenti-system --sort-by='.lastTimestamp'
+kubectl get events -n rossoctl-system --sort-by='.lastTimestamp'
 ```
 
 ### Current Logs
 
 OTEL Collector logs:
 ```bash
-kubectl logs -n kagenti-system deployment/otel-collector --tail=100
+kubectl logs -n rossoctl-system deployment/otel-collector --tail=100
 ```
 
 MLflow logs:
 ```bash
-kubectl logs -n kagenti-system deployment/mlflow --tail=100
+kubectl logs -n rossoctl-system deployment/mlflow --tail=100
 ```
 
 Agent logs:
@@ -159,7 +159,7 @@ kubectl logs -n team1 deployment/weather-service --tail=100
 
 Filter for errors:
 ```bash
-kubectl logs -n kagenti-system deployment/otel-collector --tail=500 | grep -iE "error|fail|warn"
+kubectl logs -n rossoctl-system deployment/otel-collector --tail=500 | grep -iE "error|fail|warn"
 ```
 
 ## Phase 2: Inspect Components
@@ -180,22 +180,22 @@ kubectl get pod <pod-name> -n <namespace> -o jsonpath='{.status.containerStatuse
 
 List ConfigMaps:
 ```bash
-kubectl get configmap -n kagenti-system
+kubectl get configmap -n rossoctl-system
 ```
 
 View specific ConfigMap:
 ```bash
-kubectl get configmap otel-collector-config -n kagenti-system -o yaml
+kubectl get configmap otel-collector-config -n rossoctl-system -o yaml
 ```
 
 List Secrets (check existence, not values):
 ```bash
-kubectl get secrets -n kagenti-system
+kubectl get secrets -n rossoctl-system
 ```
 
 Check secret keys:
 ```bash
-kubectl get secret mlflow-oauth-secret -n kagenti-system -o jsonpath='{.data}' | jq 'keys'
+kubectl get secret mlflow-oauth-secret -n rossoctl-system -o jsonpath='{.data}' | jq 'keys'
 ```
 
 Decode specific secret value:
@@ -207,13 +207,13 @@ kubectl get secret <secret-name> -n <namespace> -o jsonpath='{.data.<key>}' | ba
 
 Service endpoints:
 ```bash
-kubectl get endpoints -n kagenti-system
+kubectl get endpoints -n rossoctl-system
 ```
 
 Test internal connectivity:
 ```bash
 kubectl run -it --rm debug --image=curlimages/curl -- \
-  curl -v http://mlflow.kagenti-system.svc.cluster.local:5000/health
+  curl -v http://mlflow.rossoctl-system.svc.cluster.local:5000/health
 ```
 
 Check routes (OpenShift):
@@ -227,7 +227,7 @@ kubectl get routes -A
 
 Set environment variables:
 ```bash
-export CLUSTER=<suffix> WORKTREE=<worktree> MANAGED_BY_TAG=${MANAGED_BY_TAG:-kagenti-hypershift-custom}
+export CLUSTER=<suffix> WORKTREE=<worktree> MANAGED_BY_TAG=${MANAGED_BY_TAG:-rossoctl-hypershift-custom}
 ```
 
 Run specific test with verbose output:
@@ -241,12 +241,12 @@ KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig \
 
 Watch component logs (in separate terminal):
 ```bash
-kubectl logs -f -n kagenti-system deployment/otel-collector
+kubectl logs -f -n rossoctl-system deployment/otel-collector
 ```
 
 Or use stern for multiple pods:
 ```bash
-stern -n kagenti-system .
+stern -n rossoctl-system .
 ```
 
 ## Phase 4: Trace the Failure
@@ -272,12 +272,12 @@ Check each hop:
 
 **OTEL Collector:**
 ```bash
-kubectl logs -n kagenti-system deployment/otel-collector | grep -i "span\|trace\|export"
+kubectl logs -n rossoctl-system deployment/otel-collector | grep -i "span\|trace\|export"
 ```
 
 **MLflow:**
 ```bash
-kubectl logs -n kagenti-system deployment/mlflow | grep -i "trace\|experiment\|error"
+kubectl logs -n rossoctl-system deployment/mlflow | grep -i "trace\|experiment\|error"
 ```
 
 **Agent:**
@@ -294,8 +294,8 @@ KEYCLOAK_HOST=$(kubectl get route keycloak -n keycloak -o jsonpath='{.spec.host}
 
 Get OAuth client credentials:
 ```bash
-CLIENT_ID=$(kubectl get secret mlflow-oauth-secret -n kagenti-system -o jsonpath='{.data.OIDC_CLIENT_ID}' | base64 -d)
-CLIENT_SECRET=$(kubectl get secret mlflow-oauth-secret -n kagenti-system -o jsonpath='{.data.OIDC_CLIENT_SECRET}' | base64 -d)
+CLIENT_ID=$(kubectl get secret mlflow-oauth-secret -n rossoctl-system -o jsonpath='{.data.OIDC_CLIENT_ID}' | base64 -d)
+CLIENT_SECRET=$(kubectl get secret mlflow-oauth-secret -n rossoctl-system -o jsonpath='{.data.OIDC_CLIENT_SECRET}' | base64 -d)
 ```
 
 Test OAuth token exchange:

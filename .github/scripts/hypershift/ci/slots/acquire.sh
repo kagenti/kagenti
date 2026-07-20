@@ -24,7 +24,7 @@ MAX_SLOTS="${MAX_SLOTS:-6}"
 SLOT_TIMEOUT="${SLOT_TIMEOUT:-60}"  # Wait up to 60 min for a slot (CI run timeout is 120 min)
 LEASE_DURATION_SECONDS="${LEASE_DURATION_SECONDS:-7200}"  # 2 hours TTL for stale cleanup
 NAMESPACE="clusters"
-LEASE_PREFIX="kagenti-ci-slot"  # Namespaced prefix to avoid conflicts
+LEASE_PREFIX="rossoctl-ci-slot"  # Namespaced prefix to avoid conflicts
 
 # Identifiers
 RUN_ID="${GITHUB_RUN_ID:-local-$$}"
@@ -55,7 +55,7 @@ metadata:
   name: ${lease_name}
   namespace: ${NAMESPACE}
   labels:
-    app: kagenti-ci
+    app: rossoctl-ci
     slot: "${slot}"
 spec:
   holderIdentity: "${HOLDER_IDENTITY}"
@@ -141,12 +141,12 @@ show_slot_status() {
 # Check if we already have a slot (idempotency)
 check_existing_slot() {
     local existing_lease
-    existing_lease=$(oc get leases -n "$NAMESPACE" -l app=kagenti-ci \
+    existing_lease=$(oc get leases -n "$NAMESPACE" -l app=rossoctl-ci \
         -o jsonpath='{range .items[*]}{.metadata.name}|{.spec.holderIdentity}{"\n"}{end}' 2>/dev/null | \
         grep "|${CLUSTER_SUFFIX}:" | head -1 | cut -d'|' -f1 || echo "")
 
     if [[ -n "$existing_lease" ]]; then
-        # Extract slot number from lease name (e.g., "kagenti-ci-slot-0" -> "0")
+        # Extract slot number from lease name (e.g., "rossoctl-ci-slot-0" -> "0")
         local slot_num="${existing_lease##*-}"
         echo "Already have slot $slot_num (lease: $existing_lease)"
         ACQUIRED_SLOT="$slot_num"

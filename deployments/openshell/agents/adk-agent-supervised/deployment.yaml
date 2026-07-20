@@ -21,7 +21,7 @@ spec:
   template:
     metadata:
       labels:
-        kagenti.io/inject: disabled
+        rossoctl.io/inject: disabled
         app.kubernetes.io/name: adk-agent-supervised
     spec:
       terminationGracePeriodSeconds: 10
@@ -124,7 +124,7 @@ spec:
   - port: 8080
     targetPort: 8080
 ---
-apiVersion: agent.kagenti.dev/v1alpha1
+apiVersion: agent.rossoctl.dev/v1alpha1
 kind: AgentRuntime
 metadata:
   name: adk-agent-supervised

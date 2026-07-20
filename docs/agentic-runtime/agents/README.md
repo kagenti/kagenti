@@ -3,7 +3,7 @@
 > Back to [main doc](../openshell-integration.md)
 
 This directory contains one document per agent type/framework describing its
-capabilities, Kagenti integration points, and testing status.
+capabilities, Rossoctl integration points, and testing status.
 
 ## Agent Classification
 
@@ -77,14 +77,14 @@ Table of agent capabilities with status:
 | Tool calling | Yes/No | Which tools |
 | Subagent delegation | Yes/No | |
 | Memory/knowledge | Yes/No | What persists |
-| Skill execution | Native/Prompt/No | How kagenti skills are loaded |
+| Skill execution | Native/Prompt/No | How rossoctl skills are loaded |
 | HITL approval | L0-L3 | Which HITL level |
 
-## 6. Kagenti Integration
-How this agent connects to Kagenti platform services:
+## 6. Rossoctl Integration
+How this agent connects to Rossoctl platform services:
 
 ### 6.1 Communication Adapter
-How the Kagenti backend talks to this agent:
+How the Rossoctl backend talks to this agent:
 - A2A JSON-RPC (custom agents)
 - ExecSandbox gRPC (builtin sandboxes)
 - kubectl exec (fallback)
@@ -96,9 +96,9 @@ How conversation history is stored and resumed:
 - Agent-side storage (if any)
 
 ### 6.3 Observable Events
-What data the agent produces that Kagenti can display:
+What data the agent produces that Rossoctl can display:
 
-| Event | Source | Kagenti UI Component | Phase |
+| Event | Source | Rossoctl UI Component | Phase |
 |-------|--------|---------------------|-------|
 | LLM request/response | Agent SDK | PromptInspector | Phase 2 |
 | Tool call result | Agent framework | EventsPanel | Phase 2 |
@@ -164,11 +164,11 @@ Quick cross-agent comparison of key capabilities:
 
 ## A2A Adapter Architecture
 
-For agents that don't natively speak A2A, Kagenti needs an adapter:
+For agents that don't natively speak A2A, Rossoctl needs an adapter:
 
 ```mermaid
 graph TB
-    subgraph backend["Kagenti Backend"]
+    subgraph backend["Rossoctl Backend"]
         A2A["A2A Adapter"]
         EXEC["ExecSandbox Adapter"]
         TERM["Terminal Adapter"]

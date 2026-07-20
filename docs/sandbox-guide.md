@@ -1,9 +1,9 @@
-# Kagenti Sandbox Guide (OpenShell)
+# Rossoctl Sandbox Guide (OpenShell)
 
-This guide covers installing and using the Kagenti sandboxing feature powered by
-[OpenShell](https://github.com/NVIDIA/OpenShell). Kagenti maintains a
-[distribution fork](https://github.com/kagenti/OpenShell) (`mvp-v2` branch) with
-Kagenti-specific multitenancy patches. The upstream CLI works as-is — no
+This guide covers installing and using the Rossoctl sandboxing feature powered by
+[OpenShell](https://github.com/NVIDIA/OpenShell). Rossoctl maintains a
+[distribution fork](https://github.com/rossoctl/OpenShell) (`mvp-v2` branch) with
+Rossoctl-specific multitenancy patches. The upstream CLI works as-is — no
 fork-specific build is needed. Sandboxes provide kernel-level isolation for
 autonomous AI agents with credential protection and network policy enforcement.
 
@@ -16,7 +16,7 @@ autonomous AI agents with credential protection and network policy enforcement.
 
 ## Install the OpenShell CLI
 
-Install the upstream OpenShell CLI (fully compatible with the Kagenti gateway):
+Install the upstream OpenShell CLI (fully compatible with the Rossoctl gateway):
 
 ```bash
 # Via the official install script
@@ -35,23 +35,23 @@ Verify the installation:
 openshell --version
 ```
 
-## Step 1: Deploy Kagenti (Platform-Specific)
+## Step 1: Deploy Rossoctl (Platform-Specific)
 
 Choose the command that matches your target environment:
 
 ### Kind (Local Development)
 
 ```bash
-scripts/kind/setup-kagenti.sh --with-ui --with-agent-sandbox --with-spire
+scripts/kind/setup-rossoctl.sh --with-ui --with-agent-sandbox --with-spire
 ```
 
 This deploys: Kind cluster, Istio ambient mesh, cert-manager, Keycloak, SPIRE,
-and the Kagenti platform.
+and the Rossoctl platform.
 
 ### OpenShift
 
 ```bash
-scripts/ocp/setup-kagenti.sh --with-agent-sandbox --with-spire
+scripts/ocp/setup-rossoctl.sh --with-agent-sandbox --with-spire
 ```
 
 Refer to [docs/ocp/openshift-install.md](ocp/openshift-install.md) for full
@@ -411,7 +411,7 @@ openshell sandbox exec -- curl -sS -o /dev/null -w "%{http_code}" https://github
 # 200
 
 # git clone works with just github.com:443 in the policy
-openshell sandbox exec -- git clone https://github.com/kagenti/kagenti.git /tmp/repo
+openshell sandbox exec -- git clone https://github.com/rossoctl/rossoctl.git /tmp/repo
 ```
 
 Unlisted endpoints remain blocked:
@@ -554,7 +554,7 @@ Skip specific components with `--skip-*` flags (mirrors `deploy-shared.sh`):
 
 ```bash
 scripts/openshell/cleanup-shared.sh --skip-keycloak  # Keep the Keycloak realm
-scripts/openshell/cleanup-shared.sh --skip-backend   # Keep kagenti-backend + DB
+scripts/openshell/cleanup-shared.sh --skip-backend   # Keep rossoctl-backend + DB
 ```
 
 ### Dry run

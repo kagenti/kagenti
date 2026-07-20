@@ -1,6 +1,6 @@
 ---
 name: kind
-description: Manage Kind (Kubernetes in Docker) clusters for local Kagenti development and testing.
+description: Manage Kind (Kubernetes in Docker) clusters for local Rossoctl development and testing.
 ---
 
 # Kind Skills
@@ -45,7 +45,7 @@ Skills for managing Kind clusters for local development.
 ## Access URLs
 
 After deployment:
-- Kagenti UI: http://kagenti-ui.localtest.me:8080
+- Rossoctl UI: http://rossoctl-ui.localtest.me:8080
 - Keycloak: http://keycloak.localtest.me:8080
 - Phoenix: http://phoenix.localtest.me:8080
 - Kiali: http://kiali.localtest.me:8080

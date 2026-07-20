@@ -2,22 +2,22 @@
 
 This document provides detailed steps for running the **Generic Agent** proof-of-concept (PoC) demo.
 
-In this demo, we will use the Kagenti UI to import and deploy the **Generic Agent**, the **Movie Tool**, and the **Flight Tool**.
+In this demo, we will use the Rossoctl UI to import and deploy the **Generic Agent**, the **Movie Tool**, and the **Flight Tool**.
 During deployment, we'll configure the **A2A protocol** for managing agent calls and **MCP** for enabling communication between the agent and tools.
 
 Once deployed, we will query the agent using a natural language prompt. The agent will then invoke the tool and return movie or flight data as a response.
 
-This demo illustrates how Kagenti manages the lifecycle of all required components: agents, tools, protocols, and runtime infrastructure.
+This demo illustrates how Rossoctl manages the lifecycle of all required components: agents, tools, protocols, and runtime infrastructure.
 
 Here's a breakdown of the sections:
 
-- In [**Import New Agent**](#import-new-agent), you'll build and deploy the [`generic_agent`](https://github.com/kagenti/agent-examples/tree/main/a2a/generic_agent) agent.
-- In [**Import New Tool**](#import-new-tool), you'll build and deploy [`movie_tool`](https://github.com/kagenti/agent-examples/tree/main/mcp/movie_tool) tool and [`flight_tool`](https://github.com/kagenti/agent-examples/tree/main/mcp/flight_tool) tool.
+- In [**Import New Agent**](#import-new-agent), you'll build and deploy the [`generic_agent`](https://github.com/rossoctl/examples/tree/main/a2a/generic_agent) agent.
+- In [**Import New Tool**](#import-new-tool), you'll build and deploy [`movie_tool`](https://github.com/rossoctl/examples/tree/main/mcp/movie_tool) tool and [`flight_tool`](https://github.com/rossoctl/examples/tree/main/mcp/flight_tool) tool.
 - In [**Validate the Deployment**](#validate-the-deployment), you'll verify that all components are running and operational.
 - In [**Chat with the Generic Agent**](#chat-with-the-generic-agent), you'll interact with the agent and confirm it responds correctly using movie and flight data.
 
 > **Prerequisites:**
-> Ensure you've completed the Kagenti platform setup as described in the [Installation Guide](../install.md).
+> Ensure you've completed the Rossoctl platform setup as described in the [Installation Guide](../install.md).
 
 You should also open the Agent Platform Demo Dashboard as instructed in the [Accessing the UI](../install.md#accessing-the-ui) section.
 
@@ -27,7 +27,7 @@ You should also open the Agent Platform Demo Dashboard as instructed in the [Acc
 
 To deploy the Generic Agent:
 
-1. Navigate to [Import New Agent](http://kagenti-ui.localtest.me:8080/Import_New_Agent#import-new-agent) in the Kagenti UI.
+1. Navigate to [Import New Agent](http://rossoctl-ui.localtest.me:8080/Import_New_Agent#import-new-agent) in the Rossoctl UI.
 2. In the **Select Namespace to Deploy Agent** drop-down, choose the `<namespace>` where you'd like to deploy the agent. (These namespaces are defined in your `.env` file.)
 3. Under **Environment Variables**, configure LLM settings using one of these methods:
    - Click **Import .env File** and import `.env.openai` or `.env.ollama` from the agent examples repo, **or**
@@ -36,11 +36,11 @@ To deploy the Generic Agent:
    - Click `Add Environment Variable`
    - Under `Name` put `MCP_URLS` and under `Value` put `http://movie-tool:8000/mcp, http://flight-tool:8000/mcp`
 5. In the **Agent Source Repository URL** field, use the default:
-   <https://github.com/kagenti/agent-examples>
+   <https://github.com/rossoctl/examples>
    Or use a custom repository accessible using the GitHub ID specified in your `.env` file.
 6. For **Git Branch or Tag**, use the default `main` branch (or select another as needed).
 7. Set **Protocol** to `a2a`.
-8. Under [**Specify Source Subfolder**](http://kagenti-ui.localtest.me:8080/Import_New_Agent#specify-source-subfolder):
+8. Under [**Specify Source Subfolder**](http://rossoctl-ui.localtest.me:8080/Import_New_Agent#specify-source-subfolder):
    - Click `Select from examples`
    - Choose: `a2a/generic_agent`
 9. Click **Build & Deploy New Agent** to deploy.
@@ -54,14 +54,14 @@ To deploy the Generic Agent:
 To deploy the Movie Tool using Shipwright:
 
 1. Go to [OMDB's website](https://www.omdbapi.com/) and apply for a free API key
-1. Navigate to [Import New Tool](http://kagenti-ui.localtest.me:8080/Import_New_Tool#import-new-tool) in Kagenti's UI.
+1. Navigate to [Import New Tool](http://rossoctl-ui.localtest.me:8080/Import_New_Tool#import-new-tool) in Rossoctl's UI.
 1. Select the same `<namespace>` as used for the agent.
 1. Select "Build from source" as the deployment method.
-1. Under [**Environment Variable**](http://kagenti-ui.localtest.me:8080/Import_New_Agent#environment-variables), add the following environment variable:
+1. Under [**Environment Variable**](http://rossoctl-ui.localtest.me:8080/Import_New_Agent#environment-variables), add the following environment variable:
    - Click `Add Environment Variable`
    - Under `Name` put `OMDB_API_KEY` and under `Value` put your OMDB API key
 1. Use the same source repository:
-   <https://github.com/kagenti/agent-examples>
+   <https://github.com/rossoctl/examples>
 1. Choose the `main` branch or your preferred branch.
 1. Set **Select Protocol** to `streamable_http`.
 1. Under **Specify Source Subfolder**:
@@ -72,11 +72,11 @@ You will be redirected to a **Build Progress** page where you can monitor the Sh
 
 To deploy the Flight Tool using Shipwright:
 
-1. Navigate to [Import New Tool](http://kagenti-ui.localtest.me:8080/Import_New_Tool#import-new-tool) in the UI.
+1. Navigate to [Import New Tool](http://rossoctl-ui.localtest.me:8080/Import_New_Tool#import-new-tool) in the UI.
 1. Select the same `<namespace>` as used for the agent.
 1. Select "Build from source" as the deployment method.
 1. Use the same source repository:
-   <https://github.com/kagenti/agent-examples>
+   <https://github.com/rossoctl/examples>
 1. Choose the `main` branch or your preferred branch.
 1. Set **Select Protocol** to `streamable_http`.
 1. Under **Specify Source Subfolder**:
@@ -109,7 +109,7 @@ To verify that both the agent and tool are running:
 
    ```console
    installer$ kubectl logs -f deployment/generic-agent -n <your-ns>
-   Defaulted container "generic-agent" out of: generic-agent, spiffe-helper, kagenti-client-registration, fix-permissions (init)
+   Defaulted container "generic-agent" out of: generic-agent, spiffe-helper, rossoctl-client-registration, fix-permissions (init)
    INFO:     Started server process [14]
    INFO:     Waiting for application startup.
    INFO:     Application startup complete.
@@ -120,7 +120,7 @@ To verify that both the agent and tool are running:
    For the movie tool:
    ```console
    installer$ kubectl logs -f deployment/movie-tool -n <your-ns>
-   Defaulted container "movie-tool" out of: movie-tool, spiffe-helper, kagenti-client-registration, fix-permissions (init)                        
+   Defaulted container "movie-tool" out of: movie-tool, spiffe-helper, rossoctl-client-registration, fix-permissions (init)                        
    INFO:     Started server process [14]
    INFO:     Waiting for application startup.
    INFO: StreamableHTTP session manager started
@@ -131,7 +131,7 @@ To verify that both the agent and tool are running:
    For the flight tool:
    ```console
    installer$ kubectl logs -f deployment/flight-tool -n <your-ns>
-   Defaulted container "flight-tool" out of: flight-tool, spiffe-helper, kagenti-client-registration, fix-permissions (init)   
+   Defaulted container "flight-tool" out of: flight-tool, spiffe-helper, rossoctl-client-registration, fix-permissions (init)   
    INFO:     Started server process [14]
    INFO:     Waiting for application startup.
    INFO: StreamableHTTP session manager started
@@ -147,9 +147,9 @@ To verify that both the agent and tool are running:
 
 Once the deployment is complete, you can run the demo:
 
-1. Navigate to the **Agent Catalog** in the Kagenti UI.
+1. Navigate to the **Agent Catalog** in the Rossoctl UI.
 2. Select the same `<namespace>` used during the agent deployment.
-3. Under [**Available Agents in <namespace>**](http://kagenti-ui.localtest.me:8080/Agent_Catalog#available-agents-in-kagenti-system), select `generic_agent` and click **View Details**.
+3. Under [**Available Agents in <namespace>**](http://rossoctl-ui.localtest.me:8080/Agent_Catalog#available-agents-in-rossoctl-system), select `generic_agent` and click **View Details**.
 4. Scroll to the bottom of the page. In the input field labeled *Say something to the agent...*, enter:
 
    ```console

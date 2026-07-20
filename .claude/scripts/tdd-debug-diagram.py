@@ -6,7 +6,7 @@ Edges are colored by status:
   - Red (#F44336): traversed on a failure path
   - Orange (#FF9800): not yet traversed
 
-Output is organized per worktree/branch under /tmp/kagenti/tdd/<worktree>/<branch>/
+Output is organized per worktree/branch under /tmp/rossoctl/tdd/<worktree>/<branch>/
 
 Usage:
     python3 .claude/scripts/tdd-debug-diagram.py \\
@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 
 
 HIGHLIGHT_STYLE = "fill:#FFEB3B,stroke:#F57F17,stroke-width:4px"
-BASE_DIR = "/tmp/kagenti/tdd"
+BASE_DIR = "/tmp/rossoctl/tdd"
 
 # Keywords in edge labels that indicate failure paths
 FAILURE_KEYWORDS = re.compile(
@@ -56,7 +56,7 @@ def parse_args():
 
 
 def get_output_dir(worktree, branch):
-    """Build output dir: /tmp/kagenti/tdd/<worktree>/<branch>/"""
+    """Build output dir: /tmp/rossoctl/tdd/<worktree>/<branch>/"""
     # Sanitize branch name for filesystem (replace / with _)
     safe_branch = branch.replace("/", "_") if branch else "default"
     return os.path.join(BASE_DIR, worktree, safe_branch)

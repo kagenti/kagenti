@@ -16,9 +16,9 @@
 #   --help                      Show this help message
 #
 # DETECTION CRITERIA:
-#   1. Has label: kagenti.io/auto-cleanup=enabled
-#   2. Age > kagenti.io/ttl-hours (in hours)
-#   3. NOT protected (kagenti.io/protected!=true)
+#   1. Has label: rossoctl.io/auto-cleanup=enabled
+#   2. Age > rossoctl.io/ttl-hours (in hours)
+#   3. NOT protected (rossoctl.io/protected!=true)
 #   4. Matches MANAGED_BY_TAG pattern (if filtering enabled)
 #
 # EXAMPLES:
@@ -29,7 +29,7 @@
 #   ./cleanup-stale-clusters.sh --apply
 #
 #   # Only check CI clusters
-#   ./cleanup-stale-clusters.sh --dry-run --pattern "kagenti-hypershift-ci-*"
+#   ./cleanup-stale-clusters.sh --dry-run --pattern "rossoctl-hypershift-ci-*"
 #
 #   # Verbose: show all clusters with auto-cleanup enabled
 #   ./cleanup-stale-clusters.sh --dry-run --verbose
@@ -104,7 +104,7 @@ log_info() { echo -e "${BLUE}→${NC} $1"; }
 
 if [ -z "${KUBECONFIG:-}" ]; then
     log_error "KUBECONFIG not set"
-    log_info "Please source credentials first (e.g., source .env.kagenti-hypershift-custom)"
+    log_info "Please source credentials first (e.g., source .env.rossoctl-hypershift-custom)"
     exit 1
 fi
 
@@ -142,7 +142,7 @@ echo ""
 log_info "Finding clusters with auto-cleanup enabled..."
 
 CLUSTERS=$(oc get hostedclusters -n clusters \
-    -l kagenti.io/auto-cleanup=enabled \
+    -l rossoctl.io/auto-cleanup=enabled \
     -o jsonpath='{range .items[*]}{.metadata.name}{" "}{end}' 2>/dev/null || echo "")
 
 if [ -z "$CLUSTERS" ]; then
@@ -177,7 +177,7 @@ for CLUSTER_NAME in $CLUSTERS; do
     CLUSTER_JSON=$(oc get hostedcluster "$CLUSTER_NAME" -n clusters -o json 2>/dev/null || echo "{}")
 
     # Check if protected
-    PROTECTED=$(echo "$CLUSTER_JSON" | jq -r '.metadata.labels["kagenti.io/protected"] // "false"')
+    PROTECTED=$(echo "$CLUSTER_JSON" | jq -r '.metadata.labels["rossoctl.io/protected"] // "false"')
     if [ "$PROTECTED" = "true" ]; then
         if [ "$VERBOSE" = "true" ]; then
             log_success "PROTECTED: $CLUSTER_NAME"
@@ -189,8 +189,8 @@ for CLUSTER_NAME in $CLUSTERS; do
     fi
 
     # Get TTL and creation time
-    TTL_HOURS=$(echo "$CLUSTER_JSON" | jq -r '.metadata.labels["kagenti.io/ttl-hours"] // "null"')
-    CLUSTER_TYPE=$(echo "$CLUSTER_JSON" | jq -r '.metadata.labels["kagenti.io/cluster-type"] // "unknown"')
+    TTL_HOURS=$(echo "$CLUSTER_JSON" | jq -r '.metadata.labels["rossoctl.io/ttl-hours"] // "null"')
+    CLUSTER_TYPE=$(echo "$CLUSTER_JSON" | jq -r '.metadata.labels["rossoctl.io/cluster-type"] // "unknown"')
     CREATED_AT=$(echo "$CLUSTER_JSON" | jq -r '.metadata.creationTimestamp // "null"')
 
     # Validate TTL

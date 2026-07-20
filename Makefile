@@ -1,30 +1,30 @@
 .PHONY: lint
 lint:
-	cd kagenti/backend && uv sync --extra dev && uv run pylint app/
+	cd rossoctl/backend && uv sync --extra dev && uv run pylint app/
 
 # Define variables
-KIND_CLUSTER_NAME := kagenti
+KIND_CLUSTER_NAME := rossoctl
 # Generate unique tag using git commit hash (short) or timestamp if not in git repo
 TAG := $(shell git rev-parse --short HEAD 2>/dev/null | xargs -I {} sh -c 'echo "{}-$$(date +%s)"' || date +%s)
 RELEASE_TAG := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "unknown")
 
 # Agent OAuth Secret
 AGENT_OAUTH_SECRET_IMAGE := agent-oauth-secret
-AGENT_OAUTH_SECRET_DIR := kagenti/auth/agent-oauth-secret
+AGENT_OAUTH_SECRET_DIR := rossoctl/auth/agent-oauth-secret
 AGENT_OAUTH_SECRET_TAG := $(TAG)
 
 # UI v2 Frontend
-UI_FRONTEND_REPO := ghcr.io/kagenti/kagenti-ui-v2
+UI_FRONTEND_REPO := ghcr.io/rossoctl/rossoctl-ui-v2
 UI_FRONTEND_TAG := $(TAG)
-UI_FRONTEND_DIR := kagenti/ui-v2
+UI_FRONTEND_DIR := rossoctl/ui-v2
 
 # UI v2 Backend
-UI_BACKEND_REPO := ghcr.io/kagenti/kagenti-backend
+UI_BACKEND_REPO := ghcr.io/rossoctl/rossoctl-backend
 UI_BACKEND_TAG := $(TAG)
-UI_BACKEND_DIR := kagenti/backend
+UI_BACKEND_DIR := rossoctl/backend
 
 # Shared Docker build context (matches CI build.yaml)
-DOCKER_BUILD_CONTEXT := kagenti
+DOCKER_BUILD_CONTEXT := rossoctl
 
 # --- Conditional Build Flags Logic ---
 
@@ -109,14 +109,14 @@ build-load-ui: build-load-ui-frontend build-load-ui-backend
 	@echo ""
 	@echo "To use these images with the Helm chart, run:"
 	@echo ""
-	@echo "  helm upgrade --install kagenti charts/kagenti \\"
-	@echo "    --namespace kagenti-system \\"
+	@echo "  helm upgrade --install rossoctl charts/rossoctl \\"
+	@echo "    --namespace rossoctl-system \\"
 	@echo "    --set openshift=false \\"
 	@echo "    --set ui.frontend.image=$(UI_FRONTEND_REPO) \\"
 	@echo "    --set ui.frontend.tag=$(UI_FRONTEND_TAG) \\"
 	@echo "    --set ui.backend.image=$(UI_BACKEND_REPO) \\"
 	@echo "    --set ui.backend.tag=$(UI_BACKEND_TAG) \\"
-	@echo "    -f charts/kagenti/.secrets.yaml"
+	@echo "    -f charts/rossoctl/.secrets.yaml"
 	@echo ""
 
 # Help target for UI v2 builds
@@ -169,13 +169,13 @@ preload-file: preflight-check
 .PHONY: build-tui install-tui lint-tui test-tui
 
 build-tui:
-	$(MAKE) -C kagenti/tui build
+	$(MAKE) -C rossoctl/tui build
 
 install-tui:
-	$(MAKE) -C kagenti/tui install
+	$(MAKE) -C rossoctl/tui install
 
 lint-tui:
-	$(MAKE) -C kagenti/tui lint
+	$(MAKE) -C rossoctl/tui lint
 
 test-tui:
-	$(MAKE) -C kagenti/tui test
+	$(MAKE) -C rossoctl/tui test

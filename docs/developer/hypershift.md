@@ -1,6 +1,6 @@
 # HyperShift Development Guide
 
-This guide covers Kagenti development using HyperShift to create OpenShift clusters on AWS.
+This guide covers Rossoctl development using HyperShift to create OpenShift clusters on AWS.
 
 ## Table of Contents
 
@@ -106,7 +106,7 @@ oc login https://api.management-cluster.example.com:6443 ...
 # Creates IAM user + OCP service account for cluster management
 ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh
 
-# Output: .env.kagenti-hypershift-custom (contains scoped credentials)
+# Output: .env.rossoctl-hypershift-custom (contains scoped credentials)
 ```
 
 ### Step 4: Install hcp CLI
@@ -124,7 +124,7 @@ oc login https://api.management-cluster.example.com:6443 ...
 ### Step 6: Verify Setup
 
 ```bash
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 ./.github/scripts/hypershift/preflight-check.sh
 ```
 
@@ -132,10 +132,10 @@ source .env.kagenti-hypershift-custom
 
 | Component | Default | Example |
 |-----------|---------|---------|
-| MANAGED_BY_TAG | `kagenti-hypershift-custom` | Prefix for all resources |
-| .env file | `.env.kagenti-hypershift-custom` | Contains scoped credentials |
+| MANAGED_BY_TAG | `rossoctl-hypershift-custom` | Prefix for all resources |
+| .env file | `.env.rossoctl-hypershift-custom` | Contains scoped credentials |
 | Cluster suffix | `$USER` | Your username (e.g., `ladas`) |
-| Full cluster name | `<MANAGED_BY_TAG>-<suffix>` | `kagenti-hypershift-custom-ladas` |
+| Full cluster name | `<MANAGED_BY_TAG>-<suffix>` | `rossoctl-hypershift-custom-ladas` |
 
 Customize the cluster suffix by passing it as an argument.
 
@@ -147,9 +147,9 @@ After one-time setup, this is the typical development flow:
 
 ```bash
 # 1. Source credentials
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 
-# 2. Create cluster, deploy Kagenti, run tests (keep cluster for debugging)
+# 2. Create cluster, deploy Rossoctl, run tests (keep cluster for debugging)
 ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy
 
 # 3. Show service URLs and credentials
@@ -184,8 +184,8 @@ source .env.kagenti-hypershift-custom
 # Iterate on existing cluster (skip create/destroy)
 ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-create --skip-cluster-destroy
 
-# Fresh Kagenti install on existing cluster
-./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-create --clean-kagenti --skip-cluster-destroy
+# Fresh Rossoctl install on existing cluster
+./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-create --clean-rossoctl --skip-cluster-destroy
 ```
 
 ---
@@ -201,14 +201,14 @@ Operations that run on the **management cluster** (where HyperShift operator run
 Before creating clusters, verify you have sufficient AWS quota:
 
 ```bash
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 ./.github/scripts/hypershift/check-quotas.sh
 ```
 
 ### Create Hosted Cluster
 
 ```bash
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 
 # Default cluster (uses $USER as suffix)
 ./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-create
@@ -222,7 +222,7 @@ Cluster creation takes ~10-15 minutes.
 ### Destroy Hosted Cluster
 
 ```bash
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 
 # Default cluster
 ./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-destroy
@@ -236,7 +236,7 @@ source .env.kagenti-hypershift-custom
 Find orphaned AWS resources for a cluster (read-only):
 
 ```bash
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 
 # Default cluster
 ./.github/scripts/hypershift/debug-aws-hypershift.sh
@@ -257,7 +257,7 @@ Configure management cluster and nodepool autoscaling:
 
 ## Hosted Cluster Operations
 
-Operations that run on the **hosted cluster** (where Kagenti platform runs).
+Operations that run on the **hosted cluster** (where Rossoctl platform runs).
 
 **Kubeconfig:** `~/clusters/hcp/<cluster-name>/auth/kubeconfig`
 
@@ -270,15 +270,15 @@ Hosted cluster kubeconfigs are stored at:
 ```
 
 Examples:
-- `~/clusters/hcp/kagenti-hypershift-custom-ladas/auth/kubeconfig`
-- `~/clusters/hcp/kagenti-hypershift-custom-pr529/auth/kubeconfig`
+- `~/clusters/hcp/rossoctl-hypershift-custom-ladas/auth/kubeconfig`
+- `~/clusters/hcp/rossoctl-hypershift-custom-pr529/auth/kubeconfig`
 
 ```bash
 # Set kubeconfig for your cluster
-export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-$USER/auth/kubeconfig
+export KUBECONFIG=~/clusters/hcp/rossoctl-hypershift-custom-$USER/auth/kubeconfig
 
 # Or for custom suffix
-export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-pr529/auth/kubeconfig
+export KUBECONFIG=~/clusters/hcp/rossoctl-hypershift-custom-pr529/auth/kubeconfig
 
 # Verify connection
 oc get nodes
@@ -289,14 +289,14 @@ oc get nodes
 | Cluster | Purpose | Kubeconfig |
 |---------|---------|------------|
 | **Management** | Create/destroy hosted clusters | `~/.kube/hypershift_mgmt` |
-| **Hosted** | Run Kagenti platform | `~/clusters/hcp/<cluster-name>/auth/kubeconfig` |
+| **Hosted** | Run Rossoctl platform | `~/clusters/hcp/<cluster-name>/auth/kubeconfig` |
 
 The scripts automatically switch between kubeconfigs as needed.
 
-### Install Kagenti Platform
+### Install Rossoctl Platform
 
 ```bash
-./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-install
+./.github/scripts/local-setup/hypershift-full-test.sh --include-rossoctl-install
 ```
 
 ### Deploy Test Agents
@@ -311,10 +311,10 @@ The scripts automatically switch between kubeconfigs as needed.
 ./.github/scripts/local-setup/hypershift-full-test.sh --include-test
 ```
 
-### Uninstall Kagenti
+### Uninstall Rossoctl
 
 ```bash
-./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-uninstall
+./.github/scripts/local-setup/hypershift-full-test.sh --include-rossoctl-uninstall
 ```
 
 ### Access Services
@@ -331,9 +331,9 @@ Service routes:
 
 | Service | How to Find URL |
 |---------|-----------------|
-| **Kagenti UI** | `oc get route -n kagenti-system kagenti-ui` |
+| **Rossoctl UI** | `oc get route -n rossoctl-system rossoctl-ui` |
 | **Keycloak Admin** | `oc get route -n keycloak keycloak` |
-| **Phoenix (Traces)** | `oc get route -n kagenti-system phoenix` _(only when `components.phoenix.enabled: true`)_ |
+| **Phoenix (Traces)** | `oc get route -n rossoctl-system phoenix` _(only when `components.phoenix.enabled: true`)_ |
 | **Kiali** | `oc get route -n istio-system kiali` |
 | **OpenShift Console** | `oc get route -n openshift-console console` |
 
@@ -348,12 +348,12 @@ cat ~/clusters/hcp/<cluster-name>/auth/kubeadmin-password
 ```bash
 # View pod status
 oc get pods -A
-oc get pods -n kagenti-system
+oc get pods -n rossoctl-system
 oc get pods -n team1
 
 # Check logs
 oc logs -n team1 deployment/weather-service -f
-oc logs -n kagenti-system deployment/kagenti-operator -f
+oc logs -n rossoctl-system deployment/operator -f
 
 # Recent events
 oc get events -A --sort-by='.lastTimestamp' | tail -30
@@ -393,7 +393,7 @@ oc get events -A --sort-by='.lastTimestamp' | tail -30
 | `--include-cluster-destroy` | Destroy only | **Cleanup**: destroy cluster when done |
 | `--skip-cluster-create --skip-cluster-destroy` | Install, deploy, test | Iterate on existing cluster |
 | `--include-<phase>` | Selected phase(s) | Run specific phase(s) only |
-| `--clean-kagenti` | Uninstall before install | Fresh Kagenti installation |
+| `--clean-rossoctl` | Uninstall before install | Fresh Rossoctl installation |
 | `--dry-run` | Check state only | Inspect cluster state without changes |
 | `[suffix]` | Custom cluster name | Use suffix instead of $USER |
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Create Kind Cluster Script - Creates a Kind cluster for Kagenti testing
+# Create Kind Cluster Script - Creates a Kind cluster for Rossoctl testing
 # Usage: ./kind/create-cluster.sh [cluster-name]
 
 set -euo pipefail
@@ -14,12 +14,12 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-CLUSTER_NAME="${1:-${CLUSTER_NAME:-kagenti}}"
+CLUSTER_NAME="${1:-${CLUSTER_NAME:-rossoctl}}"
 KIND_CONFIG="${KIND_CONFIG:-$REPO_ROOT/scripts/kind/kind-config-registry.yaml}"
 
 echo ""
 echo "======================================================================="
-echo "              Kagenti Kind Cluster Creation                            "
+echo "              Rossoctl Kind Cluster Creation                            "
 echo "======================================================================="
 echo ""
 echo -e "${BLUE}Cluster Name: ${CLUSTER_NAME}${NC}"

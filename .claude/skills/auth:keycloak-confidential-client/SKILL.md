@@ -87,7 +87,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: my-service-oauth-secret
-  namespace: kagenti-system
+  namespace: rossoctl-system
 spec:
   template:
     spec:
@@ -129,7 +129,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: secret-creator
-  namespace: kagenti-system
+  namespace: rossoctl-system
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
@@ -141,7 +141,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: keycloak-secret-creator
-  namespace: kagenti-system
+  namespace: rossoctl-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

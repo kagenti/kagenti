@@ -3,7 +3,7 @@
 
 Usage:
     # From a local log file:
-    ./parse-test-matrix.sh /tmp/kagenti/tdd-iter8/kind-fulltest.log
+    ./parse-test-matrix.sh /tmp/rossoctl/tdd-iter8/kind-fulltest.log
 
     # From a CI run (auto-detects issue_comment Kind run):
     ./parse-test-matrix.sh --ci-kind
@@ -240,8 +240,8 @@ def load_metrics(metrics_path: str | None = None) -> list[dict]:
     # Auto-detect from LOG_DIR or common locations
     for candidate in [
         os.getenv("LOG_DIR", ""),
-        "/tmp/kagenti/tdd-iter8",
-        "/tmp/kagenti/tdd-iter7",
+        "/tmp/rossoctl/tdd-iter8",
+        "/tmp/rossoctl/tdd-iter7",
     ]:
         path = Path(candidate) / "llm-metrics.json"
         if path.exists():
@@ -371,7 +371,7 @@ def find_ci_hcp_run() -> str | None:
 
 
 def process_ci_run(run_id: str, label: str):
-    cache = Path(f"/tmp/kagenti/test-matrix-ci-{run_id}.txt")
+    cache = Path(f"/tmp/rossoctl/test-matrix-ci-{run_id}.txt")
     if cache.exists():
         log_text = cache.read_text()
     else:
@@ -408,7 +408,7 @@ def main():
         print(__doc__)
         return
 
-    os.makedirs("/tmp/kagenti", exist_ok=True)
+    os.makedirs("/tmp/rossoctl", exist_ok=True)
 
     if args[0] == "--ci-kind":
         run_id = find_ci_kind_run()
@@ -449,9 +449,9 @@ def main():
             process_ci_run(run_id, "CI HyperShift")
 
         import glob
-        for logfile in sorted(glob.glob("/tmp/kagenti/tdd-iter*/kind-fulltest*.log")):
+        for logfile in sorted(glob.glob("/tmp/rossoctl/tdd-iter*/kind-fulltest*.log")):
             process_log_file(logfile, f"Local Kind ({Path(logfile).parent.name})")
-        for logfile in sorted(glob.glob("/tmp/kagenti/tdd-iter*/hcp-fulltest*.log")):
+        for logfile in sorted(glob.glob("/tmp/rossoctl/tdd-iter*/hcp-fulltest*.log")):
             process_log_file(logfile, f"Custom HCP ({Path(logfile).parent.name})")
 
     else:

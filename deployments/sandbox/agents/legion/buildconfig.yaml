@@ -7,7 +7,7 @@ spec:
   source:
     type: Git
     git:
-      uri: https://github.com/Ladas/kagenti.git
+      uri: https://github.com/Ladas/rossoctl.git
       ref: feat/platform-agent-runtime
     contextDir: deployments/sandbox
     sourceSecret:

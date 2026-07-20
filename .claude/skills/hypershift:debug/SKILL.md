@@ -12,7 +12,7 @@ This skill helps debug AWS resources related to HyperShift clusters, identifying
 **AWS CLI and kubectl output MUST go to files.**
 
 ```bash
-export LOG_DIR=/tmp/kagenti/hypershift/${CLUSTER:-debug}
+export LOG_DIR=/tmp/rossoctl/hypershift/${CLUSTER:-debug}
 mkdir -p $LOG_DIR
 
 # Pattern: redirect AWS/kubectl output
@@ -40,8 +40,8 @@ kubectl get hostedclusters -A > $LOG_DIR/clusters.log 2>&1 && echo "OK" || echo 
 
 Ensure credentials are loaded:
 ```bash
-# Load HyperShift credentials (from kagenti repo root)
-source .env.kagenti-hypershift-custom  # or .env.hypershift-ci
+# Load HyperShift credentials (from rossoctl repo root)
+source .env.rossoctl-hypershift-custom  # or .env.hypershift-ci
 ```
 
 ### Run Full Debug Script
@@ -53,7 +53,7 @@ source .env.kagenti-hypershift-custom  # or .env.hypershift-ci
 # Examples:
 ./.github/scripts/hypershift/debug-aws-hypershift.sh              # defaults to username
 ./.github/scripts/hypershift/debug-aws-hypershift.sh ladas        # suffix only
-./.github/scripts/hypershift/debug-aws-hypershift.sh kagenti-hypershift-custom-ladas  # full name
+./.github/scripts/hypershift/debug-aws-hypershift.sh rossoctl-hypershift-custom-ladas  # full name
 ./.github/scripts/hypershift/debug-aws-hypershift.sh pr529
 
 # Check mode (quiet, returns exit code only)
@@ -67,7 +67,7 @@ echo $?  # 0 = no resources, 1 = resources exist
 
 ```bash
 # Set management cluster kubeconfig
-source .env.kagenti-hypershift-custom  # loads KUBECONFIG
+source .env.rossoctl-hypershift-custom  # loads KUBECONFIG
 
 # Get HostedCluster status
 oc get hostedcluster -n clusters <cluster-name> -o yaml

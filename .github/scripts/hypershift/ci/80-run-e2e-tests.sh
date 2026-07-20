@@ -26,7 +26,7 @@ uv sync --extra test
 #
 # Use CI-specific config that disables features not installed on ephemeral clusters
 # (RHOAI, MLflow, Shipwright, Kiali) so tests are correctly skipped.
-export KAGENTI_CONFIG_FILE="deployments/envs/ocp_ci_values.yaml"
+export ROSSOCTL_CONFIG_FILE="deployments/envs/ocp_ci_values.yaml"
 
 exec "$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
     --include-test \

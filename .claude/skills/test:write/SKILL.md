@@ -1,11 +1,11 @@
 ---
 name: test:write
-description: Write E2E and unit tests following Kagenti testing standards
+description: Write E2E and unit tests following Rossoctl testing standards
 ---
 
 # Write Tests
 
-Write tests that follow Kagenti testing standards.
+Write tests that follow Rossoctl testing standards.
 
 ## When to Use
 
@@ -16,7 +16,7 @@ Write tests that follow Kagenti testing standards.
 ## Test Structure
 
 ```
-kagenti/tests/
+rossoctl/tests/
 ├── e2e/
 │   ├── common/          # Tests that run on all platforms
 │   │   ├── test_agent_*.py
@@ -73,8 +73,8 @@ def kubeconfig():
     """KUBECONFIG path."""
 
 @pytest.fixture
-def kagenti_config():
-    """Platform config from KAGENTI_CONFIG_FILE."""
+def rossoctl_config():
+    """Platform config from ROSSOCTL_CONFIG_FILE."""
 ```
 
 ## After Writing

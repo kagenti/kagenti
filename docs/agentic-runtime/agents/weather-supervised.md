@@ -48,7 +48,7 @@ deployments/openshell/agents/weather-agent-supervised/
 ```bash
 docker build -t weather-agent-supervised:latest \
   deployments/openshell/agents/weather-agent-supervised/
-kind load docker-image weather-agent-supervised:latest --name kagenti
+kind load docker-image weather-agent-supervised:latest --name rossoctl
 kubectl apply -f deployments/openshell/agents/weather-agent-supervised/deployment.yaml
 
 # OCP: dedicated service account with privileged SCC
@@ -78,16 +78,16 @@ oc adm policy add-scc-to-user privileged -z openshell-supervisor -n team1
 | OPA proxy | **Active** | Listening on 10.200.0.1:3128 |
 | TLS MITM | **Active** | Ephemeral CA for L7 inspection |
 
-## 6. Kagenti Integration
+## 6. Rossoctl Integration
 
 ### 6.1 Communication Adapter
 **kubectl exec** — netns blocks port-forward. Tests use `kubectl exec` to
 verify supervisor logs and OPA enforcement. Future: ExecSandbox gRPC adapter
-in Kagenti backend.
+in Rossoctl backend.
 
 ### 6.2 Observable Events
 
-| Event | Source | Kagenti UI Component | Phase |
+| Event | Source | Rossoctl UI Component | Phase |
 |-------|--------|---------------------|-------|
 | Landlock setup | Supervisor logs | EventsPanel | Current (logs) |
 | OPA deny/allow | Supervisor OPA proxy | HitlApprovalCard | Phase 2 |

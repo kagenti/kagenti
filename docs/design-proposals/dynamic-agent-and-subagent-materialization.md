@@ -2,20 +2,20 @@
 
 ## Summary
 
-This proposal adds a Kubernetes-native mechanism for creating dynamic Kagenti agents from an explicit request. The central API is a new `DynamicAgentRequest` custom resource watched by a new controller in the Kagenti operator.
+This proposal adds a Kubernetes-native mechanism for creating dynamic Rossoctl agents from an explicit request. The central API is a new `DynamicAgentRequest` custom resource watched by a new controller in the Rossoctl operator.
 
 The proposal focuses on two MVP use cases:
 
 1. **User-initiated dynamic agent creation**: a user, workflow, or higher-level system submits an explicit bill of materials describing an agent to create.
-2. **Parent-agent-created subagent execution**: a running Kagenti agent requests a task-scoped child agent, passes the task and required context, and receives the child result through a durable status/result channel.
+2. **Parent-agent-created subagent execution**: a running Rossoctl agent requests a task-scoped child agent, passes the task and required context, and receives the child result through a durable status/result channel.
 
-The design reuses Kagenti's existing primitives: dynamic agents are normal Kagenti-managed agentic workloads. A dynamic agent may be materialized as a `Deployment`, `Job`, or `Sandbox`, and it should inherit the same behavior and limitations as the corresponding static workload type.
+The design reuses Rossoctl's existing primitives: dynamic agents are normal Rossoctl-managed agentic workloads. A dynamic agent may be materialized as a `Deployment`, `Job`, or `Sandbox`, and it should inherit the same behavior and limitations as the corresponding static workload type.
 
 ## Motivation and High-Level Direction
 
 Static agents are useful when the set of tasks, tools, permissions, and runtime shape are known in advance. They become limiting when users or agents need short-lived, task-specific workers with narrower tools, smaller privileges, dedicated context, and clear audit boundaries.
 
-Dynamic agent materialization enables Kagenti to create a workload only when needed, with only the components and permissions required for the specific task. This creates a foundation for:
+Dynamic agent materialization enables Rossoctl to create a workload only when needed, with only the components and permissions required for the specific task. This creates a foundation for:
 
 - task-specific agents with smaller privilege scope;
 - parent agents delegating bounded work to child agents;
@@ -31,11 +31,11 @@ This proposal is intentionally narrower than the larger long-term vision. It doe
 The MVP should:
 
 - add a `DynamicAgentRequest` CRD containing explicit bill-of-materials input;
-- implement a `DynamicAgentRequest` controller inside the existing Kagenti operator;
+- implement a `DynamicAgentRequest` controller inside the existing Rossoctl operator;
 - support both user-initiated dynamic agents and parent-agent-created subagents;
 - provide a platform tool interface for parent agents to spawn, observe, and cancel subagents;
-- support best-effort cancellation and cleanup consistent with existing Kagenti behavior;
-- preserve the behavior of existing Kagenti workload creation paths as closely as possible.
+- support best-effort cancellation and cleanup consistent with existing Rossoctl behavior;
+- preserve the behavior of existing Rossoctl workload creation paths as closely as possible.
 
 ## Non-Goals
 
@@ -47,9 +47,9 @@ The MVP does not:
 - implement a mature verified component registry;
 - implement rich UI flows beyond basic CR visibility and future optional UI affordances.
 
-## Current Kagenti Primitives and Flows to Reuse
+## Current Rossoctl Primitives and Flows to Reuse
 
-Kagenti already supports most low-level primitives required for dynamic agent materialization, including:
+Rossoctl already supports most low-level primitives required for dynamic agent materialization, including:
 
 - image-based deployment;
 - source-based deployment through Shipwright `Build` and `BuildRun`;
@@ -71,16 +71,16 @@ The first implementation will focus on *image-based materialization*. Source-bas
 
 Dynamic Agent Materialization supports two closely related but different workflows.
 
-In **standalone** mode, the request asks Kagenti to create a dynamic agent workload from explicit inputs. The controller materializes the workload, records generated resource references in status, and leaves interaction to normal Kagenti mechanisms such as A2A chat, ACP, routes, or Kubernetes visibility.
+In **standalone** mode, the request asks Rossoctl to create a dynamic agent workload from explicit inputs. The controller materializes the workload, records generated resource references in status, and leaves interaction to normal Rossoctl mechanisms such as A2A chat, ACP, routes, or Kubernetes visibility.
 
-In **subagent** mode, the request asks Kagenti to create a child agent **and run a task through it**. The task prompt, context, requested capabilities, and execution settings are part of the request. After materialization, the controller invokes the child through the selected workload/protocol path and writes the final result or artifact reference back to the same `DynamicAgentRequest` status. The parent receives progress and result through the platform tool wrapper, which reads the request status.
+In **subagent** mode, the request asks Rossoctl to create a child agent **and run a task through it**. The task prompt, context, requested capabilities, and execution settings are part of the request. After materialization, the controller invokes the child through the selected workload/protocol path and writes the final result or artifact reference back to the same `DynamicAgentRequest` status. The parent receives progress and result through the platform tool wrapper, which reads the request status.
 
 This distinction is important:
 
 | Mode | What the controller creates | Does the controller invoke the agent? | How the caller gets the result | Typical caller |
 |---|---|---|---|---|
-| `standalone` | A normal Kagenti-managed workload | No | Normal Kagenti interaction paths | User, workflow, external planner |
-| `subagent` | A normal Kagenti-managed child workload | Yes | `status.result` or `status.artifactRef`, exposed through the tool wrapper | Parent agent |
+| `standalone` | A normal Rossoctl-managed workload | No | Normal Rossoctl interaction paths | User, workflow, external planner |
+| `subagent` | A normal Rossoctl-managed child workload | Yes | `status.result` or `status.artifactRef`, exposed through the tool wrapper | Parent agent |
 
 The phrase "spawn subagent" therefore means more than "create another agent pod". It means creating a child workload, invoking it with a task, tracking failures and cancellation, and making the result available through a durable platform object.
 
@@ -91,7 +91,7 @@ The phrase "spawn subagent" therefore means more than "create another agent pod"
 The following is the conceptual shape of a `DynamicAgentRequest`:
 
 ```yaml
-apiVersion: agent.kagenti.dev/v1alpha1
+apiVersion: agent.rossoctl.dev/v1alpha1
 kind: DynamicAgentRequest
 metadata:
   # The request name is the stable handle used by users, controllers, and tools.
@@ -100,7 +100,7 @@ metadata:
   namespace: team1
 
 spec:
-  # standalone: create a dynamic agent and expose it through normal Kagenti mechanisms.
+  # standalone: create a dynamic agent and expose it through normal Rossoctl mechanisms.
   # subagent: create a child agent, invoke it with spec.task, and store the result in status.
   mode: standalone | subagent
 
@@ -135,21 +135,21 @@ spec:
       packageRefs: []
 
   agent:
-    # Reuses Kagenti workload-type terminology.
+    # Reuses Rossoctl workload-type terminology.
     workloadType: deployment | job | sandbox
 
     # image is the MVP baseline. source is represented for compatibility with
-    # Kagenti's existing Shipwright flow but may initially return
+    # Rossoctl's existing Shipwright flow but may initially return
     # UnsupportedDeploymentMethod until build/finalize reconciliation is added.
     deploymentMethod: image | source
 
     image:
-      # Existing Kagenti container-image field. Required when deploymentMethod=image.
+      # Existing Rossoctl container-image field. Required when deploymentMethod=image.
       containerImage: ghcr.io/example/reviewer:latest
       imagePullSecret: optional-secret
 
     source:
-      # Existing Kagenti/Shipwright-style source inputs. Used only when
+      # Existing Rossoctl/Shipwright-style source inputs. Used only when
       # deploymentMethod=source is implemented for dynamic requests.
       gitUrl: optional-git-url
       gitRef: optional-branch-or-tag
@@ -164,7 +164,7 @@ spec:
     # hidden capabilities from this field.
     framework: LangGraph | ADK | ClaudeCode | OpenCode | other
 
-    # Existing Kagenti service port shape for Service-backed workloads. Ignored
+    # Existing Rossoctl service port shape for Service-backed workloads. Ignored
     # or constrained for Job workloads.
     servicePorts:
       - name: http
@@ -172,11 +172,11 @@ spec:
         targetPort: 8000
         protocol: TCP
 
-    # Existing Kagenti env var shape, including valueFrom Secret/ConfigMap refs.
+    # Existing Rossoctl env var shape, including valueFrom Secret/ConfigMap refs.
     envVars: []
 
-    # Existing Kagenti skill names. Local skills are mounted from ConfigMaps;
-    # external skills follow current Kagenti external-skill behavior.
+    # Existing Rossoctl skill names. Local skills are mounted from ConfigMaps;
+    # external skills follow current Rossoctl external-skill behavior.
     skills: []
 
     # Optional model route/config reference. The MVP can translate this to
@@ -191,7 +191,7 @@ spec:
     workspaceAccess: none | readOnly | readWrite
 
   materialization:
-    # Existing Kagenti materialization/security knobs.
+    # Existing Rossoctl materialization/security knobs.
     createRoute: false
     authBridgeEnabled: true
     authBridgeMode: proxy-sidecar | envoy-sidecar | lite | waypoint
@@ -221,7 +221,7 @@ spec:
     reason: ...
 ```
 
-The CRD should use the existing Kagenti API group and version convention, `agent.kagenti.dev/v1alpha1`. Field names should mirror current Kagenti agent creation terminology where possible, such as `workloadType`, `deploymentMethod`, `containerImage`, `servicePorts`, `envVars`, `skills`, `authBridgeMode`, `mtlsMode`, and `persistentStorage`.
+The CRD should use the existing Rossoctl API group and version convention, `agent.rossoctl.dev/v1alpha1`. Field names should mirror current Rossoctl agent creation terminology where possible, such as `workloadType`, `deploymentMethod`, `containerImage`, `servicePorts`, `envVars`, `skills`, `authBridgeMode`, `mtlsMode`, and `persistentStorage`.
 
 A `DynamicAgentRequest` remains alive after the child workload is created because it records:
 
@@ -239,7 +239,7 @@ A `DynamicAgentRequest` remains alive after the child workload is created becaus
 The status model deliberately separates three concerns:
 
 1. **Request phase**: where the overall request is in its lifecycle.
-2. **Materialization state**: whether Kubernetes/Kagenti resources were created.
+2. **Materialization state**: whether Kubernetes/Rossoctl resources were created.
 3. **Execution state**: whether the child was invoked and produced a result.
 
 Conceptual status:
@@ -275,7 +275,7 @@ status:
     routeRef: ...
 
   materialization:
-    # Tracks creation of backing Kagenti/Kubernetes resources. Source-based
+    # Tracks creation of backing Rossoctl/Kubernetes resources. Source-based
     # requests may pass through BuildRunning before a workload exists.
     phase: Pending | BuildRunning | Materialized | Failed | PartiallyCreated
     buildRef: ...
@@ -342,7 +342,7 @@ The controller should enforce a configurable result-size limit for `status.resul
 
 ## Controller Location and Responsibility
 
-The new `DynamicAgentRequest` controller is running inside the Kagenti operator. It watches `DynamicAgentRequest` resources and reconciles them through the following stages:
+The new `DynamicAgentRequest` controller is running inside the Rossoctl operator. It watches `DynamicAgentRequest` resources and reconciles them through the following stages:
 
 ```text
 DynamicAgentRequest created
@@ -378,11 +378,11 @@ User/workflow creates DynamicAgentRequest
         ↓
 Controller validates and admits request
         ↓
-Controller creates the selected Kagenti workload
+Controller creates the selected Rossoctl workload
         ↓
 Controller stores generated resource references
         ↓
-User interacts with the agent through normal Kagenti mechanisms
+User interacts with the agent through normal Rossoctl mechanisms
 ```
 
 For this use case, the request may not include an immediate task invocation. It can simply create a dynamic agent and expose references to the generated workload.
@@ -456,9 +456,9 @@ This creates a deterministic retry loop without relying on task inference. A par
 
 ## Parent-Agent Tool Interface
 
-The MVP must include a concrete parent-agent interface. The recommended approach is a built-in platform MCP server in the existing Kagenti backend. This server exposes the `spawn_subagent`, `get_subagent_status`, and `cancel_subagent` tools over Streamable HTTP.
+The MVP must include a concrete parent-agent interface. The recommended approach is a built-in platform MCP server in the existing Rossoctl backend. This server exposes the `spawn_subagent`, `get_subagent_status`, and `cancel_subagent` tools over Streamable HTTP.
 
-The backend MCP server does not directly materialize workloads. Its only persistent actions are to create, patch, and read `DynamicAgentRequest` CRs. The `DynamicAgentRequest` CR remains the durable API, and the controller in the existing Kagenti operator remains responsible for reconciliation, materialization, task invocation, result capture, and cleanup.
+The backend MCP server does not directly materialize workloads. Its only persistent actions are to create, patch, and read `DynamicAgentRequest` CRs. The `DynamicAgentRequest` CR remains the durable API, and the controller in the existing Rossoctl operator remains responsible for reconciliation, materialization, task invocation, result capture, and cleanup.
 
 ### `spawn_subagent`
 
@@ -587,7 +587,7 @@ Future event/message-queue integration can provide streaming observations and ev
 
 ## Cancellation and Cleanup
 
-Cancellation is best-effort and should align with current Kagenti cleanup behavior.
+Cancellation is best-effort and should align with current Rossoctl cleanup behavior.
 
 Active cancellation should be represented by a spec field so the request can remain visible with a terminal `Cancelled` status:
 
@@ -608,36 +608,36 @@ The controller should:
 - preserve externally supplied Secrets, ConfigMaps, PVCs, and package refs unless explicitly owned by the request;
 - report cleanup errors in status.
 
-For Jobs, deletion should use normal Kubernetes background propagation. For Sandboxes and other workloads, cleanup should follow existing Kagenti deletion conventions.
+For Jobs, deletion should use normal Kubernetes background propagation. For Sandboxes and other workloads, cleanup should follow existing Rossoctl deletion conventions.
 
 ## Labels and Annotations
 
 Generated resources must be traceable to the request. The following labels are required on generated workloads and Services where Kubernetes label constraints allow them:
 
 ```yaml
-kagenti.io/dynamic-agent: "true"
-kagenti.io/dynamic-request: <request-name>
-kagenti.io/dynamic-mode: standalone | subagent
+rossoctl.io/dynamic-agent: "true"
+rossoctl.io/dynamic-request: <request-name>
+rossoctl.io/dynamic-mode: standalone | subagent
 app.kubernetes.io/name: <generated-agent-name>
 app.kubernetes.io/component: agent
-app.kubernetes.io/managed-by: kagenti-operator
+app.kubernetes.io/managed-by: rossoctl-operator
 ```
 
 For subagents, the following lineage labels should be added when the values fit Kubernetes label constraints:
 
 ```yaml
-kagenti.io/parent-agent: <parent-agent-name>
-kagenti.io/parent-namespace: <parent-agent-namespace>
+rossoctl.io/parent-agent: <parent-agent-name>
+rossoctl.io/parent-namespace: <parent-agent-namespace>
 ```
 
 Structured, large, sensitive, or potentially long values should be stored as annotations or status fields rather than labels. Recommended annotations:
 
 ```yaml
-kagenti.io/dynamic-request-uid: <request-uid>
-kagenti.io/requester-ref: ...
-kagenti.io/parent-session-ref: ...
-kagenti.io/admitted-capabilities-hash: ...
-kagenti.io/task-hash: ...
+rossoctl.io/dynamic-request-uid: <request-uid>
+rossoctl.io/requester-ref: ...
+rossoctl.io/parent-session-ref: ...
+rossoctl.io/admitted-capabilities-hash: ...
+rossoctl.io/task-hash: ...
 ```
 
 The controller should also set owner references from generated resources to the `DynamicAgentRequest` wherever Kubernetes ownership rules allow it. Owner references and finalizers are the primary cleanup mechanism; labels and annotations are for discovery, audit, and debugging.
@@ -664,15 +664,15 @@ If implementation constraints require the generated workload name to match the r
 
 ## Reusable Materialization Layer
 
-The implementation should not make workload materialization logic private to the `DynamicAgentRequest` controller. Dynamic agent requests and Teleport / restore workflows both need the same lower-level operation: given an admitted description of an agent-like workload, create or coordinate the corresponding Kagenti resources using normal Kagenti conventions.
+The implementation should not make workload materialization logic private to the `DynamicAgentRequest` controller. Dynamic agent requests and Teleport / restore workflows both need the same lower-level operation: given an admitted description of an agent-like workload, create or coordinate the corresponding Rossoctl resources using normal Rossoctl conventions.
 
-The implementation should therefore introduce a small internal **reusable materialization package** inside the existing Kagenti operator. The reusable materialization layer should own common mechanics such as:
+The implementation should therefore introduce a small internal **reusable materialization package** inside the existing Rossoctl operator. The reusable materialization layer should own common mechanics such as:
 
 - constructing `Deployment`, `Job`, or `Sandbox` resources from an admitted workload description;
 - creating or referencing `Service` resources where appropriate;
-- creating `AgentRuntime` for workload types that currently use `AgentRuntime` in Kagenti;
-- applying standard Kagenti labels, annotations, owner references, and lineage metadata;
-- wiring skills, environment variables, `Secret` and `ConfigMap` references, persistent storage, and context/package mounts using existing Kagenti conventions;
+- creating `AgentRuntime` for workload types that currently use `AgentRuntime` in Rossoctl;
+- applying standard Rossoctl labels, annotations, owner references, and lineage metadata;
+- wiring skills, environment variables, `Secret` and `ConfigMap` references, persistent storage, and context/package mounts using existing Rossoctl conventions;
 - resolving skill-related dependencies;
 - recording generated resource references;
 - tracking which resources were created by a materialization operation;
@@ -686,11 +686,11 @@ Teleport / restore workflows remain responsible for Teleport-specific behavior: 
 
 ### Step 1: Add CRD types
 
-Add `DynamicAgentRequest` API types to `kagenti-operator`, including spec/status and printer columns for phase, mode, workload type, and age.
+Add `DynamicAgentRequest` API types to `rossoctl-operator`, including spec/status and printer columns for phase, mode, workload type, and age.
 
 ### Step 2: Add controller
 
-Add a new controller in the existing Kagenti operator.
+Add a new controller in the existing Rossoctl operator.
 
 The first reconciliation loop should support:
 
@@ -710,7 +710,7 @@ Implement workload-specific reconciliation paths:
 - Job adapter;
 - Sandbox adapter.
 
-These should follow current Kagenti backend conventions as closely as possible.
+These should follow current Rossoctl backend conventions as closely as possible.
 
 ### Step 4: Implement subagent invocation
 
@@ -726,9 +726,9 @@ Store small results in `status.result`. Store larger outputs in an artifact and 
 
 ### Step 6: Add platform tool wrapper
 
-Add `spawn_subagent`, `get_subagent_status`, and `cancel_subagent` tools in the existing Kagenti backend or existing Kagenti platform service layer.
+Add `spawn_subagent`, `get_subagent_status`, and `cancel_subagent` tools in the existing Rossoctl backend or existing Rossoctl platform service layer.
 
-The tool wrapper should authenticate the caller through Kagenti's existing workload/user authentication path, stamp trusted parent/requester metadata, create/update `DynamicAgentRequest` CRs, and read status. It should not give the parent agent raw Kubernetes credentials.
+The tool wrapper should authenticate the caller through Rossoctl's existing workload/user authentication path, stamp trusted parent/requester metadata, create/update `DynamicAgentRequest` CRs, and read status. It should not give the parent agent raw Kubernetes credentials.
 
 ### Step 7: Add tests
 

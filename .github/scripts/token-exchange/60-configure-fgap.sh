@@ -2,7 +2,7 @@
 # Configure FGAP (Fine-Grained Authorization Policy) token exchange
 # for all agent/tool clients in the test realm.
 #
-# For each kagenti-registered client:
+# For each rossoctl-registered client:
 #   1. Enables authorizationServicesEnabled
 #   2. Creates token-exchange scope permission
 #   3. Enables management permissions
@@ -28,7 +28,7 @@ CLIENT_COUNT=$(echo "$ALL_CLIENTS" | jq length)
 log_info "Found $CLIENT_COUNT clients"
 
 if [[ "$CLIENT_COUNT" -eq 0 ]]; then
-  log_error "No kagenti clients found. Has the operator registered them?"
+  log_error "No rossoctl clients found. Has the operator registered them?"
   exit 1
 fi
 

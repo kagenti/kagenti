@@ -1,5 +1,5 @@
 """
-Kagenti Sandbox Agent Server — litellm-powered agent with skills (Phase 4, C10+C11)
+Rossoctl Sandbox Agent Server — litellm-powered agent with skills (Phase 4, C10+C11)
 
 A simple agent server that:
 1. Loads CLAUDE.md + .claude/skills/ from /workspace via SkillsLoader

@@ -20,7 +20,7 @@ Deploy OpenShell on Kind and OpenShift with multi-tenant isolation, OIDC authent
 | Compute driver | Fork of [openshell-driver-openshift](https://github.com/zanetworker/openshell-driver-openshift) (out-of-process, Go) |
 | Credential resolution | Keycloak credentials driver (OAuth2 client_credentials via driver subsystem) |
 | Session persistence | dtach via init container |
-| Headless mode | Kagenti `AgentTask` CRD + controller |
+| Headless mode | Rossoctl `AgentTask` CRD + controller |
 | Platforms | Kind (Istio Gateway API) + OpenShift (passthrough Routes) |
 | Store | SQLite (one file per gateway instance) |
 
@@ -114,7 +114,7 @@ Forked from [zanetworker/openshell-driver-openshift](https://github.com/zanetwor
 | Change | Size | Description |
 |--------|------|-------------|
 | Namespace from config | Small | Read `--namespace` from flag/env. Each tenant's driver targets one namespace. |
-| Tenant labels | Small | Add `openshell.ai/tenant: <team>` and `kagenti.io/team: <team>` to sandbox pods |
+| Tenant labels | Small | Add `openshell.ai/tenant: <team>` and `rossoctl.io/team: <team>` to sandbox pods |
 | Scoped RBAC | Small | Replace demo `cluster-admin` with namespace-scoped Role (sandboxes, pods, secrets) |
 | dtach in init container | Small | Add dtach binary to the supervisor-loader init container image |
 
@@ -152,7 +152,7 @@ The key insight is that this fits cleanly into OpenShell's existing credential r
 | Operation | Behavior |
 |-----------|----------|
 | `ResolveCredential(name)` | Looks up the named credential config (client_id, client_secret, token endpoint, scopes). Calls Keycloak's token endpoint with `grant_type=client_credentials`. Returns the access token. Caches tokens until near-expiry. |
-| `ListCredentials` | Returns all configured credential names (e.g., `github-api`, `kagenti-backend`). |
+| `ListCredentials` | Returns all configured credential names (e.g., `github-api`, `rossoctl-backend`). |
 
 **Configuration per tenant:**
 
@@ -165,11 +165,11 @@ credentials:
     client_secret_ref: team1-github-secret  # K8s Secret reference
     token_endpoint: https://keycloak.example.com/realms/openshell/protocol/openid-connect/token
     scopes: ["repo", "read:org"]
-  kagenti-backend:
-    client_id: team1-kagenti
-    client_secret_ref: team1-kagenti-secret
+  rossoctl-backend:
+    client_id: team1-rossoctl
+    client_secret_ref: team1-rossoctl-secret
     token_endpoint: https://keycloak.example.com/realms/openshell/protocol/openid-connect/token
-    scopes: ["kagenti:read"]
+    scopes: ["rossoctl:read"]
 ```
 
 Client secrets are stored in Kubernetes Secrets and mounted into the driver container. The driver never persists tokens to disk.
@@ -233,7 +233,7 @@ Upstream Kubernetes SIG controller (`registry.k8s.io/agent-sandbox/agent-sandbox
 
 ### 3.6 Keycloak Configuration
 
-Shared Keycloak instance (can be Kagenti's existing Keycloak or a dedicated one).
+Shared Keycloak instance (can be Rossoctl's existing Keycloak or a dedicated one).
 
 | Resource | Value |
 |----------|-------|
@@ -253,7 +253,7 @@ Shared Keycloak instance (can be Kagenti's existing Keycloak or a dedicated one)
 
 **Ingress: Shared TLS Gateway + per-tenant TLSRoute**
 
-The gateway requires L4 passthrough (mTLS between CLI and gateway, SSH tunneling inside gRPC). A single shared Istio Gateway in `kagenti-system` handles TLS passthrough for all tenants. Each tenant deploys only a `TLSRoute` that uses SNI (hostname) to route to its backend.
+The gateway requires L4 passthrough (mTLS between CLI and gateway, SSH tunneling inside gRPC). A single shared Istio Gateway in `rossoctl-system` handles TLS passthrough for all tenants. Each tenant deploys only a `TLSRoute` that uses SNI (hostname) to route to its backend.
 
 **Shared Gateway** (deployed once by `deploy-shared.sh`):
 
@@ -262,7 +262,7 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
   name: tls-passthrough
-  namespace: kagenti-system
+  namespace: rossoctl-system
   annotations:
     networking.istio.io/service-type: NodePort
 spec:
@@ -293,7 +293,7 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: tls-passthrough
-      namespace: kagenti-system
+      namespace: rossoctl-system
       sectionName: tls-passthrough
   rules:
     - backendRefs:
@@ -301,10 +301,10 @@ spec:
           port: 8080
 ```
 
-All tenants share the single Gateway (one Envoy pod in `kagenti-system`, NodePort 30443). SNI hostname distinguishes tenants — no extra Envoy pods per namespace, no port-per-tenant allocation.
+All tenants share the single Gateway (one Envoy pod in `rossoctl-system`, NodePort 30443). SNI hostname distinguishes tenants — no extra Envoy pods per namespace, no port-per-tenant allocation.
 
 **Prerequisites:**
-- Kind cluster with Istio installed (Kagenti's `kind-full-test.sh` includes this)
+- Kind cluster with Istio installed (Rossoctl's `kind-full-test.sh` includes this)
 - `agents.x-k8s.io` CRD + controller deployed
 
 ### 4.2 OpenShift
@@ -514,10 +514,10 @@ Interactive sandboxes require an SSH connection. For fire-and-forget tasks (refa
 
 ### Solution
 
-A Kagenti-owned `AgentTask` CRD and controller that creates sandbox pods with the agent command as the entrypoint instead of sshd.
+A Rossoctl-owned `AgentTask` CRD and controller that creates sandbox pods with the agent command as the entrypoint instead of sshd.
 
 ```yaml
-apiVersion: kagenti.io/v1alpha1
+apiVersion: rossoctl.io/v1alpha1
 kind: AgentTask
 metadata:
   name: refactor-auth
@@ -589,7 +589,7 @@ The supervisor's egress proxy is the critical instrumentation point for LLM obse
 2. **Shared infrastructure** (`scripts/openshell/deploy-shared.sh`)
    - Deploy `agents.x-k8s.io` Sandbox CRD + agent-sandbox-controller
    - Gateway API experimental CRDs (TLSRoute/TCPRoute, Kind only)
-   - Shared TLS passthrough Gateway in `kagenti-system` (Kind only)
+   - Shared TLS passthrough Gateway in `rossoctl-system` (Kind only)
    - cert-manager CA chain (ClusterIssuer + CA Certificate)
    - Deploy Keycloak with `openshell` realm, PKCE client, users (alice/team1, bob/team2, admin/both)
 
@@ -648,7 +648,7 @@ These items are explicitly deferred. Each has a documented path in [openshell-dr
 | **OTel/MLFlow instrumentation** | Integration points documented in Section 8; implementation requires upstream proxy instrumentation | driver-architecture.md Section 7.6 |
 | **Gateway HA** | Single-instance per tenant is acceptable for MVP; externalized state needed for replicas | k8s-integration.md Section 5.3 |
 | **CI client credentials flow** | PR #935 supports it; MVP focuses on browser PKCE for human users | driver-architecture.md Section 4 |
-| **Full Kagenti driver suite** (4 drivers) | MVP builds compute + credentials drivers; CP identity and sandbox identity drivers are future | driver-architecture.md Section 7.4 |
+| **Full Rossoctl driver suite** (4 drivers) | MVP builds compute + credentials drivers; CP identity and sandbox identity drivers are future | driver-architecture.md Section 7.4 |
 | **Policy hierarchy and templates** | Each tenant manages policies independently for now | k8s-integration.md Section 5.4 |
 | **Sandbox TTL / hibernation** | CronJob cleanup as workaround; upstream feature needed for proper lifecycle | k8s-integration.md Section 5.7 |
 | **Upstream gateway fork elimination** | Propose `--compute-driver-socket` flag upstream in parallel with MVP | driver-architecture.md Section 6 |
@@ -666,8 +666,8 @@ These items are explicitly deferred. Each has a documented path in [openshell-dr
 | Gateway fork (`--compute-driver-socket`, `--credentials-driver-socket`) | ~40 lines Rust | Low — uses existing `RemoteComputeDriver` pattern |
 | Credentials driver proto (`proto/credentials_driver.proto`) | Defined by OpenShell | Low — implement against existing contract |
 | [agent-sandbox-controller](https://github.com/kubernetes-sigs/agent-sandbox) | Published | Low — upstream K8s SIG project |
-| Keycloak | Kagenti ships with Keycloak | None |
-| Istio (Kind) | Kagenti ships with Istio | None |
+| Keycloak | Rossoctl ships with Keycloak | None |
+| Istio (Kind) | Rossoctl ships with Istio | None |
 | Supervisor binary image | Published by NVIDIA | None |
 
 ---
@@ -688,22 +688,22 @@ These items are explicitly deferred. Each has a documented path in [openshell-dr
 
 This section maps the MVP architecture to concrete implementation steps and
 reconciles with the existing PoC work in
-[PR #1300](https://github.com/kagenti/kagenti/pull/1300) (code) and
-[PR #1319](https://github.com/kagenti/kagenti/pull/1319) (architecture docs).
+[PR #1300](https://github.com/rossoctl/rossoctl/pull/1300) (code) and
+[PR #1319](https://github.com/rossoctl/rossoctl/pull/1319) (architecture docs).
 
 ### 13.1 Repos to Fork
 
-The MVP requires 3 upstream repos forked into the `kagenti` org, plus 1 new repo:
+The MVP requires 3 upstream repos forked into the `rossoctl` org, plus 1 new repo:
 
 | Upstream | Fork to | Changes | Size |
 |----------|---------|---------|------|
-| [NVIDIA/OpenShell](https://github.com/NVIDIA/OpenShell) | `kagenti/openshell` | Add `--compute-driver-socket` + `--credentials-driver-socket` flags (~40 lines Rust), cherry-pick PR #935 (OIDC) | Small |
-| [zanetworker/openshell-driver-openshift](https://github.com/zanetworker/openshell-driver-openshift) | `kagenti/openshell-driver-openshift` | Namespace from config flag, tenant labels, scoped RBAC, dtach in init container | Small |
+| [NVIDIA/OpenShell](https://github.com/NVIDIA/OpenShell) | `rossoctl/openshell` | Add `--compute-driver-socket` + `--credentials-driver-socket` flags (~40 lines Rust), cherry-pick PR #935 (OIDC) | Small |
+| [zanetworker/openshell-driver-openshift](https://github.com/zanetworker/openshell-driver-openshift) | `rossoctl/openshell-driver-openshift` | Namespace from config flag, tenant labels, scoped RBAC, dtach in init container | Small |
 | [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox) | No fork needed | Deploy upstream image as-is | None |
 
 | New repo | Purpose |
 |----------|---------|
-| `kagenti/openshell-credentials-keycloak` | Go credentials driver (~500 lines), implements `CredentialsDriver` gRPC contract for OAuth2 `client_credentials` via Keycloak |
+| `rossoctl/openshell-credentials-keycloak` | Go credentials driver (~500 lines), implements `CredentialsDriver` gRPC contract for OAuth2 `client_credentials` via Keycloak |
 
 ### 13.2 Script Architecture
 
@@ -724,9 +724,9 @@ openshell-full-test.sh (orchestrator — thin, calls the others)
 
 Builds the 3 forked/new images for the target platform:
 
-- Gateway fork (`kagenti/openshell`)
-- Compute driver (`kagenti/openshell-driver-openshift`)
-- Credentials driver (`kagenti/openshell-credentials-keycloak`)
+- Gateway fork (`rossoctl/openshell`)
+- Compute driver (`rossoctl/openshell-driver-openshift`)
+- Credentials driver (`rossoctl/openshell-credentials-keycloak`)
 
 On Kind: `docker build` + `kind load docker-image`. On OpenShift: Shipwright Build
 or `oc start-build`.
@@ -737,7 +737,7 @@ Deploys cluster-wide components (idempotent):
 
 1. **agent-sandbox-controller** — upstream image, `agent-sandbox-system` namespace
 2. **Gateway API experimental CRDs** — for TLSRoute/TCPRoute (Kind only, OCP has Routes)
-3. **Shared TLS passthrough Gateway** — single Istio Gateway in `kagenti-system` with `allowedRoutes.namespaces.from: All`, NodePort 30443 (Kind only, OCP uses Routes)
+3. **Shared TLS passthrough Gateway** — single Istio Gateway in `rossoctl-system` with `allowedRoutes.namespaces.from: All`, NodePort 30443 (Kind only, OCP uses Routes)
 4. **cert-manager CA chain** — `ClusterIssuer` + CA `Certificate` (see [Section 13.3](#133-tls-via-cert-manager))
 5. **Keycloak realm** — `openshell` realm, `openshell-cli` PKCE client, users (alice/team1, bob/team2, admin/both), audience mappers
 
@@ -766,7 +766,7 @@ Becomes a thin orchestrator:
 
 ```
 Phase 1: Cluster create           (existing kind/hypershift scripts)
-Phase 2: Kagenti platform install (existing Helm installer) [Note: Ansible installer removed]
+Phase 2: Rossoctl platform install (existing Helm installer) [Note: Ansible installer removed]
 Phase 3: build-images.sh          (forked gateway + drivers)
 Phase 4: deploy-shared.sh         (sandbox controller, cert-manager CA, Keycloak realm)
 Phase 5: deploy-tenant.sh team1   (gateway + driver + ingress)
@@ -787,14 +787,14 @@ New Helm chart for per-tenant deployment. Templated values:
 | `ingress.type` | `istio` or `route` | Platform-specific ingress |
 | `ingress.host` | `openshell-team1.localtest.me` | Ingress hostname (SNI routing key) |
 | `ingress.gatewayName` | `tls-passthrough` | Shared Istio Gateway name (Kind) |
-| `ingress.gatewayNamespace` | `kagenti-system` | Namespace of shared Gateway (Kind) |
+| `ingress.gatewayNamespace` | `rossoctl-system` | Namespace of shared Gateway (Kind) |
 | `tls.issuerRef` | `openshell-ca-issuer` | cert-manager issuer for leaf certs |
 
 ### 13.3 TLS via cert-manager
 
 All three existing TLS approaches are replaced by cert-manager `Certificate` CRs,
-following the pattern already established by Kagenti's Shipwright integration
-(`deployments/ansible/roles/kagenti_installer/tasks/04_install_shipwright.yaml`) [historical reference — Ansible installer removed].
+following the pattern already established by Rossoctl's Shipwright integration
+(`deployments/ansible/roles/rossoctl_installer/tasks/04_install_shipwright.yaml`) [historical reference — Ansible installer removed].
 
 **What this replaces:**
 
@@ -888,9 +888,9 @@ spec:
 **Advantages over previous approaches:**
 
 - Auto-renewal (cert-manager watches expiry, rotates before `renewBefore`)
-- Works on both Kind and OpenShift (cert-manager is a Kagenti platform dependency)
+- Works on both Kind and OpenShift (cert-manager is a Rossoctl platform dependency)
 - No upstream chart patching, no manual openssl, no placeholder secrets
-- Follows existing Kagenti convention (Shipwright, Istio shared trust)
+- Follows existing Rossoctl convention (Shipwright, Istio shared trust)
 - Kustomize and Helm compatible (Certificate CRs are standard K8s resources)
 
 ### 13.4 What Gets Retired
@@ -928,11 +928,11 @@ maps where the architecture docs remain valid and where they need updates:
 
 | Step | Deliverable | Depends on |
 |------|-------------|------------|
-| 1 | Fork `NVIDIA/OpenShell` → `kagenti/openshell` | — |
-| 2 | Fork `zanetworker/openshell-driver-openshift` → `kagenti/openshell-driver-openshift` | — |
+| 1 | Fork `NVIDIA/OpenShell` → `rossoctl/openshell` | — |
+| 2 | Fork `zanetworker/openshell-driver-openshift` → `rossoctl/openshell-driver-openshift` | — |
 | 3 | Gateway fork: `--compute-driver-socket` + `--credentials-driver-socket`, cherry-pick PR #935 | Step 1 |
 | 4 | Compute driver: namespace flag, tenant labels, scoped RBAC, dtach in init container | Step 2 |
-| 5 | Create `kagenti/openshell-credentials-keycloak` — implement `CredentialsDriver` gRPC | — |
+| 5 | Create `rossoctl/openshell-credentials-keycloak` — implement `CredentialsDriver` gRPC | — |
 | 6 | `scripts/openshell/build-images.sh` | Steps 3, 4, 5 |
 | 7 | `scripts/openshell/deploy-shared.sh` (cert-manager CA, sandbox controller, Keycloak realm) | — |
 | 8 | `charts/openshell/` Helm chart (per-tenant gateway stack with cert-manager leaf certs) | Step 7 |

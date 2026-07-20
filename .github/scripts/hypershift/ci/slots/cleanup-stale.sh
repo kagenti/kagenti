@@ -13,15 +13,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../../../lib/logging.sh"
 
 NAMESPACE="clusters"
-MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-ci}"
-LEASE_PREFIX="kagenti-ci-slot"  # Namespaced prefix to avoid conflicts
+MANAGED_BY_TAG="${MANAGED_BY_TAG:-rossoctl-hypershift-ci}"
+LEASE_PREFIX="rossoctl-ci-slot"  # Namespaced prefix to avoid conflicts
 
 echo "Checking for stale CI slots..."
 echo "Lease prefix: $LEASE_PREFIX"
 echo ""
 
 # Get all CI slot leases
-leases=$(oc get leases -n "$NAMESPACE" -l app=kagenti-ci \
+leases=$(oc get leases -n "$NAMESPACE" -l app=rossoctl-ci \
     -o jsonpath='{range .items[*]}{.metadata.name}|{.spec.acquireTime}|{.spec.leaseDurationSeconds}|{.spec.holderIdentity}{"\n"}{end}' 2>/dev/null || echo "")
 
 now_epoch=$(date +%s)
@@ -68,7 +68,7 @@ clusters=$(oc get hostedclusters -n clusters \
     -o jsonpath='{range .items[*]}{.metadata.name}|{.metadata.creationTimestamp}{"\n"}{end}' 2>/dev/null || echo "")
 
 # Fetch lease holders once (not inside loop)
-lease_holders=$(oc get leases -n "$NAMESPACE" -l app=kagenti-ci \
+lease_holders=$(oc get leases -n "$NAMESPACE" -l app=rossoctl-ci \
     -o jsonpath='{range .items[*]}{.spec.holderIdentity}{"\n"}{end}' 2>/dev/null || echo "")
 
 orphan_count=0

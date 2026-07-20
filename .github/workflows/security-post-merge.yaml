@@ -20,11 +20,11 @@ on:
     branches: [main]
     paths:
       - 'uv.lock'
-      - 'kagenti/backend/uv.lock'
-      - 'kagenti/**/requirements.txt'
-      - 'kagenti/**/package-lock.json'
+      - 'rossoctl/backend/uv.lock'
+      - 'rossoctl/**/requirements.txt'
+      - 'rossoctl/**/package-lock.json'
       - 'pyproject.toml'
-      - 'kagenti/backend/pyproject.toml'
+      - 'rossoctl/backend/pyproject.toml'
   # Allow manual trigger for ad-hoc scanning
   workflow_dispatch:
 

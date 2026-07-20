@@ -5,7 +5,7 @@
 #   terraform init -backend-config=backend.tfvars
 
 bucket         = "my-terraform-state-bucket"
-key            = "kagenti/management-cluster-421/terraform.tfstate"
+key            = "rossoctl/management-cluster-421/terraform.tfstate"
 region         = "us-east-1"
 dynamodb_table = "terraform-state-locks"  # Optional: for state locking
 encrypt        = true
