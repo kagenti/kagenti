@@ -12,8 +12,8 @@
 
 - [ ] AgentRuntime CR implementation (identity + observability)
 - [ ] AgentCard CR adaptation (selector change)
-- [x] Mutating webhook implementation (Pod-level targeting, [PR #183](https://github.com/rossoctl/rossocortex/pull/183))
-- [x] ConfigMap-based defaults mechanism ([PR #134](https://github.com/rossoctl/rossocortex/pull/134))
+- [x] Mutating webhook implementation (Pod-level targeting, [PR #183](https://github.com/rossoctl/cortex/pull/183))
+- [x] ConfigMap-based defaults mechanism ([PR #134](https://github.com/rossoctl/cortex/pull/134))
 - [ ] AgentRuntime controller (applies labels, manages lifecycle)
 - [ ] Controller consolidation (istiod pattern)
 - [ ] Migration tooling
@@ -1081,9 +1081,9 @@ Unchanged from original proposal:
 ## Implementation Phases
 
 **Phase 1: Webhook Foundation + AgentRuntime CR** (Q1 2026)
-- [x] Pod-level webhook targeting (Pods at CREATE, not Deployments/StatefulSets) — [rossocortex PR #183](https://github.com/rossoctl/rossocortex/pull/183)
-- [x] ConfigMap-based platform defaults (`rossoctl-webhook-defaults`, `rossoctl-webhook-feature-gates`) — [rossocortex PR #134](https://github.com/rossoctl/rossocortex/pull/134)
-- [x] Per-sidecar feature gates and precedence system — [rossocortex PRs #110-#116](https://github.com/rossoctl/rossocortex/issues/109)
+- [x] Pod-level webhook targeting (Pods at CREATE, not Deployments/StatefulSets) — [cortex PR #183](https://github.com/rossoctl/cortex/pull/183)
+- [x] ConfigMap-based platform defaults (`rossoctl-webhook-defaults`, `rossoctl-webhook-feature-gates`) — [cortex PR #134](https://github.com/rossoctl/cortex/pull/134)
+- [x] Per-sidecar feature gates and precedence system — [cortex PRs #110-#116](https://github.com/rossoctl/cortex/issues/109)
 - [x] Optional namespace gating (`rossoctl-enabled: "true"` namespaceSelector)
 - [ ] Define lean AgentRuntime v1alpha1 CRD (`targetRef`, `identity`, `trace`)
 - [ ] Implement AgentRuntime controller with targetRef resolution

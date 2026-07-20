@@ -3,7 +3,7 @@
 ## Deployment Modes
 
 AuthBridge ships three combined sidecar images, each hardcoded to its
-deployment shape (rossocortex#411):
+deployment shape (cortex#411):
 
 | | `authbridge` (proxy-sidecar, default) | `authbridge-envoy` (envoy-sidecar, advanced) | `authbridge-lite` (proxy-sidecar, auth-only) |
 |---|---|---|---|
@@ -86,13 +86,13 @@ only when you need protocol-level transparent interception.
 AuthBridge is configured via YAML with `${ENV_VAR}` expansion. The operator
 mounts the configuration from a ConfigMap such as `authbridge-config-weather-service`.
 
-After rossocortex#411 the runtime config uses a per-plugin
+After cortex#411 the runtime config uses a per-plugin
 schema: every plugin-specific setting lives under its own `config:`
 block inside `pipeline.inbound.plugins[]` or
 `pipeline.outbound.plugins[]`. Plugin-level defaults (audience_file,
 bypass_paths, identity file paths) are applied by the authbridge
 binary itself — see `authbridge/authlib/plugins/CONVENTIONS.md` in
-rossocortex for the full reference. The chart-rendered
+cortex for the full reference. The chart-rendered
 ConfigMaps and the backend's per-agent ConfigMap renderer both emit
 this shape.
 
@@ -125,7 +125,7 @@ pipeline:
 
 The fields below appear inside each plugin's `config:` block, not at
 the top level. See `authbridge/docs/plugin-reference.md` in
-rossocortex for the per-plugin authoritative reference.
+cortex for the per-plugin authoritative reference.
 
 | Field | Plugin | Description | Default |
 |---|---|---|---|
@@ -254,5 +254,5 @@ injects defaults that can be overridden via Helm values.
 
 - [Sidecar Injection](sidecar-injection.md) — expected containers per mode, label vocabulary, feature gates, how to switch modes
 - [Authentication Guide](../authentication.md) — how `CLIENT_AUTH_TYPE=federated-jwt` (SPIFFE auth) works, how to enable it, and how it compares to client-secret mode
-- [AuthBridge Binary README](https://github.com/rossoctl/rossocortex/blob/main/authbridge/cmd/README.md) — full YAML config reference, all listener modes
-- [AuthBridge Architecture](https://github.com/rossoctl/rossocortex/blob/main/authbridge/README.md) — sequence diagrams, protocol details
+- [AuthBridge Binary README](https://github.com/rossoctl/cortex/blob/main/authbridge/cmd/README.md) — full YAML config reference, all listener modes
+- [AuthBridge Architecture](https://github.com/rossoctl/cortex/blob/main/authbridge/README.md) — sequence diagrams, protocol details

@@ -1,7 +1,7 @@
 # Keycloak Configuration for GitHub Issue Demo
 
 This script configures Keycloak for the
-[GitHub Issue Demo](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/github-issue/demo.md).
+[GitHub Issue Demo](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/github-issue/demo.md).
 Logging into Rossoctl with accounts of different
 permissions affects the results those accounts receive.
 

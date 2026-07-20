@@ -26,14 +26,14 @@ permissions:
 # Version tracking - keep in sync with kind-config in scripts/kind/setup-rossoctl.sh
 env:
   K8S_VERSION: '1.35.0'  # Must match kindest/node version in kind-config
-  # rossocortex#347 merged: AuthBridge weather advanced fixes on main; 91 clones default org URL.
+  # cortex#347 merged: AuthBridge weather advanced fixes on main; 91 clones default org URL.
   ROSSOCTL_EXTENSIONS_GIT_REF: 'main'
 
 jobs:
   e2e-dev-rossoctl-operator:
     name: Deploy & Test
     runs-on: ubuntu-latest
-    # Includes rossocortex AuthBridge E2E (clone, Keycloak, advanced deploys).
+    # Includes cortex AuthBridge E2E (clone, Keycloak, advanced deploys).
     timeout-minutes: 90
 
     steps:

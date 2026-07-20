@@ -8,7 +8,7 @@ handles token exchange (SPIFFE SVID → scoped GitHub token) transparently.
 Usage:
     from repo_manager import RepoManager
     mgr = RepoManager("/workspace", "/workspace/repo/sources.json")
-    mgr.clone("https://github.com/rossoctl/rossocortex")  # allowed
+    mgr.clone("https://github.com/rossoctl/cortex")  # allowed
     mgr.clone("https://github.com/evil-org/malware")  # blocked by policy
 """
 
@@ -129,7 +129,7 @@ if __name__ == "__main__":
 
     # Test policy
     test_urls = [
-        "https://github.com/rossoctl/rossocortex",
+        "https://github.com/rossoctl/cortex",
         "https://github.com/rossoctl/rossoctl",
         "https://github.com/evil-org/malware",
         "https://github.com/random/other-repo",

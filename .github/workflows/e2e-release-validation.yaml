@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       rossoctl_extensions_ref:
-        description: 'rossocortex git ref for AuthBridge E2E (consumed by .github/scripts/kind/91-run-authbridge-weather-e2e.sh when cloning the demo). Typically pin this to the matching release tag.'
+        description: 'cortex git ref for AuthBridge E2E (consumed by .github/scripts/kind/91-run-authbridge-weather-e2e.sh when cloning the demo). Typically pin this to the matching release tag.'
         required: false
         type: string
         default: 'main'
@@ -28,7 +28,7 @@ permissions:
 env:
   K8S_VERSION: '1.35.0'
   # Consumed by .github/scripts/kind/91-run-authbridge-weather-e2e.sh when it
-  # clones rossocortex for the AuthBridge weather demo.
+  # clones cortex for the AuthBridge weather demo.
   ROSSOCTL_EXTENSIONS_GIT_REF: ${{ inputs.rossoctl_extensions_ref }}
 
 jobs:

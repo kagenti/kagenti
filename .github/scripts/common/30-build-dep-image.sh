@@ -17,10 +17,10 @@
 #   pr/<number>          — fetch PR head ref (works with forks)
 #
 # Examples:
-#   /run-e2e --build rossoctl/rossocortex=fix/my-branch
-#   /run-e2e --build rossoctl/rossocortex=pr/234
+#   /run-e2e --build rossoctl/cortex=fix/my-branch
+#   /run-e2e --build rossoctl/cortex=pr/234
 #   /run-e2e --build rossoctl/operator=feat/new-crd
-#   /run-e2e --build rossoctl/rossocortex=pr/234 --build rossoctl/operator=pr/100
+#   /run-e2e --build rossoctl/cortex=pr/234 --build rossoctl/operator=pr/100
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,7 +28,7 @@ source "$SCRIPT_DIR/../lib/env-detect.sh"
 source "$SCRIPT_DIR/../lib/logging.sh"
 
 # Required env vars
-: "${DEP_REPO:?DEP_REPO is required (e.g., rossoctl/rossocortex)}"
+: "${DEP_REPO:?DEP_REPO is required (e.g., rossoctl/cortex)}"
 : "${DEP_REF:?DEP_REF is required (e.g., fix/my-branch or pr/234)}"
 : "${DEP_CONTEXT:?DEP_CONTEXT is required (subdirectory with Dockerfile)}"
 : "${DEP_IMAGE_NAME:?DEP_IMAGE_NAME is required (e.g., proxy-init)}"
@@ -151,7 +151,7 @@ EOF
 else
     # ── Kind / vanilla Kubernetes: local build + kind load ──
     # Use the GHCR path as the image name so it matches what the webhook
-    # references (e.g., ghcr.io/rossoctl/rossocortex/proxy-init:latest).
+    # references (e.g., ghcr.io/rossoctl/cortex/proxy-init:latest).
     # Tag as both :local and :latest so the webhook's default reference works.
     BASE_IMAGE="ghcr.io/${DEP_REPO}/${DEP_IMAGE_NAME}"
     CUSTOM_IMAGE="${BASE_IMAGE}:local"

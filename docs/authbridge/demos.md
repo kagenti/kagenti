@@ -21,7 +21,7 @@ agent stays focused on its job; the sidecar handles the zero-trust security arou
 
 This walkthrough demonstrates each of those behaviors, one layer at a time. You first
 deploy the weather agent by following the
-[weather demo UI guide](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui.md)
+[weather demo UI guide](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui.md)
 — that guide is where you learn the deployment steps themselves — and then run the checks
 below to observe what AuthBridge is doing at each stage.
 
@@ -36,7 +36,7 @@ scripts/kind/setup-rossoctl.sh --with-istio --with-spire --with-ui --with-backen
 Before continuing, make sure the weather agent and its tool are deployed and running in
 the `team1` namespace (`weather-service` and `weather-tool`). If you have not deployed them
 yet, follow the
-[weather demo UI guide](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui.md);
+[weather demo UI guide](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui.md);
 see the [Deployment Guide](deployment-guide.md) for broader platform details.
 
 **Resource tip:** On a machine with only 4 CPUs, building the agent from source with
@@ -45,7 +45,7 @@ from image** in the UI instead and point it at the prebuilt image
 (`ghcr.io/rossoctl/examples/weather_service:latest`).
 
 Once you finish the basic demo, the
-[advanced demo](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui-advanced.md)
+[advanced demo](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui-advanced.md)
 adds **token exchange** and per-tool JWTs. That is what powers Layer 2 and beyond, where
 you watch the sidecar mint delegated tokens for downstream calls.
 
@@ -93,7 +93,7 @@ Use the table below to pick the right client for what you are doing:
 ## Verify deployment
 
 After completing the UI deploy steps in
-[demo-ui.md](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui.md),
+[demo-ui.md](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui.md),
 confirm that everything came up correctly. Each command below checks one thing; the comment
 above it describes what a healthy result looks like.
 
@@ -206,7 +206,7 @@ kubectl exec -n team1 test-client -- \
 
 In this basic demo, the agent's call out to the MCP weather tool is a simple
 **passthrough** — no token exchange happens yet. For more CLI variations, see
-[demo-ui Step 6](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui.md#step-6-test-via-cli).
+[demo-ui Step 6](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui.md#step-6-test-via-cli).
 
 ## Layer 2: Watch the token flow
 
@@ -218,7 +218,7 @@ token is powerful enough to be reused elsewhere.
 
 This layer needs the advanced deployment (or an `authproxy-routes` config with an exchange
 policy), so set that up first via
-[demo-ui-advanced](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui-advanced.md).
+[demo-ui-advanced](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui-advanced.md).
 Then turn up the sidecar's logging and repeat the Layer 1 request against the advanced
 agent:
 
@@ -258,7 +258,7 @@ claim, so a downstream service can see both the original caller and the agent ac
 their behalf.
 
 Follow the
-[token-exchange routes guide](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/token-exchange-routes/README.md),
+[token-exchange routes guide](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/token-exchange-routes/README.md),
 which covers both single-target and multi-target exchange. As you drive the demo, watch the
 sidecar logs for the `act` claims and the per-hop exchanges — that is the delegation chain
 being built.
@@ -278,10 +278,10 @@ denied by policy.
 
 | Demo | Difficulty | What it adds | Link |
 |------|:----------:|--------------|------|
-| Weather (basic) | Beginner | Inbound JWT validation, outbound passthrough | [demo-ui.md](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui.md) |
-| Weather (advanced) | Intermediate | Token exchange, per-tool JWTs | [demo-ui-advanced.md](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui-advanced.md) |
-| GitHub Issue | Intermediate | Calling an external API with scoped tokens | [README](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/README.md#github-issue-agent-full-authbridge-flow) |
-| Multi-Target | Advanced | Delegation across multiple tools | [token-exchange-routes](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/token-exchange-routes/README.md) |
+| Weather (basic) | Beginner | Inbound JWT validation, outbound passthrough | [demo-ui.md](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui.md) |
+| Weather (advanced) | Intermediate | Token exchange, per-tool JWTs | [demo-ui-advanced.md](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui-advanced.md) |
+| GitHub Issue | Intermediate | Calling an external API with scoped tokens | [README](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/README.md#github-issue-agent-full-authbridge-flow) |
+| Multi-Target | Advanced | Delegation across multiple tools | [token-exchange-routes](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/token-exchange-routes/README.md) |
 
 ## Further reading
 

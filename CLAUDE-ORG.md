@@ -20,7 +20,7 @@ The Rossoctl organization consists of the following repositories:
 | **[rossoctl-operator](https://github.com/rossoctl/operator)** | Go | Kubernetes operator for agent/tool lifecycle management |
 | **[mcp-gateway](https://github.com/rossoctl/mcp-gateway)** | Go | Envoy-based MCP Gateway for tool federation |
 | **[agent-examples](https://github.com/rossoctl/examples)** | Python | Sample agents and tools for the platform |
-| **[rossocortex](https://github.com/rossoctl/rossocortex)** | Go | Extensions and plugins |
+| **[cortex](https://github.com/rossoctl/cortex)** | Go | Extensions and plugins |
 | **[agentic-control-plane](https://github.com/rossoctl/agentic-control-plane)** | Python | Control plane of specialized A2A agents |
 | **[plugins-adapter](https://github.com/rossoctl/plugins-adapter)** | Python | Guardrails configuration for MCP Gateway |
 | **[.github](https://github.com/rossoctl/.github)** | HTML | Project website (Hugo-based) |
@@ -244,7 +244,7 @@ agent_name/
 
 ---
 
-### 6. rossocortex
+### 6. cortex
 
 **Purpose**: Extensions and plugins for the Rossoctl platform.
 

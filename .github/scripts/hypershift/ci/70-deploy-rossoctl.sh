@@ -20,7 +20,7 @@ echo "=================================================="
 # ── Backwards compatibility: accept legacy ROSSOCTL_EXTENSIONS_REF ──
 if [[ -n "${ROSSOCTL_EXTENSIONS_REF:-}" && -z "${ROSSOCTL_DEP_BUILDS:-}" ]]; then
     echo "Converting legacy ROSSOCTL_EXTENSIONS_REF=${ROSSOCTL_EXTENSIONS_REF} to ROSSOCTL_DEP_BUILDS"
-    export ROSSOCTL_DEP_BUILDS="[{\"repo\":\"rossoctl/rossocortex\",\"ref\":\"${ROSSOCTL_EXTENSIONS_REF}\"}]"
+    export ROSSOCTL_DEP_BUILDS="[{\"repo\":\"rossoctl/cortex\",\"ref\":\"${ROSSOCTL_EXTENSIONS_REF}\"}]"
 fi
 
 # Detect main repo root for worktree compatibility (secrets stay in main repo)

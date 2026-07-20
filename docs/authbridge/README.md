@@ -141,9 +141,9 @@ For a progressive walkthrough: [Demos](demos.md)
 
 For deep implementation details:
 
-- [AuthBridge Binary README](https://github.com/rossoctl/rossocortex/blob/main/authbridge/cmd/README.md) — modes, YAML config, logging
-- [AuthBridge Architecture](https://github.com/rossoctl/rossocortex/blob/main/authbridge/README.md) — sequence diagrams, protocol flows
-- [AuthBridge Demos](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/README.md) — step-by-step demo instructions
+- [AuthBridge Binary README](https://github.com/rossoctl/cortex/blob/main/authbridge/cmd/README.md) — modes, YAML config, logging
+- [AuthBridge Architecture](https://github.com/rossoctl/cortex/blob/main/authbridge/README.md) — sequence diagrams, protocol flows
+- [AuthBridge Demos](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/README.md) — step-by-step demo instructions
 - [Identity Guide](../identity-guide.md) — platform-level SPIFFE/SPIRE and Keycloak architecture
 
 ## Blog Posts

@@ -282,7 +282,7 @@ data:
 # ——————————————————————————————————————————————————————————————————————————————
 #  ConfigMap for AuthBridge in Namespace: {{ . }}
 #  YAML config for the authbridge binaries (authbridge-proxy / -envoy /
-#  -lite — see rossocortex#411). Supports envoy-sidecar,
+#  -lite — see cortex#411). Supports envoy-sidecar,
 #  proxy-sidecar (default), and lite shapes. The operator resolves the
 #  per-workload mode via the chain
 #    AgentRuntime.Spec.AuthBridgeMode → this ConfigMap's `mode:` field
@@ -302,7 +302,7 @@ data:
   # Per-plugin config. Plugin-level defaults (audience_file,
   # bypass_paths, identity file paths, etc.) are applied by the
   # authbridge binary itself — see
-  # authbridge/authlib/plugins/CONVENTIONS.md in rossocortex.
+  # authbridge/authlib/plugins/CONVENTIONS.md in cortex.
   #
   # No top-level `mode:` — see the matching template-configmap in
   # authbridge-template-configmaps.yaml for the rationale.
@@ -335,7 +335,7 @@ subjects:
 # ——————————————————————————————————————————————————————————————————————————————
 #  SCC RoleBinding for AuthBridge in Namespace: {{ . }}
 #  Grants the rossoctl-authbridge custom SCC to all service accounts so that
-#  the webhook-injected AuthBridge stack can run. After rossocortex#411
+#  the webhook-injected AuthBridge stack can run. After cortex#411
 #  there's a single combined sidecar per mode (spiffe-helper bundled inside,
 #  client-registration is operator-managed):
 #    - proxy-sidecar (default): authbridge container (UID 1337)
@@ -344,7 +344,7 @@ subjects:
 #  Agent SAs are created dynamically by the operator (name = agent name),
 #  so we use the namespace service accounts group.
 #
-#  Requires rossocortex#234 (webhook uses capabilities instead of
+#  Requires cortex#234 (webhook uses capabilities instead of
 #  privileged mode). Use --extensions-ref to test:
 #    /run-e2e --extensions-ref fix/proxy-init-drop-privileged
 # ——————————————————————————————————————————————————————————————————————————————

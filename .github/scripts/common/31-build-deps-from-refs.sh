@@ -4,10 +4,10 @@
 # Reads ROSSOCTL_DEP_BUILDS env var (JSON array) and builds each dependency.
 # Called from 70-deploy-rossoctl.sh between platform install and agent deploy.
 #
-# Format: ROSSOCTL_DEP_BUILDS='[{"repo":"rossoctl/rossocortex","ref":"fix/branch"}]'
+# Format: ROSSOCTL_DEP_BUILDS='[{"repo":"rossoctl/cortex","ref":"fix/branch"}]'
 #
 # Supported dependencies (add new ones to the registry below):
-#   rossoctl/rossocortex  — webhook + AuthBridge images
+#   rossoctl/cortex  — webhook + AuthBridge images
 #   rossoctl/operator    — operator image
 #
 set -euo pipefail
@@ -38,11 +38,11 @@ build_dep() {
     local ref="$2"
 
     case "$repo" in
-        rossoctl/rossocortex)
-            # Build the proxy-init image from rossocortex.
+        rossoctl/cortex)
+            # Build the proxy-init image from cortex.
             # (The sidecar-injection webhook formerly built here moved to
             # rossoctl/operator — see that case below. The only
-            # image still built from rossocortex is proxy-init.)
+            # image still built from cortex is proxy-init.)
             # DEP_SKIP_PATCH=true because proxy-init is an init container
             # image, not a deployment.
             log_info "Building proxy-init from ${repo}@${ref}"

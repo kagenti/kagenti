@@ -152,4 +152,4 @@ Pod admitted by webhook
 
 - [Deployment Guide](deployment-guide.md) — mode details, configuration, troubleshooting
 - [Security Model](security-model.md) — mTLS, SPIFFE identity, token exchange
-- [AuthBridge Architecture](https://github.com/rossoctl/rossocortex/blob/main/authbridge/README.md) — sequence diagrams, protocol details
+- [AuthBridge Architecture](https://github.com/rossoctl/cortex/blob/main/authbridge/README.md) — sequence diagrams, protocol details

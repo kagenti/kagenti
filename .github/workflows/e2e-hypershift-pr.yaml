@@ -105,7 +105,7 @@ jobs:
             console.log('Parsing comment:', commentBody);
 
             // Allowed repos (security: only build from trusted orgs/repos)
-            const ALLOWED_REPOS = ['rossoctl/rossocortex', 'rossoctl/operator'];
+            const ALLOWED_REPOS = ['rossoctl/cortex', 'rossoctl/operator'];
             // Allowed ref pattern: alphanumeric, dots, dashes, slashes, underscores
             const REF_PATTERN = /^[\w.\-\/]+$/;
 
@@ -113,9 +113,9 @@ jobs:
 
             // Parse --build org/repo=ref flags
             // Examples:
-            //   /run-e2e --build rossoctl/rossocortex=fix/my-branch
-            //   /run-e2e --build rossoctl/rossocortex=pr/234
-            //   /run-e2e --build rossoctl/rossocortex=pr/234 --build rossoctl/operator=feat/new-crd
+            //   /run-e2e --build rossoctl/cortex=fix/my-branch
+            //   /run-e2e --build rossoctl/cortex=pr/234
+            //   /run-e2e --build rossoctl/cortex=pr/234 --build rossoctl/operator=feat/new-crd
             const buildPattern = /--build\s+(\S+)/g;
             let match;
             while ((match = buildPattern.exec(commentBody)) !== null) {
@@ -141,14 +141,14 @@ jobs:
               builds.push({ repo, ref });
             }
 
-            // Legacy: --extensions-ref maps to rossoctl/rossocortex build
+            // Legacy: --extensions-ref maps to rossoctl/cortex build
             if (builds.length === 0) {
               const legacyMatch = commentBody.match(/--extensions-ref\s+(\S+)/);
               if (legacyMatch) {
                 const ref = legacyMatch[1];
                 if (REF_PATTERN.test(ref)) {
                   console.log(`Legacy --extensions-ref: ${ref}`);
-                  builds.push({ repo: 'rossoctl/rossocortex', ref });
+                  builds.push({ repo: 'rossoctl/cortex', ref });
                 } else {
                   core.setFailed(`Invalid extensions-ref: ${ref}`);
                   return;

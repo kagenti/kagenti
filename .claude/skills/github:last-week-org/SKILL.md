@@ -75,7 +75,7 @@ Use this format for **every** repo, including rossoctl itself:
 
 Examples:
 - `[rossoctl/rossoctl#960](https://github.com/rossoctl/rossoctl/issues/960)`
-- `[rossoctl/rossocortex#239](https://github.com/rossoctl/rossocortex/pull/239)`
+- `[rossoctl/cortex#239](https://github.com/rossoctl/cortex/pull/239)`
 
 ### Phase 2: Deep Dive per Active Repo
 

@@ -69,7 +69,7 @@ def test_create_agent_request_allows_envoy_with_strict():
 
     Pairs with rossoctl-operator#381 (operator wires Spec.MTLSMode
     into a per-agent envoy-config CM with TLS blocks) and
-    rossocortex#441 (proxy-sidecar permissive consistency).
+    cortex#441 (proxy-sidecar permissive consistency).
     """
     from app.routers.agents import CreateAgentRequest
 

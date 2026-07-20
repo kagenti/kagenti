@@ -509,7 +509,7 @@ Use the diff file for all analysis.
 
 ### Cross-repo reviews
 
-When verifying cross-repo dependency files (e.g. checking whether `rossocortex`
+When verifying cross-repo dependency files (e.g. checking whether `cortex`
 already handles something being removed from `$OWNER/$REPO`), **always fetch directly
 from GitHub — never trust a local clone:**
 

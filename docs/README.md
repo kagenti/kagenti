@@ -7,7 +7,7 @@ This directory contains the official Rossoctl project documentation.
 If you are new to Rossoctl, we recommend the following flow to get started with a local Kind cluster. 
 
 1. [Installation Guide](./install.md): Step-by-step instructions to start a Kind cluster and install all prerequisite components
-2. [Quickstart Weather Agent](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui.md): Deploy your first agent with AuthBridge security.
+2. [Quickstart Weather Agent](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui.md): Deploy your first agent with AuthBridge security.
 
 Rossoctl is built on existing open-source cloud-native technologies. 
 

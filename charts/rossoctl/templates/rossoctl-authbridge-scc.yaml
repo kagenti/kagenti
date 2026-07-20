@@ -3,7 +3,7 @@
 #  Custom SCC for AuthBridge sidecars in agent namespaces.
 #
 #  The rossoctl-webhook injects an AuthBridge sidecar stack into agent pods.
-#  After rossocortex#411 there's a single combined sidecar per mode
+#  After cortex#411 there's a single combined sidecar per mode
 #  (spiffe-helper bundled inside, client-registration is operator-managed):
 #    - proxy-sidecar (default): container "authbridge-proxy"
 #      from the "authbridge" image (UID 1337)

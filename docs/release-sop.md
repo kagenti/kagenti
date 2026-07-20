@@ -179,7 +179,7 @@ Rossoctl spans multiple repositories. Tags must be created in dependency order:
 
 ```
 1. rossoctl/operator      →  tag, wait for CI
-2. rossoctl/rossocortex    →  tag, wait for CI
+2. rossoctl/cortex    →  tag, wait for CI
 3. rossoctl/rossoctl               →  update Chart.yaml + values.yaml, tag
 ```
 

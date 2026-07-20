@@ -21,7 +21,7 @@ full standard.
 | rossoctl-operator | 3.5/5 | Nested workflow structure, no security scanning |
 | plugins-adapter | 3/5 | No dependabot, no security scanning |
 | .github | 3/5 | Org config, reusable workflows |
-| rossocortex | 2/5 | Tests commented out, no security scanning |
+| cortex | 2/5 | Tests commented out, no security scanning |
 | agent-examples | 1.5/5 | Tests commented out, no pre-commit |
 | agentic-control-plane | 1/5 | No CI at all |
 | workload-harness | 0.5/5 | No CI at all |

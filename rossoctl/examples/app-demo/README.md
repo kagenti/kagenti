@@ -8,7 +8,7 @@ A standalone demo application that shows how a third-party app integrates with t
 
 **Prerequisites:**
 - A running Rossoctl Kind cluster with UI enabled
-- At least one agent deployed in any namespace (e.g., follow the [Weather Agent Demo](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui.md))
+- At least one agent deployed in any namespace (e.g., follow the [Weather Agent Demo](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui.md))
 - Users created in Keycloak (default users: `alice`, `bob`, `charlie`)
 
 > **💡 Note:** The app-demo works with the `rossoctl` realm in Keycloak and can discover agents in any namespace. You don't need a specific namespace like "team1" - the app dynamically lists all available namespaces with agents.

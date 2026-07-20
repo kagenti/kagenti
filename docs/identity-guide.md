@@ -11,7 +11,7 @@ In practice, the Authorization Pattern within the Agentic Platform enables:
 ## 📚 Related Documentation
 
 - **[Rossoctl Identity Overview](./2025-10.Rossoctl-Identity.pdf)** - High-level architectural concepts
-- **[AuthBridge Component](https://github.com/rossoctl/rossocortex/tree/main/authbridge)** - Complete end-to-end installation and demo with SPIFFE, Client Registration, and AuthProxy
+- **[AuthBridge Component](https://github.com/rossoctl/cortex/tree/main/authbridge)** - Complete end-to-end installation and demo with SPIFFE, Client Registration, and AuthProxy
 - **[Token Exchange Deep Dive](../rossoctl/examples/identity/token_exchange.md)** - Detailed OAuth2 token exchange flows
 - **[Client Registration Examples](../rossoctl/examples/identity/keycloak_token_exchange/README.md)** - Practical integration examples
 - **[Personas and Roles](../PERSONAS_AND_ROLES.md#23-security-and-identity-specialist)** - Security and identity specialist persona
@@ -556,7 +556,7 @@ tool_response = requests.post(
 
 ## 🌉 AuthBridge Component
 
-The [AuthBridge Component](https://github.com/rossoctl/rossocortex/tree/main/authbridge) provides a complete, hands-on implementation of Rossoctl's identity and authorization patterns. It combines **Client Registration** and **AuthProxy** to demonstrate the full zero-trust authentication flow.
+The [AuthBridge Component](https://github.com/rossoctl/cortex/tree/main/authbridge) provides a complete, hands-on implementation of Rossoctl's identity and authorization patterns. It combines **Client Registration** and **AuthProxy** to demonstrate the full zero-trust authentication flow.
 
 ### What AuthBridge Demonstrates
 
@@ -631,17 +631,17 @@ The [AuthBridge Component](https://github.com/rossoctl/rossocortex/tree/main/aut
 
 For step-by-step AuthBridge demos with real working examples, see:
 
-- **[AuthBridge Weather Demo](https://github.com/rossoctl/rossocortex/tree/main/authbridge/demos/weather-agent)** — Complete end-to-end example showing token exchange between a weather agent and weather tool
-- **[AuthBridge Documentation](https://github.com/rossoctl/rossocortex/tree/main/authbridge)** — Component documentation and additional examples
+- **[AuthBridge Weather Demo](https://github.com/rossoctl/cortex/tree/main/authbridge/demos/weather-agent)** — Complete end-to-end example showing token exchange between a weather agent and weather tool
+- **[AuthBridge Documentation](https://github.com/rossoctl/cortex/tree/main/authbridge)** — Component documentation and additional examples
 
 ### AuthBridge Documentation
 
 For complete documentation, see:
 
-- **[AuthBridge README](https://github.com/rossoctl/rossocortex/tree/main/authbridge)** - Full demo instructions
-- **[AuthProxy](https://github.com/rossoctl/rossocortex/tree/main/authbridge)** - Token validation and exchange proxy
+- **[AuthBridge README](https://github.com/rossoctl/cortex/tree/main/authbridge)** - Full demo instructions
+- **[AuthProxy](https://github.com/rossoctl/cortex/tree/main/authbridge)** - Token validation and exchange proxy
 
-> **Note**: The AuthBridge demo in rossocortex includes client-registration components for demonstration purposes. In production Rossoctl deployments, client registration is handled by the rossoctl-operator controller.
+> **Note**: The AuthBridge demo in cortex includes client-registration components for demonstration purposes. In production Rossoctl deployments, client registration is handled by the rossoctl-operator controller.
 
 ---
 

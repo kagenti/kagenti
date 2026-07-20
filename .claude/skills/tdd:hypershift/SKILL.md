@@ -247,7 +247,7 @@ Only when the cluster itself is broken:
 
 ## Building Custom Images from Dependency Repos
 
-When debugging issues in agent-examples or rossocortex, build custom images directly on the cluster using Shipwright/OpenShift Builds:
+When debugging issues in agent-examples or cortex, build custom images directly on the cluster using Shipwright/OpenShift Builds:
 
 ```bash
 # Point build spec to your fork/branch
