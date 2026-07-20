@@ -235,7 +235,7 @@ export const ImportAgentPage: React.FC = () => {
   // value (default 'disabled'). Force-reset to 'disabled' when SPIRE
   // is off — mTLS requires SPIRE-issued X.509 SVIDs in either deployment
   // mode. envoy-sidecar + non-disabled used to be rejected here; that
-  // gate has been lifted (rossoctl-operator#381 + rossocortex#441
+  // gate has been lifted (rossoctl-operator#381 + cortex#441
   // wire the combination end-to-end).
   const [mtlsMode, setMtlsMode] = useState<'disabled' | 'permissive' | 'strict'>('disabled');
   useEffect(() => {

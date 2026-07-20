@@ -108,7 +108,7 @@ kubectl logs -n spire-server deployment/spire-spiffe-oidc-discovery-provider
 
 **Solution:**
 ```bash
-# From rossocortex repo:
+# From cortex repo:
 ./spiffe-keycloak/patch_spire_config.sh
 ```
 
@@ -118,6 +118,6 @@ This is normal and expected - the script is idempotent and will update the exist
 
 ## Related Documentation
 
-- [SPIFFE_KEYCLOAK_SETUP.md](../../../../../../../rossocortex/SPIFFE_KEYCLOAK_SETUP.md) - Full setup and testing guide
-- [CONFIGURATION_CHANGES.md](../../../../../../../rossocortex/spiffe-keycloak/CONFIGURATION_CHANGES.md) - Configuration changes summary
-- [keycloak_federated_client.py](../../../../../../../rossocortex/spiffe-keycloak/keycloak_federated_client.py) - Reference implementation
+- [SPIFFE_KEYCLOAK_SETUP.md](../../../../../../../cortex/SPIFFE_KEYCLOAK_SETUP.md) - Full setup and testing guide
+- [CONFIGURATION_CHANGES.md](../../../../../../../cortex/spiffe-keycloak/CONFIGURATION_CHANGES.md) - Configuration changes summary
+- [keycloak_federated_client.py](../../../../../../../cortex/spiffe-keycloak/keycloak_federated_client.py) - Reference implementation

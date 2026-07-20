@@ -29,14 +29,14 @@ permissions:
 # Version tracking - keep in sync with kind-config in scripts/kind/setup-rossoctl.sh
 env:
   K8S_VERSION: '1.35.0'  # Must match kindest/node version in kind-config
-  # rossocortex ref for AuthBridge weather E2E (pin to a release tag once the demo is in a tagged release).
+  # cortex ref for AuthBridge weather E2E (pin to a release tag once the demo is in a tagged release).
   ROSSOCTL_EXTENSIONS_GIT_REF: 'main'
 
 jobs:
   e2e-dev-rossoctl-operator:
     name: Deploy & Test
     runs-on: ubuntu-latest
-    # Includes rossocortex AuthBridge E2E (clone, Keycloak, advanced deploys).
+    # Includes cortex AuthBridge E2E (clone, Keycloak, advanced deploys).
     timeout-minutes: 90
 
     steps:
@@ -137,7 +137,7 @@ jobs:
         env:
           NAMESPACE: team1
 
-      # rossocortex: authbridge/demos/weather-agent (token exchange + tool inbound JWT). Not a lightweight check.
+      # cortex: authbridge/demos/weather-agent (token exchange + tool inbound JWT). Not a lightweight check.
       - name: AuthBridge Weather (advanced) E2E
         if: success()
         run: bash .github/scripts/kind/91-run-authbridge-weather-e2e.sh

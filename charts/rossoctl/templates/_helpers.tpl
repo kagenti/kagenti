@@ -93,7 +93,7 @@ gates a top-level `spiffe:` block into the rendered authbridge config.
 Without that, the new authbridge image fails to Configure with
 "spiffe identity requires a SPIFFE provider to be injected" at boot.
 Failing here at helm template time gives a clearer message than a
-CrashLoopBackOff. See rossocortex#332.
+CrashLoopBackOff. See cortex#332.
 */}}
 {{- define "rossoctl.authBridge.validateSpiffeIdentity" -}}
 {{- if and (eq .Values.authBridge.clientAuthType "federated-jwt") (not .Values.spire.enabled) -}}

@@ -34,7 +34,7 @@ on:
         required: false
         default: '6'
       dep_builds:
-        description: 'JSON array of dependency builds, e.g. [{"repo":"rossoctl/rossocortex","ref":"fix/branch"}]'
+        description: 'JSON array of dependency builds, e.g. [{"repo":"rossoctl/cortex","ref":"fix/branch"}]'
         required: false
         default: '[]'
 

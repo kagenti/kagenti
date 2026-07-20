@@ -149,7 +149,7 @@ From the UI you can:
 - Test agents interactively
 - Monitor traces and network traffic
 
-To learn how to deploy agents and MCP tools, follow the **[Weather Agent Demo](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui.md)** — the recommended getting-started tutorial that walks you through deploying an agent and tool via the UI and chatting with it end-to-end. For more demos, see the [full demo list](./docs/demos/README.md).
+To learn how to deploy agents and MCP tools, follow the **[Weather Agent Demo](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui.md)** — the recommended getting-started tutorial that walks you through deploying an agent and tool via the UI and chatting with it end-to-end. For more demos, see the [full demo list](./docs/demos/README.md).
 
 ## Documentation
 

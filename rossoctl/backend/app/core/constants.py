@@ -40,7 +40,7 @@ ROSSOCTL_AUTOSCALING_ANNOTATION = "rossoctl.io/autoscaling"  # HPA-off marker (d
 SIMULATION_HARNESS_SKILLS_MOUNT = "/app/skills-store"  # HARNESS_SKILLS_FOLDER mount path
 
 # Per-sidecar opt-out labels (envoy-proxy / spiffe-helper /
-# client-registration) are gone after rossocortex#411 — they
+# client-registration) are gone after cortex#411 — they
 # referenced separate sidecars that no longer exist. The master enable
 # /disable trigger is still ROSSOCTL_INJECT_LABEL above; per-workload
 # mode now lives on AgentRuntime.Spec.AuthBridgeMode.

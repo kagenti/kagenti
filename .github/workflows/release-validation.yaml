@@ -29,7 +29,7 @@ on:
         type: boolean
         default: false
       dep_builds:
-        description: 'JSON array of dependency builds (used by both Kind and HyperShift), e.g. [{"repo":"rossoctl/rossocortex","ref":"v0.6.0-rc.1"}]. Kind uses the rossocortex ref for weather-agent deploy; HyperShift passes the full array to the deploy script.'
+        description: 'JSON array of dependency builds (used by both Kind and HyperShift), e.g. [{"repo":"rossoctl/cortex","ref":"v0.6.0-rc.1"}]. Kind uses the cortex ref for weather-agent deploy; HyperShift passes the full array to the deploy script.'
         required: false
         default: '[]'
 
@@ -164,13 +164,13 @@ jobs:
           EXTENSIONS_REF="${{ inputs.ref }}"
           DEP_BUILDS='${{ inputs.dep_builds }}'
           if [ "$DEP_BUILDS" != "[]" ] && [ -n "$DEP_BUILDS" ]; then
-            REF=$(echo "$DEP_BUILDS" | jq -r '.[] | select(.repo == "rossoctl/rossocortex") | .ref // empty')
+            REF=$(echo "$DEP_BUILDS" | jq -r '.[] | select(.repo == "rossoctl/cortex") | .ref // empty')
             if [ -n "$REF" ]; then
               EXTENSIONS_REF="$REF"
             fi
           fi
           echo "extensions_ref=${EXTENSIONS_REF}" >> "$GITHUB_OUTPUT"
-          echo "Using rossocortex ref: ${EXTENSIONS_REF}"
+          echo "Using cortex ref: ${EXTENSIONS_REF}"
 
       - name: Deploy weather-service agent
         run: bash .github/scripts/operator/74-deploy-weather-agent.sh

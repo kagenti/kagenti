@@ -5,7 +5,7 @@
 #   ./.github/scripts/kind/run-e2e-tests.sh
 #   ROSSOCTL_CONFIG_FILE=deployments/envs/dev_values.yaml ./.github/scripts/kind/run-e2e-tests.sh
 #   RUN_AUTHBRIDGE_WEATHER_E2E=1 ./.github/scripts/kind/run-e2e-tests.sh
-#   RUN_AUTHBRIDGE_WEATHER_E2E=1 ROSSOCTL_EXTENSIONS_ROOT=../rossocortex ./.github/scripts/kind/run-e2e-tests.sh
+#   RUN_AUTHBRIDGE_WEATHER_E2E=1 ROSSOCTL_EXTENSIONS_ROOT=../cortex ./.github/scripts/kind/run-e2e-tests.sh
 
 set -euo pipefail
 
@@ -49,7 +49,7 @@ echo ""
 
 cd "$REPO_ROOT"
 
-# Optional: AuthBridge Weather (advanced) E2E from rossocortex (wave 91).
+# Optional: AuthBridge Weather (advanced) E2E from cortex (wave 91).
 # Set RUN_AUTHBRIDGE_WEATHER_E2E=1 to run after pytest. Requires network (git clone)
 # unless ROSSOCTL_EXTENSIONS_ROOT points at a local clone.
 RUN_AUTHBRIDGE_WEATHER_E2E="${RUN_AUTHBRIDGE_WEATHER_E2E:-0}"
@@ -82,7 +82,7 @@ bash .github/scripts/operator/90-run-e2e-tests.sh
 
 TEST_RESULT=$?
 
-# Step 4: AuthBridge Weather (advanced) — rossocortex deploy + verify
+# Step 4: AuthBridge Weather (advanced) — cortex deploy + verify
 if [[ "$RUN_AUTHBRIDGE_WEATHER_E2E" == "1" ]]; then
     if [[ $TEST_RESULT -ne 0 ]]; then
         echo -e "${RED}Skipping AuthBridge E2E (pytest failed)${NC}"

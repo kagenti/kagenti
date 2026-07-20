@@ -41,7 +41,7 @@ data:
   # Per-plugin config. Plugin-level defaults (audience_file,
   # bypass_paths, identity file paths, etc.) are applied by the
   # authbridge binary itself — see
-  # authbridge/authlib/plugins/CONVENTIONS.md in rossocortex.
+  # authbridge/authlib/plugins/CONVENTIONS.md in cortex.
   #
   # No top-level `mode:` is set here. After rossoctl-operator#361 the
   # operator resolves mode per workload from

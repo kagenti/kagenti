@@ -148,7 +148,7 @@ Rossoctl is a cloud-native middleware platform that provides framework-neutral, 
 
 **Primary Repositories**:
 
-- [rossocortex](https://github.com/rossoctl/rossocortex) - Core extensions (Go)
+- [cortex](https://github.com/rossoctl/cortex) - Core extensions (Go)
 - [plugins-adapter](https://github.com/rossoctl/plugins-adapter) - Guardrails and policy plugins (Python)
 - [agentic-control-plane](https://github.com/rossoctl/agentic-control-plane) - A2A control plane agents (Python)
 
@@ -162,7 +162,7 @@ Rossoctl is a cloud-native middleware platform that provides framework-neutral, 
 
 **Technical Skills**:
 
-- Go programming (for rossocortex)
+- Go programming (for cortex)
 - Python programming (for plugins-adapter, agentic-control-plane)
 - Kubernetes API and controller development
 - Plugin architecture design
@@ -387,7 +387,7 @@ Review Identity Patterns in [identity documentation](docs/identity-guide.md) for
 | **[agent-examples](https://github.com/rossoctl/examples)** | Agent Developer, Tool Developer |
 | **[mcp-gateway](https://github.com/rossoctl/mcp-gateway)** | MCP Gateway Developer, MCP Gateway Operator |
 | **[rossoctl-operator](https://github.com/rossoctl/operator)** | Operator Developer, Platform Operator |
-| **[rossocortex](https://github.com/rossoctl/rossocortex)** | Extensions Developer |
+| **[cortex](https://github.com/rossoctl/cortex)** | Extensions Developer |
 | **[agentic-control-plane](https://github.com/rossoctl/agentic-control-plane)** | Extensions Developer, Agent Developer |
 | **[plugins-adapter](https://github.com/rossoctl/plugins-adapter)** | Extensions Developer, Security Specialist |
 | **[.github](https://github.com/rossoctl/.github)** | UI Developer |

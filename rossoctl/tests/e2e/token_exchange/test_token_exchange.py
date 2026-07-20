@@ -851,7 +851,7 @@ class TestAuthbridgeExtProc:
         ]
         has_evidence = any(marker in logs.lower() for marker in exchange_markers)
         # This is a soft check — log format may vary. The legacy
-        # authbridge-light container is gone after rossocortex#411
+        # authbridge-light container is gone after cortex#411
         # (everything's bundled into the envoy-proxy container in
         # envoy-sidecar mode), so we only inspect that one container now.
         # The token comparison tests above are the definitive proof.

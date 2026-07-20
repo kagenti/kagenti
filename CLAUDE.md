@@ -281,6 +281,6 @@ The work is the developer's; Claude Code assists. This applies to:
 - [Components](docs/components.md)
 - [AI Ops / Claude Code](docs/ai-ops/README.md)
 - [Demos](docs/demos/README.md)
-- [AuthBridge Demos](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/README.md) — Zero-trust agent demos (weather agent, github issue, webhook, multi-target) in rossocortex
+- [AuthBridge Demos](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/README.md) — Zero-trust agent demos (weather agent, github issue, webhook, multi-target) in cortex
 - [Skills and Patterns](docs/skills/README.md)
 - [Keycloak Patterns](docs/auth/keycloak-patterns.md)

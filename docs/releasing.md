@@ -47,7 +47,7 @@ GA release notes should include a compatibility table:
 | Component | Version |
 |-----------|---------|
 | rossoctl (platform) | v0.6.0 |
-| rossocortex (webhook) | v0.5.0 |
+| cortex (webhook) | v0.5.0 |
 | rossoctl-operator | v0.3.0 |
 | agent-examples | v0.2.0 |
 ```
@@ -64,7 +64,7 @@ artifacts when a tag is pushed:
 | Repository | Artifacts on tag push | CI workflow(s) |
 |------------|----------------------|----------------|
 | [rossoctl/rossoctl](https://github.com/rossoctl/rossoctl) | Container images (ui-v2, backend, oauth-secrets), Helm charts (rossoctl, rossoctl-deps) | `build.yaml` |
-| [rossoctl/rossocortex](https://github.com/rossoctl/rossocortex) | Container images (envoy-with-processor, proxy-init, client-registration), webhook binary + ko image, Helm chart (rossoctl-webhook-chart) | `build.yaml`, `goreleaser.yml` |
+| [rossoctl/cortex](https://github.com/rossoctl/cortex) | Container images (envoy-with-processor, proxy-init, client-registration), webhook binary + ko image, Helm chart (cortex-webhook-chart) | `build.yaml`, `goreleaser.yml` |
 | [rossoctl/operator](https://github.com/rossoctl/operator) | Operator image, Helm chart (operator-chart) | repo-specific |
 | [rossoctl/examples](https://github.com/rossoctl/examples) | Sample agent/tool images | repo-specific |
 
@@ -76,7 +76,7 @@ The `rossoctl/rossoctl` Helm chart depends on sub-charts from other repos
 
 ```
 1. rossoctl/operator     →  tag & wait for CI
-2. rossoctl/rossocortex   →  tag & wait for CI
+2. rossoctl/cortex   →  tag & wait for CI
 3. rossoctl/examples       →  tag (if applicable)
 4. rossoctl/rossoctl              →  update Chart.yaml, tag
 ```
@@ -113,14 +113,14 @@ Alpha releases are tagged from `main` during active development.
 
 ### Updating rossoctl/rossoctl after dependency alphas
 
-After tagging `rossocortex` and `rossoctl-operator`, update the sub-chart
+After tagging `cortex` and `rossoctl-operator`, update the sub-chart
 versions in `charts/rossoctl/Chart.yaml`:
 
 ```yaml
 dependencies:
-- name: rossoctl-webhook-chart
+- name: cortex-webhook-chart
   version: X.Y.0-alpha.N    # <-- new version
-  repository: oci://ghcr.io/rossoctl/rossocortex
+  repository: oci://ghcr.io/rossoctl/cortex
 - name: operator-chart
   version: X.Y.0-alpha.N    # <-- new version
   repository: oci://ghcr.io/rossoctl/operator
@@ -284,7 +284,7 @@ A GA release is the final, stable, production-ready version.
    | Component | Version |
    |-----------|---------|
    | rossoctl (platform) | vX.Y.0 |
-   | rossocortex (webhook) | vA.B.0 |
+   | cortex (webhook) | vA.B.0 |
    | rossoctl-operator | vC.D.0 |
    | agent-examples | vE.F.0 |
 
@@ -333,7 +333,7 @@ gh workflow run release-validation.yaml -f ref=v0.6.0-rc.9
 
 # Validate with a specific extensions dependency
 gh workflow run release-validation.yaml -f ref=v0.6.0-rc.9 \
-  -f dep_builds='[{"repo":"rossoctl/rossocortex","ref":"v0.6.0-rc.1"}]'
+  -f dep_builds='[{"repo":"rossoctl/cortex","ref":"v0.6.0-rc.1"}]'
 
 # Quick iteration: HyperShift only, keep cluster alive for debugging
 gh workflow run release-validation.yaml -f ref=v0.6.0-rc.9 \
@@ -513,7 +513,7 @@ Tag repos in this order. Wait for CI between each:
 
 ```
 1. rossoctl/operator     →  tag, wait for CI + images
-2. rossoctl/rossocortex   →  tag, wait for CI + images
+2. rossoctl/cortex   →  tag, wait for CI + images
 3. rossoctl/examples       →  tag (if applicable)
 4. rossoctl/rossoctl              →  update Chart.yaml + values.yaml, tag
 ```
@@ -605,7 +605,7 @@ gh pr list --repo rossoctl/rossoctl --state merged --base main \
   --jq '.[] | "#\(.number) \(.title) [\(.mergeCommit.oid[:12])]"'
 
 # Check dependency repos too
-gh pr list --repo rossoctl/rossocortex --state merged --base main \
+gh pr list --repo rossoctl/cortex --state merged --base main \
   --search "merged:>$LAST_RC_DATE" --json number,title,mergeCommit \
   --jq '.[] | "#\(.number) \(.title) [\(.mergeCommit.oid[:12])]"'
 ```
@@ -775,7 +775,7 @@ for img in ui-v2 backend ui-oauth-secret agent-oauth-secret api-oauth-secret; do
 done
 
 # Helm charts
-helm show chart oci://ghcr.io/rossoctl/rossocortex/rossoctl-webhook-chart --version <version>
+helm show chart oci://ghcr.io/rossoctl/cortex/cortex-webhook-chart --version <version>
 helm show chart oci://ghcr.io/rossoctl/operator/operator-chart --version <version>
 
 # Pre-release flag (should be true for alpha/RC, false for GA)
@@ -823,7 +823,7 @@ Release candidate for vX.Y.0.
 | Component | Version |
 |-----------|---------|
 | rossoctl (platform) | vX.Y.0 |
-| rossocortex | vA.B.0 |
+| cortex | vA.B.0 |
 | rossoctl-operator | vC.D.0 |
 
 ## Upgrade Notes

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build rossocortex images from source.
+# Build cortex images from source.
 #
 # Environment:
 #   ROSSOCTL_EXTENSIONS_ROOT   Local clone (optional; clones from GitHub if unset)
@@ -8,7 +8,7 @@
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
-log_step "10" "Build rossocortex images"
+log_step "10" "Build cortex images"
 
 PLATFORM="${PLATFORM:-$(detect_platform)}"
 EXTENSIONS_REF="${ROSSOCTL_EXTENSIONS_REF:-main}"
@@ -16,16 +16,16 @@ EXT_ROOT="${ROSSOCTL_EXTENSIONS_ROOT:-}"
 CLONE_DIR=""
 
 if [[ -z "$EXT_ROOT" ]]; then
-  CLONE_DIR="${TMPDIR:-/tmp}/rossocortex-tx-e2e-$$"
-  log_info "Cloning rossocortex (ref: $EXTENSIONS_REF)"
+  CLONE_DIR="${TMPDIR:-/tmp}/cortex-tx-e2e-$$"
+  log_info "Cloning cortex (ref: $EXTENSIONS_REF)"
   git clone --depth 1 --single-branch --branch "$EXTENSIONS_REF" \
-    "https://github.com/rossoctl/rossocortex.git" "$CLONE_DIR" 2>/dev/null || \
-  git clone "https://github.com/rossoctl/rossocortex.git" "$CLONE_DIR" && \
+    "https://github.com/rossoctl/cortex.git" "$CLONE_DIR" 2>/dev/null || \
+  git clone "https://github.com/rossoctl/cortex.git" "$CLONE_DIR" && \
     (cd "$CLONE_DIR" && git checkout "$EXTENSIONS_REF")
   EXT_ROOT="$CLONE_DIR"
 fi
 
-# Images to build. After rossocortex#411 the unified binary was
+# Images to build. After cortex#411 the unified binary was
 # split into three mode-specific binaries, each with its own combined
 # image (spiffe-helper bundled inside, gated by SPIRE_ENABLED). The
 # old client-registration and standalone spiffe-helper images are gone
@@ -37,12 +37,12 @@ IMAGES=(
   "proxy-init:authbridge/proxy-init:Dockerfile.init"
 )
 
-REGISTRY="ghcr.io/rossoctl/rossocortex"
+REGISTRY="ghcr.io/rossoctl/cortex"
 
 # Extract pinned tags from values.yaml so locally-built images replace them
 PINNED_TAGS=()
 VALUES_FILE="$REPO_ROOT/charts/rossoctl/values.yaml"
-for tag in $(grep -oP '(?<=rossocortex/)[^:]+:\S+' "$VALUES_FILE" 2>/dev/null | sort -u); do
+for tag in $(grep -oP '(?<=cortex/)[^:]+:\S+' "$VALUES_FILE" 2>/dev/null | sort -u); do
   img="${tag%%:*}"
   ver="${tag#*:}"
   PINNED_TAGS+=("${img}:${ver}")
@@ -84,4 +84,4 @@ if [[ -n "$CLONE_DIR" && -d "$CLONE_DIR" ]]; then
   rm -rf "$CLONE_DIR"
 fi
 
-log_success "All rossocortex images built"
+log_success "All cortex images built"

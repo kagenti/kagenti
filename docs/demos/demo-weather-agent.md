@@ -1,12 +1,12 @@
 # Weather Agent Demo
 
 > **This demo has moved.** The Weather Agent demo is now maintained in
-> [rossocortex](https://github.com/rossoctl/rossocortex) with
+> [cortex](https://github.com/rossoctl/cortex) with
 > AuthBridge integration for zero-trust security.
 
 ## New Location
 
-**[Weather Agent Demo with AuthBridge](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui.md)**
+**[Weather Agent Demo with AuthBridge](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui.md)**
 — Deploy the Weather Agent via the Rossoctl UI with automatic SPIFFE identity
 registration and inbound JWT validation.
 
@@ -15,7 +15,7 @@ This is the recommended **getting-started** demo for new users.
 ## Why It Moved
 
 The original demo in this file used an older version of the Rossoctl UI and did
-not include AuthBridge security features. The new demo in `rossocortex`:
+not include AuthBridge security features. The new demo in `cortex`:
 
 - Uses the **current Rossoctl UI** (Import Agent / Import Tool workflow)
 - Adds **AuthBridge inbound JWT validation** — requests are validated before
@@ -27,5 +27,5 @@ not include AuthBridge security features. The new demo in `rossocortex`:
 
 ## All Available Demos
 
-See the [AuthBridge Demos Index](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/README.md)
+See the [AuthBridge Demos Index](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/README.md)
 for a complete list of demos with a recommended learning path.

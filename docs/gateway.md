@@ -34,7 +34,7 @@ mcp-controller-666f8cf9bf-dcpbc      1/1     Running   0          30h
 
 ### Register Weather MCP Server
 
-The Weather Service Tool can be installed using the Rossoctl UI [as usual](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui.md#step-3-import-the-weather-tool-via-rossoctl-ui). Once it is
+The Weather Service Tool can be installed using the Rossoctl UI [as usual](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui.md#step-3-import-the-weather-tool-via-rossoctl-ui). Once it is
 installed, to register it with the Gateway, create an [`HTTPRoute`](https://gateway-api.sigs.k8s.io/reference/api-types/httproute/):
 
 ```
@@ -118,7 +118,7 @@ kubectl delete pod -n <namespace> -l app.kubernetes.io/name=weather-service
 Once the Gateway implementation has stabilized, `MCP_URL` will be set to this
 value by default, so we do not need to set this environment variable for every
 agent. To check if the weather service is working, simply use the chatbot
-exposed by the Weather Service Agent to query for weather information. Instructions for chatting with the agent can be referred to [here](https://github.com/rossoctl/rossocortex/blob/main/authbridge/demos/weather-agent/demo-ui.md#step-7-chat-via-rossoctl-ui).
+exposed by the Weather Service Agent to query for weather information. Instructions for chatting with the agent can be referred to [here](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui.md#step-7-chat-via-rossoctl-ui).
 
 ### Limitations
 

@@ -50,7 +50,7 @@ def test_build_authbridge_runtime_yaml_client_secret():
     jwt = _plugin_config(cfg, "inbound", "jwt-validation")
     assert jwt["issuer"] == "http://keycloak.example.com/realms/rossoctl"
     # keycloak_url + keycloak_realm let jwt-validation derive jwks_url
-    # from the INTERNAL keycloak URL (see rossocortex#383).
+    # from the INTERNAL keycloak URL (see cortex#383).
     # Pinning the full jwks_url was the pre-plugin-fix workaround; the
     # two hints are the supported contract now.
     assert jwt["keycloak_url"] == "http://keycloak:8080"
@@ -97,7 +97,7 @@ def test_build_authbridge_runtime_yaml_spire_enabled():
     tok = _plugin_config(cfg, "outbound", "token-exchange")
     assert tok["identity"]["type"] == "spiffe"
     # JWT-SVID client-assertion audience — must equal the realm issuer
-    # URL Keycloak's SPIFFE IdP expects. See rossocortex#332.
+    # URL Keycloak's SPIFFE IdP expects. See cortex#332.
     assert tok["identity"]["jwt_audience"] == "http://keycloak.example.com/realms/rossoctl"
     # jwt_svid_path is not emitted — the plugin applies
     # /opt/jwt_svid.token as its default when identity.type is spiffe.

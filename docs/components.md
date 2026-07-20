@@ -464,7 +464,7 @@ kubectl get route rossoctl-ui -n rossoctl-system -o jsonpath='{.status.ingress[0
 
 ## Identity & Auth Bridge
 
-**Repository**: [rossoctl/rossocortex/AuthBridge](https://github.com/rossoctl/rossocortex/tree/main/authbridge)
+**Repository**: [rossoctl/cortex/AuthBridge](https://github.com/rossoctl/cortex/tree/main/authbridge)
 
 Rossoctl provides a unified framework for identity and authorization in agentic systems, replacing static credentials with dynamic, short-lived tokens. We call this collection of assets **Auth Bridge**.
 
@@ -474,7 +474,7 @@ Rossoctl provides a unified framework for identity and authorization in agentic 
 
 | Component | Purpose | Repository |
 |-----------|---------|------------|
-| **[AuthProxy](https://github.com/rossoctl/rossocortex/tree/main/authbridge)** | Inbound JWT validation (JWKS) and outbound token exchange | `AuthBridge/AuthProxy` |
+| **[AuthProxy](https://github.com/rossoctl/cortex/tree/main/authbridge)** | Inbound JWT validation (JWKS) and outbound token exchange | `AuthBridge/AuthProxy` |
 | **[SPIRE](https://spiffe.io/docs/latest/spire-about/)** | Workload identity and attestation | External |
 | **[Keycloak](https://www.keycloak.org/)** | Identity provider and access management | External |
 

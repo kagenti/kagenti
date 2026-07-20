@@ -343,7 +343,7 @@ class CreateAgentRequest(BaseModel):
         as defense-in-depth in front of the operator's webhook gate.
         Both have been lifted now that the operator + extensions
         support the full matrix (rossoctl-operator#381,
-        rossocortex#441), so today there are no rejected
+        cortex#441), so today there are no rejected
         combinations.
 
         TODO(future-incompatibility): re-enable cross-field rejections

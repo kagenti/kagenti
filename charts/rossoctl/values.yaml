@@ -384,7 +384,7 @@ operator-chart:
     spireTrustDomain: localtest.me
   # Pin sidecar image tags injected by the AuthBridge webhook.
   #
-  # After rossocortex#411 there are three combined images:
+  # After cortex#411 there are three combined images:
   #   * authbridge      — proxy-sidecar mode (default), full plugin set
   #                       including the a2a/mcp/inference parsers.
   #   * authbridge-envoy — envoy-sidecar mode, full plugin set, expects
@@ -397,10 +397,10 @@ operator-chart:
   # sidecar. Client registration is operator-managed.
   defaults:
     images:
-      authbridge: ghcr.io/rossoctl/rossocortex/authbridge:v0.6.0-alpha.10
-      envoyProxy: ghcr.io/rossoctl/rossocortex/authbridge-envoy:v0.6.0-alpha.10
-      authbridgeLite: ghcr.io/rossoctl/rossocortex/authbridge-lite:v0.6.0-alpha.10
-      proxyInit: ghcr.io/rossoctl/rossocortex/proxy-init:v0.6.0-alpha.10
+      authbridge: ghcr.io/rossoctl/cortex/authbridge:v0.6.0-alpha.10
+      envoyProxy: ghcr.io/rossoctl/cortex/authbridge-envoy:v0.6.0-alpha.10
+      authbridgeLite: ghcr.io/rossoctl/cortex/authbridge-lite:v0.6.0-alpha.10
+      proxyInit: ghcr.io/rossoctl/cortex/proxy-init:v0.6.0-alpha.10
 
 # ------------------------------------------------------------------
 #  SPIFFE Configuration

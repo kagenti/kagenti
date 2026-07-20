@@ -87,7 +87,7 @@ Headline impact — median time-to-merge before vs. after the bot became active 
 | PRs reviewed (cumulative) | 79 | failed: 0 |
 | Currently queued for review | 1 | |
 
-> Per-repo activation: rossoctl/rossoctl since 2026-06-12; rossoctl/rossocortex since 2026-06-13; rossoctl/automation since 2026-06-16; rossoctl/agent-skills since 2026-06-16
+> Per-repo activation: rossoctl/rossoctl since 2026-06-12; rossoctl/cortex since 2026-06-13; rossoctl/automation since 2026-06-16; rossoctl/agent-skills since 2026-06-16
 
 Reviewed vs. unreviewed (secondary — interpret with care):
 
@@ -124,7 +124,7 @@ Reviewed vs. unreviewed (secondary — interpret with care):
 | automation | no | no | yes | 1 |
 | ecosystem-guide | yes | no | no | 1 |
 | rossoctl | yes | no | yes | 2 |
-| rossocortex | no | no | yes | 1 |
+| cortex | no | no | yes | 1 |
 | rossoctl-operator | yes | yes | no | 2 |
 | OpenShell | yes | yes | no | 2 |
 | pi | yes | no | no | 1 |

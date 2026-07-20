@@ -295,10 +295,10 @@ fi
 # with the old chart binaries. Build from source to match.
 # ============================================================================
 if [ -z "${ROSSOCTL_DEP_BUILDS:-}" ] || [ "${ROSSOCTL_DEP_BUILDS:-}" = "[]" ]; then
-    # Default: build proxy-init from rossocortex main so the packaged
+    # Default: build proxy-init from cortex main so the packaged
     # chart deps pick up the latest init-container fixes even when the chart
     # is pinned to an older release.
-    export ROSSOCTL_DEP_BUILDS='[{"repo":"rossoctl/rossocortex","ref":"main"}]'
+    export ROSSOCTL_DEP_BUILDS='[{"repo":"rossoctl/cortex","ref":"main"}]'
 fi
 if [ "${ROSSOCTL_DEP_BUILDS:-}" != "[]" ] && [ "$RUN_INSTALL" = "true" ]; then
     DEP_BUILD_SCRIPT="./.github/scripts/common/31-build-deps-from-refs.sh"

@@ -81,8 +81,8 @@ Gather the current release landscape before making any changes.
 echo "=== rossoctl/rossoctl ==="
 gh release list --repo rossoctl/rossoctl --limit 5
 
-echo "=== rossoctl/rossocortex ==="
-gh release list --repo rossoctl/rossocortex --limit 5
+echo "=== rossoctl/cortex ==="
+gh release list --repo rossoctl/cortex --limit 5
 
 echo "=== rossoctl/operator ==="
 gh release list --repo rossoctl/operator --limit 5
@@ -121,11 +121,11 @@ Present the user with a summary built from live data:
 ```
 Current state:
   rossoctl:            <latest tag> | release branch: <exists/not>
-  rossocortex: <latest tag> | release branch: <exists/not>
+  cortex: <latest tag> | release branch: <exists/not>
   rossoctl-operator:   <latest tag> | release branch: <exists/not>
 
 Chart.yaml pins:
-  rossoctl-webhook-chart: <version>
+  cortex-webhook-chart: <version>
   operator-chart: <version>
 
 Image tag issues:
@@ -149,7 +149,7 @@ All repos must be tagged in this order. Wait for CI to complete between each:
 
 ```
 1. rossoctl/operator     →  first
-2. rossoctl/rossocortex   →  second
+2. rossoctl/cortex   →  second
 3. rossoctl/examples       →  third (if applicable)
 4. rossoctl/rossoctl              →  last (update Chart.yaml + values.yaml, then tag)
 ```
@@ -294,7 +294,7 @@ After tagging, verify that CI produced all expected artifacts.
 ### 3.1 GitHub Releases
 
 ```bash
-for repo in rossoctl rossocortex rossoctl-operator; do
+for repo in rossoctl cortex rossoctl-operator; do
   echo "=== rossoctl/$repo ==="
   gh release view <version> --repo rossoctl/$repo --json tagName,isPrerelease,publishedAt 2>/dev/null || echo "  Not found"
 done
@@ -313,10 +313,10 @@ for img in ui-v2 backend ui-oauth-secret agent-oauth-secret api-oauth-secret; do
     && echo "OK" || echo "MISSING"
 done
 
-# rossocortex images
+# cortex images
 for img in envoy-with-processor proxy-init client-registration; do
   echo -n "$img:$VERSION ... "
-  docker manifest inspect ghcr.io/rossoctl/rossocortex/$img:$VERSION >/dev/null 2>&1 \
+  docker manifest inspect ghcr.io/rossoctl/cortex/$img:$VERSION >/dev/null 2>&1 \
     && echo "OK" || echo "MISSING"
 done
 ```
@@ -324,7 +324,7 @@ done
 ### 3.3 Helm charts
 
 ```bash
-helm show chart oci://ghcr.io/rossoctl/rossocortex/rossoctl-webhook-chart --version <chart-version> 2>/dev/null \
+helm show chart oci://ghcr.io/rossoctl/cortex/cortex-webhook-chart --version <chart-version> 2>/dev/null \
   && echo "webhook chart OK" || echo "webhook chart MISSING"
 
 helm show chart oci://ghcr.io/rossoctl/operator/operator-chart --version <chart-version> 2>/dev/null \
@@ -373,8 +373,8 @@ gh pr list --repo rossoctl/rossoctl --state merged --base main \
   --jq '.[] | "#\(.number) \(.title) [\(.mergeCommit.oid[:12])] labels:\([.labels[].name] | join(","))"'
 
 echo ""
-echo "=== PRs merged to rossoctl/rossocortex main since $LAST_RC ==="
-gh pr list --repo rossoctl/rossocortex --state merged --base main \
+echo "=== PRs merged to rossoctl/cortex main since $LAST_RC ==="
+gh pr list --repo rossoctl/cortex --state merged --base main \
   --search "merged:>$LAST_RC_DATE" --json number,title,mergeCommit \
   --jq '.[] | "#\(.number) \(.title) [\(.mergeCommit.oid[:12])]"'
 
@@ -401,7 +401,7 @@ rossoctl/rossoctl:
   2. #1660 - fix(ui): dashboard crash on empty state [abc123]
   3. #1670 - chore(deps): bump go to 1.22 [def456]
 
-rossocortex:
+cortex:
   4. #89 - fix(webhook): handle nil annotations [aaa111]
 
 rossoctl-operator:
@@ -421,15 +421,15 @@ For each selected fix, cherry-pick into the appropriate release branch.
 
 #### If fixes touch dependency repos (extensions or operator)
 
-**ASK:** "PR #89 is in rossocortex. Does that repo have a release-X.Y
+**ASK:** "PR #89 is in cortex. Does that repo have a release-X.Y
 branch yet?"
 
 If no release branch exists for the dependency repo:
 
 ```bash
 # Create release branch in the dependency repo
-gh repo clone rossoctl/rossocortex /tmp/rossoctl-release/rossocortex
-cd /tmp/rossoctl-release/rossocortex
+gh repo clone rossoctl/cortex /tmp/rossoctl-release/cortex
+cd /tmp/rossoctl-release/cortex
 git checkout -b release-X.Y main
 git push origin release-X.Y
 ```
@@ -437,7 +437,7 @@ git push origin release-X.Y
 Then cherry-pick and tag:
 
 ```bash
-cd /tmp/rossoctl-release/rossocortex
+cd /tmp/rossoctl-release/cortex
 git checkout release-X.Y
 git pull origin release-X.Y
 git cherry-pick -x <merge-commit-sha>
@@ -609,7 +609,7 @@ If dependency repos were also tagged, include them:
 
 ```bash
 gh workflow run release-validation.yaml -f ref=<version> \
-  -f dep_builds='[{"repo":"rossoctl/rossocortex","ref":"<ext-version>"}]'
+  -f dep_builds='[{"repo":"rossoctl/cortex","ref":"<ext-version>"}]'
 ```
 
 After triggering, show the run URL:
@@ -666,7 +666,7 @@ Full release notes with component compatibility table:
 | Component | Version |
 |-----------|---------|
 | rossoctl (platform) | vX.Y.0 |
-| rossocortex (webhook) | vA.B.0 |
+| cortex (webhook) | vA.B.0 |
 | rossoctl-operator | vC.D.0 |
 | agent-examples | vE.F.0 |
 
@@ -771,7 +771,7 @@ When fixes span multiple repos, cherry-pick and tag in dependency order:
 
 ```
 1. rossoctl-operator (if affected)     → cherry-pick, tag RC
-2. rossocortex (if affected)   → cherry-pick, tag RC
+2. cortex (if affected)   → cherry-pick, tag RC
 3. rossoctl/rossoctl                    → update Chart.yaml deps, cherry-pick fixes, tag RC
 ```
 
@@ -810,7 +810,7 @@ cat > /tmp/rossoctl/release/v0.6.0/rc-fixes.md << 'EOF'
 <!-- - [ ] PR #NNN - description -->
 
 ### Dependency repo fixes
-<!-- - [ ] rossocortex PR #NN - description -->
+<!-- - [ ] cortex PR #NN - description -->
 <!-- - [ ] rossoctl-operator PR #NN - description -->
 
 ## Previous RCs

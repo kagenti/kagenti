@@ -256,7 +256,7 @@ The 17 public repos in the Rossoctl org as of 2026-06-03:
 | `rossoctl-operator` | Lifecycle controller — production deployments depend on it. |
 | `agent-examples` | Reference samples users copy from; examples are an API. |
 | `adk` | Agent Development Kit; explicitly a "Kit" with a contract to downstream developers. |
-| `rossocortex` | Houses AuthBridge and related stable extensions. *(May be renamed to `rossoctl-authbridge` in a future update — separate decision.)* |
+| `cortex` | Houses AuthBridge and related stable extensions. *(May be renamed to `rossoctl-authbridge` in a future update — separate decision.)* |
 | `.github` | Org profile and landing surface; Core by definition. |
 
 ### Incubator (9)
@@ -436,7 +436,7 @@ own CI and policies.
 
 Separate proposal. Candidates discussed informally:
 
-- `rossocortex` → `rossoctl-authbridge`.
+- `cortex` → `rossoctl-authbridge`.
 - Prefixing incubator repos (e.g., `lab-`).
 
 Not part of this proposal. Listed here only to acknowledge it as a known
