@@ -5,7 +5,7 @@ description: Clone target repo into .repos/ and verify skill discovery works
 
 # Onboard: Link to Hub
 
-Clone an orchestrated repository into the kagenti hub's `.repos/` directory
+Clone an orchestrated repository into the rossoctl hub's `.repos/` directory
 and verify that Claude Code can discover the target's skills.
 
 ## Steps
@@ -52,7 +52,7 @@ Add entry to `.repos/README.md`:
 
 | Repo | Status | Last Orchestrated |
 |------|--------|-------------------|
-| kagenti-operator | Orchestrated | 2026-02-14 |
+| rossoctl-operator | Orchestrated | 2026-02-14 |
 ```
 
 Status values: `Orchestrated`, `Linked`, `Onboarded`
@@ -72,5 +72,5 @@ The cloned repo itself is NOT committed (`.repos/` is in `.gitignore`).
 ## Related Skills
 
 - `onboard` — Router skill
-- `onboard:standards` — Apply kagenti conventions (next step)
+- `onboard:standards` — Apply rossoctl conventions (next step)
 - `orchestrate:scan` — Create CLAUDE.md if missing

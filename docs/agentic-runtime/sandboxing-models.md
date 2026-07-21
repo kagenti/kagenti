@@ -2,9 +2,9 @@
 
 > Back to [main doc](openshell-integration.md)
 
-Kagenti supports two agent deployment modes that coexist in the same cluster.
+Rossoctl supports two agent deployment modes that coexist in the same cluster.
 
-## Mode 1: Custom A2A Agents (Kagenti-managed)
+## Mode 1: Custom A2A Agents (Rossoctl-managed)
 
 Custom agents deployed as K8s Deployments with A2A JSON-RPC 2.0 protocol.
 Used for production agents with custom code and frameworks.
@@ -13,13 +13,13 @@ Used for production agents with custom code and frameworks.
 graph LR
     Wizard["SandboxWizard / kubectl"] -->|"creates"| Dep["Deployment + Service"]
     Dep --> Pod1["Agent Pod<br/>(custom image)"]
-    OP1["Kagenti Operator"] -->|"AgentRuntime CR"| Pod1
+    OP1["Rossoctl Operator"] -->|"AgentRuntime CR"| Pod1
 ```
 
 - **Image:** Custom Dockerfile per agent
 - **Interaction:** A2A JSON-RPC 2.0 (programmatic)
 - **Lifecycle:** Long-running Deployment
-- **Session management:** Kagenti backend PostgreSQL
+- **Session management:** Rossoctl backend PostgreSQL
 
 ### Custom agent types in the PoC
 
@@ -43,13 +43,13 @@ graph LR
 ```
 
 - **Image:** `ghcr.io/nvidia/openshell-community/sandboxes/base:latest` (~1.1GB)
-- **Interaction:** SSH exec or `ExecSandbox` gRPC (Kagenti backend adapter in Phase 2)
+- **Interaction:** SSH exec or `ExecSandbox` gRPC (Rossoctl backend adapter in Phase 2)
 - **Lifecycle:** Ephemeral sandbox (Sandbox CR, on-demand create/destroy)
-- **Session management:** Workspace PVC + Kagenti backend PostgreSQL
+- **Session management:** Workspace PVC + Rossoctl backend PostgreSQL
 
 ### Builtin sandbox types in the PoC
 
-| Sandbox ID | CLI Agent | LLM | Works with LiteMaaS? | Kagenti Skill Support |
+| Sandbox ID | CLI Agent | LLM | Works with LiteMaaS? | Rossoctl Skill Support |
 |-----------|-----------|-----|---------------------|----------------------|
 | `openshell_claude` | Claude Code CLI | Anthropic API | No (needs real key) | Native (`.claude/skills/`) |
 | `openshell_opencode` | OpenCode CLI | OpenAI-compat | Yes | Via tool/prompt system |
@@ -59,7 +59,7 @@ graph LR
 
 | CLI | Binary | LLM Protocol | Notes |
 |-----|--------|-------------|-------|
-| claude | Claude Code | Anthropic `/v1/messages` | Best for kagenti skills (native `.claude/skills/` support) |
+| claude | Claude Code | Anthropic `/v1/messages` | Best for rossoctl skills (native `.claude/skills/` support) |
 | opencode | OpenCode | OpenAI `/v1/chat/completions` | Good with LiteMaaS |
 | codex | OpenAI Codex | OpenAI-specific | Needs real OpenAI key |
 | copilot | GitHub Copilot | Proprietary | Needs GitHub subscription |
@@ -73,9 +73,9 @@ graph TB
         KD3["K8s Compute Driver"]
     end
 
-    subgraph kagenti_ns2["kagenti-system"]
-        OP3["Kagenti Operator"]
-        BE3["Kagenti Backend"]
+    subgraph rossoctl_ns2["rossoctl-system"]
+        OP3["Rossoctl Operator"]
+        BE3["Rossoctl Backend"]
     end
 
     subgraph agent_ns2["team1"]
@@ -100,7 +100,7 @@ graph TB
 
 Both modes share the same namespace, LLM routing (LiteMaaS/Budget Proxy),
 and Istio mesh. Custom agents use A2A protocol; builtin sandboxes use
-SSH/exec, with the Kagenti backend serving as the unified session manager.
+SSH/exec, with the Rossoctl backend serving as the unified session manager.
 
 ## Target: Unified Supervisor for ALL Agents
 

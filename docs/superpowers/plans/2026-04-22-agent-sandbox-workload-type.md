@@ -14,42 +14,42 @@
 
 | File | Responsibility |
 |------|---------------|
-| `kagenti/backend/app/core/config.py` | Feature flag declaration |
-| `kagenti/backend/app/core/constants.py` | `WORKLOAD_TYPE_SANDBOX` constant + CRD coordinates |
-| `kagenti/backend/app/services/kubernetes.py` | Sandbox CRUD methods (create/get/list/delete/patch) |
-| `kagenti/backend/app/routers/agents.py` | Manifest builder + all dispatch points (create/list/get/delete/finalize) |
-| `kagenti/backend/app/routers/config.py` | Expose `agentSandbox` in feature flags response |
-| `kagenti/backend/app/services/reconciliation.py` | Add Sandbox to `_workload_exists` |
-| `kagenti/backend/app/main.py` | CRD detection at startup |
-| `charts/kagenti/values.yaml` | `featureFlags.agentSandbox` value |
-| `charts/kagenti/templates/ui.yaml` | Wire env var for feature flag |
-| `kagenti/ui-v2/src/types/index.ts` | Add `'sandbox'` to `WorkloadType` union |
-| `kagenti/ui-v2/src/hooks/useFeatureFlags.ts` | Add `agentSandbox` boolean |
-| `kagenti/ui-v2/src/pages/ImportAgentPage.tsx` | Sandbox option in workload dropdown |
-| `kagenti/ui-v2/src/pages/AgentCatalogPage.tsx` | Sandbox badge rendering |
-| `kagenti/ui-v2/src/pages/AgentDetailPage.tsx` | Sandbox status display |
-| `kagenti/ui-v2/src/services/api.ts` | Add `'sandbox'` to API type unions |
-| `kagenti/tests/e2e/test_agent_sandbox.py` | E2E tests for Sandbox workload type |
+| `rossoctl/backend/app/core/config.py` | Feature flag declaration |
+| `rossoctl/backend/app/core/constants.py` | `WORKLOAD_TYPE_SANDBOX` constant + CRD coordinates |
+| `rossoctl/backend/app/services/kubernetes.py` | Sandbox CRUD methods (create/get/list/delete/patch) |
+| `rossoctl/backend/app/routers/agents.py` | Manifest builder + all dispatch points (create/list/get/delete/finalize) |
+| `rossoctl/backend/app/routers/config.py` | Expose `agentSandbox` in feature flags response |
+| `rossoctl/backend/app/services/reconciliation.py` | Add Sandbox to `_workload_exists` |
+| `rossoctl/backend/app/main.py` | CRD detection at startup |
+| `charts/rossoctl/values.yaml` | `featureFlags.agentSandbox` value |
+| `charts/rossoctl/templates/ui.yaml` | Wire env var for feature flag |
+| `rossoctl/ui-v2/src/types/index.ts` | Add `'sandbox'` to `WorkloadType` union |
+| `rossoctl/ui-v2/src/hooks/useFeatureFlags.ts` | Add `agentSandbox` boolean |
+| `rossoctl/ui-v2/src/pages/ImportAgentPage.tsx` | Sandbox option in workload dropdown |
+| `rossoctl/ui-v2/src/pages/AgentCatalogPage.tsx` | Sandbox badge rendering |
+| `rossoctl/ui-v2/src/pages/AgentDetailPage.tsx` | Sandbox status display |
+| `rossoctl/ui-v2/src/services/api.ts` | Add `'sandbox'` to API type unions |
+| `rossoctl/tests/e2e/test_agent_sandbox.py` | E2E tests for Sandbox workload type |
 
 ---
 
 ### Task 1: Feature flag + constants (epic 1.1)
 
 **Files:**
-- Modify: `kagenti/backend/app/core/config.py:69-71`
-- Modify: `kagenti/backend/app/core/constants.py:56-66`
+- Modify: `rossoctl/backend/app/core/config.py:69-71`
+- Modify: `rossoctl/backend/app/core/constants.py:56-66`
 
 - [ ] **Step 1: Add feature flag to config.py**
 
-In `kagenti/backend/app/core/config.py`, add after line 71 (`kagenti_feature_flag_triggers`):
+In `rossoctl/backend/app/core/config.py`, add after line 71 (`rossoctl_feature_flag_triggers`):
 
 ```python
-    kagenti_feature_flag_agent_sandbox: bool = False
+    rossoctl_feature_flag_agent_sandbox: bool = False
 ```
 
 - [ ] **Step 2: Add constants to constants.py**
 
-In `kagenti/backend/app/core/constants.py`, add after line 59 (`WORKLOAD_TYPE_JOB = "job"`):
+In `rossoctl/backend/app/core/constants.py`, add after line 59 (`WORKLOAD_TYPE_JOB = "job"`):
 
 ```python
 WORKLOAD_TYPE_SANDBOX = "sandbox"
@@ -82,13 +82,13 @@ SUPPORTED_WORKLOAD_TYPES = [
     WORKLOAD_TYPE_STATEFULSET,
     WORKLOAD_TYPE_JOB,
 ]
-if settings.kagenti_feature_flag_agent_sandbox:
+if settings.rossoctl_feature_flag_agent_sandbox:
     SUPPORTED_WORKLOAD_TYPES.append(WORKLOAD_TYPE_SANDBOX)
 ```
 
 - [ ] **Step 4: Add agentSandbox to feature flags response**
 
-In `kagenti/backend/app/routers/config.py`, update the `FeatureFlagsResponse` class (line 16-19):
+In `rossoctl/backend/app/routers/config.py`, update the `FeatureFlagsResponse` class (line 16-19):
 
 ```python
 class FeatureFlagsResponse(BaseModel):
@@ -102,17 +102,17 @@ And update the endpoint (line 32-36):
 
 ```python
     return FeatureFlagsResponse(
-        sandbox=settings.kagenti_feature_flag_sandbox,
-        integrations=settings.kagenti_feature_flag_integrations,
-        triggers=settings.kagenti_feature_flag_triggers,
-        agentSandbox=settings.kagenti_feature_flag_agent_sandbox,
+        sandbox=settings.rossoctl_feature_flag_sandbox,
+        integrations=settings.rossoctl_feature_flag_integrations,
+        triggers=settings.rossoctl_feature_flag_triggers,
+        agentSandbox=settings.rossoctl_feature_flag_agent_sandbox,
     )
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add kagenti/backend/app/core/config.py kagenti/backend/app/core/constants.py kagenti/backend/app/routers/config.py
+git add rossoctl/backend/app/core/config.py rossoctl/backend/app/core/constants.py rossoctl/backend/app/routers/config.py
 git commit -s -m "feat: add agent_sandbox feature flag and constants (epic 1155 step 1.1)"
 ```
 
@@ -121,11 +121,11 @@ git commit -s -m "feat: add agent_sandbox feature flag and constants (epic 1155 
 ### Task 2: KubernetesService Sandbox CRUD (epic 1.2)
 
 **Files:**
-- Modify: `kagenti/backend/app/services/kubernetes.py:492-498`
+- Modify: `rossoctl/backend/app/services/kubernetes.py:492-498`
 
 - [ ] **Step 1: Add Sandbox CRUD methods**
 
-In `kagenti/backend/app/services/kubernetes.py`, add a new section before the `@lru_cache` line (line 495), after the Job Operations section:
+In `rossoctl/backend/app/services/kubernetes.py`, add a new section before the `@lru_cache` line (line 495), after the Job Operations section:
 
 ```python
     # -------------------------------------------------------------------------
@@ -240,7 +240,7 @@ In `kagenti/backend/app/services/kubernetes.py`, add a new section before the `@
 - [ ] **Step 2: Commit**
 
 ```bash
-git add kagenti/backend/app/services/kubernetes.py
+git add rossoctl/backend/app/services/kubernetes.py
 git commit -s -m "feat: add Sandbox CRUD methods to KubernetesService (epic 1155 step 1.2)"
 ```
 
@@ -249,11 +249,11 @@ git commit -s -m "feat: add Sandbox CRUD methods to KubernetesService (epic 1155
 ### Task 3: Manifest builder (epic 1.3)
 
 **Files:**
-- Modify: `kagenti/backend/app/routers/agents.py`
+- Modify: `rossoctl/backend/app/routers/agents.py`
 
 - [ ] **Step 1: Add WORKLOAD_TYPE_SANDBOX to imports**
 
-In `kagenti/backend/app/routers/agents.py`, add to the imports from `app.core.constants` (around line 57-59):
+In `rossoctl/backend/app/routers/agents.py`, add to the imports from `app.core.constants` (around line 57-59):
 
 ```python
     WORKLOAD_TYPE_SANDBOX,
@@ -277,10 +277,10 @@ def _build_sandbox_manifest(
     labels = _build_common_labels(request, WORKLOAD_TYPE_SANDBOX)
 
     annotations: Dict[str, str] = {
-        KAGENTI_DESCRIPTION_ANNOTATION: f"Agent '{request.name}' deployed from UI.",
+        ROSSOCTL_DESCRIPTION_ANNOTATION: f"Agent '{request.name}' deployed from UI.",
     }
     if shipwright_build_name:
-        annotations["kagenti.io/shipwright-build"] = shipwright_build_name
+        annotations["rossoctl.io/shipwright-build"] = shipwright_build_name
 
     container_port = DEFAULT_IN_CLUSTER_PORT
     if request.servicePorts and len(request.servicePorts) > 0:
@@ -367,13 +367,13 @@ def _get_sandbox_description(sandbox: dict) -> str:
     """Extract description from a Sandbox CR."""
     metadata = sandbox.get("metadata", {})
     annotations = metadata.get("annotations", {})
-    return annotations.get(KAGENTI_DESCRIPTION_ANNOTATION, "No description")
+    return annotations.get(ROSSOCTL_DESCRIPTION_ANNOTATION, "No description")
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add kagenti/backend/app/routers/agents.py
+git add rossoctl/backend/app/routers/agents.py
 git commit -s -m "feat: add Sandbox manifest builder and status helpers (epic 1155 step 1.3)"
 ```
 
@@ -382,7 +382,7 @@ git commit -s -m "feat: add Sandbox manifest builder and status helpers (epic 11
 ### Task 4: Router integration — list, get, delete (epic 1.4a)
 
 **Files:**
-- Modify: `kagenti/backend/app/routers/agents.py`
+- Modify: `rossoctl/backend/app/routers/agents.py`
 
 - [ ] **Step 1: Add Sandbox to list_agents**
 
@@ -390,7 +390,7 @@ In `list_agents` (around line 566, after the Jobs query block ending at line 597
 
 ```python
         # Query Sandbox CRs with agent label (when feature flag enabled)
-        if settings.kagenti_feature_flag_agent_sandbox:
+        if settings.rossoctl_feature_flag_agent_sandbox:
             try:
                 sandboxes = kube.list_sandboxes(
                     namespace=namespace,
@@ -436,7 +436,7 @@ In `get_agent` (around line 692, after the Job try block), add before the 404 ra
 
 ```python
     # If still not found, try Sandbox (when feature flag enabled)
-    if workload is None and settings.kagenti_feature_flag_agent_sandbox:
+    if workload is None and settings.rossoctl_feature_flag_agent_sandbox:
         try:
             workload = kube.get_sandbox(namespace=namespace, name=name)
             workload_type = WORKLOAD_TYPE_SANDBOX
@@ -466,7 +466,7 @@ In `delete_agent` (around line 818, after the Job delete block), add:
 
 ```python
     # Delete the Sandbox (if exists)
-    if settings.kagenti_feature_flag_agent_sandbox:
+    if settings.rossoctl_feature_flag_agent_sandbox:
         try:
             kube.delete_sandbox(namespace=namespace, name=name)
             messages.append(f"Sandbox '{name}' deleted")
@@ -480,7 +480,7 @@ In `delete_agent` (around line 818, after the Job delete block), add:
 - [ ] **Step 6: Commit**
 
 ```bash
-git add kagenti/backend/app/routers/agents.py
+git add rossoctl/backend/app/routers/agents.py
 git commit -s -m "feat: add Sandbox to list/get/delete agent endpoints (epic 1155 step 1.4a)"
 ```
 
@@ -489,7 +489,7 @@ git commit -s -m "feat: add Sandbox to list/get/delete agent endpoints (epic 115
 ### Task 5: Router integration — create + finalize (epic 1.4b)
 
 **Files:**
-- Modify: `kagenti/backend/app/routers/agents.py`
+- Modify: `rossoctl/backend/app/routers/agents.py`
 
 - [ ] **Step 1: Add Sandbox branch to create_agent (image deploy)**
 
@@ -529,7 +529,7 @@ No code change needed here.
 In `finalize_shipwright_build` (around line 2691-2714, the workload existence check), add a Sandbox try block after the Job check:
 
 ```python
-        if not workload_exists and settings.kagenti_feature_flag_agent_sandbox:
+        if not workload_exists and settings.rossoctl_feature_flag_agent_sandbox:
             try:
                 kube.get_sandbox(namespace=namespace, name=name)
                 workload_exists = True
@@ -566,7 +566,7 @@ And update the Service skip condition (around line 2894):
 - [ ] **Step 5: Commit**
 
 ```bash
-git add kagenti/backend/app/routers/agents.py
+git add rossoctl/backend/app/routers/agents.py
 git commit -s -m "feat: add Sandbox to create_agent and finalize_shipwright_build (epic 1155 step 1.4b)"
 ```
 
@@ -575,7 +575,7 @@ git commit -s -m "feat: add Sandbox to create_agent and finalize_shipwright_buil
 ### Task 6: Reconciliation (epic 1.5)
 
 **Files:**
-- Modify: `kagenti/backend/app/services/reconciliation.py:38-47`
+- Modify: `rossoctl/backend/app/services/reconciliation.py:38-47`
 
 - [ ] **Step 1: Add Sandbox to _workload_exists**
 
@@ -592,7 +592,7 @@ def _workload_exists(kube: KubernetesService, namespace: str, name: str) -> bool
             if e.status != 404:
                 raise
 
-    if settings.kagenti_feature_flag_agent_sandbox:
+    if settings.rossoctl_feature_flag_agent_sandbox:
         try:
             kube.get_sandbox(namespace=namespace, name=name)
             return True
@@ -614,7 +614,7 @@ from app.core.config import settings
 - [ ] **Step 3: Commit**
 
 ```bash
-git add kagenti/backend/app/services/reconciliation.py
+git add rossoctl/backend/app/services/reconciliation.py
 git commit -s -m "feat: add Sandbox to reconciliation workload check (epic 1155 step 1.5)"
 ```
 
@@ -623,7 +623,7 @@ git commit -s -m "feat: add Sandbox to reconciliation workload check (epic 1155 
 ### Task 7: CRD detection at startup (epic 1.7)
 
 **Files:**
-- Modify: `kagenti/backend/app/main.py:96-117`
+- Modify: `rossoctl/backend/app/main.py:96-117`
 
 - [ ] **Step 1: Add CRD detection in lifespan**
 
@@ -631,7 +631,7 @@ In `main.py`, add the CRD detection inside the `lifespan` function, after the st
 
 ```python
     # Detect agent-sandbox CRD availability (when flag is enabled)
-    if settings.kagenti_feature_flag_agent_sandbox:
+    if settings.rossoctl_feature_flag_agent_sandbox:
         from app.core.constants import (
             AGENT_SANDBOX_CRD_GROUP,
             AGENT_SANDBOX_CRD_VERSION,
@@ -665,7 +665,7 @@ In `main.py`, add the CRD detection inside the `lifespan` function, after the st
 - [ ] **Step 2: Commit**
 
 ```bash
-git add kagenti/backend/app/main.py
+git add rossoctl/backend/app/main.py
 git commit -s -m "feat: detect agent-sandbox CRD at startup with graceful degradation (epic 1155 step 1.7)"
 ```
 
@@ -674,12 +674,12 @@ git commit -s -m "feat: detect agent-sandbox CRD at startup with graceful degrad
 ### Task 8: Helm chart (epic 1.1 continued)
 
 **Files:**
-- Modify: `charts/kagenti/values.yaml:7-10`
-- Modify: `charts/kagenti/templates/ui.yaml:122-123`
+- Modify: `charts/rossoctl/values.yaml:7-10`
+- Modify: `charts/rossoctl/templates/ui.yaml:122-123`
 
 - [ ] **Step 1: Add agentSandbox to values.yaml**
 
-In `charts/kagenti/values.yaml`, add after line 10 (`triggers: false`):
+In `charts/rossoctl/values.yaml`, add after line 10 (`triggers: false`):
 
 ```yaml
   agentSandbox: false
@@ -687,17 +687,17 @@ In `charts/kagenti/values.yaml`, add after line 10 (`triggers: false`):
 
 - [ ] **Step 2: Wire env var in ui.yaml**
 
-In `charts/kagenti/templates/ui.yaml`, add after line 123 (the `KAGENTI_FEATURE_FLAG_TRIGGERS` block):
+In `charts/rossoctl/templates/ui.yaml`, add after line 123 (the `ROSSOCTL_FEATURE_FLAG_TRIGGERS` block):
 
 ```yaml
-            - name: KAGENTI_FEATURE_FLAG_AGENT_SANDBOX
+            - name: ROSSOCTL_FEATURE_FLAG_AGENT_SANDBOX
               value: "{{ .Values.featureFlags.agentSandbox }}"
 ```
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add charts/kagenti/values.yaml charts/kagenti/templates/ui.yaml
+git add charts/rossoctl/values.yaml charts/rossoctl/templates/ui.yaml
 git commit -s -m "feat: add agentSandbox feature flag to Helm chart (epic 1155 step 1.1)"
 ```
 
@@ -706,13 +706,13 @@ git commit -s -m "feat: add agentSandbox feature flag to Helm chart (epic 1155 s
 ### Task 9: UI — types + feature flags (epic 1.8a)
 
 **Files:**
-- Modify: `kagenti/ui-v2/src/types/index.ts:9`
-- Modify: `kagenti/ui-v2/src/hooks/useFeatureFlags.ts`
-- Modify: `kagenti/ui-v2/src/services/api.ts:204`
+- Modify: `rossoctl/ui-v2/src/types/index.ts:9`
+- Modify: `rossoctl/ui-v2/src/hooks/useFeatureFlags.ts`
+- Modify: `rossoctl/ui-v2/src/services/api.ts:204`
 
 - [ ] **Step 1: Add sandbox to WorkloadType**
 
-In `kagenti/ui-v2/src/types/index.ts`, change line 9:
+In `rossoctl/ui-v2/src/types/index.ts`, change line 9:
 
 ```typescript
 export type WorkloadType = 'deployment' | 'statefulset' | 'job' | 'sandbox';
@@ -720,7 +720,7 @@ export type WorkloadType = 'deployment' | 'statefulset' | 'job' | 'sandbox';
 
 - [ ] **Step 2: Add agentSandbox to FeatureFlags**
 
-In `kagenti/ui-v2/src/hooks/useFeatureFlags.ts`, update the interface (line 7-11):
+In `rossoctl/ui-v2/src/hooks/useFeatureFlags.ts`, update the interface (line 7-11):
 
 ```typescript
 export interface FeatureFlags {
@@ -755,7 +755,7 @@ Update the validated block inside the `useEffect` (line 34-38):
 
 - [ ] **Step 3: Add sandbox to API type unions**
 
-In `kagenti/ui-v2/src/services/api.ts`, find line 204:
+In `rossoctl/ui-v2/src/services/api.ts`, find line 204:
 
 ```typescript
     workloadType?: 'deployment' | 'statefulset' | 'job';
@@ -772,7 +772,7 @@ Search for any other workloadType type annotations in `api.ts` and add `'sandbox
 - [ ] **Step 4: Commit**
 
 ```bash
-git add kagenti/ui-v2/src/types/index.ts kagenti/ui-v2/src/hooks/useFeatureFlags.ts kagenti/ui-v2/src/services/api.ts
+git add rossoctl/ui-v2/src/types/index.ts rossoctl/ui-v2/src/hooks/useFeatureFlags.ts rossoctl/ui-v2/src/services/api.ts
 git commit -s -m "feat: add sandbox to UI types and feature flags (epic 1155 step 1.8a)"
 ```
 
@@ -781,7 +781,7 @@ git commit -s -m "feat: add sandbox to UI types and feature flags (epic 1155 ste
 ### Task 10: UI — ImportAgentPage dropdown (epic 1.8b)
 
 **Files:**
-- Modify: `kagenti/ui-v2/src/pages/ImportAgentPage.tsx`
+- Modify: `rossoctl/ui-v2/src/pages/ImportAgentPage.tsx`
 
 - [ ] **Step 1: Import useFeatureFlags**
 
@@ -848,7 +848,7 @@ After line 956 (the job helper text), add:
 - [ ] **Step 7: Commit**
 
 ```bash
-git add kagenti/ui-v2/src/pages/ImportAgentPage.tsx
+git add rossoctl/ui-v2/src/pages/ImportAgentPage.tsx
 git commit -s -m "feat: add Sandbox option to agent workload type dropdown (epic 1155 step 1.8b)"
 ```
 
@@ -857,8 +857,8 @@ git commit -s -m "feat: add Sandbox option to agent workload type dropdown (epic
 ### Task 11: UI — AgentCatalogPage + AgentDetailPage (epic 1.8c)
 
 **Files:**
-- Modify: `kagenti/ui-v2/src/pages/AgentCatalogPage.tsx:121-131`
-- Modify: `kagenti/ui-v2/src/pages/AgentDetailPage.tsx`
+- Modify: `rossoctl/ui-v2/src/pages/AgentCatalogPage.tsx:121-131`
+- Modify: `rossoctl/ui-v2/src/pages/AgentDetailPage.tsx`
 
 - [ ] **Step 1: Add sandbox badge color to AgentCatalogPage**
 
@@ -913,7 +913,7 @@ Change to:
 - [ ] **Step 4: Commit**
 
 ```bash
-git add kagenti/ui-v2/src/pages/AgentCatalogPage.tsx kagenti/ui-v2/src/pages/AgentDetailPage.tsx
+git add rossoctl/ui-v2/src/pages/AgentCatalogPage.tsx rossoctl/ui-v2/src/pages/AgentDetailPage.tsx
 git commit -s -m "feat: add Sandbox display to agent catalog and detail pages (epic 1155 step 1.8c)"
 ```
 
@@ -922,11 +922,11 @@ git commit -s -m "feat: add Sandbox display to agent catalog and detail pages (e
 ### Task 12: E2E tests (epic 1.9)
 
 **Files:**
-- Create: `kagenti/tests/e2e/test_agent_sandbox.py`
+- Create: `rossoctl/tests/e2e/test_agent_sandbox.py`
 
 - [ ] **Step 1: Create E2E test file**
 
-Create `kagenti/tests/e2e/test_agent_sandbox.py`:
+Create `rossoctl/tests/e2e/test_agent_sandbox.py`:
 
 ```python
 """
@@ -934,7 +934,7 @@ E2E tests for agent-sandbox (Sandbox) workload type.
 
 Requires:
 - agent-sandbox controller installed in the cluster
-- KAGENTI_FEATURE_FLAG_AGENT_SANDBOX=true
+- ROSSOCTL_FEATURE_FLAG_AGENT_SANDBOX=true
 - Feature: agent_sandbox enabled in test config
 """
 
@@ -951,12 +951,12 @@ SANDBOX_VERSION = "v1alpha1"
 SANDBOX_PLURAL = "sandboxes"
 TEST_NAMESPACE = "team1"
 TEST_AGENT_NAME = "sandbox-e2e-test"
-TEST_IMAGE = "ghcr.io/kagenti/examples/echo-agent:v0.0.1"
+TEST_IMAGE = "ghcr.io/rossoctl/examples/echo-agent:v0.0.1"
 
 
 @pytest.mark.requires_features(["agent_sandbox"])
 class TestAgentSandboxWorkloadType:
-    """Test Sandbox as a fourth workload type in Kagenti."""
+    """Test Sandbox as a fourth workload type in Rossoctl."""
 
     @pytest.fixture(autouse=True)
     def setup(self, http_client):
@@ -1037,7 +1037,7 @@ class TestAgentSandboxWorkloadType:
         assert resp.status_code == 200
         data = resp.json()
         assert data["workloadType"] == "sandbox"
-        assert data["metadata"]["labels"]["kagenti.io/type"] == "agent"
+        assert data["metadata"]["labels"]["rossoctl.io/type"] == "agent"
 
     @pytest.mark.asyncio
     async def test_delete_sandbox_agent(self):
@@ -1056,7 +1056,7 @@ class TestAgentSandboxWorkloadType:
 - [ ] **Step 2: Commit**
 
 ```bash
-git add kagenti/tests/e2e/test_agent_sandbox.py
+git add rossoctl/tests/e2e/test_agent_sandbox.py
 git commit -s -m "feat: add E2E tests for Sandbox workload type (epic 1155 step 1.9)"
 ```
 

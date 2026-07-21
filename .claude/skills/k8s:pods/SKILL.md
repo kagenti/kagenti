@@ -5,7 +5,7 @@ description: Debug and troubleshoot pod issues including crashes, failures, netw
 
 # Troubleshoot Pods Skill
 
-This skill provides systematic approaches to debugging pod issues in the Kagenti platform.
+This skill provides systematic approaches to debugging pod issues in the Rossoctl platform.
 
 ## Context-Safe Execution (MANDATORY)
 
@@ -13,7 +13,7 @@ This skill provides systematic approaches to debugging pod issues in the Kagenti
 form for readability. When executing, always redirect:
 
 ```bash
-export LOG_DIR=/tmp/kagenti/k8s/${CLUSTER:-local}
+export LOG_DIR=/tmp/rossoctl/k8s/${CLUSTER:-local}
 mkdir -p $LOG_DIR
 
 # Pattern for all kubectl commands:
@@ -28,7 +28,7 @@ kubectl <command> > $LOG_DIR/<descriptive-name>.log 2>&1 && echo "OK" || echo "F
 - Pods are crashlooping or failing
 - Pods stuck in Pending, ImagePullBackOff, or other error states
 - User reports application not working
-- After `kagenti:deploy` to verify pods are healthy
+- After `rossoctl:deploy` to verify pods are healthy
 - Investigating resource issues
 
 ## Quick Pod Status Check
@@ -278,13 +278,13 @@ kubectl logs -n keycloak deployment/postgresql --tail=50 2>/dev/null
 
 ```bash
 # Check operator deployment
-kubectl get deployment -n kagenti-system -l control-plane=controller-manager
+kubectl get deployment -n rossoctl-system -l control-plane=controller-manager
 
 # Check operator pods
-kubectl get pods -n kagenti-system -l control-plane=controller-manager
+kubectl get pods -n rossoctl-system -l control-plane=controller-manager
 
 # Check operator logs for errors
-kubectl logs -n kagenti-system -l control-plane=controller-manager | \
+kubectl logs -n rossoctl-system -l control-plane=controller-manager | \
   grep -iE "error|fail"
 
 # Check Component CRD processing
@@ -292,7 +292,7 @@ kubectl get components -A
 kubectl describe component -n <namespace> <component-name>
 
 # Check if operator is reconciling
-kubectl logs -n kagenti-system -l control-plane=controller-manager --tail=50 | \
+kubectl logs -n rossoctl-system -l control-plane=controller-manager --tail=50 | \
   grep -i "reconcile"
 ```
 
@@ -505,4 +505,4 @@ kubectl describe networkpolicy -n <namespace> <policy-name>
 
 - **k8s:health**: Check overall platform health
 - **k8s:logs**: Detailed log analysis
-- **kagenti:deploy**: Full cluster redeploy if needed
+- **rossoctl:deploy**: Full cluster redeploy if needed

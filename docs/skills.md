@@ -2,13 +2,13 @@
 
 ## Overview
 
-**Skills** in Kagenti are reusable capabilities stored as Kubernetes ConfigMaps and managed through the platform's REST API. They encapsulate domain expertise and workflows that agents can access on-demand. Skills are stored with the label `kagenti.io/type=skill` and can include multiple files (code, documentation, configuration) that define their behavior.
+**Skills** in Rossoctl are reusable capabilities stored as Kubernetes ConfigMaps and managed through the platform's REST API. They encapsulate domain expertise and workflows that agents can access on-demand. Skills are stored with the label `rossoctl.io/type=skill` and can include multiple files (code, documentation, configuration) that define their behavior.
 
-Skills are a key component of the Kagenti workload runtime, working alongside Agents and Tools in the platform architecture. While agents provide the reasoning and orchestration layer, and tools offer specific integrations, skills deliver specialized domain knowledge stored as ConfigMaps that can be retrieved and used by agents.
+Skills are a key component of the Rossoctl workload runtime, working alongside Agents and Tools in the platform architecture. While agents provide the reasoning and orchestration layer, and tools offer specific integrations, skills deliver specialized domain knowledge stored as ConfigMaps that can be retrieved and used by agents.
 
 ## Enabling Skills
 
-Skills are a feature-flagged capability in Kagenti and must be explicitly enabled before use. Two flags control the feature:
+Skills are a feature-flagged capability in Rossoctl and must be explicitly enabled before use. Two flags control the feature:
 
 | Flag | Controls |
 |------|----------|
@@ -22,29 +22,29 @@ The easiest way to enable both is the `--with-skills` flag described below.
 Pass `--with-skills` to enable both flags at once. It automatically enables `--with-backend` and `--with-ui`:
 
 ```bash
-scripts/kind/setup-kagenti.sh --with-skills
+scripts/kind/setup-rossoctl.sh --with-skills
 ```
 
 `--with-skills` also deploys an **in-cluster skillberry-store** pod and
-**auto-enables autosync** against it (via the `kagenti-skill-autosync-config`
+**auto-enables autosync** against it (via the `rossoctl-skill-autosync-config`
 ConfigMap), so skills sync with no external registry and no
 `--skill-registry-allowed-hosts`. The store UI is browsable at
 `http://skillberry-store.<domain>:8080`. Override the store image with the
 `SKILLBERRY_STORE_IMAGE` / `SKILLBERRY_STORE_TAG` env vars (default tag `0.2.0`):
 
 ```bash
-SKILLBERRY_STORE_TAG=0.2.1 scripts/kind/setup-kagenti.sh --with-skills
+SKILLBERRY_STORE_TAG=0.2.1 scripts/kind/setup-rossoctl.sh --with-skills
 ```
 
 To combine with other options, for example builds and locally-built images:
 
 ```bash
-scripts/kind/setup-kagenti.sh --with-skills --with-builds --build-images --skip-cluster
+scripts/kind/setup-rossoctl.sh --with-skills --with-builds --build-images --skip-cluster
 ```
 
-### Using the Kagenti Installer
+### Using the Rossoctl Installer
 
-When using the installer, enable skills by modifying your values file (e.g., `charts/kagenti/.secrets.yaml` or a custom values file):
+When using the installer, enable skills by modifying your values file (e.g., `charts/rossoctl/.secrets.yaml` or a custom values file):
 
 ```bash
 cat <<EOF > /tmp/enable-flag-skills.yaml
@@ -57,16 +57,16 @@ EOF
 Then run the installer:
 
 ```bash
-./scripts/kind/setup-kagenti.sh --with-all --kagenti-values /tmp/enable-flag-skills.yaml
+./scripts/kind/setup-rossoctl.sh --with-all --rossoctl-values /tmp/enable-flag-skills.yaml
 ```
 
 ### Using Helm
 
-When installing or upgrading Kagenti with Helm directly:
+When installing or upgrading Rossoctl with Helm directly:
 
 ```bash
-helm upgrade --install kagenti ./charts/kagenti/ \
-  -n kagenti-system --create-namespace \
+helm upgrade --install rossoctl ./charts/rossoctl/ \
+  -n rossoctl-system --create-namespace \
   --set featureFlags.skills=true \
   --set featureFlags.externalSkills=true \
   --set components.skillberryStore.enabled=true
@@ -79,11 +79,11 @@ the autosync ConfigMap pointing at it (both default off). Override the image wit
 To enable on an already-running cluster without full redeploy:
 
 ```bash
-helm upgrade kagenti ./charts/kagenti/ \
+helm upgrade rossoctl ./charts/rossoctl/ \
   --reuse-values \
   --set featureFlags.skills=true \
   --set featureFlags.externalSkills=true \
-  -n kagenti-system
+  -n rossoctl-system
 ```
 
 ### Configuring skillberry-store Environment Variables
@@ -113,7 +113,7 @@ First create a Secret holding the sensitive values (do this out-of-band, not in 
 checked-in file):
 
 ```bash
-kubectl create secret generic skillberry-store-secrets -n kagenti-system \
+kubectl create secret generic skillberry-store-secrets -n rossoctl-system \
   --from-literal=rits-api-key="<your-key>" \
   --from-literal=third-party-api-key="<your-key>" \
   --from-literal=openai-api-key="<your-key>" \
@@ -160,20 +160,20 @@ skillberryStore:
           key: anthropic-auth-token
 ```
 
-Apply it with the Kind setup script via `--kagenti-values` (it is passed straight
+Apply it with the Kind setup script via `--rossoctl-values` (it is passed straight
 through to Helm as `--values`):
 
 ```bash
-scripts/kind/setup-kagenti.sh --with-backend --with-ui --with-skills --with-builds \
+scripts/kind/setup-rossoctl.sh --with-backend --with-ui --with-skills --with-builds \
   --build-images --skill-registry-allowed-hosts "<your-allowed-host>" \
-  --kagenti-values /tmp/skillberry-env.yaml
+  --rossoctl-values /tmp/skillberry-env.yaml
 ```
 
 …or directly with Helm:
 
 ```bash
-helm upgrade --install kagenti ./charts/kagenti/ \
-  -n kagenti-system --create-namespace \
+helm upgrade --install rossoctl ./charts/rossoctl/ \
+  -n rossoctl-system --create-namespace \
   --set featureFlags.skills=true \
   --set featureFlags.externalSkills=true \
   --set components.skillberryStore.enabled=true \
@@ -184,18 +184,18 @@ The entries are appended to the store container after the chart-managed
 variables. Verify they landed:
 
 ```bash
-kubectl set env deploy/skillberry-store -n kagenti-system --list
+kubectl set env deploy/skillberry-store -n rossoctl-system --list
 ```
 
 ### Verifying Skills Are Enabled
 
 After enabling the feature flag and restarting/upgrading your deployment:
 
-1. **Check the UI**: Navigate to the Kagenti UI at `http://kagenti-ui.localtest.me:8080` (or your configured domain)
+1. **Check the UI**: Navigate to the Rossoctl UI at `http://rossoctl-ui.localtest.me:8080` (or your configured domain)
 2. **Look for Skills Section**: The Skills management interface should now be visible in the navigation menu
 3. **Verify Backend**: Check the backend logs to confirm skills routes are registered:
    ```bash
-   kubectl logs -n kagenti-system -l app.kubernetes.io/name=kagenti-backend | grep "skills routes registered"
+   kubectl logs -n rossoctl-system -l app.kubernetes.io/name=rossoctl-backend | grep "skills routes registered"
    ```
 
 Once enabled, the Skills management interface will be accessible through the UI, allowing you to configure and deploy skills for your agents.
@@ -204,24 +204,24 @@ Once enabled, the Skills management interface will be accessible through the UI,
 
 ### Skills not appearing after setup
 
-If the skills feature was not enabled during initial setup (e.g., the `KAGENTI_FEATURE_FLAG_SKILLS` env var was set but `--with-skills` was not passed, or `--with-all` was used with an older script version), you can enable it without redeploying the full cluster:
+If the skills feature was not enabled during initial setup (e.g., the `ROSSOCTL_FEATURE_FLAG_SKILLS` env var was set but `--with-skills` was not passed, or `--with-all` was used with an older script version), you can enable it without redeploying the full cluster:
 
 ```bash
-helm upgrade kagenti charts/kagenti -n kagenti-system \
+helm upgrade rossoctl charts/rossoctl -n rossoctl-system \
   --set featureFlags.skills=true \
   --set openshift=false \
-  -f charts/kagenti/values.yaml
+  -f charts/rossoctl/values.yaml
 ```
 
 This triggers a rolling restart of the backend and UI pods with the flag enabled. Verify afterwards:
 
 ```bash
-kubectl logs -n kagenti-system -l app.kubernetes.io/name=kagenti-backend | grep "skills routes registered"
+kubectl logs -n rossoctl-system -l app.kubernetes.io/name=rossoctl-backend | grep "skills routes registered"
 ```
 
 ## Accessing Skills via REST API
 
-Skills are managed through the Kagenti backend REST API. All endpoints require authentication.
+Skills are managed through the Rossoctl backend REST API. All endpoints require authentication.
 
 ### List Skills
 
@@ -229,11 +229,11 @@ List all skills in a namespace:
 
 ```bash
 # List all skills
-curl -X GET "http://kagenti-backend/api/skills?namespace=kagenti-system" \
+curl -X GET "http://rossoctl-backend/api/skills?namespace=rossoctl-system" \
   -H "Authorization: Bearer $TOKEN"
 
 # Search skills by keyword
-curl -X GET "http://kagenti-backend/api/skills?namespace=kagenti-system&q=code-review" \
+curl -X GET "http://rossoctl-backend/api/skills?namespace=rossoctl-system&q=code-review" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -242,7 +242,7 @@ curl -X GET "http://kagenti-backend/api/skills?namespace=kagenti-system&q=code-r
 Retrieve detailed information about a specific skill, including all files:
 
 ```bash
-curl -X GET "http://kagenti-backend/api/skills/kagenti-system/code-review" \
+curl -X GET "http://rossoctl-backend/api/skills/rossoctl-system/code-review" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -251,12 +251,12 @@ curl -X GET "http://kagenti-backend/api/skills/kagenti-system/code-review" \
 Create a new skill from files:
 
 ```bash
-curl -X POST "http://kagenti-backend/api/skills" \
+curl -X POST "http://rossoctl-backend/api/skills" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "code-review",
-    "namespace": "kagenti-system",
+    "namespace": "rossoctl-system",
     "description": "Automated code review skill",
     "category": "development",
     "files": {
@@ -273,7 +273,7 @@ curl -X POST "http://kagenti-backend/api/skills" \
 Remove a skill from the cluster:
 
 ```bash
-curl -X DELETE "http://kagenti-backend/api/skills/kagenti-system/code-review" \
+curl -X DELETE "http://rossoctl-backend/api/skills/rossoctl-system/code-review" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -287,8 +287,8 @@ import httpx
 # List available skills
 async with httpx.AsyncClient() as client:
     response = await client.get(
-        "http://kagenti-backend/api/skills",
-        params={"namespace": "kagenti-system"},
+        "http://rossoctl-backend/api/skills",
+        params={"namespace": "rossoctl-system"},
         headers={"Authorization": f"Bearer {token}"}
     )
     skills = response.json()["items"]
@@ -296,7 +296,7 @@ async with httpx.AsyncClient() as client:
 # Get skill details
 async with httpx.AsyncClient() as client:
     response = await client.get(
-        "http://kagenti-backend/api/skills/kagenti-system/code-review",
+        "http://rossoctl-backend/api/skills/rossoctl-system/code-review",
         headers={"Authorization": f"Bearer {token}"}
     )
     skill_detail = response.json()
@@ -311,15 +311,15 @@ async with httpx.AsyncClient() as client:
 
 Before configuring skills, ensure you have:
 
-1. A running Kagenti installation (see [Installation Guide](./install.md))
-2. Access to the Kagenti UI
+1. A running Rossoctl installation (see [Installation Guide](./install.md))
+2. Access to the Rossoctl UI
 3. Appropriate permissions to manage skills (ROLE_OPERATOR for create/delete, ROLE_VIEWER for read)
 
 ### Accessing Skills in the UI
 
-1. **Navigate to the Kagenti UI**
+1. **Navigate to the Rossoctl UI**
    ```bash
-   open http://kagenti-ui.localtest.me:8080
+   open http://rossoctl-ui.localtest.me:8080
    ```
 
 2. **Login** with your credentials (use `show-services.sh` to retrieve credentials if needed)
@@ -335,4 +335,4 @@ For additional support:
 
 - Check the [Troubleshooting Guide](./troubleshooting.md)
 - Review [Component Details](./components.md)
-- See the backend implementation: `kagenti/backend/app/routers/skills.py`
+- See the backend implementation: `rossoctl/backend/app/routers/skills.py`

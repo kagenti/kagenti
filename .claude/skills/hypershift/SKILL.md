@@ -1,6 +1,6 @@
 ---
 name: hypershift
-description: Manage HyperShift clusters on AWS for Kagenti testing. Create, destroy, debug clusters and check quotas.
+description: Manage HyperShift clusters on AWS for Rossoctl testing. Create, destroy, debug clusters and check quotas.
 ---
 
 ```mermaid
@@ -36,12 +36,12 @@ Skills for managing HyperShift (hosted OpenShift) clusters on AWS.
 
 ```bash
 # 1. Stay in main repo (run worktree scripts from here)
-cd /Users/ladas/Projects/OCTO/kagenti/kagenti
+cd /Users/ladas/Projects/OCTO/rossoctl/rossoctl
 
 # 2. Source credentials env file
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 
-# 3. Create cluster, deploy Kagenti, run E2E tests (all-in-one)
+# 3. Create cluster, deploy Rossoctl, run E2E tests (all-in-one)
 # Cluster name: max 5 chars (AWS IAM limit)
 ./.github/scripts/local-setup/hypershift-full-test.sh pr529 --skip-cluster-destroy
 
@@ -53,7 +53,7 @@ source .env.kagenti-hypershift-custom
 
 ```bash
 # Run from main repo, execute worktree's scripts
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 
 # Example: test ui-agent-discovery branch (name max 5 chars)
 .worktrees/ui-agent-discovery/.github/scripts/local-setup/hypershift-full-test.sh uitst --skip-cluster-destroy

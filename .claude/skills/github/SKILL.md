@@ -75,7 +75,7 @@ What do you need?
 |-------|---------|
 | `github:my-status` | Personal dashboard: your open PRs, pending reviews, assigned issues |
 | `github:last-week` | Weekly report: merged PRs, new issues, CI health, priority analysis |
-| `github:last-week-org` | Org-wide weekly report: all kagenti repos, proportional depth by activity |
+| `github:last-week-org` | Org-wide weekly report: all rossoctl repos, proportional depth by activity |
 | `github:issues` | Issue triage: stale, blocking, no attention, should-close |
 | `github:pr-review` | Automated PR review: inline comments, conventions, security checks |
 | `github:prs` | PR health: passing CI without review, stale, conflicts |

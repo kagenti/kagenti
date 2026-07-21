@@ -1,12 +1,12 @@
 # Agent-Sandbox Upstream Issues — Operator Integration Findings
 
-**Epic:** [#1155](https://github.com/kagenti/kagenti/issues/1155)
-**Component:** kagenti-operator AgentRuntime controller + agents.x-k8s.io Sandbox controller
-**Discovered:** 2026-04-29, during live testing of operator PR [kagenti-operator#316](https://github.com/kagenti/kagenti-operator/pull/316)
+**Epic:** [#1155](https://github.com/rossoctl/rossoctl/issues/1155)
+**Component:** rossoctl-operator AgentRuntime controller + agents.x-k8s.io Sandbox controller
+**Discovered:** 2026-04-29, during live testing of operator PR [rossoctl-operator#316](https://github.com/rossoctl/operator/pull/316)
 
 ## Context
 
-The kagenti-operator's AgentRuntime controller manages workload configuration (labels,
+The rossoctl-operator's AgentRuntime controller manages workload configuration (labels,
 annotations, config-hash) for Deployment, StatefulSet, and now Sandbox targets. When
 configuration changes (e.g., a namespace-level ConfigMap is updated), the operator
 recomputes a config-hash and applies it to the workload's pod template. For Deployments
@@ -19,8 +19,8 @@ has no such mechanism.
 
 ### Behavior
 
-When the kagenti-operator updates `spec.podTemplate.metadata.annotations` on a Sandbox
-CR (e.g., writing a new `kagenti.io/config-hash`), the Sandbox controller does not
+When the rossoctl-operator updates `spec.podTemplate.metadata.annotations` on a Sandbox
+CR (e.g., writing a new `rossoctl.io/config-hash`), the Sandbox controller does not
 terminate and recreate the running pod. The existing pod continues running with stale
 configuration indefinitely.
 
@@ -36,7 +36,7 @@ compare the pod's spec against the current `spec.podTemplate`.
 
 ### Impact
 
-Any configuration change that the kagenti-operator applies to the Sandbox (new config-hash
+Any configuration change that the rossoctl-operator applies to the Sandbox (new config-hash
 from ConfigMap changes, label updates, annotation changes) has no effect on the running
 pod until the pod is externally deleted or the Sandbox is scaled down and back up.
 
@@ -156,7 +156,7 @@ controller then creates a fresh pod within seconds.
    labels/annotations against `spec.podTemplate` and recreate when they diverge. This
    would fix Issue 1 entirely.
 
-### Possible kagenti-operator workarounds
+### Possible rossoctl-operator workarounds
 
 1. **Poll-and-clear loop:** After scale-down, poll the Sandbox annotation in a loop and
    keep clearing it until the pod-name annotation is absent for a stable period, then
@@ -184,8 +184,8 @@ current implementation and a documented known limitation.
 
 When a `SandboxClaim` exists for a Sandbox, the SandboxClaim controller copies the
 entire `spec.podTemplate` from the `SandboxTemplate` to the `Sandbox` on every
-reconciliation. Any annotations or labels the kagenti-operator writes to
-`spec.podTemplate.metadata` (e.g., `kagenti.io/config-hash`) are overwritten within
+reconciliation. Any annotations or labels the rossoctl-operator writes to
+`spec.podTemplate.metadata` (e.g., `rossoctl.io/config-hash`) are overwritten within
 seconds, triggering a continuous reconcile loop:
 
 ```
@@ -203,12 +203,12 @@ are lost on each reconciliation cycle.
 
 ### Impact
 
-The kagenti-operator cannot persist any configuration on `spec.podTemplate` when a
+The rossoctl-operator cannot persist any configuration on `spec.podTemplate` when a
 SandboxClaim owns the Sandbox. This means:
 
-1. `kagenti.io/config-hash` annotation is repeatedly wiped — the operator loops forever
+1. `rossoctl.io/config-hash` annotation is repeatedly wiped — the operator loops forever
    trying to reapply it.
-2. Any kagenti-managed labels on `spec.podTemplate.metadata.labels` are wiped.
+2. Any rossoctl-managed labels on `spec.podTemplate.metadata.labels` are wiped.
 3. The two-phase restart mechanism cannot function because Phase 1 (scale to 0) triggers
    SandboxClaim reconciliation which may reset `spec.replicas` or other fields.
 
@@ -217,7 +217,7 @@ SandboxClaim owns the Sandbox. This means:
 ```bash
 # Create AgentRuntime pointing to a Sandbox owned by a SandboxClaim
 # Observe operator logs: continuous "Applying config to workload" messages
-kubectl logs deployment/kagenti-controller-manager -n kagenti-system --tail=20
+kubectl logs deployment/rossoctl-controller-manager -n rossoctl-system --tail=20
 # Verify config-hash is never persisted:
 kubectl get sandbox weather-service-5000 -n team1 \
   -o jsonpath='{.spec.podTemplate.metadata.annotations}'
@@ -241,7 +241,7 @@ kubectl get sandbox weather-service-5000 -n team1 \
 
 ### Resolution
 
-**Bypass SandboxClaim entirely.** The kagenti backend creates `Sandbox` CRs directly
+**Bypass SandboxClaim entirely.** The rossoctl backend creates `Sandbox` CRs directly
 (no SandboxTemplate, no SandboxClaim). This eliminates the third writer and gives the
 operator full control over `spec.podTemplate`. See
 [ADR: Direct Sandbox Creation vs SandboxClaim](2026-04-30-adr-sandbox-direct-vs-claim.md).
@@ -257,5 +257,5 @@ end-to-end without reconcile loops.
 - Kind cluster, single node
 - agent-sandbox controller: `v0.3.10` (controller-runtime v0.23.3), upgraded to
   local build with commit `9c6264c` (Issue 2 self-healing fix)
-- kagenti-operator: branch `feat/sandbox-workload-support` (two-phase restart)
+- rossoctl-operator: branch `feat/sandbox-workload-support` (two-phase restart)
 - Sandbox CRD: `agents.x-k8s.io/v1alpha1`

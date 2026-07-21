@@ -1,6 +1,6 @@
 # Contributing to this project
 
-Greetings! We are grateful for your interest in joining the Kagenti community and making a positive impact. Whether you're raising issues, enhancing documentation, fixing bugs, or developing new features, your contributions are essential to our success.
+Greetings! We are grateful for your interest in joining the Rossoctl community and making a positive impact. Whether you're raising issues, enhancing documentation, fixing bugs, or developing new features, your contributions are essential to our success.
 
 To get started, kindly read through this document and familiarize yourself with our code of conduct.
 
@@ -59,7 +59,7 @@ See the [making PR](./docs/dev-guide.md#making-a-pr) document for detailed instr
 ## Releasing
 
 Maintainers: see the [Releasing Guide](./docs/releasing.md) for how to create
-tags, pre-releases, and stable (GA) releases across the Kagenti organization.
+tags, pre-releases, and stable (GA) releases across the Rossoctl organization.
 
 ## Contributing Documentation
 
@@ -73,14 +73,14 @@ When adding diagrams to the documentation, please place them in the appropriate 
 
 - **Mermaid sequence diagrams**: Place Mermaid source files (`.mmd`) in [`docs/diagrams/`](./docs/diagrams/) and generate PNG versions in [`docs/diagrams/images/png/`](./docs/diagrams/images/png/). See the [diagrams README](./docs/diagrams/README.md) for instructions on generating diagram images from Mermaid source files.
 
-When referencing diagrams in documentation, use relative paths from the documentation file location (e.g., `./images/kagenti-architecture.drawio.png` or `../diagrams/images/png/01-user-authentication-flow.png`).
+When referencing diagrams in documentation, use relative paths from the documentation file location (e.g., `./images/rossoctl-architecture.drawio.png` or `../diagrams/images/png/01-user-authentication-flow.png`).
 
 ## Licensing
 
-Kagenti is [Apache 2.0 licensed](LICENSE) and we accept contributions via
+Rossoctl is [Apache 2.0 licensed](LICENSE) and we accept contributions via
 GitHub pull requests.
 
-Please read the following if you're interested in contributing to Kagenti.
+Please read the following if you're interested in contributing to Rossoctl.
 
 ## Certificate of Origin
 

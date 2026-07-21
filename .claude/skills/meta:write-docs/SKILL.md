@@ -1,6 +1,6 @@
 ---
 name: meta:write-docs
-description: Guidelines and patterns for writing Kagenti documentation
+description: Guidelines and patterns for writing Rossoctl documentation
 ---
 
 # Write Documentation
@@ -177,7 +177,7 @@ Use tables for structured reference data. Keep column count to 3-5:
 ```markdown
 | Component | Purpose | Namespace |
 |-----------|---------|-----------|
-| OTEL Collector | Telemetry pipeline | `kagenti-system` |
+| OTEL Collector | Telemetry pipeline | `rossoctl-system` |
 | TempoStack | Trace storage | `tempo-system` |
 ```
 
@@ -196,7 +196,7 @@ Always specify language. Use `bash` for shell commands:
 
 ````markdown
 ```bash
-kubectl get pods -n kagenti-system
+kubectl get pods -n rossoctl-system
 ```
 ````
 
@@ -207,11 +207,11 @@ at the top identifying the resource:
 
 ````markdown
 ```yaml
-# charts/kagenti/templates/observability/collector.yaml
+# charts/rossoctl/templates/observability/collector.yaml
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
 metadata:
-  name: kagenti-collector
+  name: rossoctl-collector
 spec:
   mode: daemonset
 ```
@@ -228,7 +228,7 @@ kubectl get tempostacks -n tempo-system
 
 ```text
 NAME            AGE   STATUS
-kagenti-tempo   5m    Ready
+rossoctl-tempo   5m    Ready
 ```
 ````
 

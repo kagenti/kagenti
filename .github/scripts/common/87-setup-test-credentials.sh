@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # Ensure a test user and a service-account client exist in the Keycloak
-# kagenti realm.  Runs AFTER the platform is deployed and Keycloak is
+# rossoctl realm.  Runs AFTER the platform is deployed and Keycloak is
 # reachable, BEFORE E2E tests start.
 #
 # Creates:
-#   1. Test user "admin" in the kagenti realm (for agent AuthBridge auth)
-#   2. Confidential client "kagenti-e2e-tests" with client_credentials
+#   1. Test user "admin" in the rossoctl realm (for agent AuthBridge auth)
+#   2. Confidential client "rossoctl-e2e-tests" with client_credentials
 #      grant (for backend API tests that need a service account)
 #
 # Outputs (exported to GITHUB_ENV on CI):
-#   KAGENTI_TEST_USER        – username
-#   KAGENTI_TEST_PASSWORD    – password
-#   KAGENTI_E2E_CLIENT_ID    – service account client id
-#   KAGENTI_E2E_CLIENT_SECRET – service account client secret
+#   ROSSOCTL_TEST_USER        – username
+#   ROSSOCTL_TEST_PASSWORD    – password
+#   ROSSOCTL_E2E_CLIENT_ID    – service account client id
+#   ROSSOCTL_E2E_CLIENT_SECRET – service account client secret
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/env-detect.sh"
@@ -32,9 +32,9 @@ ADMIN_USER=$(kubectl get secret keycloak-initial-admin -n keycloak \
 ADMIN_PASS=$(kubectl get secret keycloak-initial-admin -n keycloak \
     -o jsonpath='{.data.password}' | base64 -d)
 
-# Read realm from kagenti-test-user secret (if it exists), else default
-REALM=$(kubectl get secret kagenti-test-user -n keycloak \
-    -o jsonpath='{.data.realm}' 2>/dev/null | base64 -d 2>/dev/null || echo "kagenti")
+# Read realm from rossoctl-test-user secret (if it exists), else default
+REALM=$(kubectl get secret rossoctl-test-user -n keycloak \
+    -o jsonpath='{.data.realm}' 2>/dev/null | base64 -d 2>/dev/null || echo "rossoctl")
 
 log_info "Keycloak URL: $KEYCLOAK_URL"
 log_info "Target realm: $REALM"
@@ -136,7 +136,7 @@ if [ "$USER_COUNT" = "0" ]; then
             \"username\": \"$TEST_USER\",
             \"firstName\": \"$TEST_USER\",
             \"lastName\": \"Test\",
-            \"email\": \"$TEST_USER@kagenti.dev\",
+            \"email\": \"$TEST_USER@rossoctl.dev\",
             \"emailVerified\": true,
             \"enabled\": true,
             \"requiredActions\": [],
@@ -194,7 +194,7 @@ log_success "Test user token verified (length=${#TEST_TOKEN})"
 # 4. Create service account client for API tests
 # ============================================================================
 
-E2E_CLIENT_ID="kagenti-e2e-tests"
+E2E_CLIENT_ID="rossoctl-e2e-tests"
 
 CLIENT_JSON=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/clients?clientId=$E2E_CLIENT_ID")
 CLIENT_COUNT=$(echo "$CLIENT_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
@@ -242,15 +242,15 @@ dump_scope_timeout_diagnostics() {
 
     echo
     echo "--- Agent deployments in team1 (pod template labels + annotations) ---"
-    kubectl get deployment -n team1 -l kagenti.io/type=agent \
+    kubectl get deployment -n team1 -l rossoctl.io/type=agent \
         -o 'custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,AVAILABLE:.status.availableReplicas,AGE:.metadata.creationTimestamp' \
         2>&1 || echo "  (failed to list)"
-    for dep in $(kubectl get deployment -n team1 -l kagenti.io/type=agent -o name 2>/dev/null); do
+    for dep in $(kubectl get deployment -n team1 -l rossoctl.io/type=agent -o name 2>/dev/null); do
         echo
         echo "  Deployment: $dep"
         echo "  Pod-template labels:"
         kubectl get "$dep" -n team1 -o jsonpath='{.spec.template.metadata.labels}' 2>&1 | python3 -m json.tool 2>/dev/null | sed 's/^/    /' || echo "    (failed)"
-        echo "  Pod-template annotations (looking for kagenti.io/keycloak-client-credentials-secret-name):"
+        echo "  Pod-template annotations (looking for rossoctl.io/keycloak-client-credentials-secret-name):"
         kubectl get "$dep" -n team1 -o jsonpath='{.spec.template.metadata.annotations}' 2>&1 | python3 -m json.tool 2>/dev/null | sed 's/^/    /' || echo "    (failed)"
     done
 
@@ -260,8 +260,8 @@ dump_scope_timeout_diagnostics() {
         grep -E '^  [A-Z_]+:|^data:' | head -30 || echo "  (not found — reconciler will requeue forever on 'waiting for KEYCLOAK_URL/KEYCLOAK_REALM')"
 
     echo
-    echo "--- keycloak-admin-secret (now in kagenti-system, not team1) ---"
-    kubectl get secret -n kagenti-system keycloak-admin-secret \
+    echo "--- keycloak-admin-secret (now in rossoctl-system, not team1) ---"
+    kubectl get secret -n rossoctl-system keycloak-admin-secret \
         -o jsonpath='{"  keys: "}{.data}{"\n"}' 2>&1 | python3 -c "
 import sys, json, re
 s = sys.stdin.read().strip()
@@ -278,14 +278,14 @@ else:
 " 2>&1 || echo "  (not found — operator will be unable to register clients)"
 
     echo
-    echo "--- kagenti-operator controller pod status ---"
-    kubectl get pods -n kagenti-system -l app.kubernetes.io/name=kagenti-operator \
+    echo "--- rossoctl-operator controller pod status ---"
+    kubectl get pods -n rossoctl-system -l app.kubernetes.io/name=rossoctl-operator \
         -o 'custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[*].ready,RESTARTS:.status.containerStatuses[*].restartCount,PHASE:.status.phase,AGE:.metadata.creationTimestamp' \
         2>&1 | head -5 || echo "  (failed to list)"
 
     echo
-    echo "--- kagenti-operator recent logs (broader grep than 85-collect-failure-info.sh) ---"
-    kubectl logs -n kagenti-system deployment/kagenti-controller-manager --tail=200 2>/dev/null | \
+    echo "--- rossoctl-operator recent logs (broader grep than 85-collect-failure-info.sh) ---"
+    kubectl logs -n rossoctl-system deployment/rossoctl-controller-manager --tail=200 2>/dev/null | \
         grep -iE 'waiting for|cannot resolve|skip|reconcile|client.?regist|keycloak|credential|error|ERROR|audience' | \
         tail -50 || echo "  (no operator logs matched — broaden the grep or increase --tail)"
 
@@ -325,7 +325,7 @@ except Exception as e:
 
 # Gate: wait for at least one agent-*-aud scope to appear in the realm
 # before trying to attach them. These scopes are created asynchronously
-# by kagenti-operator's ClientRegistrationReconciler (default path) or
+# by rossoctl-operator's ClientRegistrationReconciler (default path) or
 # by the legacy client-registration sidecar (opt-in). If we query before
 # either path finishes, the test token is minted without an aud claim
 # and AuthBridge rejects every request with 401
@@ -335,7 +335,7 @@ except Exception as e:
 # with no agent under test). SCOPE_WAIT_TIMEOUT overrides the default 5
 # minutes; in healthy runs the first iteration finds scopes immediately
 # so the happy path pays effectively nothing.
-AGENT_COUNT=$(kubectl get deployment -n team1 -l kagenti.io/type=agent \
+AGENT_COUNT=$(kubectl get deployment -n team1 -l rossoctl.io/type=agent \
     -o name 2>/dev/null | wc -l | tr -d ' ')
 
 if [ "$AGENT_COUNT" -gt 0 ]; then
@@ -363,7 +363,7 @@ sys.exit(1)
         ELAPSED=$((ELAPSED + SLEEP))
     done
     if [ "$SCOPE_SEEN" = "false" ]; then
-        log_warn "No agent-*-aud scopes appeared after ${MAX_WAIT}s; tests will likely fail with 401 (kagenti-operator ClientRegistrationReconciler may be stuck)"
+        log_warn "No agent-*-aud scopes appeared after ${MAX_WAIT}s; tests will likely fail with 401 (rossoctl-operator ClientRegistrationReconciler may be stuck)"
         log_warn "Dumping diagnostics so the next maintainer can debug the reconciler without a second CI run:"
         dump_scope_timeout_diagnostics
     fi
@@ -390,11 +390,11 @@ else
 fi
 
 # ============================================================================
-# 5. Update kagenti-test-user secret with verified credentials
+# 5. Update rossoctl-test-user secret with verified credentials
 # ============================================================================
 
-log_info "Updating kagenti-test-user secret with verified credentials..."
-kubectl create secret generic kagenti-test-user \
+log_info "Updating rossoctl-test-user secret with verified credentials..."
+kubectl create secret generic rossoctl-test-user \
     --namespace keycloak \
     --from-literal=username="$TEST_USER" \
     --from-literal=password="$TEST_PASS" \
@@ -409,16 +409,16 @@ kubectl create secret generic kagenti-test-user \
 
 if [ "$IS_CI" = true ]; then
     {
-        echo "KAGENTI_TEST_USER=$TEST_USER"
-        echo "KAGENTI_TEST_PASSWORD=$TEST_PASS"
-        echo "KAGENTI_E2E_CLIENT_ID=$E2E_CLIENT_ID"
-        echo "KAGENTI_E2E_CLIENT_SECRET=$E2E_CLIENT_SECRET"
+        echo "ROSSOCTL_TEST_USER=$TEST_USER"
+        echo "ROSSOCTL_TEST_PASSWORD=$TEST_PASS"
+        echo "ROSSOCTL_E2E_CLIENT_ID=$E2E_CLIENT_ID"
+        echo "ROSSOCTL_E2E_CLIENT_SECRET=$E2E_CLIENT_SECRET"
     } >> "$GITHUB_ENV"
 else
-    export KAGENTI_TEST_USER="$TEST_USER"
-    export KAGENTI_TEST_PASSWORD="$TEST_PASS"
-    export KAGENTI_E2E_CLIENT_ID="$E2E_CLIENT_ID"
-    export KAGENTI_E2E_CLIENT_SECRET="$E2E_CLIENT_SECRET"
+    export ROSSOCTL_TEST_USER="$TEST_USER"
+    export ROSSOCTL_TEST_PASSWORD="$TEST_PASS"
+    export ROSSOCTL_E2E_CLIENT_ID="$E2E_CLIENT_ID"
+    export ROSSOCTL_E2E_CLIENT_SECRET="$E2E_CLIENT_SECRET"
 fi
 
 log_success "Test credentials ready"

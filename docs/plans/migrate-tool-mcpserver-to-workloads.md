@@ -2,11 +2,11 @@
 
 **Status:** In Progress
 **Created:** 2026-01-26
-**Target:** Kagenti UI v2.x
+**Target:** Rossoctl UI v2.x
 
 ## Executive Summary
 
-This document outlines the phased migration of the Kagenti UI from managing MCP tools
+This document outlines the phased migration of the Rossoctl UI from managing MCP tools
 via the Toolhive `MCPServer` CRD to directly creating standard Kubernetes workloads
 (Deployments and StatefulSets). This migration removes the dependency on the Toolhive
 operator while maintaining full MCP tool functionality.
@@ -58,7 +58,7 @@ operator while maintaining full MCP tool functionality.
 
 ```
 ┌─────────────┐     POST /tools      ┌─────────────────┐
-│  Kagenti UI │ ──────────────────▶  │ Backend (FastAPI)│
+│  Rossoctl UI │ ──────────────────▶  │ Backend (FastAPI)│
 └─────────────┘                      └────────┬────────┘
                                               │
                                               │ Creates MCPServer CRD
@@ -88,7 +88,7 @@ operator while maintaining full MCP tool functionality.
 **API Version:** `toolhive.stacklok.dev/v1alpha1`
 **Kind:** `MCPServer`
 
-**File:** `kagenti/backend/app/routers/tools.py` (lines 458-538)
+**File:** `rossoctl/backend/app/routers/tools.py` (lines 458-538)
 
 ```yaml
 apiVersion: toolhive.stacklok.dev/v1alpha1
@@ -97,10 +97,10 @@ metadata:
   name: <tool-name>
   namespace: <namespace>
   labels:
-    app.kubernetes.io/created-by: kagenti-ui
-    kagenti.io/type: tool
-    kagenti.io/protocol: streamable_http|sse
-    kagenti.io/framework: <framework>
+    app.kubernetes.io/created-by: rossoctl-ui
+    rossoctl.io/type: tool
+    rossoctl.io/protocol: streamable_http|sse
+    rossoctl.io/framework: <framework>
 spec:
   image: <image-url>
   transport: streamable-http
@@ -154,19 +154,19 @@ When an MCPServer CRD is created, the Toolhive operator automatically provisions
 
 | File | Purpose | Lines of Interest |
 |------|---------|-------------------|
-| `kagenti/backend/app/routers/tools.py` | Tool API endpoints | 458-538 (manifest), 185-244 (list) |
-| `kagenti/backend/app/services/kubernetes.py` | K8s API wrapper | 82-103 (list resources) |
-| `kagenti/backend/app/core/constants.py` | CRD/label constants | All |
+| `rossoctl/backend/app/routers/tools.py` | Tool API endpoints | 458-538 (manifest), 185-244 (list) |
+| `rossoctl/backend/app/services/kubernetes.py` | K8s API wrapper | 82-103 (list resources) |
+| `rossoctl/backend/app/core/constants.py` | CRD/label constants | All |
 
 ### Key Frontend Files
 
 | File | Purpose |
 |------|---------|
-| `kagenti/ui-v2/src/pages/ToolCatalogPage.tsx` | Tool listing |
-| `kagenti/ui-v2/src/pages/ToolDetailPage.tsx` | Tool details, MCP invocation |
-| `kagenti/ui-v2/src/pages/ImportToolPage.tsx` | Tool creation |
-| `kagenti/ui-v2/src/pages/ToolBuildProgressPage.tsx` | Build monitoring |
-| `kagenti/ui-v2/src/services/api.ts` | API client |
+| `rossoctl/ui-v2/src/pages/ToolCatalogPage.tsx` | Tool listing |
+| `rossoctl/ui-v2/src/pages/ToolDetailPage.tsx` | Tool details, MCP invocation |
+| `rossoctl/ui-v2/src/pages/ImportToolPage.tsx` | Tool creation |
+| `rossoctl/ui-v2/src/pages/ToolBuildProgressPage.tsx` | Build monitoring |
+| `rossoctl/ui-v2/src/services/api.ts` | API client |
 
 ### Current MCP Tool Discovery & Invocation Flow
 
@@ -191,7 +191,7 @@ ToolDetailPage → "Connect & List Tools" Button
 
 ```
 ┌─────────────┐     POST /tools      ┌─────────────────┐
-│  Kagenti UI │ ──────────────────▶  │ Backend (FastAPI)│
+│  Rossoctl UI │ ──────────────────▶  │ Backend (FastAPI)│
 └─────────────┘                      └────────┬────────┘
                                               │
                                               │ Creates directly
@@ -234,32 +234,32 @@ All tool workloads (Deployment, StatefulSet) and their managed Pods **MUST** hav
 
 | Label | Value | Purpose |
 |-------|-------|---------|
-| `kagenti.io/type` | `tool` | Identifies resource as a Kagenti tool |
+| `rossoctl.io/type` | `tool` | Identifies resource as a Rossoctl tool |
 | `app.kubernetes.io/name` | `<tool-name>` | Standard K8s app name label |
-| `kagenti.io/protocol` | `mcp` | Protocol type |
+| `rossoctl.io/protocol` | `mcp` | Protocol type |
 
 ### Recommended Labels
 
 | Label | Value | Purpose |
 |-------|-------|---------|
-| `kagenti.io/transport` | `streamable_http` | MCP transport type |
-| `app.kubernetes.io/managed-by` | `kagenti-ui` | Resource manager |
+| `rossoctl.io/transport` | `streamable_http` | MCP transport type |
+| `app.kubernetes.io/managed-by` | `rossoctl-ui` | Resource manager |
 | `app.kubernetes.io/component` | `tool` | Component type |
-| `kagenti.io/framework` | `<framework>` | Framework (Python, etc.) |
-| `kagenti.io/workload-type` | `deployment` or `statefulset` | Workload type |
+| `rossoctl.io/framework` | `<framework>` | Framework (Python, etc.) |
+| `rossoctl.io/workload-type` | `deployment` or `statefulset` | Workload type |
 
 ### Label Selector for Tools
 
 To list all tools in a namespace:
 
 ```
-kagenti.io/type=tool
+rossoctl.io/type=tool
 ```
 
 To list all MCP tools:
 
 ```
-kagenti.io/type=tool,kagenti.io/protocol=mcp
+rossoctl.io/type=tool,rossoctl.io/protocol=mcp
 ```
 
 ---
@@ -272,7 +272,7 @@ kagenti.io/type=tool,kagenti.io/protocol=mcp
 
 #### 1.1 Update Constants
 
-**File:** `kagenti/backend/app/core/constants.py`
+**File:** `rossoctl/backend/app/core/constants.py`
 
 ```python
 # Workload types for tools
@@ -280,11 +280,11 @@ TOOL_WORKLOAD_TYPE_DEPLOYMENT = "deployment"
 TOOL_WORKLOAD_TYPE_STATEFULSET = "statefulset"
 
 # Tool label keys
-LABEL_KAGENTI_TYPE = "kagenti.io/type"
-LABEL_KAGENTI_PROTOCOL = "kagenti.io/protocol"
-LABEL_KAGENTI_TRANSPORT = "kagenti.io/transport"
-LABEL_KAGENTI_FRAMEWORK = "kagenti.io/framework"
-LABEL_KAGENTI_WORKLOAD_TYPE = "kagenti.io/workload-type"
+LABEL_ROSSOCTL_TYPE = "rossoctl.io/type"
+LABEL_ROSSOCTL_PROTOCOL = "rossoctl.io/protocol"
+LABEL_ROSSOCTL_TRANSPORT = "rossoctl.io/transport"
+LABEL_ROSSOCTL_FRAMEWORK = "rossoctl.io/framework"
+LABEL_ROSSOCTL_WORKLOAD_TYPE = "rossoctl.io/workload-type"
 LABEL_APP_NAME = "app.kubernetes.io/name"
 LABEL_MANAGED_BY = "app.kubernetes.io/managed-by"
 
@@ -292,7 +292,7 @@ LABEL_MANAGED_BY = "app.kubernetes.io/managed-by"
 VALUE_TYPE_TOOL = "tool"
 VALUE_PROTOCOL_MCP = "mcp"
 VALUE_TRANSPORT_STREAMABLE_HTTP = "streamable_http"
-VALUE_MANAGED_BY_UI = "kagenti-ui"
+VALUE_MANAGED_BY_UI = "rossoctl-ui"
 
 # Service naming
 TOOL_SERVICE_SUFFIX = "-mcp"  # Results in: {name}-mcp
@@ -300,7 +300,7 @@ TOOL_SERVICE_SUFFIX = "-mcp"  # Results in: {name}-mcp
 
 #### 1.2 Add Kubernetes Core API Methods
 
-**File:** `kagenti/backend/app/services/kubernetes.py`
+**File:** `rossoctl/backend/app/services/kubernetes.py`
 
 Reuse methods from agent migration (Deployments and Services) and add StatefulSet support:
 
@@ -315,7 +315,7 @@ def patch_statefulset(namespace: str, name: str, body: dict) -> dict
 
 #### 1.3 Add Manifest Builders for Tools
 
-**File:** `kagenti/backend/app/routers/tools.py` (new functions)
+**File:** `rossoctl/backend/app/routers/tools.py` (new functions)
 
 ```python
 def _build_tool_deployment_manifest(request: CreateToolRequest, image: str) -> dict:
@@ -343,29 +343,29 @@ metadata:
   name: <tool-name>
   namespace: <namespace>
   labels:
-    kagenti.io/type: tool
-    kagenti.io/protocol: mcp
-    kagenti.io/transport: streamable_http
-    kagenti.io/framework: <framework>
-    kagenti.io/workload-type: deployment
+    rossoctl.io/type: tool
+    rossoctl.io/protocol: mcp
+    rossoctl.io/transport: streamable_http
+    rossoctl.io/framework: <framework>
+    rossoctl.io/workload-type: deployment
     app.kubernetes.io/name: <tool-name>
-    app.kubernetes.io/managed-by: kagenti-ui
+    app.kubernetes.io/managed-by: rossoctl-ui
   annotations:
-    kagenti.io/description: "<description>"
-    kagenti.io/shipwright-build: "<build-name>"  # if built from source
+    rossoctl.io/description: "<description>"
+    rossoctl.io/shipwright-build: "<build-name>"  # if built from source
 spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: tool
+      rossoctl.io/type: tool
       app.kubernetes.io/name: <tool-name>
   template:
     metadata:
       labels:
-        kagenti.io/type: tool
-        kagenti.io/protocol: mcp
-        kagenti.io/transport: streamable_http
-        kagenti.io/framework: <framework>
+        rossoctl.io/type: tool
+        rossoctl.io/protocol: mcp
+        rossoctl.io/transport: streamable_http
+        rossoctl.io/framework: <framework>
         app.kubernetes.io/name: <tool-name>
     spec:
       serviceAccountName: <tool-name>
@@ -423,14 +423,14 @@ metadata:
   name: <tool-name>-mcp
   namespace: <namespace>
   labels:
-    kagenti.io/type: tool
-    kagenti.io/protocol: mcp
+    rossoctl.io/type: tool
+    rossoctl.io/protocol: mcp
     app.kubernetes.io/name: <tool-name>
-    app.kubernetes.io/managed-by: kagenti-ui
+    app.kubernetes.io/managed-by: rossoctl-ui
 spec:
   type: ClusterIP
   selector:
-    kagenti.io/type: tool
+    rossoctl.io/type: tool
     app.kubernetes.io/name: <tool-name>
   ports:
     - name: http
@@ -441,7 +441,7 @@ spec:
 
 #### 2.3 Update Tool Creation Endpoint
 
-**File:** `kagenti/backend/app/routers/tools.py`
+**File:** `rossoctl/backend/app/routers/tools.py`
 
 Modify `create_tool()` endpoint to:
 
@@ -472,14 +472,14 @@ async def create_tool(request: CreateToolRequest):
 
 #### 2.4 Update Tool List Endpoint
 
-**File:** `kagenti/backend/app/routers/tools.py`
+**File:** `rossoctl/backend/app/routers/tools.py`
 
 Modify `list_tools()` to query Deployments instead of MCPServer CRD:
 
 ```python
 @router.get("/tools")
 async def list_tools(namespace: str):
-    label_selector = f"{LABEL_KAGENTI_TYPE}={VALUE_TYPE_TOOL}"
+    label_selector = f"{LABEL_ROSSOCTL_TYPE}={VALUE_TYPE_TOOL}"
 
     # Query Deployments
     deployments = k8s.list_deployments(namespace, label_selector)
@@ -593,27 +593,27 @@ metadata:
   name: <tool-name>
   namespace: <namespace>
   labels:
-    kagenti.io/type: tool
-    kagenti.io/protocol: mcp
-    kagenti.io/transport: streamable_http
-    kagenti.io/framework: <framework>
-    kagenti.io/workload-type: statefulset
+    rossoctl.io/type: tool
+    rossoctl.io/protocol: mcp
+    rossoctl.io/transport: streamable_http
+    rossoctl.io/framework: <framework>
+    rossoctl.io/workload-type: statefulset
     app.kubernetes.io/name: <tool-name>
-    app.kubernetes.io/managed-by: kagenti-ui
+    app.kubernetes.io/managed-by: rossoctl-ui
 spec:
   serviceName: <tool-name>-mcp
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: tool
+      rossoctl.io/type: tool
       app.kubernetes.io/name: <tool-name>
   template:
     metadata:
       labels:
-        kagenti.io/type: tool
-        kagenti.io/protocol: mcp
-        kagenti.io/transport: streamable_http
-        kagenti.io/framework: <framework>
+        rossoctl.io/type: tool
+        rossoctl.io/protocol: mcp
+        rossoctl.io/transport: streamable_http
+        rossoctl.io/framework: <framework>
         app.kubernetes.io/name: <tool-name>
     spec:
       serviceAccountName: <tool-name>
@@ -658,7 +658,7 @@ spec:
 ```python
 @router.get("/tools")
 async def list_tools(namespace: str):
-    label_selector = f"{LABEL_KAGENTI_TYPE}={VALUE_TYPE_TOOL}"
+    label_selector = f"{LABEL_ROSSOCTL_TYPE}={VALUE_TYPE_TOOL}"
 
     tools = []
 
@@ -762,7 +762,7 @@ async def delete_tool(namespace: str, name: str):
 
 #### 4.1 Update Type Definitions
 
-**File:** `kagenti/ui-v2/src/types/index.ts`
+**File:** `rossoctl/ui-v2/src/types/index.ts`
 
 ```typescript
 // Workload types for tools
@@ -833,7 +833,7 @@ export interface CreateToolRequest {
 
 #### 4.2 Update Tool Catalog Page
 
-**File:** `kagenti/ui-v2/src/pages/ToolCatalogPage.tsx`
+**File:** `rossoctl/ui-v2/src/pages/ToolCatalogPage.tsx`
 
 - Add workload type indicator (icon or badge)
 - Update status logic for Deployment/StatefulSet conditions
@@ -841,7 +841,7 @@ export interface CreateToolRequest {
 
 #### 4.3 Update Tool Detail Page
 
-**File:** `kagenti/ui-v2/src/pages/ToolDetailPage.tsx`
+**File:** `rossoctl/ui-v2/src/pages/ToolDetailPage.tsx`
 
 - Update status tab to show Deployment/StatefulSet conditions
 - Show replica count and availability
@@ -851,7 +851,7 @@ export interface CreateToolRequest {
 
 #### 4.4 Update Import Tool Page
 
-**File:** `kagenti/ui-v2/src/pages/ImportToolPage.tsx`
+**File:** `rossoctl/ui-v2/src/pages/ImportToolPage.tsx`
 
 Add workload type selector:
 
@@ -894,38 +894,38 @@ Add workload type selector:
 
 #### 5.1 CLI Migration Script
 
-**File:** `kagenti/tools/migrate_tools.py`
+**File:** `rossoctl/tools/migrate_tools.py`
 
 ##### Basic Usage
 
 ```bash
 # List tools that can be migrated (dry-run by default)
-python -m kagenti.tools.migrate_tools --namespace <namespace>
+python -m rossoctl.tools.migrate_tools --namespace <namespace>
 
 # Dry-run migration (shows what would happen)
-python -m kagenti.tools.migrate_tools --namespace team1 --dry-run
+python -m rossoctl.tools.migrate_tools --namespace team1 --dry-run
 
 # Actually perform the migration
-python -m kagenti.tools.migrate_tools --namespace team1 --no-dry-run
+python -m rossoctl.tools.migrate_tools --namespace team1 --no-dry-run
 
 # Migrate and delete old MCPServer CRDs
-python -m kagenti.tools.migrate_tools --namespace team1 --no-dry-run --delete-old
+python -m rossoctl.tools.migrate_tools --namespace team1 --no-dry-run --delete-old
 
 # Migrate a specific tool only
-python -m kagenti.tools.migrate_tools --namespace team1 --tool my-tool --no-dry-run
+python -m rossoctl.tools.migrate_tools --namespace team1 --tool my-tool --no-dry-run
 
 # Output results as JSON (for scripting)
-python -m kagenti.tools.migrate_tools --namespace team1 --json
+python -m rossoctl.tools.migrate_tools --namespace team1 --json
 
 # Verbose output
-python -m kagenti.tools.migrate_tools --namespace team1 -v
+python -m rossoctl.tools.migrate_tools --namespace team1 -v
 ```
 
 ##### Example Output
 
 ```
 ============================================================
-Kagenti MCPServer CRD Migration - DRY-RUN
+Rossoctl MCPServer CRD Migration - DRY-RUN
 ============================================================
 Namespace: team1
 Delete old CRDs: False
@@ -992,7 +992,7 @@ Failed: 0
 
 #### 5.2 Migration Logic
 
-1. **List MCPServer CRDs**: Query all MCPServer CRDs in the specified namespace with `kagenti.io/type=tool` label
+1. **List MCPServer CRDs**: Query all MCPServer CRDs in the specified namespace with `rossoctl.io/type=tool` label
 2. **Check for existing Deployments**: Skip tools that already have a Deployment/StatefulSet with the same name
 3. **Build Deployment manifest**: Extract configuration from MCPServer CRD and build Deployment spec
 4. **Build Service manifest**: Create Service with new naming convention (`{name}-mcp`)
@@ -1006,14 +1006,14 @@ Migrated Deployments include tracking annotations:
 
 ```yaml
 annotations:
-  kagenti.io/migrated-from: "mcpserver-crd"
-  kagenti.io/migration-timestamp: "2026-01-26T10:30:00+00:00"
-  kagenti.io/original-service: "mcp-{name}-proxy"  # for reference
+  rossoctl.io/migrated-from: "mcpserver-crd"
+  rossoctl.io/migration-timestamp: "2026-01-26T10:30:00+00:00"
+  rossoctl.io/original-service: "mcp-{name}-proxy"  # for reference
 ```
 
 #### 5.4 Backend Migration Endpoints
 
-**File:** `kagenti/backend/app/routers/tools.py`
+**File:** `rossoctl/backend/app/routers/tools.py`
 
 ##### List Migratable Tools
 
@@ -1032,7 +1032,7 @@ GET /tools/migration/migratable?namespace=team1
       "status": "Ready",
       "has_deployment": false,
       "has_statefulset": false,
-      "labels": {"kagenti.io/type": "tool", "kagenti.io/protocol": "mcp"},
+      "labels": {"rossoctl.io/type": "tool", "rossoctl.io/protocol": "mcp"},
       "description": "Weather MCP tool",
       "old_service_name": "mcp-weather-tool-proxy",
       "new_service_name": "weather-tool-mcp"
@@ -1099,7 +1099,7 @@ Content-Type: application/json
 
 #### 5.5 Backward Compatibility Period
 
-**File:** `kagenti/backend/app/core/config.py`
+**File:** `rossoctl/backend/app/core/config.py`
 
 ```python
 # config.py
@@ -1109,7 +1109,7 @@ enable_legacy_mcpserver_crd: bool = False  # Default is False, set to True durin
 
 When enabled, the `list_tools` endpoint will:
 
-1. Query Deployments/StatefulSets with `kagenti.io/type=tool` label
+1. Query Deployments/StatefulSets with `rossoctl.io/type=tool` label
 2. Query MCPServer CRDs in the namespace
 3. Skip MCPServer CRDs that already have a corresponding Deployment (already migrated)
 4. Return a combined list of both Deployment-based and CRD-based tools
@@ -1118,7 +1118,7 @@ When enabled, the `list_tools` endpoint will:
 
 After migration, any code or configuration that references MCP tool URLs must be updated:
 
-| Before (Toolhive) | After (Kagenti) |
+| Before (Toolhive) | After (Rossoctl) |
 |-------------------|-----------------|
 | `http://mcp-{name}-proxy.{ns}.svc.cluster.local:8000/mcp` | `http://{name}-mcp.{ns}.svc.cluster.local:8000/mcp` |
 
@@ -1145,19 +1145,19 @@ The following files in `.github/` reference MCPServer or Toolhive and need updat
 | File | Current Purpose | Required Changes |
 |------|-----------------|------------------|
 | `.github/workflows/e2e-kind.yaml` | E2E workflow | Remove Toolhive CRD wait step, update tool deployment step |
-| `.github/scripts/kagenti-operator/43-wait-toolhive-crds.sh` | Wait for Toolhive CRDs | Remove or make conditional |
-| `.github/scripts/kagenti-operator/72-deploy-weather-tool.sh` | Deploy tool via MCPServer | Replace with Deployment+Service |
-| `.github/scripts/kagenti-operator/73-patch-weather-tool.sh` | Patch Toolhive-created resources | Simplify or remove (volumes in manifest) |
-| `.github/scripts/kagenti-operator/75-deploy-weather-tool-shipwright.sh` | Shipwright build + MCPServer | Update to create Deployment instead of MCPServer |
+| `.github/scripts/operator/43-wait-toolhive-crds.sh` | Wait for Toolhive CRDs | Remove or make conditional |
+| `.github/scripts/operator/72-deploy-weather-tool.sh` | Deploy tool via MCPServer | Replace with Deployment+Service |
+| `.github/scripts/operator/73-patch-weather-tool.sh` | Patch Toolhive-created resources | Simplify or remove (volumes in manifest) |
+| `.github/scripts/operator/75-deploy-weather-tool-shipwright.sh` | Shipwright build + MCPServer | Update to create Deployment instead of MCPServer |
 | `.github/scripts/lib/k8s-utils.sh` | K8s utility functions | Add `wait_for_tool_deployment` function |
-| `kagenti/examples/mcpservers/weather_tool.yaml` | Example MCPServer manifest | Replace with Deployment+Service manifests |
+| `rossoctl/examples/mcpservers/weather_tool.yaml` | Example MCPServer manifest | Replace with Deployment+Service manifests |
 
 Python E2E test files:
 
 | File | Current Purpose | Required Changes |
 |------|-----------------|------------------|
-| `kagenti/tests/e2e/common/test_shipwright_tool_build.py` | Shipwright build tests | Update CRD references, add Deployment verification |
-| `kagenti/tests/e2e/conftest.py` | Test fixtures | Update `toolhiveCRDs`/`toolhiveOperator` feature flags |
+| `rossoctl/tests/e2e/common/test_shipwright_tool_build.py` | Shipwright build tests | Update CRD references, add Deployment verification |
+| `rossoctl/tests/e2e/conftest.py` | Test fixtures | Update `toolhiveCRDs`/`toolhiveOperator` feature flags |
 
 #### 6.2 Update Workflow: e2e-kind.yaml
 
@@ -1168,7 +1168,7 @@ Python E2E test files:
 ```yaml
 # REMOVE this step (or make conditional for legacy mode)
 - name: Wait for Toolhive CRDs to be established
-  run: bash .github/scripts/kagenti-operator/43-wait-toolhive-crds.sh
+  run: bash .github/scripts/operator/43-wait-toolhive-crds.sh
 ```
 
 ##### Update Tool Deployment Step
@@ -1176,11 +1176,11 @@ Python E2E test files:
 ```yaml
 # CHANGE from:
 - name: Deploy weather-tool via Toolhive MCPServer
-  run: bash .github/scripts/kagenti-operator/72-deploy-weather-tool.sh
+  run: bash .github/scripts/operator/72-deploy-weather-tool.sh
 
 # TO:
 - name: Deploy weather-tool via Deployment
-  run: bash .github/scripts/kagenti-operator/72-deploy-weather-tool.sh
+  run: bash .github/scripts/operator/72-deploy-weather-tool.sh
 ```
 
 ##### Simplify or Remove Patch Step
@@ -1188,12 +1188,12 @@ Python E2E test files:
 ```yaml
 # REMOVE this step (volumes now in manifest directly)
 - name: Patch weather-tool StatefulSet for writable /tmp
-  run: bash .github/scripts/kagenti-operator/73-patch-weather-tool.sh
+  run: bash .github/scripts/operator/73-patch-weather-tool.sh
 ```
 
 #### 6.3 New Tool Deployment Script
 
-**File:** `.github/scripts/kagenti-operator/72-deploy-weather-tool.sh`
+**File:** `.github/scripts/operator/72-deploy-weather-tool.sh`
 
 Replace MCPServer deployment with Deployment + Service:
 
@@ -1215,10 +1215,10 @@ metadata:
   name: weather-tool
   namespace: team1
   labels:
-    kagenti.io/type: tool
-    kagenti.io/protocol: mcp
-    kagenti.io/transport: streamable_http
-    kagenti.io/framework: Python
+    rossoctl.io/type: tool
+    rossoctl.io/protocol: mcp
+    rossoctl.io/transport: streamable_http
+    rossoctl.io/framework: Python
     app.kubernetes.io/name: weather-tool
     app.kubernetes.io/managed-by: e2e-test
   annotations:
@@ -1227,15 +1227,15 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: tool
+      rossoctl.io/type: tool
       app.kubernetes.io/name: weather-tool
   template:
     metadata:
       labels:
-        kagenti.io/type: tool
-        kagenti.io/protocol: mcp
-        kagenti.io/transport: streamable_http
-        kagenti.io/framework: Python
+        rossoctl.io/type: tool
+        rossoctl.io/protocol: mcp
+        rossoctl.io/transport: streamable_http
+        rossoctl.io/framework: Python
         app.kubernetes.io/name: weather-tool
     spec:
       serviceAccountName: weather-tool
@@ -1253,7 +1253,7 @@ spec:
             - name: HOST
               value: "0.0.0.0"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+              value: "http://otel-collector.rossoctl-system.svc.cluster.local:8335"
             - name: KEYCLOAK_URL
               value: "http://keycloak.keycloak.svc.cluster.local:8080"
             - name: UV_NO_CACHE
@@ -1295,14 +1295,14 @@ metadata:
   name: weather-tool-mcp
   namespace: team1
   labels:
-    kagenti.io/type: tool
-    kagenti.io/protocol: mcp
+    rossoctl.io/type: tool
+    rossoctl.io/protocol: mcp
     app.kubernetes.io/name: weather-tool
     app.kubernetes.io/managed-by: e2e-test
 spec:
   type: ClusterIP
   selector:
-    kagenti.io/type: tool
+    rossoctl.io/type: tool
     app.kubernetes.io/name: weather-tool
   ports:
     - name: http
@@ -1325,9 +1325,9 @@ log_success "Weather-tool deployed successfully"
 
 #### 6.4 Update Example Manifests
 
-**File:** `kagenti/examples/mcpservers/weather_tool.yaml`
+**File:** `rossoctl/examples/mcpservers/weather_tool.yaml`
 
-Rename to `kagenti/examples/tools/weather_tool.yaml` and update content:
+Rename to `rossoctl/examples/tools/weather_tool.yaml` and update content:
 
 ```yaml
 # Deployment for weather-tool
@@ -1337,10 +1337,10 @@ metadata:
   name: weather-tool
   namespace: team1
   labels:
-    kagenti.io/type: tool
-    kagenti.io/protocol: mcp
-    kagenti.io/transport: streamable_http
-    kagenti.io/framework: Python
+    rossoctl.io/type: tool
+    rossoctl.io/protocol: mcp
+    rossoctl.io/transport: streamable_http
+    rossoctl.io/framework: Python
     app.kubernetes.io/name: weather-tool
     app.kubernetes.io/managed-by: example
   annotations:
@@ -1349,15 +1349,15 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: tool
+      rossoctl.io/type: tool
       app.kubernetes.io/name: weather-tool
   template:
     metadata:
       labels:
-        kagenti.io/type: tool
-        kagenti.io/protocol: mcp
-        kagenti.io/transport: streamable_http
-        kagenti.io/framework: Python
+        rossoctl.io/type: tool
+        rossoctl.io/protocol: mcp
+        rossoctl.io/transport: streamable_http
+        rossoctl.io/framework: Python
         app.kubernetes.io/name: weather-tool
     spec:
       containers:
@@ -1372,13 +1372,13 @@ metadata:
   name: weather-tool-mcp
   namespace: team1
   labels:
-    kagenti.io/type: tool
-    kagenti.io/protocol: mcp
+    rossoctl.io/type: tool
+    rossoctl.io/protocol: mcp
     app.kubernetes.io/name: weather-tool
 spec:
   type: ClusterIP
   selector:
-    kagenti.io/type: tool
+    rossoctl.io/type: tool
     app.kubernetes.io/name: weather-tool
   ports:
     - name: http
@@ -1389,7 +1389,7 @@ spec:
 
 #### 6.5 Update Python E2E Tests
 
-**File:** `kagenti/tests/e2e/common/test_shipwright_tool_build.py`
+**File:** `rossoctl/tests/e2e/common/test_shipwright_tool_build.py`
 
 ##### Update CRD Constants
 
@@ -1429,8 +1429,8 @@ class TestToolShipwrightBuildIntegration:
 
         # Verify required labels
         labels = deployment.metadata.labels
-        assert labels.get("kagenti.io/type") == "tool"
-        assert labels.get("kagenti.io/protocol") == "mcp"
+        assert labels.get("rossoctl.io/type") == "tool"
+        assert labels.get("rossoctl.io/protocol") == "mcp"
         assert labels.get("app.kubernetes.io/name") == TEST_TOOL_BUILD_NAME
 ```
 
@@ -1457,7 +1457,7 @@ def k8s_apps_client():
 
 #### 6.6 Update Test Configuration Fixtures
 
-**File:** `kagenti/tests/e2e/conftest.py`
+**File:** `rossoctl/tests/e2e/conftest.py`
 
 Update feature flag handling to reflect the migration:
 
@@ -1529,7 +1529,7 @@ wait_for_tool_service() {
 
 #### 6.8 Update Shipwright Build Script
 
-**File:** `.github/scripts/kagenti-operator/75-deploy-weather-tool-shipwright.sh`
+**File:** `.github/scripts/operator/75-deploy-weather-tool-shipwright.sh`
 
 Replace MCPServer creation (Step 5) with Deployment + Service:
 
@@ -1544,24 +1544,24 @@ metadata:
   name: ${TOOL_NAME}
   namespace: ${NAMESPACE}
   labels:
-    kagenti.io/type: tool
-    kagenti.io/protocol: mcp
-    kagenti.io/transport: streamable_http
-    kagenti.io/built-by: shipwright
-    kagenti.io/build-name: ${TOOL_NAME}
+    rossoctl.io/type: tool
+    rossoctl.io/protocol: mcp
+    rossoctl.io/transport: streamable_http
+    rossoctl.io/built-by: shipwright
+    rossoctl.io/build-name: ${TOOL_NAME}
     app.kubernetes.io/name: ${TOOL_NAME}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: tool
+      rossoctl.io/type: tool
       app.kubernetes.io/name: ${TOOL_NAME}
   template:
     metadata:
       labels:
-        kagenti.io/type: tool
-        kagenti.io/protocol: mcp
-        kagenti.io/transport: streamable_http
+        rossoctl.io/type: tool
+        rossoctl.io/protocol: mcp
+        rossoctl.io/transport: streamable_http
         app.kubernetes.io/name: ${TOOL_NAME}
     spec:
       containers:
@@ -1593,13 +1593,13 @@ metadata:
   name: ${TOOL_NAME}-mcp
   namespace: ${NAMESPACE}
   labels:
-    kagenti.io/type: tool
-    kagenti.io/protocol: mcp
+    rossoctl.io/type: tool
+    rossoctl.io/protocol: mcp
     app.kubernetes.io/name: ${TOOL_NAME}
 spec:
   type: ClusterIP
   selector:
-    kagenti.io/type: tool
+    rossoctl.io/type: tool
     app.kubernetes.io/name: ${TOOL_NAME}
   ports:
     - name: http
@@ -1636,9 +1636,9 @@ After migration is complete, the following scripts can be removed or archived:
 
 | Script | Action |
 |--------|--------|
-| `.github/scripts/kagenti-operator/43-wait-toolhive-crds.sh` | Remove |
-| `.github/scripts/kagenti-operator/73-patch-weather-tool.sh` | Remove (volumes in manifest) |
-| `kagenti/examples/mcpservers/` | Move to `kagenti/examples/legacy/mcpservers/` |
+| `.github/scripts/operator/43-wait-toolhive-crds.sh` | Remove |
+| `.github/scripts/operator/73-patch-weather-tool.sh` | Remove (volumes in manifest) |
+| `rossoctl/examples/mcpservers/` | Move to `rossoctl/examples/legacy/mcpservers/` |
 
 #### 6.10 MCP Connection URL Update in Tests
 
@@ -1722,7 +1722,7 @@ The MCP connection URL changes due to new Service naming:
 
 ### Update MCP Connection Logic
 
-**File:** `kagenti/backend/app/routers/tools.py`
+**File:** `rossoctl/backend/app/routers/tools.py`
 
 ```python
 def _get_mcp_service_url(namespace: str, name: str) -> str:
@@ -1771,13 +1771,13 @@ async def connect_to_tool(namespace: str, name: str):
 
 ### New Permissions Required
 
-The Kagenti backend ServiceAccount needs additional permissions (many shared with agent migration):
+The Rossoctl backend ServiceAccount needs additional permissions (many shared with agent migration):
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kagenti-backend
+  name: rossoctl-backend
 rules:
   # Existing permissions for MCPServer CRD...
 
@@ -1809,9 +1809,9 @@ rules:
 
 ### Helm Chart Updates
 
-**File:** `charts/kagenti/templates/ui.yaml`
+**File:** `charts/rossoctl/templates/ui.yaml`
 
-Update the RBAC rules for the kagenti-backend ServiceAccount.
+Update the RBAC rules for the rossoctl-backend ServiceAccount.
 
 ---
 
@@ -1835,7 +1835,7 @@ Update the RBAC rules for the kagenti-backend ServiceAccount.
 
 ### E2E Tests
 
-**File:** `kagenti/tests/e2e/`
+**File:** `rossoctl/tests/e2e/`
 
 - Full workflow: Import tool → Build → Deploy → Connect → Invoke → Delete
 - Migration: Create MCPServer CRD → Migrate → Verify Deployment → Verify MCP connection
@@ -1862,7 +1862,7 @@ Update the RBAC rules for the kagenti-backend ServiceAccount.
 
 Add feature flag to switch between MCPServer CRD and Deployment modes:
 
-**File:** `kagenti/backend/app/core/config.py`
+**File:** `rossoctl/backend/app/core/config.py`
 
 ```python
 USE_DEPLOYMENT_FOR_TOOLS = os.getenv("USE_DEPLOYMENT_FOR_TOOLS", "true").lower() == "true"

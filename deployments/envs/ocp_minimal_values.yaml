@@ -1,9 +1,9 @@
-# Kagenti minimal installation configuration for OpenShift
+# Rossoctl minimal installation configuration for OpenShift
 # no UI (frontend + backend)
-# Use this for deployments that integrate with Kagenti without the standalone UI.
+# Use this for deployments that integrate with Rossoctl without the standalone UI.
 # For full standalone deployment with UI, use ocp_values.yaml instead.
 #
-# Usage: scripts/ocp/setup-kagenti.sh
+# Usage: scripts/ocp/setup-rossoctl.sh
 #
 # Disable Kind cluster creation - we're deploying to an existing OpenShift cluster
 create_kind_cluster: false
@@ -13,7 +13,7 @@ create_kind_cluster: false
 # SPIRE/ZTWIM (Zero Trust Workload Identity Manager) requires OpenShift 4.19+
 #
 # If your cluster is running OCP < 4.19:
-#   - Set components.spire.enabled to 'false' in kagenti-deps section (line 36)
+#   - Set components.spire.enabled to 'false' in rossoctl-deps section (line 36)
 #   - The installer will auto-detect and disable SPIRE on older versions
 #   - See docs/ocp/openshift-install.md for upgrade instructions
 #
@@ -23,9 +23,9 @@ create_kind_cluster: false
 
 charts:
   ####################################################################
-  # kagenti-deps
+  # rossoctl-deps
   ####################################################################
-  kagenti-deps:
+  rossoctl-deps:
     enabled: true
     values:
       openshift: true
@@ -69,9 +69,9 @@ charts:
           enabled: true  # Require authentication for MLflow access
 
   ####################################################################
-  # kagenti
+  # rossoctl
   ####################################################################
-  kagenti:
+  rossoctl:
     enabled: true
     values:
       openshift: true
@@ -82,7 +82,7 @@ charts:
           enabled: true
         # Enable platformWebhook for SPIFFE identity injection
         # Works with ZTWIM operator on OCP 4.19+ via SpiffeCSIDriver
-        # Injects: spiffe-helper sidecar, kagenti-client-registration init container
+        # Injects: spiffe-helper sidecar, rossoctl-client-registration init container
         platformWebhook:
           enabled: true
         ui:
@@ -127,11 +127,11 @@ charts:
     enabled: true
 
   ####################################################################
-  # spire - On OpenShift, ZTWIM operator is used (configured in kagenti-deps)
+  # spire - On OpenShift, ZTWIM operator is used (configured in rossoctl-deps)
   # Helm-based SPIRE is automatically skipped on OpenShift
   ####################################################################
   spire:
-    enabled: false  # Helm SPIRE disabled; ZTWIM operator used via kagenti-deps
+    enabled: false  # Helm SPIRE disabled; ZTWIM operator used via rossoctl-deps
 
 ####################################################################
 # RHOAI (Red Hat OpenShift AI)

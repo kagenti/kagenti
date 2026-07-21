@@ -1,4 +1,4 @@
-# Kagenti Installation Guide
+# Rossoctl Installation Guide
 
 This guide covers installation on both local Kind clusters and OpenShift environments.
 
@@ -53,10 +53,47 @@ podman machine start
 
 | Tool | Purpose |
 |------|---------|
-| Docker Desktop / Rancher Desktop / Podman | Container runtime (18GB RAM, 6 cores recommended) |
+| Docker Desktop / Rancher Desktop / Podman | Container runtime (18GB RAM, 6 cores recommended) — see [Local machine resources](#local-machine-resources) below |
 | [Kind](https://kind.sigs.k8s.io) | Local Kubernetes cluster |
 | [Ollama](https://ollama.com/download) | Local LLM inference |
 | [GitHub Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic) | **(Optional)** Only needed to deploy agents/tools from private GitHub repos or pull from private registries. Recommended scopes: `repo` for private repositories and `read:packages` for private registries (e.g., GHCR). |
+
+#### Local machine resources
+
+Kind runs the entire platform on **one control-plane node**. That node’s CPU and memory
+limits come from your container runtime (Podman machine, Docker Desktop, etc.) — not
+from the Kind config file alone.
+
+| Profile | RAM | CPUs | Typical install |
+|---------|-----|------|-----------------|
+| **Recommended** | 18 GiB | **6** | `--with-istio --with-spire --with-ui --with-backend` plus AuthBridge demos |
+| **Minimum (no builds)** | 16 GiB | **4** | Core + UI; deploy agents from prebuilt images only |
+| **Not recommended** | 16 GiB | **≤4** | Often installs, but Shipwright/Tekton build pods stay `Pending` with `Insufficient cpu` when building from source; see below |
+
+> The installer runs a resource pre-flight check (`scripts/kind/setup-rossoctl.sh`) that
+> **warns** when the machine has less than 18 GiB RAM or 6 CPUs. It does not hard-fail, so
+> the numbers above are recommendations, not enforced minimums.
+
+**4 CPUs is usually not enough** for the common demo path (Istio, SPIRE, Keycloak,
+Kuadrant, UI, backend, and **build-from-source** agents via Shipwright). Platform pods
+alone can request ~3.5–4 cores before any agent build runs.
+
+If you must stay on 4 CPUs:
+
+- Skip optional components you do not need (`--with-mlflow`, `--with-kuadrant`, etc.)
+- Deploy agents with **Deploy from image** instead of **Build from source** in the UI
+- Or temporarily scale down non-essential deployments before triggering a Shipwright build
+
+To resize Podman after the machine already exists:
+
+```bash
+podman machine stop
+podman machine set --cpus 6
+podman machine start
+# Recreate the Kind cluster so the node sees the new CPU limit
+kind delete cluster --name rossoctl
+scripts/kind/setup-rossoctl.sh --with-istio --with-spire --with-ui --with-backend
+```
 
 ### OpenShift-Specific Requirements
 
@@ -73,32 +110,40 @@ podman machine start
 
 ```bash
 # Clone the repository
-git clone https://github.com/kagenti/kagenti.git
-cd kagenti
+git clone https://github.com/rossoctl/rossoctl.git
+cd rossoctl
 ```
 
 #### Bash Installer (Recommended)
 
-The bash installer (`scripts/kind/setup-kagenti.sh`) is a composable, single-file
-script that creates a Kind cluster and deploys Kagenti. Core components are always
+The bash installer (`scripts/kind/setup-rossoctl.sh`) is a composable, single-file
+script that creates a Kind cluster and deploys Rossoctl. Core components are always
 installed; optional layers are enabled with `--with-*` flags.
 
-**Core (always installed):** cert-manager, Gateway API CRDs, Istio Gateway controller (istio-base + istiod), Keycloak, kagenti-operator, kagenti-webhook
+**Core (always installed):** cert-manager, Gateway API CRDs, Istio Gateway controller (istio-base + istiod), Keycloak, rossoctl-operator, rossoctl-webhook
+
+> **Two Istio layers — don't confuse them.** The **Istio Gateway controller**
+> (`istio-base` + `istiod`) is core and always installed: it implements the
+> `gatewayClassName: istio` Gateway that fronts all `*.localtest.me:8080` ingress
+> (UI, Keycloak, agents), so it cannot be skipped. `--with-istio` is a *separate*
+> layer — the **ambient mesh** (mTLS + waypoints) — and is optional. You do **not**
+> need `--with-istio` for the AuthBridge weather demo, which enforces auth via its
+> own injected sidecar, not the mesh.
 
 **Install everything:**
 
 ```bash
-scripts/kind/setup-kagenti.sh --with-all
+scripts/kind/setup-rossoctl.sh --with-all
 ```
 
 **Install only what you need:**
 
 ```bash
 # Core + Istio ambient + UI
-scripts/kind/setup-kagenti.sh --with-istio --with-ui
+scripts/kind/setup-rossoctl.sh --with-istio --with-ui
 
 # Core + full service mesh + builds
-scripts/kind/setup-kagenti.sh --with-istio --with-spire --with-builds
+scripts/kind/setup-rossoctl.sh --with-istio --with-spire --with-builds
 ```
 
 **Available `--with-*` flags:**
@@ -107,8 +152,8 @@ scripts/kind/setup-kagenti.sh --with-istio --with-spire --with-builds
 |------|------------|
 | `--with-istio` | Full Istio ambient mesh (mTLS, waypoints); Gateway API controller always installed as core |
 | `--with-spire` | SPIRE + SPIFFE IdP setup |
-| `--with-backend` | Kagenti backend API |
-| `--with-ui` | Kagenti UI (auto-enables backend) |
+| `--with-backend` | Rossoctl backend API |
+| `--with-ui` | Rossoctl UI (auto-enables backend) |
 | `--with-mcp-gateway` | MCP Gateway |
 | `--with-kuadrant` | Kuadrant operator (auto-enables MCP Gateway) |
 | `--with-otel` | OpenTelemetry collector |
@@ -126,10 +171,10 @@ scripts/kind/setup-kagenti.sh --with-istio --with-spire --with-builds
 | `--build-images` | Build platform images from source and load into Kind (backend, ui-v2, agent-oauth-secret, mlflow-oauth-secret) |
 | `--preload-images` | Pre-pull third-party images on the host and load them into the Kind node for faster pod startup (see [Preloading Images](#preloading-images)) |
 | `--secrets-file FILE` | YAML file with secrets (see below) |
-| `--cluster-name NAME` | Kind cluster name (default: `kagenti`) |
+| `--cluster-name NAME` | Kind cluster name (default: `rossoctl`) |
 | `--domain DOMAIN` | Domain for services (default: `localtest.me`) |
-| `--kagenti-values FILE` | Helm override file applied to the `kagenti` chart |
-| `--kagenti-deps-values FILE` | Helm override file applied to the `kagenti-deps` chart |
+| `--rossoctl-values FILE` | Helm override file applied to the `rossoctl` chart |
+| `--rossoctl-deps-values FILE` | Helm override file applied to the `rossoctl-deps` chart |
 | `--dry-run` | Show commands without executing |
 
 #### Preloading Images
@@ -155,7 +200,7 @@ fine on demand.
 
 ```bash
 # Use during a full install
-scripts/kind/setup-kagenti.sh --with-all --preload-images
+scripts/kind/setup-rossoctl.sh --with-all --preload-images
 ```
 
 How it works:
@@ -171,8 +216,8 @@ Failures during pull are non-fatal — the installer logs a warning and lets
 pods fall back to pulling on demand.
 
 When updating image versions, keep `preload-images.txt` in sync with the
-versions referenced in `scripts/kind/setup-kagenti.sh` and the
-`charts/kagenti-deps/templates/` manifests, otherwise pods will still pull
+versions referenced in `scripts/kind/setup-rossoctl.sh` and the
+`charts/rossoctl-deps/templates/` manifests, otherwise pods will still pull
 the un-preloaded versions at runtime.
 
 #### Providing Secrets
@@ -180,29 +225,29 @@ the un-preloaded versions at runtime.
 Create a secrets file from the template:
 
 ```bash
-cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
+cp charts/rossoctl/.secrets_template.yaml charts/rossoctl/.secrets.yaml
 # Edit .secrets.yaml with your values
 ```
 
 Pass it to the installer:
 
 ```bash
-scripts/kind/setup-kagenti.sh --with-all --secrets-file charts/kagenti/.secrets.yaml
+scripts/kind/setup-rossoctl.sh --with-all --secrets-file charts/rossoctl/.secrets.yaml
 ```
 
 If `--secrets-file` is not specified, the installer automatically uses
-`charts/kagenti/.secrets.yaml` when it exists.
+`charts/rossoctl/.secrets.yaml` when it exists.
 
 #### Cleanup
 
-To uninstall Kagenti from a Kind cluster:
+To uninstall Rossoctl from a Kind cluster:
 
 ```bash
 # Uninstall platform, keep cluster
-scripts/kind/cleanup-kagenti.sh
+scripts/kind/cleanup-rossoctl.sh
 
 # Uninstall platform and destroy cluster
-scripts/kind/cleanup-kagenti.sh --destroy-cluster
+scripts/kind/cleanup-rossoctl.sh --destroy-cluster
 ```
 
 ### Using an Existing Kubernetes Cluster
@@ -210,7 +255,7 @@ scripts/kind/cleanup-kagenti.sh --destroy-cluster
 If you have an existing Kind cluster:
 
 ```bash
-scripts/kind/setup-kagenti.sh --skip-cluster --with-all
+scripts/kind/setup-rossoctl.sh --skip-cluster --with-all
 ```
 
 For non-Kind clusters, see the [OpenShift installation](#openshift-installation) instructions.
@@ -223,64 +268,64 @@ Both Ollama (local models) and OpenAI are supported as LLM backends. See the [Lo
 
 ### Option A: Bash Installer (Recommended)
 
-The `scripts/ocp/setup-kagenti.sh` script is the recommended way to install Kagenti on OpenShift.
+The `scripts/ocp/setup-rossoctl.sh` script is the recommended way to install Rossoctl on OpenShift.
 It installs SPIRE, cert-manager, Keycloak, the operator, MCP Gateway, and the UI/backend in a
 single command. Run it from the repository root after logging in with `oc`.
 
 > **Note**: If your cluster already has a cert-manager installation (e.g. installed via the
-> Red Hat OpenShift cert-manager Operator), remove it before running the script, as Kagenti
+> Red Hat OpenShift cert-manager Operator), remove it before running the script, as Rossoctl
 > installs its own.
 
 ```bash
 # Clone repository
-git clone https://github.com/kagenti/kagenti.git
-cd kagenti
+git clone https://github.com/rossoctl/rossoctl.git
+cd rossoctl
 
 # Log in to your cluster
 oc login https://api.your-cluster.example.com:6443 -u kubeadmin -p <password>
 
-# Install Kagenti platform
-./scripts/ocp/setup-kagenti.sh
+# Install Rossoctl platform
+./scripts/ocp/setup-rossoctl.sh
 ```
 
 Common options:
 
 | Flag | Description |
 |------|-------------|
-| `--kagenti-repo PATH\|URL` | Local path or GitHub URL to the repo (default: clones `main` to `~/.cache/kagenti`) |
-| `--realm REALM` | Keycloak realm (default: `kagenti`) |
+| `--rossoctl-repo PATH\|URL` | Local path or GitHub URL to the repo (default: clones `main` to `~/.cache/rossoctl`) |
+| `--realm REALM` | Keycloak realm (default: `rossoctl`) |
 | `--skip-ovn-patch` | Skip OVN gateway routing patch (operator logs a warning at startup if not applied) |
 | `--skip-mcp-gateway` | Skip MCP Gateway installation |
-| `--skip-ui` | Skip Kagenti UI and backend installation |
+| `--skip-ui` | Skip Rossoctl UI and backend installation |
 | `--skip-mlflow` | Skip MLflow integration |
-| `--operator-image IMG:TAG` | Custom operator image (e.g. `quay.io/user/kagenti-operator:dev`) |
+| `--operator-image IMG:TAG` | Custom operator image (e.g. `quay.io/user/operator:dev`) |
 | `--dry-run` | Show commands without executing |
 
 ### Option B: Install from OCI Charts
 
 ```bash
 # Get latest version
-LATEST_TAG=$(git ls-remote --tags --sort="v:refname" https://github.com/kagenti/kagenti.git | tail -n1 | sed 's|.*refs/tags/v||; s/\^{}//')
+LATEST_TAG=$(git ls-remote --tags --sort="v:refname" https://github.com/rossoctl/rossoctl.git | tail -n1 | sed 's|.*refs/tags/v||; s/\^{}//')
 
 # Prepare secrets
-# Download .secrets_template.yaml from https://github.com/kagenti/kagenti/blob/main/charts/kagenti/.secrets_template.yaml
+# Download .secrets_template.yaml from https://github.com/rossoctl/rossoctl/blob/main/charts/rossoctl/.secrets_template.yaml
 # Save as .secrets.yaml and fill in required values
 
 # Install dependencies
-helm install --create-namespace -n kagenti-system kagenti-deps \
-  oci://ghcr.io/kagenti/kagenti/kagenti-deps \
+helm install --create-namespace -n rossoctl-system rossoctl-deps \
+  oci://ghcr.io/rossoctl/rossoctl/rossoctl-deps \
   --version $LATEST_TAG \
   --set spire.trustDomain=${DOMAIN}
 
 # Install MCP Gateway
-LATEST_GATEWAY_TAG=$(skopeo list-tags docker://ghcr.io/kagenti/charts/mcp-gateway | jq -r '.Tags[-1]')
-helm install mcp-gateway oci://ghcr.io/kagenti/charts/mcp-gateway \
+LATEST_GATEWAY_TAG=$(skopeo list-tags docker://ghcr.io/rossoctl/charts/mcp-gateway | jq -r '.Tags[-1]')
+helm install mcp-gateway oci://ghcr.io/rossoctl/charts/mcp-gateway \
   --create-namespace --namespace mcp-system \
   --version $LATEST_GATEWAY_TAG
 
-# Install Kagenti (with OpenShift CA workaround)
-helm upgrade --install --create-namespace -n kagenti-system \
-  -f .secrets.yaml kagenti oci://ghcr.io/kagenti/kagenti/kagenti \
+# Install Rossoctl (with OpenShift CA workaround)
+helm upgrade --install --create-namespace -n rossoctl-system \
+  -f .secrets.yaml rossoctl oci://ghcr.io/rossoctl/rossoctl/rossoctl \
   --version $LATEST_TAG \
   --set agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa \
   --set uiOAuthSecret.useServiceAccountCA=false \
@@ -291,33 +336,33 @@ helm upgrade --install --create-namespace -n kagenti-system \
 
 ```bash
 # Clone repository
-git clone https://github.com/kagenti/kagenti.git
-cd kagenti
+git clone https://github.com/rossoctl/rossoctl.git
+cd rossoctl
 
 # Prepare secrets
-cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
+cp charts/rossoctl/.secrets_template.yaml charts/rossoctl/.secrets.yaml
 # Edit .secrets.yaml with your values
 
 # Update chart dependencies
-helm dependency update ./charts/kagenti-deps/
-helm dependency update ./charts/kagenti/
+helm dependency update ./charts/rossoctl-deps/
+helm dependency update ./charts/rossoctl/
 
 # Install dependencies
-helm install kagenti-deps ./charts/kagenti-deps/ \
-  -n kagenti-system --create-namespace \
+helm install rossoctl-deps ./charts/rossoctl-deps/ \
+  -n rossoctl-system --create-namespace \
   --set spire.trustDomain=${DOMAIN} --wait
 
 # Install MCP Gateway
-helm install mcp-gateway oci://ghcr.io/kagenti/charts/mcp-gateway \
+helm install mcp-gateway oci://ghcr.io/rossoctl/charts/mcp-gateway \
   --create-namespace --namespace mcp-system --version 0.4.0
 
 # Get latest UI tag
-LATEST_TAG=$(git ls-remote --tags --sort="v:refname" https://github.com/kagenti/kagenti.git | tail -n1 | sed 's|.*refs/tags/||; s/\^{}//')
+LATEST_TAG=$(git ls-remote --tags --sort="v:refname" https://github.com/rossoctl/rossoctl.git | tail -n1 | sed 's|.*refs/tags/||; s/\^{}//')
 
-# Install Kagenti (with OpenShift CA workaround)
-helm upgrade --install kagenti ./charts/kagenti/ \
-  -n kagenti-system --create-namespace \
-  -f ./charts/kagenti/.secrets.yaml \
+# Install Rossoctl (with OpenShift CA workaround)
+helm upgrade --install rossoctl ./charts/rossoctl/ \
+  -n rossoctl-system --create-namespace \
+  -f ./charts/rossoctl/.secrets.yaml \
   --set ui.tag=${LATEST_TAG} \
   --set agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa \
   --set uiOAuthSecret.useServiceAccountCA=false \
@@ -339,22 +384,19 @@ If `Current` or `Ready` is `0`, see [Troubleshooting](#spire-daemonset-issues).
 ### Kind Cluster
 
 ```bash
-open http://kagenti-ui.localtest.me:8080
+open http://rossoctl-ui.localtest.me:8080
 ```
 
 ### OpenShift
 
 ```bash
-echo "https://$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.status.ingress[0].host}')"
+echo "https://$(kubectl get route rossoctl-ui -n rossoctl-system -o jsonpath='{.status.ingress[0].host}')"
 ```
 
 If using self-signed certificates, accept the certificate in your browser.
 
-For MCP Inspector, also accept the proxy certificate:
-
-```bash
-echo "https://$(kubectl get route mcp-proxy -n kagenti-system -o jsonpath='{.status.ingress[0].host}')"
-```
+The MCP Inspector and its proxy are served on a single host, so accepting the
+Inspector's certificate also covers its proxy — no separate step is needed.
 
 ### Default Credentials
 
@@ -373,64 +415,14 @@ kubectl get secret keycloak-initial-admin -n keycloak \
 
 ---
 
-## Keycloak Admin Credentials for Agent Namespaces
+## Keycloak Authentication
 
-The [AuthBridge](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge) stack (separate sidecars or a single [combined `authbridge` container](authbridge-combined-sidecar.md)) needs Keycloak admin credentials for automatic OAuth2 client registration. These credentials are stored in a Kubernetes Secret called `keycloak-admin-secret` in each agent namespace.
+Rossoctl supports two modes for how the operator and agent workloads authenticate to Keycloak:
 
-### Automatic Provisioning
+- **Client secrets (default)** — the operator uses admin credentials to register agent OAuth clients; agents authenticate with provisioned client secrets. No extra infrastructure required.
+- **SPIFFE authentication (recommended)** — the operator and agents authenticate using their SPIFFE identities (JWT-SVIDs). Requires SPIRE. Eliminates all provisioned credentials.
 
-The installer automatically creates `keycloak-admin-secret` in every agent namespace (e.g., `team1`, `team2`). By default it uses `admin`/`admin`, matching the default Keycloak admin account.
-
-### Customizing Credentials
-
-If your Keycloak admin credentials differ from the defaults, override them using a values file (preferred over `--set` to avoid exposing passwords in shell history and process listings):
-
-**Secrets file** (via `.secrets.yaml`):
-
-Add to your `charts/kagenti/.secrets.yaml`:
-
-```yaml
-keycloak:
-  adminUsername: myadmin
-  adminPassword: mypassword
-```
-
-**Helm install** (via values file):
-
-```bash
-helm upgrade --install kagenti ./charts/kagenti/ \
-  -n kagenti-system --create-namespace \
-  -f my-secret-values.yaml
-```
-
-### Using an Existing Secret
-
-If you already manage Keycloak admin credentials in a Secret (e.g., via an external secrets operator), you can skip the automatic secret creation entirely by setting `keycloak.adminExistingSecret` to the name of that secret. The referenced secret must contain `KEYCLOAK_ADMIN_USERNAME` and `KEYCLOAK_ADMIN_PASSWORD` keys:
-
-```bash
-helm upgrade --install kagenti ./charts/kagenti/ \
-  -n kagenti-system --create-namespace \
-  --set keycloak.adminExistingSecret=my-keycloak-admin-secret
-```
-
-### Manual Creation
-
-If you need to create or update the secret manually in an agent namespace:
-
-```bash
-kubectl create secret generic keycloak-admin-secret -n <agent-namespace> \
-  --from-literal=KEYCLOAK_ADMIN_USERNAME=admin \
-  --from-literal=KEYCLOAK_ADMIN_PASSWORD=admin \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-### Verifying
-
-```bash
-kubectl get secret keycloak-admin-secret -n team1
-```
-
-> **Security note:** For production deployments, use a dedicated Keycloak service account with limited permissions instead of the admin account. See the [Identity Guide](./identity-guide.md) for details.
+Both modes are configured automatically during install. See the **[Authentication Guide](./authentication.md)** for full setup, configuration, and how each mode works.
 
 ---
 

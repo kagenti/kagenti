@@ -32,7 +32,7 @@ POLL_INTERVAL="${POLL_INTERVAL:-15}"       # Seconds between checks
 TIMEOUT=$((MAX_ITERATIONS * POLL_INTERVAL)) # Total timeout
 
 echo "===================================================================="
-echo "  Kagenti Deployment Health Monitor"
+echo "  Rossoctl Deployment Health Monitor"
 echo "===================================================================="
 echo ""
 echo "Configuration:"
@@ -158,8 +158,8 @@ show_deployment_status() {
     fi
 
     # Check Platform Operator
-    if kubectl get deployment -n kagenti-system -l control-plane=controller-manager &>/dev/null; then
-        local ready=$(kubectl get deployment -n kagenti-system -l control-plane=controller-manager -o jsonpath='{.items[0].status.readyReplicas}' 2>/dev/null || echo "0")
+    if kubectl get deployment -n rossoctl-system -l control-plane=controller-manager &>/dev/null; then
+        local ready=$(kubectl get deployment -n rossoctl-system -l control-plane=controller-manager -o jsonpath='{.items[0].status.readyReplicas}' 2>/dev/null || echo "0")
         if [ "$ready" -gt 0 ]; then
             echo -e "${GREEN}  ✓ platform-operator: ${ready} ready${NC}"
         else

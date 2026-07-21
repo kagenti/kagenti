@@ -1,4 +1,4 @@
-# Hermes Agent — ACP mode for Kagenti integration
+# Hermes Agent — ACP mode for Rossoctl integration
 #
 # Hermes v0.15.1 with ACP adapter for IDE/CLI agent communication.
 # Uses LiteLLM proxy for model routing (Vertex AI, MaaS, etc.)
@@ -41,9 +41,9 @@ RUN echo '#!/bin/sh' > /usr/local/bin/start-hermes.sh \
     && echo 'cat > "$HOME/.hermes/config.yaml" << EOF' >> /usr/local/bin/start-hermes.sh \
     && echo 'model:' >> /usr/local/bin/start-hermes.sh \
     && echo '  default: ${LLM_MODEL:-claude-sonnet-4-20250514}' >> /usr/local/bin/start-hermes.sh \
-    && echo '  provider: kagenti' >> /usr/local/bin/start-hermes.sh \
+    && echo '  provider: rossoctl' >> /usr/local/bin/start-hermes.sh \
     && echo 'custom_providers:' >> /usr/local/bin/start-hermes.sh \
-    && echo '  - name: kagenti' >> /usr/local/bin/start-hermes.sh \
+    && echo '  - name: rossoctl' >> /usr/local/bin/start-hermes.sh \
     && echo '    base_url: ${OPENAI_API_BASE:-http://litellm-model-proxy.team1.svc:4000/v1}' >> /usr/local/bin/start-hermes.sh \
     && echo '    api_key: ${OPENAI_API_KEY}' >> /usr/local/bin/start-hermes.sh \
     && echo '    models:' >> /usr/local/bin/start-hermes.sh \

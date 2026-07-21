@@ -25,12 +25,12 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
 
       - name: Install dependencies
         run: |
@@ -60,26 +60,26 @@ jobs:
           }
 
       # Note: E2E tests are run in the e2e-kind.yaml and e2e-hypershift.yaml
-      # workflows which have full Kubernetes clusters with Kagenti deployed
+      # workflows which have full Kubernetes clusters with Rossoctl deployed
 
   backend-tests:
     runs-on: ubuntu-latest
 
     defaults:
       run:
-        working-directory: kagenti/backend
+        working-directory: rossoctl/backend
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
         with:
           python-version: "3.11"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
 
       - name: Install dependencies
         run: uv sync --frozen --extra dev
@@ -94,7 +94,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: backend-coverage
-          path: kagenti/backend/coverage.xml
+          path: rossoctl/backend/coverage.xml
           retention-days: 30
 
   tui:
@@ -103,17 +103,17 @@ jobs:
 
     defaults:
       run:
-        working-directory: kagenti/tui
+        working-directory: rossoctl/tui
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Set up Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6
         with:
-          go-version-file: kagenti/tui/go.mod
-          cache-dependency-path: kagenti/tui/go.sum
+          go-version-file: rossoctl/tui/go.mod
+          cache-dependency-path: rossoctl/tui/go.sum
 
       - name: Run go vet
         run: go vet ./...
@@ -133,7 +133,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Set up Helm
-        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2  # v5.0.0
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
         with:
           version: v3.20.1
 
@@ -148,13 +148,13 @@ jobs:
 
       - name: Build chart dependencies
         run: |
-          helm dependency build charts/kagenti-deps
-          helm dependency build charts/kagenti
+          helm dependency build charts/rossoctl-deps
+          helm dependency build charts/rossoctl
 
       - name: Run chart unit tests
         run: |
-          helm unittest charts/kagenti-deps
-          helm unittest charts/kagenti
+          helm unittest charts/rossoctl-deps
+          helm unittest charts/rossoctl
 
       - name: Install kubeconform
         run: |
@@ -164,7 +164,7 @@ jobs:
 
       - name: Validate rendered templates with kubeconform
         run: |
-          helm template test charts/kagenti-deps \
+          helm template test charts/rossoctl-deps \
             --set openshift=false \
             --set components.spire.enabled=false \
             | kubeconform -strict -summary \

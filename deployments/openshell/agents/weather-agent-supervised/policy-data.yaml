@@ -29,9 +29,9 @@ network_policies:
   otel:
     name: "Allow OpenTelemetry collector"
     endpoints:
-      - host: "otel-collector.kagenti-system.svc.cluster.local"
+      - host: "otel-collector.rossoctl-system.svc.cluster.local"
         port: 4318
-      - host: "otel-collector.kagenti-system.svc.cluster.local"
+      - host: "otel-collector.rossoctl-system.svc.cluster.local"
         port: 4317
     binaries:
       - path: /**

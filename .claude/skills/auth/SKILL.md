@@ -1,6 +1,6 @@
 ---
 name: auth
-description: Authentication and authorization patterns for Kagenti services
+description: Authentication and authorization patterns for Rossoctl services
 ---
 
 # Authentication Skills

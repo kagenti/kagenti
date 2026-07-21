@@ -185,7 +185,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
 
       - name: Install yamllint
         run: uv tool install yamllint==1.38.0
@@ -247,7 +247,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Set up Helm
-        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2  # v5.0.0
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
         with:
           version: 'v3.14.0'
 
@@ -297,12 +297,12 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
         with:
           python-version: '3.11'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
 
       - name: Install Bandit
         run: uv tool install "bandit[toml]==1.9.4"
@@ -312,16 +312,16 @@ jobs:
           echo "=== Bandit Python Security Scan ==="
           echo ""
 
-          # Check if kagenti directory exists
-          if [ ! -d "kagenti" ]; then
-            echo "No kagenti/ directory found, skipping Python security scan"
+          # Check if rossoctl directory exists
+          if [ ! -d "rossoctl" ]; then
+            echo "No rossoctl/ directory found, skipping Python security scan"
             exit 0
           fi
 
           # Run Bandit - scan main code (excluding examples which may have intentional patterns)
           # First pass: HIGH severity only on main code - this WILL fail the build
           echo "--- Checking for HIGH severity issues in main code ---"
-          HIGH_ISSUES=$(bandit -r kagenti/ \
+          HIGH_ISSUES=$(bandit -r rossoctl/ \
             --severity-level high \
             --confidence-level high \
             --exclude '**/tests/*,**/.venv/*,**/node_modules/*,**/examples/*' \
@@ -329,7 +329,7 @@ jobs:
 
           if [ "$HIGH_ISSUES" -gt 0 ]; then
             echo "Found $HIGH_ISSUES HIGH severity issues in main code:"
-            bandit -r kagenti/ \
+            bandit -r rossoctl/ \
               --severity-level high \
               --confidence-level high \
               --exclude '**/tests/*,**/.venv/*,**/node_modules/*,**/examples/*' \
@@ -342,7 +342,7 @@ jobs:
           # Second pass: Show all issues (including examples) for visibility
           echo ""
           echo "--- Full scan (informational) ---"
-          bandit -r kagenti/ \
+          bandit -r rossoctl/ \
             --severity-level medium \
             --confidence-level medium \
             --exclude '**/tests/*,**/.venv/*,**/node_modules/*' \
@@ -436,7 +436,7 @@ jobs:
           scan-ref: '.'
           severity: 'CRITICAL,HIGH,MEDIUM'
           # Skip examples directory - contains intentional simplified configs for demos
-          skip-dirs: 'kagenti/examples'
+          skip-dirs: 'rossoctl/examples'
           # Use .trivyignore for documented exceptions (base images, CI RBAC)
           trivyignores: '.trivyignore'
           # Use trivy.yaml for trusted registries and other config
@@ -449,7 +449,7 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           scan-type: 'config'
-          scan-ref: 'kagenti/examples'
+          scan-ref: 'rossoctl/examples'
           severity: 'CRITICAL,HIGH,MEDIUM'
           # Examples are informational only - don't fail the build
           exit-code: '0'
@@ -494,17 +494,17 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4
+        uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9  # v4
         with:
           languages: python
           # Use security-extended queries for more thorough analysis
           queries: security-extended
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4
+        uses: github/codeql-action/autobuild@99df26d4f13ea111d4ec1a7dddef6063f76b97e9  # v4
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4
+        uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9  # v4
         with:
           category: "/language:python"
 

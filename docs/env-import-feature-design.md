@@ -2,7 +2,7 @@
 
 ## Overview
 
-This design document outlines a comprehensive solution for importing environment variable definitions from local filesystem or remote URLs into the Kagenti UI, with support for standard `.env` files and extended JSON syntax for Kubernetes secret/configMap references.
+This design document outlines a comprehensive solution for importing environment variable definitions from local filesystem or remote URLs into the Rossoctl UI, with support for standard `.env` files and extended JSON syntax for Kubernetes secret/configMap references.
 
 ## Requirements
 
@@ -129,7 +129,7 @@ APP_CONFIG='{"valueFrom": {"configMapKeyRef": {"name": "app-settings", "key": "c
 
 #### 1.1 New Component: `EnvImportModal.tsx`
 
-**Location**: `/Users/paolo/Projects/aiplatform/kagenti/kagenti/ui-v2/src/components/EnvImportModal.tsx`
+**Location**: `/Users/paolo/Projects/aiplatform/rossoctl/rossoctl/ui-v2/src/components/EnvImportModal.tsx`
 
 **Purpose**: Modal dialog for importing environment variables from file or URL
 
@@ -162,7 +162,7 @@ const [error, setError] = useState<string | null>(null);
 
 #### 1.2 Enhanced Data Model: `EnvVar` Interface
 
-**Location**: Update in `/Users/paolo/Projects/aiplatform/kagenti/kagenti/ui-v2/src/pages/ImportAgentPage.tsx`
+**Location**: Update in `/Users/paolo/Projects/aiplatform/rossoctl/rossoctl/ui-v2/src/pages/ImportAgentPage.tsx`
 
 **Enhanced Interface**:
 ```typescript
@@ -384,7 +384,7 @@ async def fetch_env_from_url(request: FetchEnvUrlRequest) -> FetchEnvUrlResponse
 
 #### 2.3 Update: Enhanced `EnvVar` Model
 
-**Location**: `/Users/paolo/Projects/aiplatform/kagenti/kagenti/backend/app/routers/agents.py`
+**Location**: `/Users/paolo/Projects/aiplatform/rossoctl/rossoctl/backend/app/routers/agents.py`
 
 **Enhanced Model**:
 ```python
@@ -469,7 +469,7 @@ def build_agent_manifest(
 
 #### 3.1 New API Client Methods
 
-**Location**: `/Users/paolo/Projects/aiplatform/kagenti/kagenti/ui-v2/src/services/api.ts`
+**Location**: `/Users/paolo/Projects/aiplatform/rossoctl/rossoctl/ui-v2/src/services/api.ts`
 
 **Add to `agentService` object**:
 
@@ -526,7 +526,7 @@ interface FetchEnvUrlResponse {
 
 1. User clicks "Import from File/URL" button
 2. Modal opens, user switches to "From URL" tab
-3. User enters URL (e.g., `https://raw.githubusercontent.com/kagenti/agent-examples/main/a2a/git_issue_agent/.env.openai`)
+3. User enters URL (e.g., `https://raw.githubusercontent.com/rossoctl/examples/main/a2a/git_issue_agent/.env.openai`)
 4. User clicks "Fetch"
 5. Frontend calls `/api/agents/fetch-env-url`
 6. Backend fetches content with security validations
@@ -662,25 +662,25 @@ def is_ip_blocked(ip_str: str) -> bool:
 
 #### New Files
 ```
-kagenti/ui-v2/src/components/
+rossoctl/ui-v2/src/components/
   └── EnvImportModal.tsx              # New modal component
 
-kagenti/ui-v2/src/components/
+rossoctl/ui-v2/src/components/
   └── EnvImportModal.test.tsx         # Tests
 
-kagenti/backend/app/routers/
+rossoctl/backend/app/routers/
   └── (agents.py - enhanced)          # New endpoints + models
 ```
 
 #### Modified Files
 ```
-kagenti/ui-v2/src/pages/
+rossoctl/ui-v2/src/pages/
   └── ImportAgentPage.tsx             # Enhanced env var section
 
-kagenti/ui-v2/src/services/
+rossoctl/ui-v2/src/services/
   └── api.ts                          # New API methods
 
-kagenti/backend/app/routers/
+rossoctl/backend/app/routers/
   └── agents.py                       # Enhanced models & manifest building
 ```
 

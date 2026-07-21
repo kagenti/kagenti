@@ -5,23 +5,23 @@
 ---
 This document provides detailed steps for running the **Slack Research Agent** proof-of-concept (PoC) demo.
 
-In this demo, we will use the Kagenti UI to import and deploy both the **Slack Research Agent** and the **Slack Tool**.
+In this demo, we will use the Rossoctl UI to import and deploy both the **Slack Research Agent** and the **Slack Tool**.
 During deployment, we'll configure the **A2A protocol** for managing agent calls and **MCP** for enabling communication between the agent and the Slack tool.
 
 Once deployed, we will query the agent using a natural language prompt. The agent will then invoke the tool and return the Slack data as a response.
 
-This demo illustrates how Kagenti manages the lifecycle of all required components: agents, tools, protocols, and runtime infrastructure.
+This demo illustrates how Rossoctl manages the lifecycle of all required components: agents, tools, protocols, and runtime infrastructure.
 
 Here's a breakdown of the sections:
 
-- In [**Import New Agent**](#import-new-agent), you'll build and deploy the [`a2a_slack_researcher`](https://github.com/kagenti/agent-examples/tree/main/a2a/slack_researcher) agent.
-- In [**Import New Tool**](#import-new-tool), you'll build and deploy the [`slack_tool`](https://github.com/kagenti/agent-examples/tree/main/mcp/slack_tool) tool.
+- In [**Import New Agent**](#import-new-agent), you'll build and deploy the [`a2a_slack_researcher`](https://github.com/rossoctl/examples/tree/main/a2a/slack_researcher) agent.
+- In [**Import New Tool**](#import-new-tool), you'll build and deploy the [`slack_tool`](https://github.com/rossoctl/examples/tree/main/mcp/slack_tool) tool.
 - In [**Configure Keycloak**](#configure-keycloak), you'll configure Keycloak to provide access tokens with proper permissions to each component and enable token exchange. 
 - In [**Validate the Deployment**](#validate-the-deployment), you'll verify that all components are running and operational.
 - In [**Chat with the Agent**](#chat-with-the-agent), you'll interact with the agent and confirm it responds correctly using real-time Slack data.
 
 > **Prerequisites:**
-> Ensure you've completed the Kagenti platform setup as described in the [Installation Guide](../install.md).
+> Ensure you've completed the Rossoctl platform setup as described in the [Installation Guide](../install.md).
 >
 > This demo uses `SLACK_BOT_TOKEN` and `ADMIN_SLACK_BOT_TOKEN` env. variables. See the section
 [Slack Tokens](#slack-tokens) below for more details.
@@ -32,11 +32,11 @@ You should also open the Agent Platform Demo Dashboard as instructed in the [Acc
 
 In this demo, the Slack MCP Server will access the Slack API using Slack bot tokens. We will be using two bot tokens: a general `SLACK_BOT_TOKEN` that is used by default and an `ADMIN_SLACK_BOT_TOKEN` that is used when the access token has the `slack-full-access` scope.
 
-For this demo, prior to installing Kagenti, you need to add two variables to the `charts/kagenti/.secrets.yaml` file. Visit
+For this demo, prior to installing Rossoctl, you need to add two variables to the `charts/rossoctl/.secrets.yaml` file. Visit
 [Slack Bot Token](https://docs.slack.dev/quickstart) page and follow instructions to generate the bot token:
 
 1. Create a pre-configured app
-1. Select the Slack workspace (e.g. [kagenti-dev](https://kagenti-dev.slack.com) reach out to us to be added.)
+1. Select the Slack workspace (e.g. [rossoctl-dev](https://rossoctl-dev.slack.com) reach out to us to be added.)
 1. Edit Configurations
     * Change the name, by replacing `my-powerful-app` with a custom name
     * Modify Slack scopes according to what are required. [See note below]
@@ -51,7 +51,7 @@ For this demo, prior to installing Kagenti, you need to add two variables to the
 
 Repeat the above for another app with a new name. This time limit the scope to `connections:write` only. This will be your `SLACK_BOT_TOKEN`.
 
-Add both variables (`slackBotToken` and `adminSlackBotToken`) to `charts/kagenti/.secrets.yaml` before executing Kagenti install.
+Add both variables (`slackBotToken` and `adminSlackBotToken`) to `charts/rossoctl/.secrets.yaml` before executing Rossoctl install.
 
 ---
 
@@ -75,18 +75,18 @@ The agent will work with a variety of OpenAI models. The following have been tes
 - gpt-4o
 - gpt-4o-mini
 
-To log in and import agents you can use the [default credentials](../install.md#default-credentials). Log in to the Kagenti UI.
+To log in and import agents you can use the [default credentials](../install.md#default-credentials). Log in to the Rossoctl UI.
 
 ### To deploy the Slack Research Agent
 
-1. Navigate to [Import New Agent](http://kagenti-ui.localtest.me:8080/Import_New_Agent#import-new-agent) in the Kagenti UI.
+1. Navigate to [Import New Agent](http://rossoctl-ui.localtest.me:8080/Import_New_Agent#import-new-agent) in the Rossoctl UI.
 2. In the **Select Namespace to Deploy Agent** drop-down, choose the `<namespace>` where you'd like to deploy the agent. (These namespaces are defined in your `.env` file.)
 3. Under **Environment Variables**, configure the required env vars. You can import `.env` files from the agent examples repo or add them manually:
 
    - **LLM settings**: Import `.env.openai` or `.env.ollama`, or manually set `LLM_API_BASE`, `LLM_API_KEY`, and `LLM_MODEL`
    - **MCP Slack URL**: `MCP_URL` = `http://mcp-slack-tool-proxy:8000/mcp`
    - **Researcher config**: `EXTRA_HEADERS` = `{}`, `MODEL_TEMPERATURE` = `0`, `MAX_PLAN_STEPS` = `6`, `SERVICE_PORT` = `8000`, `LOG_LEVEL` = `INFO`
-   - **Auth config**: `CLIENT_SECRET` (from `kagenti-keycloak-client-secret` secret), `ISSUER`, `JWKS_URI`, `AUDIENCE` — see the [auth demo README](../../kagenti/auth/auth_demo/README.md) for values
+   - **Auth config**: `CLIENT_SECRET` (from `rossoctl-keycloak-client-secret` secret), `ISSUER`, `JWKS_URI`, `AUDIENCE` — see the [auth demo README](../../rossoctl/auth/auth_demo/README.md) for values
 
 4. Depending on the LLM provider you need to do the following:
 
@@ -105,11 +105,11 @@ To log in and import agents you can use the [default credentials](../install.md#
    - If using `openai`, you will need to specify a different `TASK_MODEL_ID`, and can do so in the `Custom Environment Variables` section. i.e. `TASK_MODEL_ID=gpt-4.1-nano`
 
 5. In the **Agent Source Repository URL** field, use the default:
-   <https://github.com/kagenti/agent-examples>
+   <https://github.com/rossoctl/examples>
    Or use a custom repository accessible using the GitHub ID specified in your `.env` file.
 6. For **Git Branch or Tag**, use the default `main` branch (or select another as needed).
 7. Set **Protocol** to `a2a`.
-8. Under [**Specify Source Subfolder**](http://kagenti-ui.localtest.me:8080/Import_New_Agent#specify-source-subfolder):
+8. Under [**Specify Source Subfolder**](http://rossoctl-ui.localtest.me:8080/Import_New_Agent#specify-source-subfolder):
    - Click `Select from examples`
    - Choose: `a2a/slack_researcher`
 9. Click **Build & Deploy New Agent** button.
@@ -122,14 +122,14 @@ To import tools you can use the [default credentials](../install.md#default-cred
 
 To deploy the Slack Tool using Shipwright:
 
-1. Navigate to [Import New Tool](http://kagenti-ui.localtest.me:8080/Import_New_Tool#import-new-tool) in the UI.
+1. Navigate to [Import New Tool](http://rossoctl-ui.localtest.me:8080/Import_New_Tool#import-new-tool) in the UI.
 2. Select the same `<namespace>` as used for the agent.
 3. Select "Build from source" as the deployment method.
 4. Under **Environment Variables**, configure the required env vars for the tool:
    - **Slack config**: `SLACK_BOT_TOKEN` (from `slack-secret` secret)
    - **Auth config**: `ISSUER`, `JWKS_URI`, `AUDIENCE`, `ADMIN_SLACK_BOT_TOKEN` (from `slack-secret` secret), `ADMIN_SCOPE_NAME` = `slack-full-access`
 5. Use the same source repository:
-   <https://github.com/kagenti/agent-examples>
+   <https://github.com/rossoctl/examples>
 6. Choose the `main` branch or your preferred branch.
 7. Set **Select Protocol** to `streamable-http`.
 8. Under **Specify Source Subfolder**:
@@ -147,7 +147,7 @@ Now that the agent and tool have been deployed, the Keycloak Administrator must 
 ### Set up Python environment
 
 ```console
-cd kagenti/demo-setup/keycloak-config/slack/
+cd rossoctl/demo-setup/keycloak-config/slack/
 python -m venv venv
 ```
 
@@ -173,7 +173,7 @@ Now run the configuration script:
 python set_up_slack_demo.py
 ```
 
-For more information about the configuration script check the [detailed README.md](../../kagenti/demo-setup/keycloak-config/slack/README.md) file.
+For more information about the configuration script check the [detailed README.md](../../rossoctl/demo-setup/keycloak-config/slack/README.md) file.
 
 ### Enable Token exchange for the agent
 
@@ -208,7 +208,7 @@ To verify that both the agent and tool are running:
 
    ```console
     installer$ kubectl logs -f deployment/slack-researcher -n <namespace>
-    Defaulted container "slack-researcher" out of: slack-researcher, kagenti-client-registration (init)
+    Defaulted container "slack-researcher" out of: slack-researcher, rossoctl-client-registration (init)
     INFO:     Started server process [18]
     INFO:     Waiting for application startup.
     INFO:     Application startup complete.
@@ -219,7 +219,7 @@ To verify that both the agent and tool are running:
 
     ```console
     installer$ kubectl logs -f deployment/slack-tool -n <namespace>
-    Defaulted container "slack-tool" out of: slack-tool, kagenti-client-registration (init)
+    Defaulted container "slack-tool" out of: slack-tool, rossoctl-client-registration (init)
     INFO:     Started server process [19]
     INFO:     Waiting for application startup.
     INFO:     Application startup complete.
@@ -235,19 +235,19 @@ To verify that both the agent and tool are running:
 Once the deployment is complete and the Keycloak configured, you can run the demo.
 
 This example demonstrates different results based on the user access control.
-The Keycloak was pre-configured with two Kagenti demo users:
+The Keycloak was pre-configured with two Rossoctl demo users:
 
-- **slack-full-access-user** - Kagenti user that is tied to Slack token `ADMIN_SLACK_BOT_TOKEN`. This user has a full access to all the Slack channels and capabilities.
-- **slack-partial-access-user** - Kagenti user that is tied to Slack token `SLACK_BOT_TOKEN`. This user has a limited access to all the Slack channels and limited capabilities. E.g., it can list channels but not read them.
+- **slack-full-access-user** - Rossoctl user that is tied to Slack token `ADMIN_SLACK_BOT_TOKEN`. This user has a full access to all the Slack channels and capabilities.
+- **slack-partial-access-user** - Rossoctl user that is tied to Slack token `SLACK_BOT_TOKEN`. This user has a limited access to all the Slack channels and limited capabilities. E.g., it can list channels but not read them.
 
 Both users use `password` as password.
 
 Try each userid for the following interactions with the Slack agent:
 
-1. Login with the Kagenti userid.
-1. Navigate to the **Agent Catalog** in the Kagenti UI.
+1. Login with the Rossoctl userid.
+1. Navigate to the **Agent Catalog** in the Rossoctl UI.
 1. Select the same `<namespace>` used during the agent deployment.
-1. Under [**Available Agents**](http://kagenti-ui.localtest.me:8080/Agent_Catalog) in your namespace, select `slack-researcher` and click **View Details**.
+1. Under [**Available Agents**](http://rossoctl-ui.localtest.me:8080/Agent_Catalog) in your namespace, select `slack-researcher` and click **View Details**.
 1. Scroll to the bottom of the page. In the input field labeled *Say something to the agent...*, enter:
 
    ```console

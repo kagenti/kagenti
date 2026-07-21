@@ -3,7 +3,7 @@
 ## Deployment Modes
 
 AuthBridge ships three combined sidecar images, each hardcoded to its
-deployment shape (kagenti-extensions#411):
+deployment shape (cortex#411):
 
 | | `authbridge` (proxy-sidecar, default) | `authbridge-envoy` (envoy-sidecar, advanced) | `authbridge-lite` (proxy-sidecar, auth-only) |
 |---|---|---|---|
@@ -13,45 +13,44 @@ deployment shape (kagenti-extensions#411):
 | **Plugins included** | jwt-validation + token-exchange + a2a/mcp/inference parsers | Same as proxy-sidecar | jwt-validation + token-exchange only |
 | **Use when** | Standard deployments | Need transparent interception of non-HTTP protocols | Size-constrained / no protocol-aware events |
 
-`spiffe-helper` is bundled inside every combined image and runs only when the
-operator sets `SPIRE_ENABLED=true` on the workload (driven by the
-`kagenti.io/spire: enabled` label). Client registration is handled by the
-operator's reconciler — there's no in-pod client-registration sidecar.
+SPIRE integration is built into every combined image using the
+[go-spiffe](https://github.com/spiffe/go-spiffe) SDK. It is enabled or disabled
+per workload via the `SPIRE_ENABLED` env var (driven by the
+`rossoctl.io/spiffe-helper-inject` label) — there is no separate spiffe-helper
+binary or process. Client registration is handled by the operator's reconciler —
+there's no in-pod client-registration sidecar.
 
 ## Selecting a mode
 
-The operator resolves mode per workload from this chain
-(kagenti-operator#361):
+The mutating webhook resolves mode from this chain (first non-empty wins):
 
-1. `AgentRuntime.Spec.AuthBridgeMode` on the workload's CR (canonical).
-2. `mode:` field on the namespace-level `authbridge-runtime-config` ConfigMap.
-3. The deprecated `kagenti.io/authbridge-mode` pod annotation (still honored).
-4. Cluster-wide default (`proxy-sidecar`).
+1. `mode:` field in the namespace-level `authbridge-runtime-config` ConfigMap **(canonical)**.
+2. The deprecated `rossoctl.io/authbridge-mode` pod annotation (still honored).
+3. Cluster-wide default (`proxy-sidecar`).
+
+> **Note:** `AgentRuntime.Spec.AuthBridgeMode` is enum-validated by the CRD webhook but is not
+> read by the mutating webhook when resolving injection mode. Setting it does not change which
+> containers are injected.
+
+The canonical way to set mode is the namespace ConfigMap, which applies to all workloads in
+the namespace:
 
 ```yaml
-# Canonical: per-workload override on the AgentRuntime CR
-apiVersion: kagenti.io/v1alpha1
-kind: AgentRuntime
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: weather-service
-spec:
-  authBridgeMode: envoy-sidecar
-  targetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: weather-service
+  name: authbridge-runtime-config
+  namespace: team1
+data:
+  config.yaml: |
+    mode: envoy-sidecar
 ```
-
-> **Note:** All workloads should use an AgentRuntime CR to enroll with the
-> platform. The operator applies `kagenti.io/type` labels automatically.
-> The deprecated `kagenti.io/authbridge-mode` annotation is still honored
-> but `AgentRuntime.Spec.AuthBridgeMode` is the canonical method.
 
 ## Proxy-Sidecar Mode (Default)
 
 ### How It Works
 
-The Kagenti operator webhook injects a single `authbridge` container when
+The Rossoctl operator webhook injects a single `authbridge` container when
 the workload's resolved mode is `proxy-sidecar`:
 
 1. The reverse proxy takes over the agent's original port (e.g., `:8000`)
@@ -87,13 +86,13 @@ only when you need protocol-level transparent interception.
 AuthBridge is configured via YAML with `${ENV_VAR}` expansion. The operator
 mounts the configuration from a ConfigMap such as `authbridge-config-weather-service`.
 
-After kagenti-extensions#411 the runtime config uses a per-plugin
+After cortex#411 the runtime config uses a per-plugin
 schema: every plugin-specific setting lives under its own `config:`
 block inside `pipeline.inbound.plugins[]` or
 `pipeline.outbound.plugins[]`. Plugin-level defaults (audience_file,
 bypass_paths, identity file paths) are applied by the authbridge
 binary itself — see `authbridge/authlib/plugins/CONVENTIONS.md` in
-kagenti-extensions for the full reference. The chart-rendered
+cortex for the full reference. The chart-rendered
 ConfigMaps and the backend's per-agent ConfigMap renderer both emit
 this shape.
 
@@ -126,7 +125,7 @@ pipeline:
 
 The fields below appear inside each plugin's `config:` block, not at
 the top level. See `authbridge/docs/plugin-reference.md` in
-kagenti-extensions for the per-plugin authoritative reference.
+cortex for the per-plugin authoritative reference.
 
 | Field | Plugin | Description | Default |
 |---|---|---|---|
@@ -150,8 +149,8 @@ When explicit URLs are not set, they are derived automatically:
 
 | Missing field | Derived from | Example |
 |---|---|---|
-| `token_url` | `keycloak_url` + `keycloak_realm` | `http://keycloak:8080/realms/kagenti/protocol/openid-connect/token` |
-| `issuer` | `keycloak_url` + `keycloak_realm` | `http://keycloak:8080/realms/kagenti` |
+| `token_url` | `keycloak_url` + `keycloak_realm` | `http://keycloak:8080/realms/rossoctl/protocol/openid-connect/token` |
+| `issuer` | `keycloak_url` + `keycloak_realm` | `http://keycloak:8080/realms/rossoctl` |
 | `jwks_url` | `token_url` | `.../openid-connect/certs` |
 
 ### Session Store (Experimental)
@@ -210,7 +209,7 @@ kubectl exec deploy/weather-service -n team1 -c envoy-proxy -- \
 1. Check Keycloak connectivity from inside the cluster:
    ```bash
    kubectl exec deploy/weather-service -n team1 -c weather-service -- \
-     wget -qO- http://keycloak-service.keycloak.svc:8080/realms/kagenti/.well-known/openid-configuration
+     wget -qO- http://keycloak-service.keycloak.svc:8080/realms/rossoctl/.well-known/openid-configuration
    ```
 2. Verify the agent's client is registered in Keycloak
 3. Check that the target audience matches a registered client
@@ -234,10 +233,10 @@ kubectl exec deploy/weather-service -n team1 -c envoy-proxy -- \
 
 ### Proxy Not Injected
 
-1. Verify the workload has an AgentRuntime CR targeting it (the operator applies the `kagenti.io/type` label automatically)
-2. Check that the Kagenti operator webhook is running:
+1. Verify the pod has `rossoctl.io/type: agent` label — the operator sets this automatically when an AgentRuntime CR targets the workload
+2. Check that the Rossoctl operator webhook is running:
    ```bash
-   kubectl get mutatingwebhookconfigurations | grep kagenti
+   kubectl get mutatingwebhookconfigurations | grep rossoctl
    ```
 3. Check operator logs for injection errors
 
@@ -253,5 +252,7 @@ injects defaults that can be overridden via Helm values.
 
 ## Further Reading
 
-- [AuthBridge Binary README](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/cmd/README.md) — full YAML config reference, all listener modes
-- [AuthBridge Architecture](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/README.md) — sequence diagrams, protocol details
+- [Sidecar Injection](sidecar-injection.md) — expected containers per mode, label vocabulary, feature gates, how to switch modes
+- [Authentication Guide](../authentication.md) — how `CLIENT_AUTH_TYPE=federated-jwt` (SPIFFE auth) works, how to enable it, and how it compares to client-secret mode
+- [AuthBridge Binary README](https://github.com/rossoctl/cortex/blob/main/authbridge/cmd/README.md) — full YAML config reference, all listener modes
+- [AuthBridge Architecture](https://github.com/rossoctl/cortex/blob/main/authbridge/README.md) — sequence diagrams, protocol details

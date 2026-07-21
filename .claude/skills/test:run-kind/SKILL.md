@@ -12,7 +12,7 @@ description: Run E2E tests on local Kind cluster
 **Test output MUST go to files.** Test runs produce hundreds of lines.
 
 ```bash
-export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-tdd}"
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/rossoctl-tdd}"
 mkdir -p "$LOG_DIR"
 
 # Pattern: redirect test output
@@ -41,7 +41,7 @@ command > $LOG_DIR/test-run.log 2>&1; echo "EXIT:$?"
 ## Run with pytest Directly
 
 ```bash
-uv run pytest kagenti/tests/e2e/ -v -k "test_agent_simple_query"
+uv run pytest rossoctl/tests/e2e/ -v -k "test_agent_simple_query"
 ```
 
 ## Run from Worktree

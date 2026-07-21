@@ -1,11 +1,11 @@
 ---
 name: k8s:logs
-description: Query and analyze logs from Kagenti platform components, search for errors, and investigate issues
+description: Query and analyze logs from Rossoctl platform components, search for errors, and investigate issues
 ---
 
 # Check Logs Skill
 
-This skill helps you query and analyze logs from the Kagenti platform components.
+This skill helps you query and analyze logs from the Rossoctl platform components.
 
 ## Context-Safe Execution (MANDATORY)
 
@@ -14,7 +14,7 @@ source of context pollution. Commands below are shown in bare form for readabili
 When executing, always redirect:
 
 ```bash
-export LOG_DIR=/tmp/kagenti/k8s/${CLUSTER:-local}
+export LOG_DIR=/tmp/rossoctl/k8s/${CLUSTER:-local}
 mkdir -p $LOG_DIR
 
 # Pattern for all log commands:
@@ -53,7 +53,7 @@ kubectl logs -n keycloak deployment/keycloak --tail=100 2>/dev/null || \
 kubectl logs -n keycloak statefulset/keycloak --tail=100
 
 # Platform Operator
-kubectl logs -n kagenti-system -l control-plane=controller-manager --tail=100
+kubectl logs -n rossoctl-system -l control-plane=controller-manager --tail=100
 
 # Istio Control Plane
 kubectl logs -n istio-system deployment/istiod --tail=100
@@ -64,8 +64,8 @@ kubectl logs -n spire-server deployment/spire-server --tail=100
 # Tekton Controller
 kubectl logs -n tekton-pipelines deployment/tekton-pipelines-controller --tail=100
 
-# Kagenti UI
-kubectl logs -n kagenti-platform deployment/kagenti-ui --tail=100
+# Rossoctl UI
+kubectl logs -n rossoctl-platform deployment/rossoctl-ui --tail=100
 ```
 
 ### Check Logs from Previous Container (After Crash)
@@ -113,7 +113,7 @@ kubectl logs -n keycloak --all-containers=true --tail=200 | \
   grep -iE "error|fatal|exception"
 
 # Platform operator
-kubectl logs -n kagenti-system -l control-plane=controller-manager --tail=200 | \
+kubectl logs -n rossoctl-system -l control-plane=controller-manager --tail=200 | \
   grep -iE "error|fatal|exception"
 ```
 
@@ -185,14 +185,14 @@ kubectl logs -n keycloak deployment/postgresql --tail=100 2>/dev/null
 
 ```bash
 # Operator logs
-kubectl logs -n kagenti-system -l control-plane=controller-manager --tail=100
+kubectl logs -n rossoctl-system -l control-plane=controller-manager --tail=100
 
 # Search for reconciliation errors
-kubectl logs -n kagenti-system -l control-plane=controller-manager | \
+kubectl logs -n rossoctl-system -l control-plane=controller-manager | \
   grep -iE "error|fail|reconcile"
 
 # Check Component CRD processing
-kubectl logs -n kagenti-system -l control-plane=controller-manager | \
+kubectl logs -n rossoctl-system -l control-plane=controller-manager | \
   grep -i "component"
 ```
 
@@ -389,7 +389,7 @@ mkdir -p logs
 kubectl logs -n team1 deployment/weather-tool > logs/weather-tool.log
 kubectl logs -n team1 deployment/weather-service > logs/weather-service.log
 kubectl logs -n keycloak --all-containers=true > logs/keycloak.log
-kubectl logs -n kagenti-system -l control-plane=controller-manager > logs/operator.log
+kubectl logs -n rossoctl-system -l control-plane=controller-manager > logs/operator.log
 
 # Create tarball
 tar -czf logs-$(date +%Y%m%d-%H%M%S).tar.gz logs/
@@ -427,4 +427,4 @@ tar -czf debug-bundle-$(date +%Y%m%d-%H%M%S).tar.gz debug-bundle/
 
 - **k8s:health**: Check overall platform health first
 - **k8s:pods**: Debug specific pod issues
-- **kagenti:deploy**: Redeploy if logs show persistent issues
+- **rossoctl:deploy**: Redeploy if logs show persistent issues

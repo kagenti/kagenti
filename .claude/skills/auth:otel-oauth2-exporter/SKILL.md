@@ -135,7 +135,7 @@ oauth2client/mlflow:
 
 ## Helm Chart Integration
 
-In `charts/kagenti-deps/templates/otel-collector.yaml`:
+In `charts/rossoctl-deps/templates/otel-collector.yaml`:
 
 ```yaml
 {{- if .Values.otelCollector.mlflow.oauth2.enabled }}
@@ -159,7 +159,7 @@ extensions:
 
 1. Check credentials:
 ```bash
-kubectl exec -it otel-collector-xxx -n kagenti-system -- env | grep MLFLOW
+kubectl exec -it otel-collector-xxx -n rossoctl-system -- env | grep MLFLOW
 ```
 
 2. Test token endpoint manually:
@@ -174,7 +174,7 @@ curl -X POST "$KEYCLOAK_TOKEN_URL" \
 
 1. Verify CA bundle is mounted:
 ```bash
-kubectl exec -it otel-collector-xxx -n kagenti-system -- \
+kubectl exec -it otel-collector-xxx -n rossoctl-system -- \
   ls -la /etc/pki/ca-trust/extracted/pem/
 ```
 
@@ -188,7 +188,7 @@ http://keycloak-service.keycloak.svc.cluster.local:8080
 1. Ensure extension is listed in `service.extensions`
 2. Check collector logs:
 ```bash
-kubectl logs -n kagenti-system -l app=otel-collector
+kubectl logs -n rossoctl-system -l app=otel-collector
 ```
 
 ## Collector Image Requirements

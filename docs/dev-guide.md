@@ -1,8 +1,8 @@
 # Developer's Guide
 
-## Developer Personas in Kagenti
+## Developer Personas in Rossoctl
 
-This guide covers development workflows for multiple personas in the Kagenti ecosystem. Depending on your role, different sections will be more relevant:
+This guide covers development workflows for multiple personas in the Rossoctl ecosystem. Depending on your role, different sections will be more relevant:
 
 - **Agent Developers** → Focus on agent development and A2A protocol integration
 - **Tool Developers** → Emphasize MCP tool creation and gateway integration  
@@ -15,19 +15,19 @@ This guide covers development workflows for multiple personas in the Kagenti eco
 
 ### Setting up your local repo
 
-1. Create a [fork of kagenti](https://github.com/kagenti/kagenti/fork)
+1. Create a [fork of rossoctl](https://github.com/rossoctl/rossoctl/fork)
 
 2. Clone your fork – command only shown for HTTPS; adjust the URL if you prefer SSH
 
 ```shell
-git clone https://github.com/<your-username>/kagenti.git
-cd kagenti
+git clone https://github.com/<your-username>/rossoctl.git
+cd rossoctl
 ```
 
 3. Add the upstream repository as a remote (adjust the URL if you prefer SSH)
 
 ```shell
-git remote add upstream https://github.com/kagenti/kagenti.git
+git remote add upstream https://github.com/rossoctl/rossoctl.git
 ```
 
 4. Fetch all tags from upstream
@@ -67,13 +67,13 @@ functionality without a flag will be asked to add one.
 
 **How to add a flag:**
 
-1. Add `kagenti_feature_flag_<name>: bool = False` to
-   `kagenti/backend/app/core/config.py` with a descriptive comment.
-2. Add the flag to `FeatureFlagsResponse` in `kagenti/backend/app/routers/config.py`
+1. Add `rossoctl_feature_flag_<name>: bool = False` to
+   `rossoctl/backend/app/core/config.py` with a descriptive comment.
+2. Add the flag to `FeatureFlagsResponse` in `rossoctl/backend/app/routers/config.py`
    so the frontend can read it.
-3. Guard module loading in `kagenti/backend/app/main.py` using the existing
+3. Guard module loading in `rossoctl/backend/app/main.py` using the existing
    conditional import pattern.
-4. Enable via environment variable: `KAGENTI_FEATURE_FLAG_<NAME>=true`.
+4. Enable via environment variable: `ROSSOCTL_FEATURE_FLAG_<NAME>=true`.
 
 See [CLAUDE.md — Feature Flags](../CLAUDE.md#feature-flags-required) for the
 full policy and current flag inventory.
@@ -157,9 +157,9 @@ Push the tag upstream
 git push upstream v0.0.4-alpha.10
 ```
 
-## Kagenti UI Development
+## Rossoctl UI Development
 
-The Kagenti UI v2 is a modern web application consisting of two components:
+The Rossoctl UI v2 is a modern web application consisting of two components:
 - **Frontend**: React + TypeScript application with PatternFly components
 - **Backend**: FastAPI REST API that interfaces with Kubernetes
 
@@ -176,7 +176,7 @@ The Kagenti UI v2 is a modern web application consisting of two components:
 1. Navigate to the backend directory:
 
     ```shell
-    cd kagenti/backend
+    cd rossoctl/backend
     ```
 
 2. Create virtual environment and install dependencies:
@@ -202,7 +202,7 @@ The backend API will be available at `http://localhost:8000` with:
 1. Navigate to the frontend directory:
 
     ```shell
-    cd kagenti/ui-v2
+    cd rossoctl/ui-v2
     ```
 
 2. Install dependencies:
@@ -233,7 +233,7 @@ make build-load-ui
 
 This command will:
 1. Build both frontend and backend Docker images with auto-generated tags
-2. Load them into your Kind cluster (default: `kagenti`)
+2. Load them into your Kind cluster (default: `rossoctl`)
 3. Display the Helm upgrade command to deploy your images
 
 #### Build Individual Images
@@ -257,22 +257,22 @@ make build-load-ui UI_FRONTEND_TAG=my-feature UI_BACKEND_TAG=my-feature KIND_CLU
 
 ### Updating Your Kubernetes Deployment
 
-After building and loading your images, update your Kagenti installation with the new image tags:
+After building and loading your images, update your Rossoctl installation with the new image tags:
 
 ```shell
-helm upgrade --install kagenti charts/kagenti \
-  --namespace kagenti-system \
+helm upgrade --install rossoctl charts/rossoctl \
+  --namespace rossoctl-system \
   --set openshift=false \
-  --set ui.frontend.image=ghcr.io/kagenti/kagenti-ui-v2 \
+  --set ui.frontend.image=ghcr.io/rossoctl/rossoctl-ui-v2 \
   --set ui.frontend.tag=<your-frontend-tag> \
-  --set ui.backend.image=ghcr.io/kagenti/kagenti-backend \
+  --set ui.backend.image=ghcr.io/rossoctl/rossoctl-backend \
   --set ui.backend.tag=<your-backend-tag> \
   -f <your-values-file>
 ```
 
 **Tip**: The `make build-load-ui` command displays the exact Helm command with your generated tags. Copy and paste it from the output.
 
-Once the upgrade completes, access the UI at `http://kagenti-ui.localtest.me:8080`.
+Once the upgrade completes, access the UI at `http://rossoctl-ui.localtest.me:8080`.
 
 ### Quick Development Workflow
 
@@ -280,11 +280,11 @@ Once the upgrade completes, access the UI at `http://kagenti-ui.localtest.me:808
 2. Run `make build-load-ui` to build and load both images
 3. Copy the displayed Helm upgrade command and run it
 4. Wait for pods to restart with new images
-5. Test your changes at `http://kagenti-ui.localtest.me:8080`
+5. Test your changes at `http://rossoctl-ui.localtest.me:8080`
 
 ### Environment Variables Import Feature
 
-The Kagenti UI supports importing environment variables from local `.env` files or remote URLs when creating agents. This feature simplifies agent configuration by allowing reuse of standardized environment variable definitions.
+The Rossoctl UI supports importing environment variables from local `.env` files or remote URLs when creating agents. This feature simplifies agent configuration by allowing reuse of standardized environment variable definitions.
 
 #### Supported Formats
 
@@ -351,20 +351,20 @@ The UI provides conditional form fields based on the selected type, making it ea
 Import environment variables directly from agent example repositories:
 
 ```
-https://raw.githubusercontent.com/kagenti/agent-examples/main/a2a/git_issue_agent/.env.openai
-https://raw.githubusercontent.com/kagenti/agent-examples/main/a2a/weather_service/.env
+https://raw.githubusercontent.com/rossoctl/examples/main/a2a/git_issue_agent/.env.openai
+https://raw.githubusercontent.com/rossoctl/examples/main/a2a/weather_service/.env
 ```
 
 ### Additional Resources
 
-- Frontend README: `kagenti/ui-v2/README.md`
-- Backend README: `kagenti/backend/README.md`
+- Frontend README: `rossoctl/ui-v2/README.md`
+- Backend README: `rossoctl/backend/README.md`
 - Makefile UI targets: Run `make help-ui` for details
 - Environment Variables Import Design: `docs/env-import-feature-design.md`
 
 ## HyperShift Development and Testing
 
-HyperShift enables rapid testing of Kagenti on OpenShift by creating ephemeral hosted clusters (sandboxes) where the control plane runs as pods on a management cluster and workers run in AWS. This approach is faster and more cost-effective than deploying full OpenShift clusters.
+HyperShift enables rapid testing of Rossoctl on OpenShift by creating ephemeral hosted clusters (sandboxes) where the control plane runs as pods on a management cluster and workers run in AWS. This approach is faster and more cost-effective than deploying full OpenShift clusters.
 
 ### Why HyperShift?
 
@@ -432,7 +432,7 @@ The `.env` file automatically creates the management cluster kubeconfig at `~/.k
 If setting up from scratch, run the credential setup script:
 
 ```bash
-cd kagenti
+cd rossoctl
 
 # Set your managed-by tag (identifies your resources)
 export MANAGED_BY_TAG="your-name-dev"
@@ -455,7 +455,7 @@ Once credentials are configured, create a test cluster:
 
 ```bash
 # Navigate to repository root
-cd kagenti
+cd rossoctl
 
 # Create cluster with random suffix
 ./.github/scripts/hypershift/create-cluster.sh
@@ -491,20 +491,20 @@ cd kagenti
 After creating a cluster, run the full E2E test suite:
 
 ```bash
-# Run full test (deploy Kagenti + E2E tests)
+# Run full test (deploy Rossoctl + E2E tests)
 ./.github/scripts/local-setup/hypershift-full-test.sh <cluster-suffix> --skip-cluster-destroy
 
 # Re-run tests on existing cluster (skip cluster creation)
 ./.github/scripts/local-setup/hypershift-full-test.sh <cluster-suffix> --skip-cluster-create --skip-cluster-destroy
 
-# Deploy Kagenti only (no tests)
-./.github/scripts/hypershift/deploy-kagenti.sh <cluster-suffix>
+# Deploy Rossoctl only (no tests)
+./.github/scripts/hypershift/deploy-rossoctl.sh <cluster-suffix>
 ```
 
 **Test workflow:**
 1. Sets up kubeconfig for hosted cluster
-2. Deploys Kagenti platform
-3. Runs E2E test suite (`kagenti/tests/e2e/`)
+2. Deploys Rossoctl platform
+3. Runs E2E test suite (`rossoctl/tests/e2e/`)
 4. Optionally destroys cluster after tests
 
 **Working with kubeconfig:**
@@ -563,7 +563,7 @@ Hosted clusters incur AWS costs while running:
 - Destroy clusters when not in use (evenings, weekends)
 - Use `--skip-cluster-destroy` only during active development
 - Monitor AWS costs via `aws ce get-cost-and-usage` or AWS Console
-- Tag all resources with `kagenti.io/managed-by` for tracking
+- Tag all resources with `rossoctl.io/managed-by` for tracking
 
 ### Troubleshooting
 

@@ -94,19 +94,19 @@ containers:
 OpenShell is being rearchitected via [RFC 0001](https://github.com/NVIDIA/OpenShell/pull/836)
 into a composable, driver-based system with four pluggable subsystems:
 
-| Subsystem | Purpose | Kagenti Mapping |
+| Subsystem | Purpose | Rossoctl Mapping |
 |-----------|---------|-----------------|
-| **Compute** | Sandbox lifecycle (K8s, Podman, VM) | Kagenti as compute driver (Phase 2) |
+| **Compute** | Sandbox lifecycle (K8s, Podman, VM) | Rossoctl as compute driver (Phase 2) |
 | **Credentials** | Secret resolution (Vault, K8s Secrets) | Delivers secrets to supervisor proxy |
 | **Control-plane identity** | User/operator auth (mTLS, OIDC) | Keycloak OIDC |
 | **Sandbox identity** | Workload identity (SPIFFE) | SPIRE |
 
 ## AuthBridge + Supervisor Integration (Phase 3)
 
-Kagenti's [AuthBridge](../authbridge-combined-sidecar.md) and the OpenShell
+Rossoctl's [AuthBridge](../authbridge-combined-sidecar.md) and the OpenShell
 supervisor provide complementary security layers. In the current PoC they
 are **mutually exclusive** — supervised agents disable AuthBridge injection
-via `kagenti.io/inject: disabled`. Phase 3 resolves the architectural
+via `rossoctl.io/inject: disabled`. Phase 3 resolves the architectural
 conflict and combines both.
 
 ### What Each Layer Provides
@@ -145,7 +145,7 @@ Outbound: Agent (10.200.0.2) → OPA proxy (10.200.0.1:3128)
 
 ### Current Deployment: AuthBridge Disabled for Supervised Agents
 
-Supervised agents use `kagenti.io/inject: disabled` to prevent the webhook
+Supervised agents use `rossoctl.io/inject: disabled` to prevent the webhook
 from injecting AuthBridge sidecars. This is correct for Phase 1 because:
 - The supervisor provides its own egress control (OPA proxy)
 - The supervisor provides its own credential injection (gateway providers)
@@ -153,9 +153,9 @@ from injecting AuthBridge sidecars. This is correct for Phase 1 because:
 
 | Agent | AuthBridge | Supervisor | Why |
 |-------|-----------|-----------|-----|
-| weather-agent-supervised | **Injected** | No | Standard Kagenti agent (Tier 3) |
-| adk-agent-supervised | **Injected** | No | Standard Kagenti agent (Tier 3) |
-| claude-sdk-agent | **Injected** | No | Standard Kagenti agent (Tier 3) |
+| weather-agent-supervised | **Injected** | No | Standard Rossoctl agent (Tier 3) |
+| adk-agent-supervised | **Injected** | No | Standard Rossoctl agent (Tier 3) |
+| claude-sdk-agent | **Injected** | No | Standard Rossoctl agent (Tier 3) |
 | weather-supervised | **Disabled** | **Yes** | Supervisor's netns breaks AuthBridge |
 | openshell sandboxes | **Not present** | **Yes** | Gateway-managed, no webhook |
 

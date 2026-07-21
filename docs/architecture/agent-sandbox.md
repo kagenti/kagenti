@@ -150,4 +150,4 @@ Docker Sandboxes, OpenAI Codex, microsandbox.
 
 The kubernetes-sigs/agent-sandbox roadmap includes scale-down/resume, Firecracker/QEMU
 support, DRA controllers, OCI sandbox manifest standardization, and explicit
-"Integration with kAgent" -- all directly beneficial to Kagenti.
+"Integration with kAgent" -- all directly beneficial to Rossoctl.

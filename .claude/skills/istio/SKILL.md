@@ -1,6 +1,6 @@
 ---
 name: istio
-description: Istio service mesh patterns for Kagenti
+description: Istio service mesh patterns for Rossoctl
 ---
 
 # Istio Skills
@@ -12,6 +12,7 @@ Skills for configuring Istio service mesh in Ambient mode.
 | Skill | Description |
 |-------|-------------|
 | `istio:ambient-waypoint` | L7 AuthorizationPolicy with waypoint proxies |
+| `istio:mesh-selfheal` | Detect/recover the Ambient expired-cert 503 outage on long-running dev clusters |
 
 ## Ambient Mode Basics
 
@@ -24,7 +25,7 @@ In Istio Ambient mode:
 ### Enable Ambient for Namespace
 
 ```bash
-kubectl label namespace kagenti-system istio.io/dataplane-mode=ambient
+kubectl label namespace rossoctl-system istio.io/dataplane-mode=ambient
 ```
 
 ### Create Waypoint

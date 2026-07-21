@@ -4,12 +4,12 @@
 # Supports both branch refs (on upstream) and PR numbers (works with forks).
 #
 # Usage:
-#   DEP_REPO=kagenti/kagenti-operator \
+#   DEP_REPO=rossoctl/operator \
 #   DEP_REF=feat/my-branch \
 #   DEP_CONTEXT=. \
-#   DEP_IMAGE_NAME=kagenti-agent-operator \
-#   DEP_DEPLOY_NS=kagenti-system \
-#   DEP_HELM_SET="kagenti-operator-chart.controllerManager.container.image" \
+#   DEP_IMAGE_NAME=rossoctl-agent-operator \
+#   DEP_DEPLOY_NS=rossoctl-system \
+#   DEP_HELM_SET="operator-chart.controllerManager.container.image" \
 #   ./30-build-dep-image.sh
 #
 # Ref formats:
@@ -17,10 +17,10 @@
 #   pr/<number>          — fetch PR head ref (works with forks)
 #
 # Examples:
-#   /run-e2e --build kagenti/kagenti-extensions=fix/my-branch
-#   /run-e2e --build kagenti/kagenti-extensions=pr/234
-#   /run-e2e --build kagenti/kagenti-operator=feat/new-crd
-#   /run-e2e --build kagenti/kagenti-extensions=pr/234 --build kagenti/kagenti-operator=pr/100
+#   /run-e2e --build rossoctl/cortex=fix/my-branch
+#   /run-e2e --build rossoctl/cortex=pr/234
+#   /run-e2e --build rossoctl/operator=feat/new-crd
+#   /run-e2e --build rossoctl/cortex=pr/234 --build rossoctl/operator=pr/100
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,11 +28,11 @@ source "$SCRIPT_DIR/../lib/env-detect.sh"
 source "$SCRIPT_DIR/../lib/logging.sh"
 
 # Required env vars
-: "${DEP_REPO:?DEP_REPO is required (e.g., kagenti/kagenti-extensions)}"
+: "${DEP_REPO:?DEP_REPO is required (e.g., rossoctl/cortex)}"
 : "${DEP_REF:?DEP_REF is required (e.g., fix/my-branch or pr/234)}"
 : "${DEP_CONTEXT:?DEP_CONTEXT is required (subdirectory with Dockerfile)}"
 : "${DEP_IMAGE_NAME:?DEP_IMAGE_NAME is required (e.g., proxy-init)}"
-: "${DEP_DEPLOY_NS:?DEP_DEPLOY_NS is required (e.g., kagenti-system)}"
+: "${DEP_DEPLOY_NS:?DEP_DEPLOY_NS is required (e.g., rossoctl-system)}"
 # Optional
 DEP_DOCKERFILE="${DEP_DOCKERFILE:-Dockerfile}"
 
@@ -151,7 +151,7 @@ EOF
 else
     # ── Kind / vanilla Kubernetes: local build + kind load ──
     # Use the GHCR path as the image name so it matches what the webhook
-    # references (e.g., ghcr.io/kagenti/kagenti-extensions/proxy-init:latest).
+    # references (e.g., ghcr.io/rossoctl/cortex/proxy-init:latest).
     # Tag as both :local and :latest so the webhook's default reference works.
     BASE_IMAGE="ghcr.io/${DEP_REPO}/${DEP_IMAGE_NAME}"
     CUSTOM_IMAGE="${BASE_IMAGE}:local"
@@ -165,9 +165,9 @@ else
     # The webhook ConfigMap may pin images to a specific version (e.g., v0.4.0-alpha.8)
     # that differs from the Go defaults (:latest). We tag with ALL referenced versions
     # so the locally-built image is used regardless of which tag the webhook requests.
-    CLUSTER_NAME="${KIND_CLUSTER_NAME:-kagenti}"
+    CLUSTER_NAME="${KIND_CLUSTER_NAME:-rossoctl}"
     TAGS=("local" "latest")
-    PINNED_TAGS=$(grep -r "${BASE_IMAGE}:" "$REPO_ROOT/charts/kagenti/values.yaml" 2>/dev/null \
+    PINNED_TAGS=$(grep -r "${BASE_IMAGE}:" "$REPO_ROOT/charts/rossoctl/values.yaml" 2>/dev/null \
         | sed "s|.*${BASE_IMAGE}:||" | tr -d '"' | tr -d "'" || true)
     for tag in $PINNED_TAGS; do
         TAGS+=("$tag")

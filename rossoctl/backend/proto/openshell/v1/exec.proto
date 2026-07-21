@@ -1,0 +1,46 @@
+// Minimal ExecSandbox proto vendored from rossoctl/openshell.
+// Only includes types needed for the ACP bridge ExecSandbox gRPC call.
+// Full proto: https://github.com/rossoctl/openshell/blob/main/proto/openshell.proto
+//
+// SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES.
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package openshell.v1;
+
+option java_multiple_files = true;
+
+service OpenShell {
+  rpc ExecSandbox(ExecSandboxRequest) returns (stream ExecSandboxEvent);
+}
+
+message ExecSandboxRequest {
+  string sandbox_id = 1;
+  repeated string command = 2;
+  string workdir = 3;
+  map<string, string> environment = 4;
+  uint32 timeout_seconds = 5;
+  bytes stdin = 6;
+  bool tty = 7;
+}
+
+message ExecSandboxEvent {
+  oneof payload {
+    ExecSandboxStdout stdout = 1;
+    ExecSandboxStderr stderr = 2;
+    ExecSandboxExit exit = 3;
+  }
+}
+
+message ExecSandboxStdout {
+  bytes data = 1;
+}
+
+message ExecSandboxStderr {
+  bytes data = 1;
+}
+
+message ExecSandboxExit {
+  int32 exit_code = 1;
+}

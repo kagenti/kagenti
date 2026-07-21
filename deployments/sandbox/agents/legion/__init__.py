@@ -1,1 +1,1 @@
-"""Legion Agent — LangGraph-based sandbox agent for the Kagenti platform."""
+"""Legion Agent — LangGraph-based sandbox agent for the Rossoctl platform."""

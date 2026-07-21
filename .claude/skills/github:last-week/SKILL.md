@@ -46,7 +46,7 @@ Run the data gathering script to get a consistent snapshot of all issues, PRs, a
 ./.github/scripts/reports/weekly-report-data.sh 7 $OWNER/$REPO
 ```
 
-This creates JSON files in `/tmp/kagenti/github/data/`:
+This creates JSON files in `/tmp/rossoctl/github/data/`:
 - `merged-prs.json` — PRs merged in the period
 - `open-prs.json` — Currently open PRs (live snapshot)
 - `open-issues.json` — Currently open issues (live snapshot)
@@ -61,19 +61,19 @@ This creates JSON files in `/tmp/kagenti/github/data/`:
 Read from the gathered data:
 
 ```bash
-echo "Merged PRs: $(jq length /tmp/kagenti/github/data/merged-prs.json)"
+echo "Merged PRs: $(jq length /tmp/rossoctl/github/data/merged-prs.json)"
 ```
 
 ```bash
-echo "Open PRs: $(jq length /tmp/kagenti/github/data/open-prs.json)"
+echo "Open PRs: $(jq length /tmp/rossoctl/github/data/open-prs.json)"
 ```
 
 ```bash
-echo "Open issues: $(jq length /tmp/kagenti/github/data/open-issues.json)"
+echo "Open issues: $(jq length /tmp/rossoctl/github/data/open-issues.json)"
 ```
 
 ```bash
-echo "New issues: $(jq length /tmp/kagenti/github/data/new-issues.json)"
+echo "New issues: $(jq length /tmp/rossoctl/github/data/new-issues.json)"
 ```
 
 ### Phase 2: Deep Issue Analysis
@@ -83,7 +83,7 @@ For EVERY open issue (from `open-issues.json`), investigate:
 Read from gathered data (do NOT re-query `gh`):
 
 ```bash
-cat /tmp/kagenti/github/data/open-issues.json | jq '.[].number'
+cat /tmp/rossoctl/github/data/open-issues.json | jq '.[].number'
 ```
 
 For each issue, determine:
@@ -113,13 +113,13 @@ For each issue, determine:
 For EVERY open PR (from `open-prs.json`), investigate:
 
 ```bash
-cat /tmp/kagenti/github/data/open-prs.json | jq '.[].number'
+cat /tmp/rossoctl/github/data/open-prs.json | jq '.[].number'
 ```
 
 For each PR, determine:
 
 1. **CI status**: Does it pass all checks?
-2. **Needs /run-e2e?**: Does it touch kagenti/charts/deployments/.github paths?
+2. **Needs /run-e2e?**: Does it touch rossoctl/charts/deployments/.github paths?
 3. **Review status**: Approved, changes requested, or waiting?
 4. **Health**: Is it stale (>14 days)? Has merge conflicts?
 5. **Summary**: What does this PR do? (read the body)
@@ -175,9 +175,9 @@ gh pr list --repo $OWNER/$REPO --state merged --json number,title,mergedAt,chang
 
 For each candidate PR, check if it touched relevant paths:
 - `charts/` or `deployments/` → likely deploy/config issue
-- `kagenti/tests/` → test change may have introduced failure
+- `rossoctl/tests/` → test change may have introduced failure
 - `.github/workflows/` or `.github/scripts/` → CI infrastructure change
-- `kagenti/backend/` or `kagenti/auth/` → application logic change
+- `rossoctl/backend/` or `rossoctl/auth/` → application logic change
 
 Correlate the failure type with the PR changes to identify the most likely cause.
 
@@ -274,7 +274,7 @@ Single flat list, ordered by priority. No timescales.
 Save report:
 
 ```bash
-# Save to /tmp/kagenti/github/weekly-report.md
+# Save to /tmp/rossoctl/github/weekly-report.md
 ```
 
 ### Phase 5: Ask User

@@ -9,7 +9,7 @@
 #   4. Keycloak realm (openshell realm, PKCE client, test users)
 #   5. LiteLLM model proxy (optional, when --litellm is passed)
 #   6. Container image pre-pull (optional, when --pre-pull is passed)
-#   7. kagenti-backend + PostgreSQL sessions DB (off by default, --with-backend)
+#   7. rossoctl-backend + PostgreSQL sessions DB (off by default, --with-backend)
 #
 # Idempotent: safe to re-run. Checks existing state before each step.
 #
@@ -29,7 +29,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# ── Versions (keep in sync with scripts/kind/setup-kagenti.sh) ──────────────
+# ── Versions (keep in sync with scripts/kind/setup-rossoctl.sh) ──────────────
 AGENT_SANDBOX_VERSION="v0.4.6"
 GATEWAY_API_VERSION="v1.4.0"
 
@@ -46,7 +46,7 @@ STEP_KEYCLOAK=true
 STEP_LITELLM=false
 STEP_PREPULL=false
 STEP_BACKEND=false
-KIND_CLUSTER="${CLUSTER_NAME:-kagenti}"
+KIND_CLUSTER="${CLUSTER_NAME:-rossoctl}"
 DRY_RUN=false
 
 # ── Colors & logging ────────────────────────────────────────────────────────
@@ -74,8 +74,8 @@ Options:
   --skip-keycloak     Skip Keycloak realm setup
   --litellm           Deploy LiteLLM model proxy (requires MAAS_* env vars)
   --pre-pull          Pre-pull container images into the cluster
-  --with-backend      Deploy kagenti-backend + PostgreSQL sessions DB (default: off)
-  --kind-cluster NAME Kind cluster name for pre-pull (default: kagenti)
+  --with-backend      Deploy rossoctl-backend + PostgreSQL sessions DB (default: off)
+  --kind-cluster NAME Kind cluster name for pre-pull (default: rossoctl)
   --keycloak-ns NS    Keycloak namespace (default: keycloak)
   --dry-run           Print commands without executing
 EOF
@@ -195,9 +195,9 @@ fi
 # Step 2b: Shared TLS passthrough Gateway (Kind only)
 # ============================================================================
 if $STEP_GATEWAY_API && ! is_openshift; then
-  log_info "Step 2b: Shared TLS passthrough Gateway (kagenti-system)"
+  log_info "Step 2b: Shared TLS passthrough Gateway (rossoctl-system)"
 
-  if kubectl get gateway tls-passthrough -n kagenti-system &>/dev/null; then
+  if kubectl get gateway tls-passthrough -n rossoctl-system &>/dev/null; then
     log_success "Shared tls-passthrough Gateway already exists — skipping"
   else
     log_info "Creating shared TLS passthrough Gateway..."
@@ -206,7 +206,7 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
   name: tls-passthrough
-  namespace: kagenti-system
+  namespace: rossoctl-system
   annotations:
     networking.istio.io/service-type: NodePort
 spec:
@@ -225,19 +225,19 @@ EOF
     if ! $DRY_RUN; then
       log_info "Waiting for Gateway to be programmed..."
       kubectl wait --for=condition=Programmed gateway/tls-passthrough \
-        -n kagenti-system --timeout=60s
+        -n rossoctl-system --timeout=60s
     fi
     log_success "Shared TLS passthrough Gateway created"
   fi
 
   # Fix NodePort to 30443 so it matches Kind extraPortMappings (host 9443 → container 30443)
   KIND_TLS_NODEPORT=30443
-  CURRENT_NODEPORT=$(kubectl get svc tls-passthrough-istio -n kagenti-system \
+  CURRENT_NODEPORT=$(kubectl get svc tls-passthrough-istio -n rossoctl-system \
     -o jsonpath='{.spec.ports[?(@.port==443)].nodePort}' 2>/dev/null || echo "")
   if [[ -n "$CURRENT_NODEPORT" && "$CURRENT_NODEPORT" != "$KIND_TLS_NODEPORT" ]]; then
     log_info "Fixing TLS NodePort: $CURRENT_NODEPORT → $KIND_TLS_NODEPORT"
     if ! $DRY_RUN; then
-      kubectl patch svc tls-passthrough-istio -n kagenti-system --type='json' \
+      kubectl patch svc tls-passthrough-istio -n rossoctl-system --type='json' \
         -p="[{\"op\": \"replace\", \"path\": \"/spec/ports/1/nodePort\", \"value\": $KIND_TLS_NODEPORT}]"
     else
       echo "  [dry-run] kubectl patch svc tls-passthrough-istio NodePort → $KIND_TLS_NODEPORT"
@@ -405,9 +405,9 @@ if $STEP_KEYCLOAK; then
 
     # 4b2: Create confidential client for backend → gateway gRPC
     BACKEND_CLIENT_SECRET=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 40)
-    log_info "Creating client: kagenti-backend (confidential, service account)"
+    log_info "Creating client: rossoctl-backend (confidential, service account)"
     kc_exec "$KCADM create clients --config $KC_CONFIG -r openshell \
-      -s clientId=kagenti-backend \
+      -s clientId=rossoctl-backend \
       -s enabled=true \
       -s publicClient=false \
       -s serviceAccountsEnabled=true \
@@ -418,8 +418,8 @@ if $STEP_KEYCLOAK; then
 
     # Store backend client credentials in each tenant namespace
     for _ns in team1 team2; do
-      kubectl create secret generic kagenti-backend-oidc \
-        --from-literal=client-id=kagenti-backend \
+      kubectl create secret generic rossoctl-backend-oidc \
+        --from-literal=client-id=rossoctl-backend \
         --from-literal=client-secret="$BACKEND_CLIENT_SECRET" \
         -n "$_ns" --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
     done
@@ -533,14 +533,14 @@ if $STEP_KEYCLOAK; then
       log_warn "Could not find openshell-cli client ID — audience scopes created but not linked"
     fi
 
-    # Also assign audience scopes to kagenti-backend client
+    # Also assign audience scopes to rossoctl-backend client
     BACKEND_CLIENT_ID=$(kc_exec "$KCADM get clients --config $KC_CONFIG -r openshell \
-      -q clientId=kagenti-backend --fields id 2>/dev/null" | \
+      -q clientId=rossoctl-backend --fields id 2>/dev/null" | \
       grep '"id"' | head -1 | sed 's/.*: "\(.*\)".*/\1/')
     if [[ -n "$BACKEND_CLIENT_ID" ]]; then
       # Assign openshell-user role to the service account
       kc_exec "$KCADM add-roles --config $KC_CONFIG -r openshell \
-        --uusername service-account-kagenti-backend \
+        --uusername service-account-rossoctl-backend \
         --rolename openshell-user 2>/dev/null" 2>/dev/null || true
 
       for tenant in team1 team2; do
@@ -552,7 +552,7 @@ if $STEP_KEYCLOAK; then
             --config $KC_CONFIG -r openshell 2>/dev/null" 2>/dev/null || true
         fi
       done
-      log_info "Assigned audience scopes to kagenti-backend client"
+      log_info "Assigned audience scopes to rossoctl-backend client"
     fi
 
     log_success "Keycloak openshell realm configured"
@@ -664,7 +664,7 @@ metadata:
   namespace: $LITELLM_NS
   labels:
     app.kubernetes.io/name: $LITELLM_PROXY_NAME
-    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/part-of: rossoctl
 spec:
   replicas: 1
   selector:
@@ -765,13 +765,13 @@ if $STEP_PREPULL; then
 fi
 
 # ============================================================================
-# Step 7: kagenti-backend + PostgreSQL sessions DB
+# Step 7: rossoctl-backend + PostgreSQL sessions DB
 # ============================================================================
 if $STEP_BACKEND; then
-  log_info "Step 7: kagenti-backend + PostgreSQL sessions DB"
+  log_info "Step 7: rossoctl-backend + PostgreSQL sessions DB"
 
   BACKEND_NS="${LITELLM_NS:-team1}"
-  BACKEND_IMAGE="${KAGENTI_BACKEND_IMAGE:-kagenti-backend:local}"
+  BACKEND_IMAGE="${ROSSOCTL_BACKEND_IMAGE:-rossoctl-backend:local}"
 
   # 7a: PostgreSQL sessions DB
   if kubectl get statefulset postgres-sessions -n "$BACKEND_NS" &>/dev/null \
@@ -792,13 +792,13 @@ metadata:
   namespace: $BACKEND_NS
   labels:
     app.kubernetes.io/name: postgres-sessions
-    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/part-of: rossoctl
 type: Opaque
 stringData:
   host: postgres-sessions.$BACKEND_NS
   port: "5432"
   database: sessions
-  username: kagenti
+  username: rossoctl
   password: $PG_PASSWORD
 ---
 apiVersion: apps/v1
@@ -808,7 +808,7 @@ metadata:
   namespace: $BACKEND_NS
   labels:
     app.kubernetes.io/name: postgres-sessions
-    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/part-of: rossoctl
 spec:
   serviceName: postgres-sessions
   replicas: 1
@@ -842,7 +842,7 @@ spec:
         - name: POSTGRES_DB
           value: sessions
         - name: POSTGRES_USER
-          value: kagenti
+          value: rossoctl
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
@@ -899,15 +899,15 @@ EOPG
 
   # 7b: Build backend image (Kind only)
   if ! is_openshift && [[ "$BACKEND_IMAGE" == *":local"* ]]; then
-    log_info "Building kagenti-backend image..."
+    log_info "Building rossoctl-backend image..."
     if ! $DRY_RUN; then
-      docker build -f "$REPO_ROOT/kagenti/backend/Dockerfile" "$REPO_ROOT/kagenti/" \
+      docker build -f "$REPO_ROOT/rossoctl/backend/Dockerfile" "$REPO_ROOT/rossoctl/" \
         -t "$BACKEND_IMAGE" 2>&1 | tail -5
       kind load docker-image "$BACKEND_IMAGE" --name "$KIND_CLUSTER" 2>/dev/null || {
         log_warn "kind load failed — image may already exist"
       }
     else
-      echo "  [dry-run] docker build -f kagenti/backend/Dockerfile kagenti/ -t $BACKEND_IMAGE"
+      echo "  [dry-run] docker build -f rossoctl/backend/Dockerfile rossoctl/ -t $BACKEND_IMAGE"
       echo "  [dry-run] kind load docker-image $BACKEND_IMAGE --name $KIND_CLUSTER"
     fi
   fi
@@ -918,15 +918,15 @@ EOPG
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kagenti-backend
+  name: rossoctl-backend
   namespace: $BACKEND_NS
   labels:
-    app.kubernetes.io/name: kagenti-backend
+    app.kubernetes.io/name: rossoctl-backend
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kagenti-backend
+  name: rossoctl-backend
 rules:
 - apiGroups: ["", "apps", "batch"]
   resources: ["pods", "deployments", "statefulsets", "jobs", "services", "configmaps"]
@@ -938,64 +938,64 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: kagenti-backend-secrets
+  name: rossoctl-backend-secrets
   namespace: $BACKEND_NS
 rules:
 - apiGroups: [""]
   resources: ["secrets"]
   verbs: ["get"]
-  resourceNames: ["postgres-sessions-secret", "litemaas-credentials", "litellm-virtual-keys", "openshell-client-tls", "kagenti-backend-oidc"]
+  resourceNames: ["postgres-sessions-secret", "litemaas-credentials", "litellm-virtual-keys", "openshell-client-tls", "rossoctl-backend-oidc"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: kagenti-backend-secrets
+  name: rossoctl-backend-secrets
   namespace: $BACKEND_NS
 subjects:
 - kind: ServiceAccount
-  name: kagenti-backend
+  name: rossoctl-backend
   namespace: $BACKEND_NS
 roleRef:
   kind: Role
-  name: kagenti-backend-secrets
+  name: rossoctl-backend-secrets
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kagenti-backend
+  name: rossoctl-backend
 subjects:
 - kind: ServiceAccount
-  name: kagenti-backend
+  name: rossoctl-backend
   namespace: $BACKEND_NS
 roleRef:
   kind: ClusterRole
-  name: kagenti-backend
+  name: rossoctl-backend
   apiGroup: rbac.authorization.k8s.io
 EORBAC
 
   # 7d: Backend Deployment (always apply — idempotent, picks up RBAC/config changes)
-    log_info "Deploying kagenti-backend in $BACKEND_NS..."
+    log_info "Deploying rossoctl-backend in $BACKEND_NS..."
     run_cmd kubectl apply -f - <<EOBACKEND
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kagenti-backend
+  name: rossoctl-backend
   namespace: $BACKEND_NS
   labels:
-    app.kubernetes.io/name: kagenti-backend
-    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/name: rossoctl-backend
+    app.kubernetes.io/part-of: rossoctl
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: kagenti-backend
+      app.kubernetes.io/name: rossoctl-backend
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: kagenti-backend
+        app.kubernetes.io/name: rossoctl-backend
     spec:
-      serviceAccountName: kagenti-backend
+      serviceAccountName: rossoctl-backend
       containers:
       - name: backend
         image: $BACKEND_IMAGE
@@ -1008,9 +1008,9 @@ spec:
           value: "false"
         - name: DOMAIN_NAME
           value: "localtest.me"
-        - name: KAGENTI_FEATURE_FLAG_SANDBOX
+        - name: ROSSOCTL_FEATURE_FLAG_SANDBOX
           value: "true"
-        - name: KAGENTI_FEATURE_FLAG_ACP
+        - name: ROSSOCTL_FEATURE_FLAG_ACP
           value: "true"
         - name: POSTGRES_HOST
           valueFrom:
@@ -1054,14 +1054,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: kagenti-backend
+  name: rossoctl-backend
   namespace: $BACKEND_NS
   labels:
-    app.kubernetes.io/name: kagenti-backend
-    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/name: rossoctl-backend
+    app.kubernetes.io/part-of: rossoctl
 spec:
   selector:
-    app.kubernetes.io/name: kagenti-backend
+    app.kubernetes.io/name: rossoctl-backend
   ports:
   - name: http
     port: 8000
@@ -1069,11 +1069,11 @@ spec:
 EOBACKEND
 
     if ! $DRY_RUN; then
-      kubectl rollout status deploy/kagenti-backend -n "$BACKEND_NS" --timeout=120s || {
-        log_warn "kagenti-backend still starting — continuing"
+      kubectl rollout status deploy/rossoctl-backend -n "$BACKEND_NS" --timeout=120s || {
+        log_warn "rossoctl-backend still starting — continuing"
       }
     fi
-    log_success "kagenti-backend deployed"
+    log_success "rossoctl-backend deployed"
   echo ""
 fi
 
@@ -1094,7 +1094,7 @@ if ! $DRY_RUN; then
     echo "    kubectl get deployment litellm-model-proxy -n ${LITELLM_NS:-team1}"
   fi
   if $STEP_BACKEND; then
-    echo "    kubectl get deployment kagenti-backend -n ${BACKEND_NS:-team1}"
+    echo "    kubectl get deployment rossoctl-backend -n ${BACKEND_NS:-team1}"
     echo "    kubectl get statefulset postgres-sessions -n ${BACKEND_NS:-team1}"
   fi
   echo ""

@@ -17,9 +17,9 @@
 #   -h, --help               Show this help
 #
 # EXAMPLES:
-#   source .env.kagenti-hypershift-ci && ./find-orphaned-resources.sh
-#   ./find-orphaned-resources.sh --custom-prefix kagenti-hypershift
-#   ./find-orphaned-resources.sh --custom-prefix kagenti-hypershift-custom-ladas --delete-all
+#   source .env.rossoctl-hypershift-ci && ./find-orphaned-resources.sh
+#   ./find-orphaned-resources.sh --custom-prefix rossoctl-hypershift
+#   ./find-orphaned-resources.sh --custom-prefix rossoctl-hypershift-custom-ladas --delete-all
 #   ./find-orphaned-resources.sh --summary-only
 #
 
@@ -101,12 +101,12 @@ else
     echo "Error: No prefix specified." >&2
     echo "" >&2
     echo "Either:" >&2
-    echo "  1. Set MANAGED_BY_TAG environment variable (e.g., source .env.kagenti-hypershift-ci)" >&2
+    echo "  1. Set MANAGED_BY_TAG environment variable (e.g., source .env.rossoctl-hypershift-ci)" >&2
     echo "  2. Use --custom-prefix <prefix> option" >&2
     echo "" >&2
     echo "Example:" >&2
-    echo "  source .env.kagenti-hypershift-ci && $0" >&2
-    echo "  $0 --custom-prefix kagenti-hypershift" >&2
+    echo "  source .env.rossoctl-hypershift-ci && $0" >&2
+    echo "  $0 --custom-prefix rossoctl-hypershift" >&2
     exit 1
 fi
 
@@ -452,7 +452,7 @@ display_instances() {
             type=$(echo "$instance" | jq -r '.[2] // "N/A"')
             name=$(echo "$instance" | jq -r '.[3][]? | select(.Key=="Name") | .Value' 2>/dev/null | head -1)
             cluster_tag=$(echo "$instance" | jq -r '.[3][]? | select(.Key | startswith("kubernetes.io/cluster/")) | "\(.Key | split("/") | .[2])=\(.Value)"' 2>/dev/null | head -1)
-            managed_by=$(echo "$instance" | jq -r '.[3][]? | select(.Key=="kagenti.io/managed-by") | .Value' 2>/dev/null | head -1)
+            managed_by=$(echo "$instance" | jq -r '.[3][]? | select(.Key=="rossoctl.io/managed-by") | .Value' 2>/dev/null | head -1)
             [[ -z "$name" ]] && name="N/A"
             [[ -z "$cluster_tag" ]] && cluster_tag="N/A"
             [[ -z "$managed_by" ]] && managed_by="N/A"
@@ -482,7 +482,7 @@ display_nat_gateways() {
             subnet=$(echo "$nat" | jq -r '.[2] // "N/A"')
             name=$(echo "$nat" | jq -r '.[3][]? | select(.Key=="Name") | .Value' 2>/dev/null | head -1)
             cluster_tag=$(echo "$nat" | jq -r '.[3][]? | select(.Key | startswith("kubernetes.io/cluster/")) | "\(.Key | split("/") | .[2])=\(.Value)"' 2>/dev/null | head -1)
-            managed_by=$(echo "$nat" | jq -r '.[3][]? | select(.Key=="kagenti.io/managed-by") | .Value' 2>/dev/null | head -1)
+            managed_by=$(echo "$nat" | jq -r '.[3][]? | select(.Key=="rossoctl.io/managed-by") | .Value' 2>/dev/null | head -1)
             [[ -z "$name" ]] && name="N/A"
             [[ -z "$cluster_tag" ]] && cluster_tag="N/A"
             [[ -z "$managed_by" ]] && managed_by="N/A"
@@ -509,7 +509,7 @@ display_security_groups() {
             id=$(echo "$sg" | jq -r '.[0] // "N/A"')
             name=$(echo "$sg" | jq -r '.[1] // "N/A"')
             cluster_tag=$(echo "$sg" | jq -r '.[2][]? | select(.Key | startswith("kubernetes.io/cluster/")) | "\(.Key | split("/") | .[2])=\(.Value)"' 2>/dev/null | head -1)
-            managed_by=$(echo "$sg" | jq -r '.[2][]? | select(.Key=="kagenti.io/managed-by") | .Value' 2>/dev/null | head -1)
+            managed_by=$(echo "$sg" | jq -r '.[2][]? | select(.Key=="rossoctl.io/managed-by") | .Value' 2>/dev/null | head -1)
             [[ -z "$cluster_tag" ]] && cluster_tag="N/A"
             [[ -z "$managed_by" ]] && managed_by="N/A"
             print_row "%-25s %-50s %-55s %-30s" "$id" "$name" "$cluster_tag" "$managed_by"
@@ -538,7 +538,7 @@ display_subnets() {
             az=$(echo "$subnet" | jq -r '.[3] // "N/A"')
             name=$(echo "$subnet" | jq -r '.[4][]? | select(.Key=="Name") | .Value' 2>/dev/null | head -1)
             cluster_tag=$(echo "$subnet" | jq -r '.[4][]? | select(.Key | startswith("kubernetes.io/cluster/")) | "\(.Key | split("/") | .[2])=\(.Value)"' 2>/dev/null | head -1)
-            managed_by=$(echo "$subnet" | jq -r '.[4][]? | select(.Key=="kagenti.io/managed-by") | .Value' 2>/dev/null | head -1)
+            managed_by=$(echo "$subnet" | jq -r '.[4][]? | select(.Key=="rossoctl.io/managed-by") | .Value' 2>/dev/null | head -1)
             [[ -z "$name" ]] && name="N/A"
             [[ -z "$cluster_tag" ]] && cluster_tag="N/A"
             [[ -z "$managed_by" ]] && managed_by="N/A"
@@ -589,7 +589,7 @@ display_igws() {
             state=$(echo "$igw" | jq -r '.[1] // "N/A"')
             name=$(echo "$igw" | jq -r '.[2][]? | select(.Key=="Name") | .Value' 2>/dev/null | head -1)
             cluster_tag=$(echo "$igw" | jq -r '.[2][]? | select(.Key | startswith("kubernetes.io/cluster/")) | "\(.Key | split("/") | .[2])=\(.Value)"' 2>/dev/null | head -1)
-            managed_by=$(echo "$igw" | jq -r '.[2][]? | select(.Key=="kagenti.io/managed-by") | .Value' 2>/dev/null | head -1)
+            managed_by=$(echo "$igw" | jq -r '.[2][]? | select(.Key=="rossoctl.io/managed-by") | .Value' 2>/dev/null | head -1)
             [[ -z "$name" ]] && name="N/A"
             [[ -z "$cluster_tag" ]] && cluster_tag="N/A"
             [[ -z "$managed_by" ]] && managed_by="N/A"
@@ -616,7 +616,7 @@ display_rtbs() {
             id=$(echo "$rtb" | jq -r '.[0] // "N/A"')
             name=$(echo "$rtb" | jq -r '.[1][]? | select(.Key=="Name") | .Value' 2>/dev/null | head -1)
             cluster_tag=$(echo "$rtb" | jq -r '.[1][]? | select(.Key | startswith("kubernetes.io/cluster/")) | "\(.Key | split("/") | .[2])=\(.Value)"' 2>/dev/null | head -1)
-            managed_by=$(echo "$rtb" | jq -r '.[1][]? | select(.Key=="kagenti.io/managed-by") | .Value' 2>/dev/null | head -1)
+            managed_by=$(echo "$rtb" | jq -r '.[1][]? | select(.Key=="rossoctl.io/managed-by") | .Value' 2>/dev/null | head -1)
             [[ -z "$name" ]] && name="N/A"
             [[ -z "$cluster_tag" ]] && cluster_tag="N/A"
             [[ -z "$managed_by" ]] && managed_by="N/A"
@@ -1279,7 +1279,7 @@ if [[ "$eip_count" -gt 0 ]]; then
             assoc=$(echo "$eip" | jq -r '.[2] // "not-associated"')
             name=$(echo "$eip" | jq -r '.[3][]? | select(.Key=="Name") | .Value' 2>/dev/null | head -1)
             cluster_tag=$(echo "$eip" | jq -r '.[3][]? | select(.Key | startswith("kubernetes.io/cluster/")) | "\(.Key | split("/") | .[2])=\(.Value)"' 2>/dev/null | head -1)
-            managed_by=$(echo "$eip" | jq -r '.[3][]? | select(.Key=="kagenti.io/managed-by") | .Value' 2>/dev/null | head -1)
+            managed_by=$(echo "$eip" | jq -r '.[3][]? | select(.Key=="rossoctl.io/managed-by") | .Value' 2>/dev/null | head -1)
             [[ -z "$name" ]] && name="N/A"
             [[ -z "$cluster_tag" ]] && cluster_tag="N/A"
             [[ -z "$managed_by" ]] && managed_by="N/A"
@@ -1306,7 +1306,7 @@ if [[ "$vol_count" -gt 0 ]]; then
             size=$(echo "$vol" | jq -r '.[2] // "N/A"')
             name=$(echo "$vol" | jq -r '.[3][]? | select(.Key=="Name") | .Value' 2>/dev/null | head -1)
             cluster_tag=$(echo "$vol" | jq -r '.[3][]? | select(.Key | startswith("kubernetes.io/cluster/")) | "\(.Key | split("/") | .[2])=\(.Value)"' 2>/dev/null | head -1)
-            managed_by=$(echo "$vol" | jq -r '.[3][]? | select(.Key=="kagenti.io/managed-by") | .Value' 2>/dev/null | head -1)
+            managed_by=$(echo "$vol" | jq -r '.[3][]? | select(.Key=="rossoctl.io/managed-by") | .Value' 2>/dev/null | head -1)
             [[ -z "$name" ]] && name="N/A"
             [[ -z "$cluster_tag" ]] && cluster_tag="N/A"
             [[ -z "$managed_by" ]] && managed_by="N/A"

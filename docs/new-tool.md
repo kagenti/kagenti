@@ -2,9 +2,9 @@
 
 ## Overview
 
-MCP (Model Context Protocol) tools extend the capabilities of AI agents by providing access to external services, APIs, and resources. Kagenti allows you to deploy MCP tools either from source code or from pre-existing container images.
+MCP (Model Context Protocol) tools extend the capabilities of AI agents by providing access to external services, APIs, and resources. Rossoctl allows you to deploy MCP tools either from source code or from pre-existing container images.
 
-> **💡 New to Kagenti?** This guide is designed for **Tool Developers**. If you're unsure about your role or want to understand the broader ecosystem, check out our **[Personas and Roles Documentation](../PERSONAS_AND_ROLES.md)**.
+> **💡 New to Rossoctl?** This guide is designed for **Tool Developers**. If you're unsure about your role or want to understand the broader ecosystem, check out our **[Personas and Roles Documentation](../PERSONAS_AND_ROLES.md)**.
 
 ## Pre-requisites
 
@@ -12,10 +12,10 @@ MCP (Model Context Protocol) tools extend the capabilities of AI agents by provi
 
 Before importing a new tool from source, ensure that:
 
-1. The tool code is hosted on GitHub and is accessible using the GitHub credentials provided [during the Kagenti installation](./install.md).
+1. The tool code is hosted on GitHub and is accessible using the GitHub credentials provided [during the Rossoctl installation](./install.md).
 2. The tool code is organized within a sub-directory of the Git repository (not in the root directory).
 3. The root of the subdirectory contains a Dockerfile.
-4. [Shipwright](https://shipwright.io) is installed in your cluster (included in the standard Kagenti installation).
+4. [Shipwright](https://shipwright.io) is installed in your cluster (included in the standard Rossoctl installation).
 
 ### Deploying from an Image
 
@@ -23,7 +23,7 @@ Before importing a new tool from an existing Docker image, ensure that the Docke
 
 ## Tool Examples
 
-See the [Kagenti agent examples repo](https://github.com/kagenti/agent-examples/tree/main/mcp) for a variety of MCP tool examples, including:
+See the [Rossoctl agent examples repo](https://github.com/rossoctl/examples/tree/main/mcp) for a variety of MCP tool examples, including:
 
 | Tool | Description |
 |------|-------------|
@@ -38,7 +38,7 @@ See the [Kagenti agent examples repo](https://github.com/kagenti/agent-examples/
 
 ### Step 1: Access the Import New Tool Section
 
-- Log in to the Kagenti UI.
+- Log in to the Rossoctl UI.
 - Navigate to the "Import New Tool" section from the left menu.
 
 ### Step 2: Select the Namespace
@@ -73,7 +73,7 @@ See the [Kagenti agent examples repo](https://github.com/kagenti/agent-examples/
 
 ### Step 5: Configure Build Options (Source Builds Only)
 
-When building from source, Kagenti uses [Shipwright](https://shipwright.io) to build container images.
+When building from source, Rossoctl uses [Shipwright](https://shipwright.io) to build container images.
 
 #### Build Strategy
 
@@ -109,7 +109,7 @@ For source builds, you will be redirected to a **Build Progress** page that show
 - Source configuration details
 - Tool configuration that will be applied
 
-Once the build succeeds, Kagenti automatically:
+Once the build succeeds, Rossoctl automatically:
 1. Creates a Deployment and Service for the tool with the built image
 2. Creates an HTTPRoute for gateway access (if enabled, via "Enable external access to the tool endpoint" in the UI)
 3. Redirects you to the Tool detail page
@@ -124,13 +124,13 @@ To verify that your tool is running:
 2. Check the status of the tool pods:
 
    ```bash
-   kubectl get pods -n <namespace> -l kagenti.io/type=tool
+   kubectl get pods -n <namespace> -l rossoctl.io/type=tool
    ```
 
 3. Check the tool Deployment status:
 
    ```bash
-   kubectl get deployments -n <namespace> -l kagenti.io/type=tool
+   kubectl get deployments -n <namespace> -l rossoctl.io/type=tool
    ```
 
 4. Tail the logs to ensure the service has started:
@@ -143,7 +143,7 @@ To verify that your tool is running:
 
 ### Build Issues (Source Builds)
 
-When building from source, Kagenti creates Shipwright resources:
+When building from source, Rossoctl creates Shipwright resources:
 
 ```bash
 # Check Shipwright Build status
@@ -152,7 +152,7 @@ kubectl describe build <tool-name> -n <namespace>
 
 # Check BuildRun status and logs
 kubectl get buildruns -n <namespace>
-kubectl describe buildrun -l kagenti.io/build-name=<tool-name> -n <namespace>
+kubectl describe buildrun -l rossoctl.io/build-name=<tool-name> -n <namespace>
 
 # View build pod logs
 kubectl logs -n <namespace> -l build.shipwright.io/name=<tool-name>
@@ -171,14 +171,14 @@ Common build issues:
 
 ```bash
 # Check Deployment status
-kubectl get deployments -n <namespace> -l kagenti.io/type=tool
+kubectl get deployments -n <namespace> -l rossoctl.io/type=tool
 kubectl describe deployment <tool-name> -n <namespace>
 
 # Check Service status
-kubectl get services -n <namespace> -l kagenti.io/type=tool
+kubectl get services -n <namespace> -l rossoctl.io/type=tool
 
 # Check pod status and logs
-kubectl get pods -n <namespace> -l kagenti.io/type=tool,app.kubernetes.io/name=<tool-name>
+kubectl get pods -n <namespace> -l rossoctl.io/type=tool,app.kubernetes.io/name=<tool-name>
 kubectl logs -n <namespace> -l app.kubernetes.io/name=<tool-name>
 ```
 
@@ -204,7 +204,7 @@ Agents connect to tools using environment variables:
 - `MCP_URL` (singular) - For agents that use a single tool or connect via the MCP Gateway
 - `MCP_URLS` (plural) - For agents that connect directly to multiple tools (comma-separated list)
 
-The example agents in the [agent-examples repository](https://github.com/kagenti/agent-examples) include `.env.openai` or `.env.ollama` files with default values that assume the tool is deployed in the **same namespace** as the agent.
+The example agents in the [agent-examples repository](https://github.com/rossoctl/examples) include `.env.openai` or `.env.ollama` files with default values that assume the tool is deployed in the **same namespace** as the agent.
 
 #### Same Namespace (Default)
 
@@ -248,7 +248,7 @@ MCP_URLS=http://movie-tool.tools.svc.cluster.local:8000/mcp, http://flight-tool.
 
 **Option 2: Copy the namespace-qualified URL from the Tool Detail Page**
 
-1. Navigate to the Tool Catalog in the Kagenti UI
+1. Navigate to the Tool Catalog in the Rossoctl UI
 2. Click on your tool to open its detail page
 3. Copy the MCP server URL displayed on the page (which includes the namespace)
 4. Update your agent's `MCP_URL` (or `MCP_URLS` for multiple tools) environment variable with this value
@@ -268,4 +268,4 @@ This approach allows agents to access multiple tools through a single endpoint, 
 - [Importing a New Agent](./new-agent.md)
 - [MCP Gateway Instructions](./gateway.md)
 - [Components Overview](./components.md)
-- [Demo: Weather Agent and Tool](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/weather-agent/demo-ui.md)
+- [Demo: Weather Agent and Tool](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/weather-agent/demo-ui.md)

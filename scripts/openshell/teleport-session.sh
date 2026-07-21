@@ -2,7 +2,7 @@
 # ============================================================================
 # TELEPORT SESSION
 # ============================================================================
-# Package local Claude Code context and deploy it into a Kagenti OpenShell
+# Package local Claude Code context and deploy it into a Rossoctl OpenShell
 # sandbox. Enables remote execution of Claude Code with full isolation
 # (Landlock, seccomp, netns, OPA) while preserving local skills and config.
 #
@@ -203,7 +203,7 @@ metadata:
   name: $sb_name
   namespace: $NS
   labels:
-    kagenti.io/teleport-session: "$SESSION_ID"
+    rossoctl.io/teleport-session: "$SESSION_ID"
 spec:
   podTemplate:
     spec:
@@ -313,7 +313,7 @@ metadata:
   name: $sb_name
   namespace: $NS
   labels:
-    kagenti.io/teleport-session: "$SESSION_ID"
+    rossoctl.io/teleport-session: "$SESSION_ID"
 spec:
   podTemplate:
     spec:
@@ -354,7 +354,7 @@ EOSANDBOX
     if [ -n "$all_pods" ]; then
       log_error "Sandbox pod exists but not Running after ${TIMEOUT}s:"
       log_error "  $all_pods"
-      kubectl describe pod -n "$NS" -l "kagenti.io/teleport-session=$SESSION_ID" 2>/dev/null \
+      kubectl describe pod -n "$NS" -l "rossoctl.io/teleport-session=$SESSION_ID" 2>/dev/null \
         | grep -A5 "Events:" >&2 || true
     else
       log_error "Sandbox pod not created after ${TIMEOUT}s"

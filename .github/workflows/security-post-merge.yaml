@@ -20,11 +20,11 @@ on:
     branches: [main]
     paths:
       - 'uv.lock'
-      - 'kagenti/backend/uv.lock'
-      - 'kagenti/**/requirements.txt'
-      - 'kagenti/**/package-lock.json'
+      - 'rossoctl/backend/uv.lock'
+      - 'rossoctl/**/requirements.txt'
+      - 'rossoctl/**/package-lock.json'
       - 'pyproject.toml'
-      - 'kagenti/backend/pyproject.toml'
+      - 'rossoctl/backend/pyproject.toml'
   # Allow manual trigger for ad-hoc scanning
   workflow_dispatch:
 
@@ -65,7 +65,7 @@ jobs:
 
       - name: Upload to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v3
+        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9  # v3
         with:
           sarif_file: 'trivy-results.sarif'
           category: 'trivy-dependencies'

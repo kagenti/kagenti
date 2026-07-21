@@ -54,7 +54,7 @@ making it fully self-sufficient. This is Phase 6.
 
 After copying, adapt the skills:
 
-1. **Remove source-specific references** — strip kagenti-specific paths or
+1. **Remove source-specific references** — strip rossoctl-specific paths or
    assumptions that don't apply
 2. **Verify frontmatter** — every `name:` field must match its directory name
 3. **Update Related Skills** — only reference skills that exist in the copied set

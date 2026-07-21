@@ -1,6 +1,6 @@
 # ADK agent with OpenShell supervisor as entrypoint
 # Supervisor applies Landlock + seccomp + netns + OPA before exec'ing the agent
-FROM ghcr.io/kagenti/openshell/supervisor:v0.0.36-kagenti.8 AS supervisor
+FROM ghcr.io/rossoctl/openshell/supervisor:v0.0.36-rossoctl.8 AS supervisor
 
 FROM python:3.13-slim
 

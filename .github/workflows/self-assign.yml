@@ -1,9 +1,9 @@
 # Issue Self-Assign
 #
 # Thin caller for the org-wide reusable self-assign workflow.
-# Configuration and defaults are managed centrally in kagenti/.github.
+# Configuration and defaults are managed centrally in rossoctl/.github.
 #
-# Reference: https://github.com/kagenti/.github/blob/main/.github/workflows/self-assign-reusable.yml
+# Reference: https://github.com/rossoctl/.github/blob/main/.github/workflows/self-assign-reusable.yml
 #
 name: Issue self-assign
 
@@ -17,6 +17,6 @@ permissions:
 
 jobs:
   self-assign:
-    uses: kagenti/.github/.github/workflows/self-assign-reusable.yml@99700ebe858a1bc566492b1de9aea6e764ee226f # 2026-05-05
+    uses: rossoctl/.github/.github/workflows/self-assign-reusable.yml@99700ebe858a1bc566492b1de9aea6e764ee226f # 2026-05-05
     secrets:
       ISSUE_ASSIGN_TOKEN: ${{ secrets.ISSUE_ASSIGN_TOKEN }}

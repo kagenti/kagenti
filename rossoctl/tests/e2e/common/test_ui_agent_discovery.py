@@ -1,0 +1,383 @@
+#!/usr/bin/env python3
+"""
+UI Agent Discovery E2E Tests
+
+Tests that agents enrolled via AgentRuntime CRs are discoverable through the
+UI backend API.  The rossoctl-operator reconciles each AgentRuntime and applies
+the ``rossoctl.io/type`` label to the target Deployment; the backend discovers
+agents by querying that operator-managed label.
+
+This validates the agent discovery flow:
+1. AgentRuntime CR exists and references a Deployment
+2. Operator has reconciled the rossoctl.io/type label onto the Deployment
+3. Backend API can query the labelled Deployment
+4. Agent appears in the list with correct metadata
+
+Usage:
+    pytest tests/e2e/common/test_ui_agent_discovery.py -v
+
+Environment Variables:
+    ROSSOCTL_BACKEND_URL: Backend API URL
+        Kind: http://localhost:8000 (via port-forward)
+        OpenShift: https://rossoctl-ui-rossoctl-system.apps.cluster.example.com/api
+"""
+
+import os
+import pytest
+import httpx
+
+AGENTRUNTIME_GROUP = "agent.rossoctl.dev"
+AGENTRUNTIME_VERSION = "v1alpha1"
+AGENTRUNTIME_PLURAL = "agentruntimes"
+
+
+class TestUIAgentDiscovery:
+    """Test agent discovery through the UI backend API."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_ssl(self, is_openshift, openshift_ingress_ca):
+        """Set SSL context for OpenShift routes."""
+        import ssl
+
+        if is_openshift:
+            self._verify = ssl.create_default_context(cafile=openshift_ingress_ca)
+        else:
+            self._verify = True
+
+    @pytest.fixture
+    def backend_url(self, is_openshift):
+        """
+        Get the backend API URL based on environment.
+
+        For Kind: Expects port-forward to backend on localhost:8002
+        For OpenShift: Discovers rossoctl-ui route (UI proxies /api to backend)
+        """
+        url = os.environ.get("ROSSOCTL_BACKEND_URL")
+        if url:
+            return url.rstrip("/")
+
+        if is_openshift:
+            # On OpenShift, the rossoctl-ui route proxies /api/* to the backend
+            import subprocess
+
+            result = subprocess.run(
+                [
+                    "kubectl",
+                    "get",
+                    "route",
+                    "rossoctl-ui",
+                    "-n",
+                    "rossoctl-system",
+                    "-o",
+                    "jsonpath={.spec.host}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0 and result.stdout:
+                return f"https://{result.stdout}"
+            pytest.fail(
+                "Could not discover rossoctl-ui route for backend API access. "
+                "Set ROSSOCTL_BACKEND_URL env var as a workaround."
+            )
+        else:
+            # Kind cluster with port-forward (port 8002 to avoid conflict with weather-service)
+            return "http://localhost:8002"
+
+    @pytest.mark.critical
+    def test_weather_service_agent_discoverable(
+        self, backend_url, http_client, k8s_apps_client, k8s_custom_client
+    ):
+        """
+        Verify weather-service agent is discoverable through the UI backend API.
+
+        Prerequisites:
+        1. weather-service AgentRuntime CR exists in team1 namespace
+        2. rossoctl-operator has reconciled rossoctl.io/type=agent onto the Deployment
+        3. Backend is accessible (port-forwarded or via route)
+        """
+        # Verify the AgentRuntime CR exists
+        try:
+            ar = k8s_custom_client.get_namespaced_custom_object(
+                group=AGENTRUNTIME_GROUP,
+                version=AGENTRUNTIME_VERSION,
+                namespace="team1",
+                plural=AGENTRUNTIME_PLURAL,
+                name="weather-service",
+            )
+        except Exception as e:
+            pytest.fail(
+                f"weather-service AgentRuntime CR not found in team1: {e}. "
+                f"Create an AgentRuntime CR to enroll this workload."
+            )
+        assert ar["spec"]["type"] == "agent", (
+            f"weather-service AgentRuntime has type={ar['spec']['type']}, expected agent"
+        )
+
+        # Verify the operator has reconciled the label onto the Deployment
+        deployment = k8s_apps_client.read_namespaced_deployment(
+            name="weather-service", namespace="team1"
+        )
+        labels = deployment.metadata.labels or {}
+
+        assert labels.get("rossoctl.io/type") == "agent", (
+            f"weather-service Deployment missing rossoctl.io/type=agent label. "
+            f"The rossoctl-operator should apply this via AgentRuntime reconciliation. "
+            f"Found labels: {labels}"
+        )
+
+        # Now verify it appears in the backend API response
+        # This is a synchronous test, so we use httpx.get instead of http_client
+        url = f"{backend_url}/api/v1/agents?namespace=team1"
+
+        try:
+            response = httpx.get(url, timeout=30.0, verify=self._verify)
+        except httpx.ConnectError as e:
+            pytest.skip(
+                f"Backend not accessible at {backend_url}. "
+                f"Port-forward may not be set up. Error: {e}"
+            )
+
+        if response.status_code != 200:
+            pytest.skip(
+                f"Backend API returned {response.status_code} - "
+                f"backend may not be properly configured. Response: {response.text}"
+            )
+
+        data = response.json()
+        items = data.get("items", [])
+        agent_names = [agent.get("name") for agent in items]
+
+        if not agent_names:
+            pytest.skip(
+                "Backend API returned empty agent list. "
+                "This may indicate a backend bug or RBAC issue. "
+                "The Kubernetes API can find agents (see test_backend_rbac_can_list_deployments)."
+            )
+
+        assert "weather-service" in agent_names, (
+            f"weather-service not found in UI API response. "
+            f"Found agents: {agent_names}. "
+            f"Check that backend has RBAC permissions to list Deployments in team1 namespace."
+        )
+
+    @pytest.mark.critical
+    def test_weather_service_agent_metadata(self, backend_url, http_client):
+        """
+        Verify weather-service agent has correct metadata in UI API response.
+
+        Checks that the agent response includes:
+        - name: weather-service
+        - namespace: team1
+        - status: Ready (or similar healthy status)
+        - labels: protocol=a2a, framework=LangGraph
+        - workloadType: deployment
+        """
+        url = f"{backend_url}/api/v1/agents?namespace=team1"
+
+        try:
+            response = httpx.get(url, timeout=30.0, verify=self._verify)
+        except httpx.ConnectError as e:
+            pytest.skip(f"Backend not accessible: {e}")
+
+        if response.status_code != 200:
+            pytest.skip(f"Backend API returned {response.status_code}")
+
+        data = response.json()
+        items = data.get("items", [])
+
+        # Find weather-service agent
+        weather_agent = next(
+            (agent for agent in items if agent.get("name") == "weather-service"), None
+        )
+
+        if weather_agent is None:
+            pytest.skip(
+                "weather-service not found in API response - "
+                "backend may not be discovering agents correctly"
+            )
+
+        # Verify namespace
+        assert weather_agent.get("namespace") == "team1"
+
+        # Verify workload type
+        assert weather_agent.get("workloadType") == "deployment", (
+            f"Expected workloadType=deployment, got {weather_agent.get('workloadType')}"
+        )
+
+        # Verify labels
+        labels = weather_agent.get("labels", {})
+        assert labels.get("protocol") == "a2a", (
+            f"Expected protocol=a2a, got {labels.get('protocol')}"
+        )
+
+        # Status should be Ready or Running (depending on deployment state)
+        status = weather_agent.get("status")
+        assert status in ["Ready", "Running", "Progressing"], (
+            f"Expected status Ready/Running, got {status}"
+        )
+
+    def test_namespace_label_present(self, k8s_client):
+        """
+        Verify team1 namespace has rossoctl-enabled=true label.
+
+        This label is required for the namespace to appear in the
+        UI namespace selector dropdown.
+        """
+        namespace = k8s_client.read_namespace(name="team1")
+        labels = namespace.metadata.labels or {}
+
+        assert labels.get("rossoctl-enabled") == "true", (
+            f"team1 namespace missing rossoctl-enabled=true label. "
+            f"Found labels: {labels}. "
+            f"This label is required for the namespace to appear in the UI."
+        )
+
+    def test_backend_rbac_can_list_deployments(self, k8s_apps_client):
+        """
+        Verify that listing Deployments with the operator-managed
+        rossoctl.io/type=agent label works.
+
+        This simulates what the backend does to discover agents.
+        The label is applied by the rossoctl-operator via AgentRuntime
+        reconciliation, not manually.
+        If this fails, check that AgentRuntime CRs exist and the operator
+        has reconciled them, or check backend ServiceAccount RBAC permissions.
+        """
+        deployments = k8s_apps_client.list_namespaced_deployment(
+            namespace="team1", label_selector="rossoctl.io/type=agent"
+        )
+
+        assert len(deployments.items) > 0, (
+            "No Deployments found with rossoctl.io/type=agent label in team1. "
+            "Ensure AgentRuntime CRs exist and the rossoctl-operator has reconciled them."
+        )
+
+        deployment_names = [d.metadata.name for d in deployments.items]
+        assert "weather-service" in deployment_names, (
+            f"weather-service not in agent Deployments. Found: {deployment_names}"
+        )
+
+
+class TestToolDiscovery:
+    """Test tool discovery through the UI backend API."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_ssl(self, is_openshift, openshift_ingress_ca):
+        """Set SSL context for OpenShift routes."""
+        import ssl
+
+        if is_openshift:
+            self._verify = ssl.create_default_context(cafile=openshift_ingress_ca)
+        else:
+            self._verify = True
+
+    @pytest.fixture
+    def backend_url(self, is_openshift):
+        """Get the backend API URL based on environment."""
+        url = os.environ.get("ROSSOCTL_BACKEND_URL")
+        if url:
+            return url.rstrip("/")
+
+        if is_openshift:
+            import subprocess
+
+            result = subprocess.run(
+                [
+                    "kubectl",
+                    "get",
+                    "route",
+                    "rossoctl-ui",
+                    "-n",
+                    "rossoctl-system",
+                    "-o",
+                    "jsonpath={.spec.host}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0 and result.stdout:
+                return f"https://{result.stdout}"
+            pytest.fail("Could not discover rossoctl-ui route for backend API access.")
+
+        # Kind cluster with port-forward (port 8002 to avoid conflict with weather-service)
+        return "http://localhost:8002"
+
+    def test_weather_tool_discoverable(
+        self, backend_url, k8s_apps_client, k8s_custom_client
+    ):
+        """
+        Verify weather-tool is discoverable through the UI backend API.
+
+        Prerequisites:
+        1. weather-tool AgentRuntime CR exists in team1 namespace
+        2. rossoctl-operator has reconciled rossoctl.io/type=tool onto the Deployment
+        """
+        # Verify the AgentRuntime CR exists
+        try:
+            ar = k8s_custom_client.get_namespaced_custom_object(
+                group=AGENTRUNTIME_GROUP,
+                version=AGENTRUNTIME_VERSION,
+                namespace="team1",
+                plural=AGENTRUNTIME_PLURAL,
+                name="weather-tool",
+            )
+        except Exception as e:
+            pytest.fail(
+                f"weather-tool AgentRuntime CR not found in team1: {e}. "
+                f"Create an AgentRuntime CR to enroll this workload."
+            )
+        assert ar["spec"]["type"] == "tool", (
+            f"weather-tool AgentRuntime has type={ar['spec']['type']}, expected tool"
+        )
+
+        # Verify the operator has reconciled the label onto the Deployment
+        deployment = k8s_apps_client.read_namespaced_deployment(
+            name="weather-tool", namespace="team1"
+        )
+        labels = deployment.metadata.labels or {}
+
+        assert labels.get("rossoctl.io/type") == "tool", (
+            f"weather-tool Deployment missing rossoctl.io/type=tool label. "
+            f"The rossoctl-operator should apply this via AgentRuntime reconciliation. "
+            f"Found labels: {labels}"
+        )
+
+        # Check API response
+        url = f"{backend_url}/api/v1/tools?namespace=team1"
+
+        try:
+            response = httpx.get(url, timeout=30.0, verify=self._verify)
+        except httpx.ConnectError as e:
+            pytest.skip(f"Backend not accessible: {e}")
+
+        if response.status_code in (401, 403):
+            pytest.skip(
+                f"Backend tools API returned {response.status_code} - "
+                "authorization may not be configured correctly"
+            )
+
+        if response.status_code != 200:
+            pytest.skip(f"Backend API returned {response.status_code}")
+
+        data = response.json()
+        items = data.get("items", [])
+        tool_names = [tool.get("name") for tool in items]
+
+        if not tool_names:
+            pytest.skip(
+                "Backend API returned empty tool list - "
+                "backend may not be discovering tools correctly"
+            )
+
+        assert "weather-tool" in tool_names, (
+            f"weather-tool not found in UI API response. Found tools: {tool_names}"
+        )
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(pytest.main([__file__, "-v"]))

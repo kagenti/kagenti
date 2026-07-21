@@ -1,11 +1,11 @@
 ---
 name: testing:kubectl-debugging
-description: Common kubectl commands for debugging Kagenti components
+description: Common kubectl commands for debugging Rossoctl components
 ---
 
 # Kubectl Debugging Patterns
 
-Common kubectl commands for debugging Kagenti components.
+Common kubectl commands for debugging Rossoctl components.
 
 ## Context-Safe Execution (MANDATORY)
 
@@ -13,7 +13,7 @@ Common kubectl commands for debugging Kagenti components.
 form for readability. When executing, always redirect:
 
 ```bash
-export LOG_DIR=/tmp/kagenti/k8s/${CLUSTER:-local}
+export LOG_DIR=/tmp/rossoctl/k8s/${CLUSTER:-local}
 mkdir -p $LOG_DIR
 
 # Pattern: kubectl <command> > $LOG_DIR/<name>.log 2>&1 && echo "OK" || echo "FAIL"
@@ -39,11 +39,11 @@ mkdir -p $LOG_DIR
 
 ```bash
 # HyperShift cluster
-export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-mlflow/auth/kubeconfig
+export KUBECONFIG=~/clusters/hcp/rossoctl-hypershift-custom-mlflow/auth/kubeconfig
 
 # Kind cluster
 export KUBECONFIG=~/.kube/config
-kubectl config use-context kind-kagenti
+kubectl config use-context kind-rossoctl
 ```
 
 ### Verify Connection
@@ -58,27 +58,27 @@ kubectl get nodes
 ### Check Rendered Values
 
 ```bash
-helm get values kagenti-deps -n kagenti-system
+helm get values rossoctl-deps -n rossoctl-system
 ```
 
 ### Check All Values (Including Defaults)
 
 ```bash
-helm get values kagenti-deps -n kagenti-system -a
+helm get values rossoctl-deps -n rossoctl-system -a
 ```
 
 ### Template Without Installing
 
 ```bash
-helm template kagenti-deps charts/kagenti-deps -n kagenti-system \
+helm template rossoctl-deps charts/rossoctl-deps -n rossoctl-system \
   -f /tmp/values.yaml > /tmp/rendered.yaml
 ```
 
 ### Check Release Status
 
 ```bash
-helm list -n kagenti-system
-helm history kagenti-deps -n kagenti-system
+helm list -n rossoctl-system
+helm history rossoctl-deps -n rossoctl-system
 ```
 
 ## ConfigMap and Secret Inspection
@@ -86,27 +86,27 @@ helm history kagenti-deps -n kagenti-system
 ### Extract ConfigMap Content
 
 ```bash
-kubectl get configmap otel-collector-config -n kagenti-system -o yaml
+kubectl get configmap otel-collector-config -n rossoctl-system -o yaml
 ```
 
 ### Extract Specific Key
 
 ```bash
-kubectl get configmap otel-collector-config -n kagenti-system \
+kubectl get configmap otel-collector-config -n rossoctl-system \
   -o jsonpath='{.data.otel-collector-config\.yaml}'
 ```
 
 ### Decode Secret
 
 ```bash
-kubectl get secret mlflow-oauth-secret -n kagenti-system \
+kubectl get secret mlflow-oauth-secret -n rossoctl-system \
   -o jsonpath='{.data.MLFLOW_CLIENT_ID}' | base64 -d
 ```
 
 ### List All Secret Keys
 
 ```bash
-kubectl get secret mlflow-oauth-secret -n kagenti-system \
+kubectl get secret mlflow-oauth-secret -n rossoctl-system \
   -o jsonpath='{.data}' | jq 'keys'
 ```
 
@@ -115,34 +115,34 @@ kubectl get secret mlflow-oauth-secret -n kagenti-system \
 ### Check Pod Environment Variables
 
 ```bash
-kubectl get pod otel-collector-xxx -n kagenti-system \
+kubectl get pod otel-collector-xxx -n rossoctl-system \
   -o jsonpath='{.spec.containers[0].env}' | jq
 ```
 
 ### Check Pod Status
 
 ```bash
-kubectl describe pod otel-collector-xxx -n kagenti-system
+kubectl describe pod otel-collector-xxx -n rossoctl-system
 ```
 
 ### Get Pod Logs
 
 ```bash
-kubectl logs -n kagenti-system otel-collector-xxx
-kubectl logs -n kagenti-system otel-collector-xxx --previous  # After crash
-kubectl logs -n kagenti-system otel-collector-xxx -f          # Follow
+kubectl logs -n rossoctl-system otel-collector-xxx
+kubectl logs -n rossoctl-system otel-collector-xxx --previous  # After crash
+kubectl logs -n rossoctl-system otel-collector-xxx -f          # Follow
 ```
 
 ### Exec Into Pod
 
 ```bash
-kubectl exec -it otel-collector-xxx -n kagenti-system -- /bin/sh
+kubectl exec -it otel-collector-xxx -n rossoctl-system -- /bin/sh
 ```
 
 ### Check Mounted Files
 
 ```bash
-kubectl exec -it otel-collector-xxx -n kagenti-system -- \
+kubectl exec -it otel-collector-xxx -n rossoctl-system -- \
   ls -la /etc/pki/ca-trust/extracted/pem/
 ```
 
@@ -151,19 +151,19 @@ kubectl exec -it otel-collector-xxx -n kagenti-system -- \
 ### Check Service Endpoints
 
 ```bash
-kubectl get endpoints mlflow -n kagenti-system
+kubectl get endpoints mlflow -n rossoctl-system
 ```
 
 ### Check Service Labels
 
 ```bash
-kubectl get svc mlflow -n kagenti-system --show-labels
+kubectl get svc mlflow -n rossoctl-system --show-labels
 ```
 
 ### Port Forward
 
 ```bash
-kubectl port-forward svc/mlflow 5000:5000 -n kagenti-system
+kubectl port-forward svc/mlflow 5000:5000 -n rossoctl-system
 ```
 
 ## Keycloak Client Verification
@@ -174,7 +174,7 @@ kubectl port-forward svc/mlflow 5000:5000 -n kagenti-system
 # Set variables
 KEYCLOAK_URL="http://keycloak-service.keycloak.svc.cluster.local:8080"
 CLIENT_ID="mlflow-client"
-CLIENT_SECRET=$(kubectl get secret mlflow-oauth-secret -n kagenti-system \
+CLIENT_SECRET=$(kubectl get secret mlflow-oauth-secret -n rossoctl-system \
   -o jsonpath='{.data.MLFLOW_CLIENT_SECRET}' | base64 -d)
 
 # Get token
@@ -221,21 +221,21 @@ kubectl delete job mlflow-oauth-secret -n keycloak
 ### Check Waypoint Status
 
 ```bash
-kubectl get gateway -n kagenti-system
-kubectl describe gateway mlflow-waypoint -n kagenti-system
+kubectl get gateway -n rossoctl-system
+kubectl describe gateway mlflow-waypoint -n rossoctl-system
 ```
 
 ### Check AuthorizationPolicy
 
 ```bash
-kubectl get authorizationpolicy -n kagenti-system
-kubectl describe authorizationpolicy mlflow-traces-from-otel -n kagenti-system
+kubectl get authorizationpolicy -n rossoctl-system
+kubectl describe authorizationpolicy mlflow-traces-from-otel -n rossoctl-system
 ```
 
 ### Check Pod Identity
 
 ```bash
-istioctl proxy-config secret otel-collector-xxx -n kagenti-system
+istioctl proxy-config secret otel-collector-xxx -n rossoctl-system
 ```
 
 ### Check ztunnel Logs
@@ -249,13 +249,13 @@ kubectl logs -n istio-system -l app=ztunnel --tail=100
 ### Namespace Events
 
 ```bash
-kubectl get events -n kagenti-system --sort-by='.lastTimestamp'
+kubectl get events -n rossoctl-system --sort-by='.lastTimestamp'
 ```
 
 ### Pod Events
 
 ```bash
-kubectl get events -n kagenti-system --field-selector involvedObject.name=otel-collector-xxx
+kubectl get events -n rossoctl-system --field-selector involvedObject.name=otel-collector-xxx
 ```
 
 ## Resource Usage
@@ -263,13 +263,13 @@ kubectl get events -n kagenti-system --field-selector involvedObject.name=otel-c
 ### Pod Resources
 
 ```bash
-kubectl top pods -n kagenti-system
+kubectl top pods -n rossoctl-system
 ```
 
 ### Describe Resource Limits
 
 ```bash
-kubectl get pod otel-collector-xxx -n kagenti-system \
+kubectl get pod otel-collector-xxx -n rossoctl-system \
   -o jsonpath='{.spec.containers[0].resources}'
 ```
 
@@ -277,13 +277,13 @@ kubectl get pod otel-collector-xxx -n kagenti-system \
 
 | Task | Command |
 |------|---------|
-| Get all pods | `kubectl get pods -n kagenti-system` |
-| Get logs | `kubectl logs -n kagenti-system <pod>` |
-| Describe pod | `kubectl describe pod -n kagenti-system <pod>` |
-| Exec shell | `kubectl exec -it <pod> -n kagenti-system -- /bin/sh` |
-| Port forward | `kubectl port-forward svc/<svc> <port>:<port> -n kagenti-system` |
-| Get events | `kubectl get events -n kagenti-system --sort-by='.lastTimestamp'` |
-| Helm values | `helm get values kagenti-deps -n kagenti-system` |
+| Get all pods | `kubectl get pods -n rossoctl-system` |
+| Get logs | `kubectl logs -n rossoctl-system <pod>` |
+| Describe pod | `kubectl describe pod -n rossoctl-system <pod>` |
+| Exec shell | `kubectl exec -it <pod> -n rossoctl-system -- /bin/sh` |
+| Port forward | `kubectl port-forward svc/<svc> <port>:<port> -n rossoctl-system` |
+| Get events | `kubectl get events -n rossoctl-system --sort-by='.lastTimestamp'` |
+| Helm values | `helm get values rossoctl-deps -n rossoctl-system` |
 
 ## Related Skills
 

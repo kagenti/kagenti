@@ -1,15 +1,15 @@
-# Kagenti Identity & Authentication Flow Diagrams
+# Rossoctl Identity & Authentication Flow Diagrams
 
-This directory contains Mermaid sequence diagrams that illustrate the authentication and authorization flows in Kagenti's zero-trust identity architecture.
+This directory contains Mermaid sequence diagrams that illustrate the authentication and authorization flows in Rossoctl's zero-trust identity architecture.
 
 ## Diagrams Overview
 
 ### 1. User Authentication Flow
 **File**: `01-user-authentication-flow.mmd`
-**Description**: Shows how users authenticate with Kagenti UI through Keycloak OIDC flow.
+**Description**: Shows how users authenticate with Rossoctl UI through Keycloak OIDC flow.
 
 **Key Steps**:
-- User accesses Kagenti UI
+- User accesses Rossoctl UI
 - UI redirects to Keycloak for authentication
 - User provides credentials to Keycloak
 - Keycloak returns JWT token to UI
@@ -151,8 +151,8 @@ echo "🎉 All diagrams generated successfully!"
 
 These diagrams are referenced in the main documentation:
 - **[Identity Guide](../identity-guide.md)** - Complete authentication guide with embedded diagrams
-- **[Token Exchange Examples](../../kagenti/examples/identity/token_exchange.md)** - Detailed implementation examples
+- **[Token Exchange Examples](../../rossoctl/examples/identity/token_exchange.md)** - Detailed implementation examples
 
 ## Related Documentation
 - **[Personas and Roles](../../PERSONAS_AND_ROLES.md)** - Developer, operator, and end user personas
-- **[Kagenti Identity PDF](../2025-10.Kagenti-Identity.pdf)** - High-level architectural concepts
+- **[Rossoctl Identity PDF](../2025-10.Rossoctl-Identity.pdf)** - High-level architectural concepts

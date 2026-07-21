@@ -131,7 +131,7 @@ JWKS
 JWT
 JWTs
 KCP
-Kagenti
+Rossoctl
 Kaniko
 Karve
 Keycloak
@@ -432,7 +432,7 @@ jaggy
 joinus
 jq
 json
-kagenti
+rossoctl
 kaniko
 kcp
 kcp's

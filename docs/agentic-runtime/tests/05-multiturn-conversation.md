@@ -1,6 +1,6 @@
 # Multi-Turn Conversation
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_05_multiturn_conversation.py`
+> **Test file:** `rossoctl/tests/e2e/openshell/test_05_multiturn_conversation.py`
 > **Tests:** 12 | **Pass:** 9 | **Skip:** 3 (Kind, fresh cluster)
 
 ## What This Tests
@@ -44,10 +44,10 @@ sequenceDiagram
 | Service persistence | ✅ | ✅ | ✅ | — | — | — | — |
 
 **Skip reasons:**
-- **stateless** — Agent doesn't return contextId (Kagenti backend will manage context externally)
+- **stateless** — Agent doesn't return contextId (Rossoctl backend will manage context externally)
 - **ADK gap** — ADK to_a2a() doesn't support client-sent contextId (upstream limitation)
 - **needs A2A** — Supervised agent netns blocks port-forward; ExecSandbox gRPC needed for multi-turn
-- **Phase 2** — Requires PVC-backed session store + Kagenti backend integration
+- **Phase 2** — Requires PVC-backed session store + Rossoctl backend integration
 - **—** — Builtin sandboxes use terminal sessions (persistent by nature), not A2A
 
 ## Test Details
@@ -97,7 +97,7 @@ sequenceDiagram
 - **Skip condition:** 
   - Agent is stateless (no contextId)
   - ADK upstream doesn't preserve client-sent contextId
-  - TODO: Kagenti backend session store will manage context externally
+  - TODO: Rossoctl backend session store will manage context externally
 
 ### test_context_continuity__weather_supervised__requires_grpc
 
@@ -120,9 +120,9 @@ sequenceDiagram
 
 | Agent Type | Context Storage | contextId Support | Future State |
 |------------|----------------|------------------|--------------|
-| `weather_agent` | None (stateless) | No | Kagenti backend session store |
+| `weather_agent` | None (stateless) | No | Rossoctl backend session store |
 | `adk_agent` | In-memory | Returns contextId, ignores client's | Upstream PR or backend override |
-| `claude_sdk_agent` | None (stateless) | No | Kagenti backend session store |
+| `claude_sdk_agent` | None (stateless) | No | Rossoctl backend session store |
 | `weather_supervised` | None (stateless) | No | Backend + ExecSandbox gRPC |
 | `openshell_claude` | PVC `/workspace/.claude/` | Native (via Claude API) | Phase 2 provider integration |
 | `openshell_opencode` | PVC `/workspace/` | Via LiteLLM | Phase 2 provider integration |
@@ -157,7 +157,7 @@ AGENT_PROMPTS = {
 |------------|-----------|---------------|
 | `openshell_claude` | Phase 2 | ExecSandbox gRPC adapter for terminal session → A2A translation |
 | `openshell_opencode` | Phase 2 | ExecSandbox gRPC adapter for terminal session → A2A translation |
-| Context continuity | Phase 2 | Kagenti backend session store (PVC-backed PostgreSQL + checkpointer) |
+| Context continuity | Phase 2 | Rossoctl backend session store (PVC-backed PostgreSQL + checkpointer) |
 | ADK context | Upstream PR | ADK to_a2a() must respect client contextId |
 
 ## Common Failure Modes

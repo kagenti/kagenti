@@ -105,7 +105,7 @@ jobs:
             console.log('Parsing comment:', commentBody);
 
             // Allowed repos (security: only build from trusted orgs/repos)
-            const ALLOWED_REPOS = ['kagenti/kagenti-extensions', 'kagenti/kagenti-operator'];
+            const ALLOWED_REPOS = ['rossoctl/cortex', 'rossoctl/operator'];
             // Allowed ref pattern: alphanumeric, dots, dashes, slashes, underscores
             const REF_PATTERN = /^[\w.\-\/]+$/;
 
@@ -113,9 +113,9 @@ jobs:
 
             // Parse --build org/repo=ref flags
             // Examples:
-            //   /run-e2e --build kagenti/kagenti-extensions=fix/my-branch
-            //   /run-e2e --build kagenti/kagenti-extensions=pr/234
-            //   /run-e2e --build kagenti/kagenti-extensions=pr/234 --build kagenti/kagenti-operator=feat/new-crd
+            //   /run-e2e --build rossoctl/cortex=fix/my-branch
+            //   /run-e2e --build rossoctl/cortex=pr/234
+            //   /run-e2e --build rossoctl/cortex=pr/234 --build rossoctl/operator=feat/new-crd
             const buildPattern = /--build\s+(\S+)/g;
             let match;
             while ((match = buildPattern.exec(commentBody)) !== null) {
@@ -141,14 +141,14 @@ jobs:
               builds.push({ repo, ref });
             }
 
-            // Legacy: --extensions-ref maps to kagenti/kagenti-extensions build
+            // Legacy: --extensions-ref maps to rossoctl/cortex build
             if (builds.length === 0) {
               const legacyMatch = commentBody.match(/--extensions-ref\s+(\S+)/);
               if (legacyMatch) {
                 const ref = legacyMatch[1];
                 if (REF_PATTERN.test(ref)) {
                   console.log(`Legacy --extensions-ref: ${ref}`);
-                  builds.push({ repo: 'kagenti/kagenti-extensions', ref });
+                  builds.push({ repo: 'rossoctl/cortex', ref });
                 } else {
                   core.setFailed(`Invalid extensions-ref: ${ref}`);
                   return;
@@ -271,7 +271,7 @@ jobs:
           OCP_VERSION: ${{ env.OCP_VERSION }}
 
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6
         with:
           go-version: '1.23'
 
@@ -322,13 +322,13 @@ jobs:
           BASE_DOMAIN: ${{ secrets.BASE_DOMAIN }}
           OCP_VERSION: ${{ env.OCP_VERSION }}
 
-      - name: Deploy Kagenti
+      - name: Deploy Rossoctl
         if: success()
-        run: bash .github/scripts/hypershift/ci/70-deploy-kagenti.sh
+        run: bash .github/scripts/hypershift/ci/70-deploy-rossoctl.sh
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          KAGENTI_DEP_BUILDS: ${{ needs.authorize.outputs.dep_builds }}
+          ROSSOCTL_DEP_BUILDS: ${{ needs.authorize.outputs.dep_builds }}
 
       - name: Build platform images from source (backend, ui-v2, agent-oauth-secret)
         if: success()
@@ -350,7 +350,7 @@ jobs:
 
       - name: Set up Python
         if: success()
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: '3.11'
 
@@ -371,7 +371,7 @@ jobs:
         run: bash .github/scripts/hypershift/ci/80-run-e2e-tests.sh
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
-          KAGENTI_CONFIG_FILE: deployments/envs/ocp_ci_values.yaml
+          ROSSOCTL_CONFIG_FILE: deployments/envs/ocp_ci_values.yaml
 
       - name: Run UI E2E tests
         if: success()
@@ -418,7 +418,7 @@ jobs:
           OCP_VERSION: ${{ env.OCP_VERSION }}
 
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6
         with:
           go-version: '1.23'
 

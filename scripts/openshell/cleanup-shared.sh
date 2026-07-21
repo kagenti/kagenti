@@ -3,7 +3,7 @@
 # OPENSHELL SHARED INFRASTRUCTURE CLEANUP
 # ============================================================================
 # Removes cluster-wide shared infrastructure deployed by deploy-shared.sh:
-#   1. kagenti-backend + PostgreSQL sessions DB
+#   1. rossoctl-backend + PostgreSQL sessions DB
 #   2. LiteLLM model proxy
 #   3. Keycloak realm (openshell)
 #   4. cert-manager CA chain (ClusterIssuers + CA Certificate)
@@ -74,7 +74,7 @@ Options:
   --skip-tls          Skip cert-manager CA chain removal
   --skip-keycloak     Skip Keycloak realm removal
   --skip-litellm      Skip LiteLLM proxy removal
-  --skip-backend      Skip kagenti-backend + PostgreSQL removal
+  --skip-backend      Skip rossoctl-backend + PostgreSQL removal
   --skip-istio        Skip Istio env var revert
   --delete-data       Also delete PostgreSQL PVC (data loss, default: keep)
   --keycloak-ns NS    Keycloak namespace (default: keycloak)
@@ -143,22 +143,22 @@ if ! $DRY_RUN && ! $CONFIRM; then
 fi
 
 # ============================================================================
-# Step 1: Remove kagenti-backend + PostgreSQL
+# Step 1: Remove rossoctl-backend + PostgreSQL
 # ============================================================================
 if $STEP_BACKEND; then
-  log_info "Step 1: Removing kagenti-backend + PostgreSQL in namespace $BACKEND_NS..."
+  log_info "Step 1: Removing rossoctl-backend + PostgreSQL in namespace $BACKEND_NS..."
 
   if kubectl get namespace "$BACKEND_NS" &>/dev/null; then
     # Backend deployment and service
-    run_cmd kubectl delete deployment kagenti-backend -n "$BACKEND_NS" --ignore-not-found
-    run_cmd kubectl delete service kagenti-backend -n "$BACKEND_NS" --ignore-not-found
-    run_cmd kubectl delete serviceaccount kagenti-backend -n "$BACKEND_NS" --ignore-not-found
+    run_cmd kubectl delete deployment rossoctl-backend -n "$BACKEND_NS" --ignore-not-found
+    run_cmd kubectl delete service rossoctl-backend -n "$BACKEND_NS" --ignore-not-found
+    run_cmd kubectl delete serviceaccount rossoctl-backend -n "$BACKEND_NS" --ignore-not-found
 
     # Backend RBAC
-    run_cmd kubectl delete clusterrole kagenti-backend --ignore-not-found
-    run_cmd kubectl delete clusterrolebinding kagenti-backend --ignore-not-found
-    run_cmd kubectl delete role kagenti-backend-secrets -n "$BACKEND_NS" --ignore-not-found
-    run_cmd kubectl delete rolebinding kagenti-backend-secrets -n "$BACKEND_NS" --ignore-not-found
+    run_cmd kubectl delete clusterrole rossoctl-backend --ignore-not-found
+    run_cmd kubectl delete clusterrolebinding rossoctl-backend --ignore-not-found
+    run_cmd kubectl delete role rossoctl-backend-secrets -n "$BACKEND_NS" --ignore-not-found
+    run_cmd kubectl delete rolebinding rossoctl-backend-secrets -n "$BACKEND_NS" --ignore-not-found
 
     # PostgreSQL StatefulSet + PVC + Service + Secret
     run_cmd kubectl delete statefulset postgres-sessions -n "$BACKEND_NS" --ignore-not-found
@@ -253,9 +253,9 @@ fi
 if ! is_openshift; then
   log_info "Step 5: Removing shared TLS passthrough Gateway..."
 
-  run_cmd kubectl delete gateway tls-passthrough -n kagenti-system --ignore-not-found
+  run_cmd kubectl delete gateway tls-passthrough -n rossoctl-system --ignore-not-found
   # The gateway controller creates a service automatically
-  run_cmd kubectl delete service tls-passthrough-istio -n kagenti-system --ignore-not-found
+  run_cmd kubectl delete service tls-passthrough-istio -n rossoctl-system --ignore-not-found
 
   log_success "Shared Gateway removed"
 else

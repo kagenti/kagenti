@@ -1,6 +1,6 @@
 # Kind Development Guide
 
-This guide covers local Kagenti development using Kind (Kubernetes in Docker).
+This guide covers local Rossoctl development using Kind (Kubernetes in Docker).
 
 ## Table of Contents
 
@@ -94,7 +94,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ```bash
 # Direct install — composable, no extra dependencies
-scripts/kind/setup-kagenti.sh --with-all
+scripts/kind/setup-rossoctl.sh --with-all
 
 # Or full CI-style run (create → deploy → test → keep cluster)
 ./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy
@@ -103,33 +103,33 @@ scripts/kind/setup-kagenti.sh --with-all
 ./.github/scripts/local-setup/show-services.sh
 ```
 
-Access the UI at: **http://kagenti-ui.localtest.me:8080**
+Access the UI at: **http://rossoctl-ui.localtest.me:8080**
 
 Login with Keycloak admin credentials shown by `show-services.sh`.
 
 ## Direct Installation
 
-The `scripts/kind/setup-kagenti.sh` bash installer creates a Kind cluster and
-deploys Kagenti with composable `--with-*` flags. It requires only `kind`,
+The `scripts/kind/setup-rossoctl.sh` bash installer creates a Kind cluster and
+deploys Rossoctl with composable `--with-*` flags. It requires only `kind`,
 `helm` (v3), and `kubectl` — no Python or `uv` needed.
 
 ### Examples
 
 ```bash
 # Core only (cert-manager, Gateway API, Istio GW controller, Keycloak, operator, webhook)
-scripts/kind/setup-kagenti.sh
+scripts/kind/setup-rossoctl.sh
 
 # Everything
-scripts/kind/setup-kagenti.sh --with-all
+scripts/kind/setup-rossoctl.sh --with-all
 
 # Core + Istio ambient + UI (no SPIRE, no builds)
-scripts/kind/setup-kagenti.sh --with-istio --with-ui
+scripts/kind/setup-rossoctl.sh --with-istio --with-ui
 
 # Reuse existing cluster
-scripts/kind/setup-kagenti.sh --skip-cluster --with-all
+scripts/kind/setup-rossoctl.sh --skip-cluster --with-all
 
 # With secrets
-scripts/kind/setup-kagenti.sh --with-all --secrets-file charts/kagenti/.secrets.yaml
+scripts/kind/setup-rossoctl.sh --with-all --secrets-file charts/rossoctl/.secrets.yaml
 ```
 
 ### Flag Reference
@@ -138,8 +138,8 @@ scripts/kind/setup-kagenti.sh --with-all --secrets-file charts/kagenti/.secrets.
 |------|------------|
 | `--with-istio` | Full Istio ambient mesh (mTLS, waypoints); Gateway API controller always installed as core |
 | `--with-spire` | SPIRE + SPIFFE IdP setup |
-| `--with-backend` | Kagenti backend API |
-| `--with-ui` | Kagenti UI (auto-enables backend) |
+| `--with-backend` | Rossoctl backend API |
+| `--with-ui` | Rossoctl UI (auto-enables backend) |
 | `--with-mcp-gateway` | MCP Gateway |
 | `--with-kuadrant` | Kuadrant operator (auto-enables MCP Gateway) |
 | `--with-otel` | OpenTelemetry collector |
@@ -151,8 +151,8 @@ scripts/kind/setup-kagenti.sh --with-all --secrets-file charts/kagenti/.secrets.
 | Option | Description |
 |--------|-------------|
 | `--skip-cluster` | Reuse existing Kind cluster |
-| `--secrets-file FILE` | YAML file with secrets for the Kagenti Helm chart |
-| `--cluster-name NAME` | Kind cluster name (default: `kagenti`) |
+| `--secrets-file FILE` | YAML file with secrets for the Rossoctl Helm chart |
+| `--cluster-name NAME` | Kind cluster name (default: `rossoctl`) |
 | `--domain DOMAIN` | Domain for services (default: `localtest.me`) |
 | `--dry-run` | Show commands without executing |
 
@@ -160,10 +160,10 @@ scripts/kind/setup-kagenti.sh --with-all --secrets-file charts/kagenti/.secrets.
 
 ```bash
 # Uninstall platform, keep cluster
-scripts/kind/cleanup-kagenti.sh
+scripts/kind/cleanup-rossoctl.sh
 
 # Uninstall and destroy cluster
-scripts/kind/cleanup-kagenti.sh --destroy-cluster
+scripts/kind/cleanup-rossoctl.sh --destroy-cluster
 ```
 
 ## Credentials Setup
@@ -176,10 +176,10 @@ The `kind-full-test.sh` script runs 6 phases:
 
 ```
 Phase 1: Create Kind Cluster
-Phase 2: Install Kagenti Platform
+Phase 2: Install Rossoctl Platform
 Phase 3: Deploy Test Agents
 Phase 4: Run E2E Tests
-Phase 5: Kagenti Uninstall (optional)
+Phase 5: Rossoctl Uninstall (optional)
 Phase 6: Destroy Kind Cluster (optional)
 ```
 
@@ -197,9 +197,9 @@ Phase 6: Destroy Kind Cluster (optional)
 ./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-create --skip-cluster-destroy
 
 # ┌─────────────────────────────────────────────────────────────────────────────┐
-# │ Fresh Kagenti install on existing cluster                                   │
+# │ Fresh Rossoctl install on existing cluster                                   │
 # └─────────────────────────────────────────────────────────────────────────────┘
-./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-create --clean-kagenti --skip-cluster-destroy
+./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-create --clean-rossoctl --skip-cluster-destroy
 
 # ┌─────────────────────────────────────────────────────────────────────────────┐
 # │ Full CI run: create → deploy → test → destroy                               │
@@ -220,8 +220,8 @@ Use `--include-<phase>` to run only specific phases:
 # Create cluster only
 ./.github/scripts/local-setup/kind-full-test.sh --include-cluster-create
 
-# Install Kagenti only (on existing cluster)
-./.github/scripts/local-setup/kind-full-test.sh --include-kagenti-install
+# Install Rossoctl only (on existing cluster)
+./.github/scripts/local-setup/kind-full-test.sh --include-rossoctl-install
 
 # Deploy agents only
 ./.github/scripts/local-setup/kind-full-test.sh --include-agents
@@ -238,7 +238,7 @@ After deployment, services are available via `.localtest.me` domains:
 
 | Service | URL |
 |---------|-----|
-| **Kagenti UI** | http://kagenti-ui.localtest.me:8080 |
+| **Rossoctl UI** | http://rossoctl-ui.localtest.me:8080 |
 | **Keycloak Admin** | http://keycloak.localtest.me:8080/admin |
 | **Phoenix (Traces)** | http://phoenix.localtest.me:8080 _(only when `components.phoenix.enabled: true`)_ |
 | **Kiali** | http://kiali.localtest.me:8080 |
@@ -251,7 +251,7 @@ If DNS resolution fails, use port forwarding:
 
 ```bash
 # Access UI
-kubectl port-forward -n kagenti-system svc/http-istio 8080:80
+kubectl port-forward -n rossoctl-system svc/http-istio 8080:80
 # Visit: http://localhost:8080
 
 # Access Keycloak
@@ -286,20 +286,20 @@ This displays:
 uv sync
 
 # Set config file
-export KAGENTI_CONFIG_FILE=deployments/envs/dev_values.yaml
+export ROSSOCTL_CONFIG_FILE=deployments/envs/dev_values.yaml
 
 # Run tests
-uv run pytest kagenti/tests/e2e/ -v
+uv run pytest rossoctl/tests/e2e/ -v
 ```
 
 ### Run Specific Tests
 
 ```bash
 # Run single test file
-uv run pytest kagenti/tests/e2e/test_agent_api.py -v
+uv run pytest rossoctl/tests/e2e/test_agent_api.py -v
 
 # Run tests matching pattern
-uv run pytest kagenti/tests/e2e/ -v -k "test_weather"
+uv run pytest rossoctl/tests/e2e/ -v -k "test_weather"
 ```
 
 ## Debugging
@@ -317,7 +317,7 @@ export KUBECONFIG=~/.kube/config
 kubectl get pods -A
 
 # Platform pods
-kubectl get pods -n kagenti-system
+kubectl get pods -n rossoctl-system
 
 # Agent pods
 kubectl get pods -n team1
@@ -330,7 +330,7 @@ kubectl get pods -n team1
 kubectl logs -n team1 deployment/weather-service -f
 
 # Operator logs
-kubectl logs -n kagenti-system deployment/kagenti-operator -f
+kubectl logs -n rossoctl-system deployment/operator -f
 
 # Keycloak logs
 kubectl logs -n keycloak deployment/keycloak -f
@@ -361,7 +361,7 @@ Namespaces are configured in Helm values:
 ```yaml
 # deployments/envs/dev_values.yaml
 charts:
-  kagenti:
+  rossoctl:
     values:
       agentNamespaces:
         - team1
@@ -372,7 +372,7 @@ charts:
 Re-run the installer to create the namespace with all required resources:
 
 ```bash
-./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-create --include-kagenti-install --skip-cluster-destroy
+./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-create --include-rossoctl-install --skip-cluster-destroy
 ```
 
 ### What Gets Created
@@ -392,7 +392,7 @@ Namespace labels:
 
 ```yaml
 labels:
-  kagenti-enabled: "true"
+  rossoctl-enabled: "true"
   istio-discovery: enabled
   istio.io/dataplane-mode: ambient
 ```
@@ -417,8 +417,8 @@ kubectl rollout status deployment/weather-service -n team1
 
 | Script | Purpose |
 |--------|---------|
-| `setup-kagenti.sh` | **Composable installer** — create cluster + deploy platform |
-| `cleanup-kagenti.sh` | Uninstall platform (optionally destroy cluster) |
+| `setup-rossoctl.sh` | **Composable installer** — create cluster + deploy platform |
+| `cleanup-rossoctl.sh` | Uninstall platform (optionally destroy cluster) |
 
 ### CI / Test Scripts (`.github/scripts/`)
 
@@ -438,5 +438,5 @@ kubectl rollout status deployment/weather-service -n team1
 | (no options) | All phases | Full run (create → test → destroy) |
 | `--skip-cluster-create --skip-cluster-destroy` | Install, deploy, test | Iterate on existing cluster |
 | `--include-<phase>` | Selected phase(s) | Run specific phase(s) only |
-| `--clean-kagenti` | Uninstall before install | Fresh Kagenti installation |
+| `--clean-rossoctl` | Uninstall before install | Fresh Rossoctl installation |
 

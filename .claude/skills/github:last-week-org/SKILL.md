@@ -1,11 +1,11 @@
 ---
 name: github:last-week-org
-description: Org-wide weekly report - covers all kagenti repos with proportional depth based on activity
+description: Org-wide weekly report - covers all rossoctl repos with proportional depth based on activity
 ---
 
 # Org-Wide Weekly Report
 
-Deep weekly analysis across all kagenti org repositories. Active repos get full analysis; quiet repos get a one-liner summary.
+Deep weekly analysis across all rossoctl org repositories. Active repos get full analysis; quiet repos get a one-liner summary.
 
 ## Variables
 
@@ -20,7 +20,7 @@ export REPO=<repo-for-report-issue>   # where the weekly report issue is posted
 
 - Org-wide weekly standup / leadership update
 - Cross-repo coordination check
-- Tracking health of the entire kagenti org
+- Tracking health of the entire rossoctl org
 
 > **Auto-approved**: All `gh` read commands and `gh repo list` are auto-approved.
 
@@ -31,18 +31,18 @@ export REPO=<repo-for-report-issue>   # where the weekly report issue is posted
 Run the org data gathering script to snapshot all repos:
 
 ```bash
-./.github/scripts/reports/weekly-report-org-data.sh 7 > /tmp/kagenti/github/org-data-gather.log 2>&1; echo "EXIT:$?"
+./.github/scripts/reports/weekly-report-org-data.sh 7 > /tmp/rossoctl/github/org-data-gather.log 2>&1; echo "EXIT:$?"
 ```
 
 Then read the org summary (small file, OK inline):
 
 ```bash
-jq . /tmp/kagenti/github/data/org-summary.json
+jq . /tmp/rossoctl/github/data/org-summary.json
 ```
 
 This creates:
-- `/tmp/kagenti/github/data/<repo>/` — Per-repo JSON files (merged-prs, open-prs, open-issues, new-issues, ci-runs)
-- `/tmp/kagenti/github/data/org-summary.json` — Totals and per-repo counts with active/quiet classification
+- `/tmp/rossoctl/github/data/<repo>/` — Per-repo JSON files (merged-prs, open-prs, open-issues, new-issues, ci-runs)
+- `/tmp/rossoctl/github/data/org-summary.json` — Totals and per-repo counts with active/quiet classification
 
 **IMPORTANT**: All subsequent phases MUST read from these JSON files, NOT re-query `gh`. This ensures consistency.
 
@@ -55,7 +55,7 @@ Read totals from `org-summary.json` and present:
 
 | Repo | Merged PRs | Open PRs | Open Issues | New Issues | CI Pass Rate | Status |
 |------|-----------|----------|-------------|------------|-------------|--------|
-| kagenti | ... | ... | ... | ... | .../... | active |
+| rossoctl | ... | ... | ... | ... | .../... | active |
 | repo2 | ... | ... | ... | ... | .../... | quiet |
 | **TOTAL** | **N** | **N** | **N** | **N** | | |
 ```
@@ -65,36 +65,36 @@ Order repos by activity (most merged PRs + new issues first).
 ### Linking Convention (ALL phases)
 
 **IMPORTANT**: All issue and PR references in the report MUST use absolute GitHub URLs,
-not shorthand references like `#N` or `kagenti/<repo>#N`. Shorthand references are
+not shorthand references like `#N` or `rossoctl/<repo>#N`. Shorthand references are
 ambiguous when the report is posted as a GitHub issue — GitHub auto-links them relative
 to the repo where the issue lives.
 
-Use this format for **every** repo, including kagenti itself:
-- Issues: `[kagenti/<repo>#N](https://github.com/kagenti/<repo>/issues/N)`
-- PRs: `[kagenti/<repo>#N](https://github.com/kagenti/<repo>/pull/N)`
+Use this format for **every** repo, including rossoctl itself:
+- Issues: `[rossoctl/<repo>#N](https://github.com/rossoctl/<repo>/issues/N)`
+- PRs: `[rossoctl/<repo>#N](https://github.com/rossoctl/<repo>/pull/N)`
 
 Examples:
-- `[kagenti/kagenti#960](https://github.com/kagenti/kagenti/issues/960)`
-- `[kagenti/kagenti-extensions#239](https://github.com/kagenti/kagenti-extensions/pull/239)`
+- `[rossoctl/rossoctl#960](https://github.com/rossoctl/rossoctl/issues/960)`
+- `[rossoctl/cortex#239](https://github.com/rossoctl/cortex/pull/239)`
 
 ### Phase 2: Deep Dive per Active Repo
 
 For each repo classified as `active` in org-summary.json, analyze in order of activity level.
 
-#### For `kagenti` (local checkout available) — Full Depth
+#### For `rossoctl` (local checkout available) — Full Depth
 
 This is the main repo with local checkout. Apply the full `github:last-week` analysis:
 
 1. **Issue Analysis**: For every open issue, search the local codebase for affected code/component. Check if a fix was merged. Classify severity (security, blocking, bug, feature, epic, stale).
 2. **PR Analysis**: For every open PR, check CI status, review status, staleness, conflicts. Classify health (ready to merge, needs review, needs /run-e2e, CI failing, stale, conflicts).
 3. **CI Failure Timeline**: Map failures on main to triggering commits. Identify recurring vs one-off failures. Correlate with merged PRs between last success and failure.
-4. **Root Cause Correlation**: For each CI failure, identify candidate PRs by checking file paths touched (charts/, deployments/, .github/, kagenti/backend/).
+4. **Root Cause Correlation**: For each CI failure, identify candidate PRs by checking file paths touched (charts/, deployments/, .github/, rossoctl/backend/).
 
 Use subagents for log analysis:
 
 ```
 Agent(subagent_type='Explore'):
-  "Read /tmp/kagenti/github/data/kagenti/merged-prs.json and summarize:
+  "Read /tmp/rossoctl/github/data/rossoctl/merged-prs.json and summarize:
    - Count by author
    - Which areas changed most (charts, backend, tests, CI)
    Return a brief summary, not the raw data."
@@ -118,15 +118,15 @@ Present each active repo as:
 
 ### Merged PRs (N)
 | # | Title | Author | Merged |
-| [kagenti/\<repo\>#N](https://github.com/kagenti/\<repo\>/pull/N) | ... | ... | ... |
+| [rossoctl/\<repo\>#N](https://github.com/rossoctl/\<repo\>/pull/N) | ... | ... | ... |
 
 ### Open PRs (N)
 | # | Title | Author | CI | Review | Health |
-| [kagenti/\<repo\>#N](https://github.com/kagenti/\<repo\>/pull/N) | ... | ... | ... | ... | ... |
+| [rossoctl/\<repo\>#N](https://github.com/rossoctl/\<repo\>/pull/N) | ... | ... | ... | ... | ... |
 
 ### Open Issues (N)
 | # | Title | Labels | Age | Status |
-| [kagenti/\<repo\>#N](https://github.com/kagenti/\<repo\>/issues/N) | ... | ... | ... | ... |
+| [rossoctl/\<repo\>#N](https://github.com/rossoctl/\<repo\>/issues/N) | ... | ... | ... | ... |
 
 ### CI Health
 - Main branch: X/Y passed (Z%)
@@ -162,17 +162,17 @@ Present as bullet list:
 ```markdown
 ## Cross-Repo Highlights
 
-- **@author** contributed to kagenti (3 PRs) and repo-x (1 PR)
-- Org CI pass rate: X% (kagenti: Y%, repo-x: Z%)
+- **@author** contributed to rossoctl (3 PRs) and repo-x (1 PR)
+- Org CI pass rate: X% (rossoctl: Y%, repo-x: Z%)
 - [any notable cross-repo patterns]
 ```
 
 ### Phase 5: Generate Consolidated Report
 
-Write the full report to `/tmp/kagenti/github/org-weekly-report.md`:
+Write the full report to `/tmp/rossoctl/github/org-weekly-report.md`:
 
 ```markdown
-# Kagenti Org Weekly Report: [start-date] - [end-date]
+# Rossoctl Org Weekly Report: [start-date] - [end-date]
 
 ## Org-Wide Summary
 [table from Phase 1]
@@ -180,7 +180,7 @@ Write the full report to `/tmp/kagenti/github/org-weekly-report.md`:
 ## Cross-Repo Highlights
 [bullets from Phase 4]
 
-## kagenti (Deep Dive)
+## rossoctl (Deep Dive)
 [full analysis from Phase 2]
 
 ## <other-active-repo> (Deep Dive)
@@ -193,7 +193,7 @@ Write the full report to `/tmp/kagenti/github/org-weekly-report.md`:
 
 | # | Action | Repo | Owner | Priority |
 |---|--------|------|-------|----------|
-| 1 | [highest priority] | kagenti | @author | P0 |
+| 1 | [highest priority] | rossoctl | @author | P0 |
 | 2 | [next action] | repo-x | @author | P1 |
 ...
 ```
@@ -203,14 +203,14 @@ Action items are a single flat list across ALL repos, ordered by priority. No ti
 Save the report:
 
 ```bash
-# Write to /tmp/kagenti/github/org-weekly-report.md
+# Write to /tmp/rossoctl/github/org-weekly-report.md
 ```
 
 ### Phase 6: Ask User
 
 After generating the report, ask:
 
-> Org-wide weekly report ready at `/tmp/kagenti/github/org-weekly-report.md`.
+> Org-wide weekly report ready at `/tmp/rossoctl/github/org-weekly-report.md`.
 > Want me to create a GitHub issue in $OWNER/$REPO with this report?
 > Suggested title: "Org Weekly Report [start-date] - [end-date]"
 >
@@ -228,7 +228,7 @@ Follow the CLAUDE.md context budget rules strictly:
 
 ## Related Skills
 
-- `github:last-week` - Deep single-repo report (used as the template for kagenti deep dive)
+- `github:last-week` - Deep single-repo report (used as the template for rossoctl deep dive)
 - `github:issues` - Deep dive into individual issue triage
 - `github:prs` - Deep dive into individual PR health
 - `ci:status` - Detailed CI check analysis

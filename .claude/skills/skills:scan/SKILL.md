@@ -179,10 +179,10 @@ Rate each skill 1-5:
 
 ### Phase 6: Generate Report
 
-Save to `/tmp/kagenti/skills-scan/`:
+Save to `/tmp/rossoctl/skills-scan/`:
 
 ```bash
-mkdir -p /tmp/kagenti/skills-scan
+mkdir -p /tmp/rossoctl/skills-scan
 ```
 
 Output a structured report:
@@ -231,7 +231,7 @@ After completing the scan, update `.claude/skills/README.md`:
    - RCA workflow (rca → rca:ci/rca:hypershift/rca:kind escalation)
    - CI workflow (ci → ci:status/ci:monitoring → rca:ci → tdd:ci)
    - Skills meta workflow (skills:scan → skills:write → skills:validate → skills:retrospective)
-   - Deploy & debug workflow (kagenti:deploy → k8s:health → k8s:pods/logs)
+   - Deploy & debug workflow (rossoctl:deploy → k8s:health → k8s:pods/logs)
    - HyperShift lifecycle (setup → preflight → quotas → create → destroy)
 3. Update the **Auto-Approve Policy** table
 4. Verify all skills appear in the tree and diagrams

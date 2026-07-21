@@ -140,7 +140,7 @@ log_info "Checking AWS IAM permissions for setup..."
 
 # Check current identity - warn if using CI user instead of admin
 AWS_ARN=$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || echo "")
-if echo "$AWS_ARN" | grep -q "kagenti-hypershift-ci"; then
+if echo "$AWS_ARN" | grep -q "rossoctl-hypershift-ci"; then
     log_error "Logged in as CI user ($AWS_ARN). Setup requires IAM admin."
     log_info "  Run: unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY"
     log_info "  Then use admin credentials or default AWS profile"
@@ -523,10 +523,10 @@ if [ -n "$BASE_DOMAIN" ]; then
         log_info "  HyperShift requires a public hosted zone for DNS records"
         log_info "  Available public zones:"
         aws route53 list-hosted-zones --query "HostedZones[?Config.PrivateZone==\`false\`].Name" --output text 2>/dev/null | tr '\t' '\n' | sed 's/\.$//; s/^/    /' || true
-        log_info "  Set BASE_DOMAIN in .env.kagenti-$USER (or .env.hypershift-ci) to match an available zone"
+        log_info "  Set BASE_DOMAIN in .env.rossoctl-$USER (or .env.hypershift-ci) to match an available zone"
     elif [ "$ZONE_FOUND" != "$BASE_DOMAIN" ]; then
         log_warn "Auto-detected BASE_DOMAIN=$BASE_DOMAIN but public zone is: $ZONE_FOUND"
-        log_info "  You may need to update BASE_DOMAIN in .env.kagenti-$USER (or .env.hypershift-ci) to: $ZONE_FOUND"
+        log_info "  You may need to update BASE_DOMAIN in .env.rossoctl-$USER (or .env.hypershift-ci) to: $ZONE_FOUND"
     fi
 else
     log_warn "Cannot check Route53 - no base domain detected"

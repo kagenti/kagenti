@@ -23,7 +23,7 @@ log_skip()  { echo -e "${YELLOW}>>>${NC} $1 (already exists)"; }
 
 # Detect cluster type
 CLUSTER_TYPE="${PLATFORM:-kind}"
-CLUSTER_NAME="${CLUSTER_NAME:-kagenti}"
+CLUSTER_NAME="${CLUSTER_NAME:-rossoctl}"
 AGENT_NS="${AGENT_NS:-team1}"
 
 OCP_INTERNAL_REGISTRY="image-registry.openshift-image-registry.svc:5000"

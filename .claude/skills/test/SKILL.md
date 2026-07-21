@@ -1,6 +1,6 @@
 ---
 name: test
-description: Test writing, reviewing, and running for Kagenti - smart router for test workflows
+description: Test writing, reviewing, and running for Rossoctl - smart router for test workflows
 ---
 
 ```mermaid
@@ -27,7 +27,7 @@ flowchart TD
 
 # Test Skills
 
-Test management for Kagenti: write, review, and run tests.
+Test management for Rossoctl: write, review, and run tests.
 
 ## Auto-Select Sub-Skill
 

@@ -1,11 +1,11 @@
 ---
 name: git:commit
-description: Create properly formatted commits following Kagenti conventions
+description: Create properly formatted commits following Rossoctl conventions
 ---
 
 # Git Commit
 
-Create commits following Kagenti conventions with proper formatting and sign-off.
+Create commits following Rossoctl conventions with proper formatting and sign-off.
 
 ## When to Use
 
@@ -60,7 +60,7 @@ Co-authored-by: Claude <noreply@anthropic.com>
 ```
 🌱 Add E2E testing infrastructure and deployment health tests
 
-Implements initial end-to-end testing framework for Kagenti platform.
+Implements initial end-to-end testing framework for Rossoctl platform.
 
 Signed-off-by: Developer <dev@example.com>
 Co-authored-by: Claude <noreply@anthropic.com>

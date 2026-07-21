@@ -1,11 +1,11 @@
 ---
 name: test:ui
-description: Write and run Playwright UI E2E tests for Kagenti - login, navigation, agent chat, across CI/Kind/HyperShift
+description: Write and run Playwright UI E2E tests for Rossoctl - login, navigation, agent chat, across CI/Kind/HyperShift
 ---
 
 # Playwright UI Tests
 
-Write and run Playwright UI E2E tests for the Kagenti UI across all environments.
+Write and run Playwright UI E2E tests for the Rossoctl UI across all environments.
 
 > **Not to be confused with `test:playwright`** which is for recording narrated demo videos.
 > This skill is for functional UI testing (login, navigate, interact, assert).
@@ -13,7 +13,7 @@ Write and run Playwright UI E2E tests for the Kagenti UI across all environments
 ## Test Location
 
 ```
-kagenti/ui-v2/
+rossoctl/ui-v2/
 ├── e2e/
 │   ├── agent-chat.spec.ts     # Login -> agent -> chat flow
 │   ├── agent-catalog.spec.ts  # Agent listing page
@@ -99,9 +99,9 @@ test('should login and interact with agent', async ({ page }) => {
 
 ```bash
 # Prerequisites: Kind cluster running, backend port-forwarded
-kubectl port-forward -n kagenti-system svc/kagenti-backend 8000:8000 &
+kubectl port-forward -n rossoctl-system svc/rossoctl-backend 8000:8000 &
 
-cd kagenti/ui-v2
+cd rossoctl/ui-v2
 npm ci
 npx playwright install chromium
 
@@ -116,22 +116,22 @@ The Vite dev server starts automatically and proxies `/api` to `localhost:8000`.
 ### On HyperShift
 
 ```bash
-export CLUSTER=<suffix> MANAGED_BY_TAG=${MANAGED_BY_TAG:-kagenti-hypershift-custom}
+export CLUSTER=<suffix> MANAGED_BY_TAG=${MANAGED_BY_TAG:-rossoctl-hypershift-custom}
 export KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig
 
 # Get UI URL from OpenShift route
-KAGENTI_UI_URL="https://$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.spec.host}')"
+ROSSOCTL_UI_URL="https://$(kubectl get route rossoctl-ui -n rossoctl-system -o jsonpath='{.spec.host}')"
 
-cd kagenti/ui-v2
+cd rossoctl/ui-v2
 npm ci
 npx playwright install chromium
 
-KAGENTI_UI_URL="$KAGENTI_UI_URL" npx playwright test
-KAGENTI_UI_URL="$KAGENTI_UI_URL" npm run test:e2e:ui  # Interactive
+ROSSOCTL_UI_URL="$ROSSOCTL_UI_URL" npx playwright test
+ROSSOCTL_UI_URL="$ROSSOCTL_UI_URL" npm run test:e2e:ui  # Interactive
 ```
 
 **HyperShift notes:**
-- Always set `KAGENTI_UI_URL` to the OpenShift route (no dev server needed)
+- Always set `ROSSOCTL_UI_URL` to the OpenShift route (no dev server needed)
 - May need `PLAYWRIGHT_IGNORE_HTTPS_ERRORS=1` for self-signed certs
 - Keycloak credentials: `kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' | base64 -d`
 
@@ -151,7 +151,7 @@ CI step `91-run-ui-tests.sh` runs after pytest E2E tests:
 gh run download <run-id> -n e2e-test-results -D /tmp/test-results
 
 # Open HTML report
-npx playwright show-report /tmp/test-results/kagenti/ui-v2/playwright-report
+npx playwright show-report /tmp/test-results/rossoctl/ui-v2/playwright-report
 ```
 
 ## Related Skills
@@ -162,4 +162,4 @@ npx playwright show-report /tmp/test-results/kagenti/ui-v2/playwright-report
 - **`tdd:ci`** - CI-driven TDD (invokes this skill for UI tests)
 - **`tdd:kind`** - Kind TDD (invokes this skill for UI tests)
 - **`tdd:hypershift`** - HyperShift TDD (invokes this skill for UI tests)
-- **`kagenti:ui-debug`** - Debug UI issues (502, proxy, auth)
+- **`rossoctl:ui-debug`** - Debug UI issues (502, proxy, auth)

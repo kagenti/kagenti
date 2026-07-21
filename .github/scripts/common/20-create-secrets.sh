@@ -11,7 +11,7 @@ source "$SCRIPT_DIR/../lib/logging.sh"
 log_step "20" "Creating secret values"
 
 # Use MAIN_REPO_ROOT for secrets (worktree-aware - secrets stay in main repo)
-SECRET_FILE="$MAIN_REPO_ROOT/charts/kagenti/.secrets.yaml"
+SECRET_FILE="$MAIN_REPO_ROOT/charts/rossoctl/.secrets.yaml"
 
 # Check if secrets already exist (in main repo)
 if [ -f "$SECRET_FILE" ]; then
@@ -20,7 +20,7 @@ if [ -f "$SECRET_FILE" ]; then
 fi
 
 # Ensure chart directory exists in main repo
-mkdir -p "$MAIN_REPO_ROOT/charts/kagenti"
+mkdir -p "$MAIN_REPO_ROOT/charts/rossoctl"
 
 if [ "$IS_CI" = true ]; then
     log_info "Creating CI test secrets"
@@ -35,8 +35,8 @@ secrets:
 EOF
 else
     log_info "Creating local test secrets from template"
-    if [ -f "$MAIN_REPO_ROOT/charts/kagenti/.secrets_template.yaml" ]; then
-        cp "$MAIN_REPO_ROOT/charts/kagenti/.secrets_template.yaml" "$SECRET_FILE"
+    if [ -f "$MAIN_REPO_ROOT/charts/rossoctl/.secrets_template.yaml" ]; then
+        cp "$MAIN_REPO_ROOT/charts/rossoctl/.secrets_template.yaml" "$SECRET_FILE"
     else
         cat > "$SECRET_FILE" <<EOF
 secrets:

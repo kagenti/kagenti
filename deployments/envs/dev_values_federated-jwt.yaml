@@ -9,7 +9,7 @@
 # ============================================================================
 
 charts:
-  kagenti:
+  rossoctl:
     values:
       # Enable JWT-SVID authentication instead of client-secret
       # This is the ONLY change needed to switch from client-secret to federated-jwt

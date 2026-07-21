@@ -2,13 +2,13 @@
 
 **Date:** 2026-05-27  
 **Status:** Approved  
-**Feature flag:** `kagenti_feature_flag_external_skills` (default: `False`)
+**Feature flag:** `rossoctl_feature_flag_external_skills` (default: `False`)
 
 ---
 
 ## Overview
 
-Kagenti skills are currently stored as Kubernetes ConfigMaps containing the full skill file content. This spec extends the skill system to support **external skill registries**: a lightweight ConfigMap variant that holds only a pointer (URL + metadata) to a skill in a remote registry. At agent pod startup, an init container fetches the skill content from the registry and writes it to a shared volume — the agent container mounts the result identically to a local skill.
+Rossoctl skills are currently stored as Kubernetes ConfigMaps containing the full skill file content. This spec extends the skill system to support **external skill registries**: a lightweight ConfigMap variant that holds only a pointer (URL + metadata) to a skill in a remote registry. At agent pod startup, an init container fetches the skill content from the registry and writes it to a shared volume — the agent container mounts the result identically to a local skill.
 
 The initial target registry is [skillberry-store](https://github.ibm.com/skillberry/skillberry-store/), which serves skill archives via a REST API returning `tar.gz` bundles.
 
@@ -20,7 +20,7 @@ The initial target registry is [skillberry-store](https://github.ibm.com/skillbe
 - At agent startup, fetch skill content from the registry and mount it transparently to the agent — no agent framework changes.
 - Shell scripts inside an `alpine:3` init container handle all registry-specific logic (download, retry, extraction, future auth). No new container images required.
 - External and local skills are unified in the UI catalog; external skills show a distinguishing badge.
-- All new behaviour is gated behind a feature flag (`kagenti_feature_flag_external_skills`).
+- All new behaviour is gated behind a feature flag (`rossoctl_feature_flag_external_skills`).
 
 ## Non-Goals
 
@@ -41,19 +41,19 @@ metadata:
   name: <sanitized-skill-name>       # e.g. skillberry-code-review
   namespace: <team-namespace>        # team1 / team2
   labels:
-    kagenti.io/type: skill
-    kagenti.io/source: external       # distinguishes from local skills
-    kagenti.io/registry-type: skillberry  # selects fetcher script
-    kagenti.io/category: <category>   # optional
-    app.kubernetes.io/managed-by: kagenti-ui
+    rossoctl.io/type: skill
+    rossoctl.io/source: external       # distinguishes from local skills
+    rossoctl.io/registry-type: skillberry  # selects fetcher script
+    rossoctl.io/category: <category>   # optional
+    app.kubernetes.io/managed-by: rossoctl-ui
   annotations:
-    kagenti.io/display-name: "Code Review"
-    kagenti.io/description: "Reviews code for quality and style"
-    kagenti.io/registry-url: "https://skillberry.example.com"
-    kagenti.io/registry-skill-name: "code-review"
-    kagenti.io/registry-skill-version: "1.2.0"   # optional; "latest" if absent
-    kagenti.io/origin: "https://skillberry.example.com/skills/code-review"
-    kagenti.io/usage-count: "0"
+    rossoctl.io/display-name: "Code Review"
+    rossoctl.io/description: "Reviews code for quality and style"
+    rossoctl.io/registry-url: "https://skillberry.example.com"
+    rossoctl.io/registry-skill-name: "code-review"
+    rossoctl.io/registry-skill-version: "1.2.0"   # optional; "latest" if absent
+    rossoctl.io/origin: "https://skillberry.example.com/skills/code-review"
+    rossoctl.io/usage-count: "0"
 data: {}   # intentionally empty — no content stored locally
 ```
 
@@ -61,29 +61,29 @@ data: {}   # intentionally empty — no content stored locally
 
 | Constant | Value |
 |---|---|
-| `SKILL_SOURCE_LABEL` | `kagenti.io/source` |
+| `SKILL_SOURCE_LABEL` | `rossoctl.io/source` |
 | `SKILL_SOURCE_EXTERNAL` | `external` |
 | `SKILL_SOURCE_LOCAL` | `local` (for future explicit tagging; currently absence of label means local) |
-| `SKILL_REGISTRY_TYPE_LABEL` | `kagenti.io/registry-type` |
-| `SKILL_REGISTRY_URL_ANNOTATION` | `kagenti.io/registry-url` |
-| `SKILL_REGISTRY_SKILL_NAME_ANNOTATION` | `kagenti.io/registry-skill-name` |
-| `SKILL_REGISTRY_SKILL_VERSION_ANNOTATION` | `kagenti.io/registry-skill-version` |
-| `SKILL_FETCHER_SCRIPTS_CM` | `kagenti-skill-fetcher-scripts` |
+| `SKILL_REGISTRY_TYPE_LABEL` | `rossoctl.io/registry-type` |
+| `SKILL_REGISTRY_URL_ANNOTATION` | `rossoctl.io/registry-url` |
+| `SKILL_REGISTRY_SKILL_NAME_ANNOTATION` | `rossoctl.io/registry-skill-name` |
+| `SKILL_REGISTRY_SKILL_VERSION_ANNOTATION` | `rossoctl.io/registry-skill-version` |
+| `SKILL_FETCHER_SCRIPTS_CM` | `rossoctl-skill-fetcher-scripts` |
 | `SKILL_FETCHER_IMAGE` | `alpine:3` |
 
 ---
 
 ## Fetcher Scripts ConfigMap
 
-The backend ensures a ConfigMap named `kagenti-skill-fetcher-scripts` exists in **each namespace where an agent with external skills is deployed**. It is created or overwritten by the backend at agent-creation time (idempotent upsert). It is labeled `app.kubernetes.io/managed-by: kagenti` so it is clearly Kagenti-owned.
+The backend ensures a ConfigMap named `rossoctl-skill-fetcher-scripts` exists in **each namespace where an agent with external skills is deployed**. It is created or overwritten by the backend at agent-creation time (idempotent upsert). It is labeled `app.kubernetes.io/managed-by: rossoctl` so it is clearly Rossoctl-owned.
 
 Each key in `data` is `<registry-type>.sh`. The script receives the following environment variables from the init container spec:
 
 | Variable | Source |
 |---|---|
-| `REGISTRY_URL` | `kagenti.io/registry-url` annotation |
-| `SKILL_NAME` | `kagenti.io/registry-skill-name` annotation |
-| `SKILL_VERSION` | `kagenti.io/registry-skill-version` annotation (default: `latest`) |
+| `REGISTRY_URL` | `rossoctl.io/registry-url` annotation |
+| `SKILL_NAME` | `rossoctl.io/registry-skill-name` annotation |
+| `SKILL_VERSION` | `rossoctl.io/registry-skill-version` annotation (default: `latest`) |
 | `TARGET_DIR` | Computed by backend: `/app/skills/<sanitized-name>` |
 
 ### `skillberry.sh`
@@ -166,7 +166,7 @@ InitContainer: none
 ```
 Volumes:
   skill-ext-<i>:       emptyDir {}
-  fetcher-scripts-vol: configMap {name: kagenti-skill-fetcher-scripts}
+  fetcher-scripts-vol: configMap {name: rossoctl-skill-fetcher-scripts}
 
 InitContainer: fetch-skill-<i>
   image:   alpine:3
@@ -178,10 +178,10 @@ InitContainer: fetch-skill-<i>
       [ -f "$SCRIPT" ] || SCRIPT=/fetcher-scripts/generic.sh
       /bin/sh "$SCRIPT"
   env:
-    REGISTRY_TYPE: <kagenti.io/registry-type label>
-    REGISTRY_URL:  <kagenti.io/registry-url>
-    SKILL_NAME:    <kagenti.io/registry-skill-name>
-    SKILL_VERSION: <kagenti.io/registry-skill-version>  # or "latest"
+    REGISTRY_TYPE: <rossoctl.io/registry-type label>
+    REGISTRY_URL:  <rossoctl.io/registry-url>
+    SKILL_NAME:    <rossoctl.io/registry-skill-name>
+    SKILL_VERSION: <rossoctl.io/registry-skill-version>  # or "latest"
     TARGET_DIR:    /app/skills/<sanitized-name>
   volumeMounts:
     skill-ext-<i>:       /app/skills/<sanitized-name>   readOnly=false
@@ -200,22 +200,22 @@ One `fetcher-scripts-vol` volume is shared across all external skill init contai
 
 ## Backend Changes
 
-### `kagenti/backend/app/core/constants.py`
+### `rossoctl/backend/app/core/constants.py`
 
 Add the constants listed in the Data Model section above.
 
-### `kagenti/backend/app/core/config.py`
+### `rossoctl/backend/app/core/config.py`
 
 ```python
 # Gate all external registry skill behaviour
-kagenti_feature_flag_external_skills: bool = False
+rossoctl_feature_flag_external_skills: bool = False
 ```
 
-### `kagenti/backend/app/routers/config.py`
+### `rossoctl/backend/app/routers/config.py`
 
 Expose the new flag in the `GET /api/config/features` response.
 
-### `kagenti/backend/app/routers/skills.py`
+### `rossoctl/backend/app/routers/skills.py`
 
 **New Pydantic models:**
 
@@ -242,7 +242,7 @@ class ExternalSkillInfo(BaseModel):
 
 **Updated `Skill` model:** add optional `source: str | None` and `externalInfo: ExternalSkillInfo | None`.
 
-**New helper `_is_external(cm)`:** returns `True` if the ConfigMap has label `kagenti.io/source=external`.
+**New helper `_is_external(cm)`:** returns `True` if the ConfigMap has label `rossoctl.io/source=external`.
 
 **New helper `_configmap_to_external_skill_info(cm)`:** builds `ExternalSkillInfo` from annotations.
 
@@ -262,11 +262,11 @@ async def create_external_skill(request: CreateExternalSkillRequest, ...):
     # Return CreateSkillResponse
 ```
 
-### `kagenti/backend/app/routers/agents.py`
+### `rossoctl/backend/app/routers/agents.py`
 
-**New helper `_is_skill_external(kube, namespace, skill_name) -> bool`:** looks up the ConfigMap, returns `True` if it has `kagenti.io/source=external`.
+**New helper `_is_skill_external(kube, namespace, skill_name) -> bool`:** looks up the ConfigMap, returns `True` if it has `rossoctl.io/source=external`.
 
-**New helper `_ensure_fetcher_scripts_cm(kube, namespace)`:** creates or updates the `kagenti-skill-fetcher-scripts` ConfigMap in the given namespace with the embedded shell scripts.
+**New helper `_ensure_fetcher_scripts_cm(kube, namespace)`:** creates or updates the `rossoctl-skill-fetcher-scripts` ConfigMap in the given namespace with the embedded shell scripts.
 
 **New helper `_get_external_skill_init_containers(external_skills, namespace) -> tuple[list, list, list, str | None]`:** returns `(volumes, init_containers, main_mounts, skill_paths_fragment)` for all external skills.
 
@@ -291,7 +291,7 @@ All other existing skill and agent endpoints are unchanged.
 
 ## UI Changes
 
-### `kagenti/ui-v2/src/types/index.ts`
+### `rossoctl/ui-v2/src/types/index.ts`
 
 Add to `Skill`:
 ```typescript
@@ -304,11 +304,11 @@ externalInfo?: {
 };
 ```
 
-### `kagenti/ui-v2/src/pages/SkillCatalogPage.tsx`
+### `rossoctl/ui-v2/src/pages/SkillCatalogPage.tsx`
 
 In the skill list item: render a small `External` badge (e.g., outlined chip) when `skill.source === 'external'`.
 
-### `kagenti/ui-v2/src/pages/SkillDetailPage.tsx`
+### `rossoctl/ui-v2/src/pages/SkillDetailPage.tsx`
 
 For external skills: replace the `SkillFileTree` component with a "Registry Info" card showing:
 - Registry type
@@ -316,7 +316,7 @@ For external skills: replace the `SkillFileTree` component with a "Registry Info
 - Skill name and version in the registry
 - "View in Registry" button if `origin` annotation is set
 
-### `kagenti/ui-v2/src/pages/ImportSkillPage.tsx`
+### `rossoctl/ui-v2/src/pages/ImportSkillPage.tsx`
 
 Add a second tab "From Registry" (shown only when `features.externalSkills` is `true`). Fields:
 - Registry type (select: `skillberry` / `generic`)
@@ -325,7 +325,7 @@ Add a second tab "From Registry" (shown only when `features.externalSkills` is `
 - Version (optional, placeholder "latest")
 - Display name, description, category (same as local import)
 
-### `kagenti/ui-v2/src/services/api.ts`
+### `rossoctl/ui-v2/src/services/api.ts`
 
 Add `skillService.createExternal(data: CreateExternalSkillRequest)` that calls `POST /skills/external`.
 
@@ -345,15 +345,15 @@ Add `skillService.createExternal(data: CreateExternalSkillRequest)` that calls `
 
 ## Testing
 
-- **Unit tests** (`kagenti/backend/tests/test_skills.py`): test `_is_external()`, `_configmap_to_external_skill_info()`, `create_external_skill` endpoint, updated list/detail responses.
-- **Unit tests** (`kagenti/backend/tests/test_agents.py`): test `_ensure_fetcher_scripts_cm()`, `_get_external_skill_init_containers()`, combined local+external `_get_linked_skill_mounts()`.
-- **E2E test** (`kagenti/tests/e2e/`): create external skill reference, create agent referencing it, verify pod starts and `SKILL_FOLDERS` contains the mount path, verify fetcher init container spec is present.
+- **Unit tests** (`rossoctl/backend/tests/test_skills.py`): test `_is_external()`, `_configmap_to_external_skill_info()`, `create_external_skill` endpoint, updated list/detail responses.
+- **Unit tests** (`rossoctl/backend/tests/test_agents.py`): test `_ensure_fetcher_scripts_cm()`, `_get_external_skill_init_containers()`, combined local+external `_get_linked_skill_mounts()`.
+- **E2E test** (`rossoctl/tests/e2e/`): create external skill reference, create agent referencing it, verify pod starts and `SKILL_FOLDERS` contains the mount path, verify fetcher init container spec is present.
 - **Shell script tests**: validate `skillberry.sh` and `generic.sh` exit codes on curl failure, successful extract.
 
 ---
 
 ## Rollout
 
-1. Feature flag `kagenti_feature_flag_external_skills` defaults to `False`.
-2. Enable flag in dev/staging by setting `KAGENTI_FEATURE_FLAG_EXTERNAL_SKILLS=true`.
+1. Feature flag `rossoctl_feature_flag_external_skills` defaults to `False`.
+2. Enable flag in dev/staging by setting `ROSSOCTL_FEATURE_FLAG_EXTERNAL_SKILLS=true`.
 3. GA: flip default to `True` once E2E tests pass on Kind and HyperShift.

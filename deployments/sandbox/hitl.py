@@ -1,5 +1,5 @@
 """
-Kagenti HITL Delivery — Multi-channel approval system (Phase 8, C14+C18)
+Rossoctl HITL Delivery — Multi-channel approval system (Phase 8, C14+C18)
 
 When an autonomous agent hits a HITL (Human-In-The-Loop) operation, this module
 routes the approval request to the appropriate channel and waits for a response.
@@ -7,7 +7,7 @@ routes the approval request to the appropriate channel and waits for a response.
 Channels:
   - GitHub: Post as PR/issue comment, human replies in thread
   - Slack: Interactive message with approve/deny buttons
-  - Kagenti UI: Approval queue with WebSocket push
+  - Rossoctl UI: Approval queue with WebSocket push
   - A2A: input_required task state for agent-to-agent delegation
 
 Architecture:
@@ -20,7 +20,7 @@ Architecture:
 
 Usage:
     from hitl import HITLManager, ApprovalRequest
-    hitl = HITLManager(channels=["github", "kagenti-ui"])
+    hitl = HITLManager(channels=["github", "rossoctl-ui"])
 
     # Agent requests approval
     request = ApprovalRequest(
@@ -175,18 +175,18 @@ class SlackAdapter(ChannelAdapter):
         return None
 
 
-class KagentiUIAdapter(ChannelAdapter):
-    """Posts HITL requests to Kagenti UI approval queue via WebSocket."""
+class RossoctlUIAdapter(ChannelAdapter):
+    """Posts HITL requests to Rossoctl UI approval queue via WebSocket."""
 
     def __init__(self, api_url: str = ""):
         self.api_url = api_url
 
     def post_request(self, request: ApprovalRequest) -> str:
-        # In production: POST to Kagenti backend, push via WebSocket
+        # In production: POST to Rossoctl backend, push via WebSocket
         return f"ui:queue:{request.request_id}"
 
     def check_response(self, ref: str) -> Optional[ApprovalDecision]:
-        # In production: Poll Kagenti backend for decision
+        # In production: Poll Rossoctl backend for decision
         return None
 
 
@@ -196,12 +196,12 @@ class HITLManager:
     ADAPTERS = {
         "github": GitHubAdapter,
         "slack": SlackAdapter,
-        "kagenti-ui": KagentiUIAdapter,
+        "rossoctl-ui": RossoctlUIAdapter,
     }
 
     def __init__(self, channels: list[str] = None):
         self.registry = ContextRegistry()
-        self.channels = channels or ["kagenti-ui"]
+        self.channels = channels or ["rossoctl-ui"]
         self.adapters: dict[str, ChannelAdapter] = {}
         for ch in self.channels:
             if ch in self.ADAPTERS:
@@ -234,9 +234,9 @@ class HITLManager:
 
 # FastAPI integration endpoints
 FASTAPI_ROUTES = '''
-# Add to kagenti/backend/main.py:
+# Add to rossoctl/backend/main.py:
 
-hitl_manager = HITLManager(channels=["github", "kagenti-ui"])
+hitl_manager = HITLManager(channels=["github", "rossoctl-ui"])
 
 @app.post("/api/v1/sandbox/hitl/request")
 async def create_hitl_request(request: dict):
@@ -276,7 +276,7 @@ async def get_hitl_status(request_id: str):
 
 if __name__ == "__main__":
     # Demo the HITL workflow
-    mgr = HITLManager(channels=["github", "kagenti-ui"])
+    mgr = HITLManager(channels=["github", "rossoctl-ui"])
 
     req = ApprovalRequest(
         context_id="sandbox-demo",

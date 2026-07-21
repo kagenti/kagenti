@@ -1,9 +1,9 @@
 ---
 name: repo:issue
-description: Kagenti issue templates - bug reports, feature requests, epics
+description: Rossoctl issue templates - bug reports, feature requests, epics
 ---
 
-# Kagenti Issue Conventions
+# Rossoctl Issue Conventions
 
 ## Issue Templates
 

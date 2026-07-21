@@ -12,7 +12,7 @@ metadata:
   namespace: openshell-system
   labels:
     app.kubernetes.io/name: openshell-gateway
-    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/part-of: rossoctl
     app.kubernetes.io/component: openshell
 spec:
   serviceName: openshell-gateway
@@ -24,7 +24,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: openshell-gateway
-        app.kubernetes.io/part-of: kagenti
+        app.kubernetes.io/part-of: rossoctl
         app.kubernetes.io/component: openshell
     spec:
       serviceAccountName: openshell-gateway
@@ -92,7 +92,7 @@ metadata:
   namespace: openshell-system
   labels:
     app.kubernetes.io/name: openshell-gateway
-    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/part-of: rossoctl
     app.kubernetes.io/component: openshell
 spec:
   type: ClusterIP

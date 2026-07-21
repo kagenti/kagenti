@@ -1,17 +1,17 @@
 ---
 name: kind:cluster
-description: Manage Kind clusters for local Kagenti testing. Create, destroy, deploy platform, and run E2E tests.
+description: Manage Kind clusters for local Rossoctl testing. Create, destroy, deploy platform, and run E2E tests.
 ---
 
 # Kind Cluster Management Skill
 
-Manage Kind (Kubernetes in Docker) clusters for local Kagenti development and testing.
+Manage Kind (Kubernetes in Docker) clusters for local Rossoctl development and testing.
 
 ## When to Use
 
 - Creating a new local test cluster
 - Destroying an existing cluster
-- Deploying Kagenti platform to Kind
+- Deploying Rossoctl platform to Kind
 - Running E2E tests locally
 - User asks "create cluster", "deploy locally", or "run tests"
 
@@ -27,7 +27,7 @@ Manage Kind (Kubernetes in Docker) clusters for local Kagenti development and te
 ### Create Cluster
 
 ```bash
-# Create with default name (kagenti)
+# Create with default name (rossoctl)
 ./.github/scripts/kind/create-cluster.sh
 
 # Create with custom name
@@ -50,12 +50,12 @@ CLUSTER_NAME=my-cluster ./.github/scripts/kind/create-cluster.sh
 ### Deploy Platform
 
 ```bash
-# Deploy full Kagenti platform to existing cluster
+# Deploy full Rossoctl platform to existing cluster
 ./.github/scripts/kind/deploy-platform.sh
 ```
 
 This deploys:
-- Kagenti platform via bash installer
+- Rossoctl platform via bash installer
 - All platform components (Istio, Keycloak, SPIRE, etc.)
 - Ollama LLM (pulls qwen2.5:0.5b model)
 - Weather agent and tool demo
@@ -81,7 +81,7 @@ Tests include:
 ```
 
 Then run the suggested command and visit:
-- Kagenti UI: http://kagenti-ui.localtest.me:8080
+- Rossoctl UI: http://rossoctl-ui.localtest.me:8080
 - Keycloak: http://keycloak.localtest.me:8080
 - Phoenix: http://phoenix.localtest.me:8080
 - Kiali: http://kiali.localtest.me:8080
@@ -135,7 +135,7 @@ KIND_CONFIG=/path/to/config.yaml ./.github/scripts/kind/create-cluster.sh
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLUSTER_NAME` | kagenti | Kind cluster name |
+| `CLUSTER_NAME` | rossoctl | Kind cluster name |
 | `KIND_CONFIG` | kind-config-registry.yaml | Kind configuration file |
 | `SKIP_OLLAMA` | false | Skip Ollama installation |
 | `SKIP_AGENTS` | false | Skip agent deployment |
@@ -165,7 +165,7 @@ kubectl logs -n team1 deployment/weather-service --tail=100 -f
 kubectl logs -n team1 deployment/weather-tool --tail=100 -f
 
 # Platform operator
-kubectl logs -n kagenti-system deployment/kagenti-platform-operator --tail=100 -f
+kubectl logs -n rossoctl-system deployment/rossoctl-platform-operator --tail=100 -f
 ```
 
 ### Check Events
@@ -230,16 +230,16 @@ ollama list | grep qwen
 
 ```bash
 # Check gateway pod
-kubectl get pods -n kagenti-system -l app=http-istio
+kubectl get pods -n rossoctl-system -l app=http-istio
 
 # Restart port-forward
-kubectl port-forward -n kagenti-system svc/http-istio 8080:80
+kubectl port-forward -n rossoctl-system svc/http-istio 8080:80
 ```
 
 ## Related Skills
 
 - **local:testing**: Detailed local testing guide
-- **kagenti:deploy**: Alternative deployment via Python installer
+- **rossoctl:deploy**: Alternative deployment via Python installer
 - **k8s:pods**: Debug pod issues
 - **k8s:logs**: Query logs
 

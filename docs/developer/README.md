@@ -1,6 +1,6 @@
 # Developer Guides
 
-This directory contains comprehensive development guides for working with Kagenti on different environments.
+This directory contains comprehensive development guides for working with Rossoctl on different environments.
 
 ## Choose Your Environment
 
@@ -42,10 +42,10 @@ Before deploying to any environment, create the secrets file:
 
 ```bash
 # Copy the template
-cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
+cp charts/rossoctl/.secrets_template.yaml charts/rossoctl/.secrets.yaml
 
 # Edit with your values
-vi charts/kagenti/.secrets.yaml
+vi charts/rossoctl/.secrets.yaml
 ```
 
 Required values in `.secrets.yaml`:
@@ -74,7 +74,7 @@ export GITHUB_USER="your-username"
 export GITHUB_TOKEN_VALUE="ghp_..."
 
 # Force regeneration from env vars
-rm -f charts/kagenti/.secrets.yaml
+rm -f charts/rossoctl/.secrets.yaml
 ```
 
 ## Documentation Structure

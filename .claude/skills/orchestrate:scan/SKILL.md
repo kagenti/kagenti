@@ -277,7 +277,7 @@ Then follow the `cve:scan` skill workflow:
    Advisory Database
 4. **Classify** — confirmed / suspected / false positive
 
-Write CVE findings to `/tmp/kagenti/cve/<target>/scan-report.json` (never to
+Write CVE findings to `/tmp/rossoctl/cve/<target>/scan-report.json` (never to
 git-tracked files). Include a summary in the scan report.
 
 Key areas to focus on:
@@ -326,10 +326,10 @@ git -C .repos/<target> remote -v
 
 ## Output Format
 
-Save scan report to `/tmp/kagenti/orchestrate/<target>/scan-report.md`:
+Save scan report to `/tmp/rossoctl/orchestrate/<target>/scan-report.md`:
 
 ```bash
-mkdir -p /tmp/kagenti/orchestrate/<target>
+mkdir -p /tmp/rossoctl/orchestrate/<target>
 ```
 
 Report template:
@@ -439,7 +439,7 @@ Report template:
 
 ## Dependency Vulnerabilities (cve:scan)
 - Scan method: [Trivy + LLM + WebSearch / LLM + WebSearch / LLM only]
-- Full report: `/tmp/kagenti/cve/<target>/scan-report.json`
+- Full report: `/tmp/rossoctl/cve/<target>/scan-report.json`
 
 | Severity | Count |
 |----------|-------|
@@ -458,7 +458,7 @@ Report template:
 |---------|----------|---------|
 | [e.g., insecure port, no input validation] | HIGH/MEDIUM | [brief description] |
 
-> **Note:** CVE IDs and detailed descriptions are in `/tmp/kagenti/cve/<target>/scan-report.json` only.
+> **Note:** CVE IDs and detailed descriptions are in `/tmp/rossoctl/cve/<target>/scan-report.json` only.
 > Do NOT copy CVE IDs into git-tracked files, PRs, or issues.
 
 ## Gap Summary

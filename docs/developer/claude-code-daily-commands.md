@@ -1,7 +1,7 @@
 # Claude Code Daily Commands
 
 Quick reference for the skills and commands you'll use regularly when working on
-Kagenti. For setup, prerequisites, and workflow details, see the
+Rossoctl. For setup, prerequisites, and workflow details, see the
 [Claude Code Development Guide](./claude-code.md).
 
 ## Developer Commands
@@ -119,7 +119,7 @@ All skills organized by how often you'll use them.
 | `kind:cluster` | Manage local Kind cluster |
 | `hypershift:cluster` | Create/destroy HyperShift clusters |
 | `hypershift:quotas` | Check AWS quotas |
-| `kagenti:deploy` | Deploy platform |
+| `rossoctl:deploy` | Deploy platform |
 | `helm:debug` | Debug Helm charts |
 | `auth:keycloak-confidential-client` | Create OAuth2 clients |
 

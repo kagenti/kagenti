@@ -1,18 +1,18 @@
 ---
 name: local:testing
-description: Test Kagenti platform locally using Kind. Scripts for deploy, test, and access.
+description: Test Rossoctl platform locally using Kind. Scripts for deploy, test, and access.
 ---
 
 # Local Testing Skill
 
-This skill helps you test Kagenti platform locally using Kind (Kubernetes in Docker).
+This skill helps you test Rossoctl platform locally using Kind (Kubernetes in Docker).
 
 ## Overview
 
 The `local-testing/` directory contains scripts that mirror the GitHub Actions CI workflow, allowing you to:
-- Deploy the full Kagenti platform locally
+- Deploy the full Rossoctl platform locally
 - Run E2E tests with Ollama LLM integration
-- Access the Kagenti UI and services
+- Access the Rossoctl UI and services
 - Debug agent and tool deployments
 
 ## Prerequisites
@@ -37,7 +37,7 @@ Use this when you want a fresh start or cluster is in a bad state.
 
 ### 2. Deploy Platform
 
-Deploys the full Kagenti platform (takes ~15-20 minutes):
+Deploys the full Rossoctl platform (takes ~15-20 minutes):
 
 ```bash
 ./local-testing/deploy-platform.sh
@@ -73,10 +73,10 @@ Shows access information and port-forward commands:
 
 Then run the suggested command:
 ```bash
-kubectl port-forward -n kagenti-system svc/http-istio 8080:80
+kubectl port-forward -n rossoctl-system svc/http-istio 8080:80
 ```
 
-Visit: http://kagenti-ui.localtest.me:8080
+Visit: http://rossoctl-ui.localtest.me:8080
 
 ## Typical Workflow
 
@@ -123,7 +123,7 @@ kubectl logs -n team1 deployment/weather-service --tail=100 -f
 kubectl logs -n team1 deployment/weather-tool --tail=100 -f
 
 # Platform operator
-kubectl logs -n kagenti-system deployment/kagenti-platform-operator --tail=100 -f
+kubectl logs -n rossoctl-system deployment/rossoctl-platform-operator --tail=100 -f
 ```
 
 ### Check Pod Status
@@ -134,7 +134,7 @@ kubectl get pods -A
 
 # Specific namespace
 kubectl get all -n team1
-kubectl get all -n kagenti-system
+kubectl get all -n rossoctl-system
 ```
 
 ### View Events
@@ -191,16 +191,16 @@ If E2E tests fail:
 
 If UI doesn't load:
 
-1. Verify pod is running: `kubectl get pods -n kagenti-system -l app=kagenti-ui`
-2. Check Istio gateway: `kubectl get pods -n kagenti-system -l app=http-istio`
-3. Restart port-forward: `kubectl port-forward -n kagenti-system svc/http-istio 8080:80`
+1. Verify pod is running: `kubectl get pods -n rossoctl-system -l app=rossoctl-ui`
+2. Check Istio gateway: `kubectl get pods -n rossoctl-system -l app=http-istio`
+3. Restart port-forward: `kubectl port-forward -n rossoctl-system svc/http-istio 8080:80`
 
 ## Notes
 
 - These scripts are for local development only (not committed to repo)
 - Scripts are in `.gitignore` to avoid accidental commits
 - Deployment uses same installer as CI
-- Cluster name is `kagenti` (matches CI workflow)
+- Cluster name is `rossoctl` (matches CI workflow)
 - Secrets used are test values (not production)
 
 ## Files Location
@@ -216,4 +216,4 @@ All scripts are in: `local-testing/`
 
 - `local:full-test` - Complete test workflows for Kind and HyperShift
 - `kind:cluster` - Create/destroy Kind clusters
-- `kagenti:deploy` - Deploy platform
+- `rossoctl:deploy` - Deploy platform

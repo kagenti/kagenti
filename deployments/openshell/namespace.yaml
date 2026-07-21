@@ -6,6 +6,6 @@ kind: Namespace
 metadata:
   name: openshell-system
   labels:
-    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/part-of: rossoctl
     app.kubernetes.io/component: openshell
     istio.io/dataplane-mode: ambient
