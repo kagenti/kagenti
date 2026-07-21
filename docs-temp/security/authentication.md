@@ -3,6 +3,10 @@ sidebar_label: Authentication
 sidebar_position: 3
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Authentication
 
 Workload identity answers *which workload*. Authentication answers *which user or client*, and what role they hold. Rossoctl uses [Keycloak](https://www.keycloak.org/) as its OAuth2/OIDC provider for user login, client registration, and token issuance.

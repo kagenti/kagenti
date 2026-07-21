@@ -3,6 +3,10 @@ sidebar_label: Helm
 sidebar_position: 4
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Deploy with Helm
 
 For shared clusters and GitOps pipelines, install Rossoctl from its OCI Helm charts. This gives you versioned, declarative installs you can manage the same way as the rest of your platform.

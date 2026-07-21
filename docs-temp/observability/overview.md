@@ -3,6 +3,10 @@ sidebar_label: Overview
 sidebar_position: 1
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Observability Overview
 
 You can't operate what you can't see. Agents are especially opaque — they make decisions and chains of tool calls that are hard to reconstruct after the fact. Rossoctl instruments the platform so you get traces, metrics, cost, and network topology out of the box.

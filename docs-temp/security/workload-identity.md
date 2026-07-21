@@ -3,6 +3,10 @@ sidebar_label: Workload Identity
 sidebar_position: 2
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Workload Identity
 
 Every workload on Rossoctl — agent, tool, or platform service — has a cryptographic identity issued by [SPIFFE/SPIRE](https://spiffe.io/). This is the foundation everything else rests on: authentication, delegation, and audit all start from "which workload is this, provably?"

@@ -3,6 +3,10 @@ sidebar_label: Overview
 sidebar_position: 1
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Operations Overview
 
 Once Rossoctl is installed and agents are live, the work shifts to day-two operations: keeping agents healthy, managing their lifecycle, handling state, and scaling with demand. This section is for whoever runs the platform after launch.

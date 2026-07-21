@@ -3,6 +3,10 @@ sidebar_label: Tracing
 sidebar_position: 2
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Tracing
 
 A trace is the single most useful artifact for understanding an agent: it shows the full sequence of reasoning steps, model calls, and tool invocations behind one request. Rossoctl captures traces automatically using OpenTelemetry, and gives you MLflow and Phoenix to explore them.

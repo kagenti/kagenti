@@ -3,6 +3,10 @@ sidebar_label: Overview
 sidebar_position: 1
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Security & Identity Overview
 
 Rossoctl's job is to let agents — including autonomous ones — run on your infrastructure without becoming a liability. That means a security model built in from the start, not bolted on. This section explains each mechanism; start here for the shape of it.

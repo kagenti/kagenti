@@ -3,6 +3,10 @@ sidebar_label: OpenShift
 sidebar_position: 3
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Deploy on OpenShift
 
 Rossoctl runs on OpenShift with a few platform-specific considerations — routes for ingress, OLM-managed operators, and security context constraints. This page covers what differs from a vanilla Kubernetes install.

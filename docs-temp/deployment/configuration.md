@@ -3,6 +3,10 @@ sidebar_label: Configuration
 sidebar_position: 5
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Configuration
 
 Rossoctl is configured through Helm values (or `rossoctl config`) and a set of feature flags. This page covers the settings you'll touch most; the full list lives in the [Configuration Reference](../reference/configuration-reference.md).

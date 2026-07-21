@@ -3,6 +3,10 @@ sidebar_label: Deploy Your First Agent
 sidebar_position: 4
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Deploy Your First Agent
 
 The quickstart used a sample. Here you deploy *your own* agent — from a container image or straight from source. Rossoctl is framework-neutral, so whatever built your agent (LangGraph, CrewAI, AG2, AutoGen, or any A2A-compatible framework) is fine as long as it speaks A2A.

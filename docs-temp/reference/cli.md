@@ -3,6 +3,10 @@ sidebar_label: CLI (rossoctl)
 sidebar_position: 1
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # CLI Reference: `rossoctl`
 
 `rossoctl` is the command-line interface for installing Rossoctl and managing agents, tools, and configuration. This page is a starter reference; run `rossoctl <command> --help` for the authoritative, up-to-date flags.

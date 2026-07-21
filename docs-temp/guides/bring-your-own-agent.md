@@ -3,6 +3,10 @@ sidebar_label: Bring Your Own Agent
 sidebar_position: 4
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Bring Your Own Agent
 
 Rossoctl runs agents built with any framework, as long as they speak [A2A](https://a2aproject.github.io/A2A/). You don't rewrite your agent to adopt the platform — you wrap it so it publishes an Agent Card and accepts A2A requests, then deploy it like any other workload.

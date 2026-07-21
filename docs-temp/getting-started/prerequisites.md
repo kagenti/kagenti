@@ -3,6 +3,10 @@ sidebar_label: Prerequisites
 sidebar_position: 1
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Prerequisites
 
 Before you install Rossoctl, make sure your workstation and target cluster meet the requirements below. Most first-time users run everything locally on Kind — that path needs only Docker or Podman and a few CLIs.

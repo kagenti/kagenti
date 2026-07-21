@@ -3,6 +3,10 @@ sidebar_label: Skills
 sidebar_position: 4
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Skills
 
 A **skill** is a reusable, packaged capability an agent can pick up — a documented procedure plus any assets it needs. Skills let you capture "how we do X" once and share it across agents, instead of re-teaching every agent from scratch.

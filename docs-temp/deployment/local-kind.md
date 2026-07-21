@@ -3,6 +3,10 @@ sidebar_label: Local (Kind)
 sidebar_position: 2
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Deploy on Kind
 
 [Kind](https://kind.sigs.k8s.io/) (Kubernetes in Docker) is the recommended way to run Rossoctl locally — for development, demos, and evaluation. It's the same path the [Installation](../getting-started/installation.md) quickstart uses, with more detail and options here.

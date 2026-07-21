@@ -3,6 +3,10 @@ sidebar_label: Use Local Models
 sidebar_position: 5
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Use Local Models
 
 Agents need a model backend, and you don't have to send data to a hosted provider to use Rossoctl. This guide points agents at a local or self-hosted model through any OpenAI-compatible endpoint — [Ollama](https://ollama.com/) is the common choice for local development.

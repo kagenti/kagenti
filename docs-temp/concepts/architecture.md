@@ -3,6 +3,10 @@ sidebar_label: Architecture
 sidebar_position: 1
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Architecture
 
 Rossoctl is organized around four pillars — **Lifecycle, Networking, Security, and Observability** — that together turn a Kubernetes cluster into a place where agents can run safely. This page gives you the mental model; the rest of the Concepts section drills into each piece.

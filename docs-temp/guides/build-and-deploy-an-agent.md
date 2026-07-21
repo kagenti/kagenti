@@ -3,6 +3,10 @@ sidebar_label: Build & Deploy an Agent
 sidebar_position: 1
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Build and Deploy an Agent
 
 This guide covers the full path from source to a running, governed agent — including in-cluster builds, configuration, and promotion between namespaces. If you just want the two-minute version, see [Deploy your first agent](../getting-started/deploy-your-first-agent.md).

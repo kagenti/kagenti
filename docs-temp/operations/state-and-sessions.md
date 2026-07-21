@@ -3,6 +3,10 @@ sidebar_label: State & Sessions
 sidebar_position: 3
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # State & Sessions
 
 Agents that hold a conversation or work over long periods need memory that survives a restart. Rossoctl provides persistent state and session management so an agent can be rescheduled, upgraded, or resumed without losing its context.

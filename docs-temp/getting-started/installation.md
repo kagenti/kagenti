@@ -3,6 +3,10 @@ sidebar_label: Installation
 sidebar_position: 3
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Installation
 
 This page gets the Rossoctl platform running on a local Kind cluster — the fastest way to try it. For other targets and production settings, see [Deployment](../deployment/overview.md).

@@ -3,6 +3,10 @@ sidebar_label: Metrics & Cost
 sidebar_position: 3
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Metrics & Cost
 
 Beyond individual traces, you need the aggregate picture: how much traffic agents handle, how they perform, and — because models cost money per token — how much they spend and on whose behalf. Rossoctl attributes token usage so cost is never a mystery.

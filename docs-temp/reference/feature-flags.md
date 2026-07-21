@@ -3,6 +3,10 @@ sidebar_label: Feature Flags
 sidebar_position: 4
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Feature Flags
 
 Optional capabilities in Rossoctl are gated behind feature flags and are **off by default**. This keeps a default install lean and lets you adopt newer capabilities deliberately. Flip a flag with `rossoctl config set` or a Helm value.

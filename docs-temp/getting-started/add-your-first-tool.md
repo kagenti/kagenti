@@ -3,6 +3,10 @@ sidebar_label: Add Your First Tool
 sidebar_position: 5
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Add Your First Tool
 
 Agents get their reach from tools. Rossoctl exposes tools over the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) and routes every call through the **MCP Gateway**, which handles discovery, authentication, and audit for you. This page registers a tool and connects it to an agent.

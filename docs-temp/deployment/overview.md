@@ -3,6 +3,10 @@ sidebar_label: Overview
 sidebar_position: 1
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Deployment Overview
 
 Rossoctl runs on any conformant Kubernetes cluster. This page helps you pick a target and points to the right install guide; the following pages cover each in detail.

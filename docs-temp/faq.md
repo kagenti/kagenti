@@ -3,6 +3,10 @@ sidebar_label: FAQ
 sidebar_position: 11
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # FAQ
 
 Short answers to the questions people ask most. Deeper answers live in the linked pages.

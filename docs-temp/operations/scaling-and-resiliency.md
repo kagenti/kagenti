@@ -3,6 +3,10 @@ sidebar_label: Scaling & Resiliency
 sidebar_position: 4
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Scaling & Resiliency
 
 As usage grows, you scale agents and the platform to match — and you make sure a failure in one place doesn't cascade. This page covers the scaling levers and the resiliency practices that keep a busy cluster stable.

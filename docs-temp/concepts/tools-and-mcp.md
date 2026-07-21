@@ -3,6 +3,10 @@ sidebar_label: Tools & MCP
 sidebar_position: 3
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Tools & MCP
 
 Tools are how agents affect the world — query a database, call an API, file a ticket. Rossoctl standardizes tools on the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) and puts a **gateway** in front of them so that access is discoverable, authenticated, and audited.

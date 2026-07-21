@@ -3,6 +3,10 @@ sidebar_label: Network Visualization
 sidebar_position: 4
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Network Visualization
 
 Multi-agent systems create a web of connections — agents calling agents, agents calling tools through the gateway, everything over the mesh. [Kiali](https://kiali.io/) gives you a live topology view of that web, built on the Istio service mesh underneath Rossoctl.

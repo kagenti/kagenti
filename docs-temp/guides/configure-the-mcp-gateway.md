@@ -3,6 +3,10 @@ sidebar_label: Configure the MCP Gateway
 sidebar_position: 2
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Configure the MCP Gateway
 
 The MCP Gateway is the single front door for tool calls. This guide shows how to register MCP servers, set routing prefixes, and require authentication — the day-to-day tasks of running tools on Rossoctl. For the concept, see [Tools & MCP](../concepts/tools-and-mcp.md).

@@ -3,6 +3,10 @@ sidebar_label: Managing Agents & Tools
 sidebar_position: 2
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Managing Agents & Tools
 
 Agents and tools have a lifecycle: you deploy them, update them as code changes, pause the ones you aren't using, and retire them when they're done. Rossoctl manages that lifecycle through the operator, so these are declarative, reviewable operations.

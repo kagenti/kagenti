@@ -3,6 +3,10 @@ sidebar_label: Production Checklist
 sidebar_position: 6
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Production Checklist
 
 Going from a local demo to a production install is mostly about the things a quickstart skips: capacity, high availability, real certificates, backups, and locked-down policy. Work through this before you put agents in front of users.

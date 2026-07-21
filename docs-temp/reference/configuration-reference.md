@@ -3,6 +3,10 @@ sidebar_label: Configuration Reference
 sidebar_position: 3
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Configuration Reference
 
 The complete set of configuration values for a Rossoctl install. For the common cases and how-to, see [Deployment: Configuration](../deployment/configuration.md); this page is the exhaustive lookup.

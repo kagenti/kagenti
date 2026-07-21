@@ -3,6 +3,10 @@ sidebar_label: Manage Skills
 sidebar_position: 3
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Manage Skills
 
 Skills package a reusable capability an agent can adopt. This guide enables the skills feature, authors a skill, and publishes it for agents to use. For the concept, see [Skills](../concepts/skills.md).

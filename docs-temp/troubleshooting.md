@@ -3,6 +3,10 @@ sidebar_label: Troubleshooting
 sidebar_position: 10
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Troubleshooting
 
 Common problems and how to resolve them, grouped by where they show up. If you don't find your issue here, check the component's traces ([Tracing](observability/tracing.md)) and the [FAQ](faq.md).

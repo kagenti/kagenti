@@ -3,6 +3,10 @@ sidebar_label: Sandbox Agents
 sidebar_position: 6
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Sandbox Agents
 
 Some agents run arbitrary code, rewrite their own files, and act without being asked. You want those agents contained so a mistake — or a prompt injection — can't reach the rest of your systems. Rossoctl's sandboxing (**OpenShell**) gives each agent a kernel-isolated execution environment with a policy-controlled egress.

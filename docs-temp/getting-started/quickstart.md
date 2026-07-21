@@ -3,6 +3,10 @@ sidebar_label: Quickstart
 sidebar_position: 2
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Quickstart
 
 In about ten minutes you'll go from an empty cluster to a running agent you can talk to. This walks the whole loop end to end; later pages go deeper on each step.

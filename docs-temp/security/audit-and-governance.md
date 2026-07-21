@@ -3,6 +3,10 @@ sidebar_label: Audit & Governance
 sidebar_position: 6
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Audit & Governance
 
 Governance is being able to answer, after the fact, *what did this agent do, on whose behalf, and was it allowed?* Rossoctl records every tool call and grounds it in verifiable identity, so autonomous agents remain accountable.

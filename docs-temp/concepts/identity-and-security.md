@@ -3,6 +3,10 @@ sidebar_label: Identity & Security
 sidebar_position: 5
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Identity & Security
 
 Security is the reason Rossoctl exists as a platform and not a library. Autonomous agents act on their own and touch sensitive systems, so *who is this agent, what is it allowed to do, and what did it actually do* has to be answerable at all times. This page is the conceptual overview; the [Security & Identity](../security/overview.md) section covers each mechanism in depth.

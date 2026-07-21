@@ -3,6 +3,10 @@ sidebar_label: API & Custom Resources
 sidebar_position: 2
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # API & Custom Resources
 
 Rossoctl is driven by Kubernetes custom resources, so you can manage everything declaratively and with GitOps. This page lists the main resources and their purpose; field-level schemas belong in each resource's generated CRD reference.

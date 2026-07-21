@@ -3,6 +3,10 @@ sidebar_label: Token Exchange & AuthBridge
 sidebar_position: 4
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Token Exchange & AuthBridge
 
 When a user asks an agent to do something, the agent should act *as that user* toward the tools it calls — not with its own broad, standing access. Rossoctl achieves this with **OAuth2 token exchange (RFC 8693)**, applied transparently by **AuthBridge**.

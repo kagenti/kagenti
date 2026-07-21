@@ -3,6 +3,10 @@ sidebar_label: Agents
 sidebar_position: 2
 ---
 
+:::danger Placeholder content
+This content is placeholder and should be replaced, edited, or deleted by the content owners.
+:::
+
 # Agents
 
 An **agent** is a workload that reasons and acts — it takes a goal, decides what to do, and calls tools or other agents to get there. On Rossoctl, an agent is just a container that speaks [A2A](https://a2aproject.github.io/A2A/), enrolled with the platform through an `AgentRuntime` resource.
