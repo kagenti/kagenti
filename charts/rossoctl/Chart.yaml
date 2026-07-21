@@ -7,6 +7,6 @@ appVersion: "0.7.0-alpha.5"
 
 dependencies:
 - name: operator-chart
-  version: 0.3.0-alpha.8
+  version: 0.3.0-alpha.9
   repository: oci://ghcr.io/rossoctl/operator
   condition: components.agentOperator.enabled
