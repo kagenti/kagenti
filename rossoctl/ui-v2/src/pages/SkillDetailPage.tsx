@@ -53,6 +53,16 @@ export const SkillDetailPage: React.FC = () => {
     enabled: !!namespace && !!name,
   });
 
+  // Browser-facing store URL (the registry URL is a cluster-internal service
+  // address that a browser cannot reach). Best-effort; ignored if unavailable.
+  const { data: autoSync } = useQuery({
+    queryKey: ['skill-autosync'],
+    queryFn: () => skillService.getAutoSync(),
+    enabled: !!skill && skill.source === 'external',
+    retry: false,
+    staleTime: 60_000,
+  });
+
   const deleteMutation = useMutation({
     mutationFn: () => skillService.delete(namespace!, name!),
     onSuccess: () => {
@@ -210,11 +220,24 @@ export const SkillDetailPage: React.FC = () => {
                 <DescriptionListGroup>
                   <DescriptionListTerm>Registry URL</DescriptionListTerm>
                   <DescriptionListDescription>
-                    <a href={skill.externalInfo.registryUrl} target="_blank" rel="noreferrer">
-                      {skill.externalInfo.registryUrl}
-                    </a>
+                    {/* Cluster-internal service address — not browser-reachable, so shown as
+                        plain text. A browser link to the store is offered separately below. */}
+                    <code>{skill.externalInfo.registryUrl}</code>
+                    <span style={{ color: 'var(--pf-v5-global--Color--200)', marginLeft: 8 }}>
+                      (in-cluster address)
+                    </span>
                   </DescriptionListDescription>
                 </DescriptionListGroup>
+                {autoSync?.storeUiUrl && (
+                  <DescriptionListGroup>
+                    <DescriptionListTerm>Open in store</DescriptionListTerm>
+                    <DescriptionListDescription>
+                      <a href={autoSync.storeUiUrl} target="_blank" rel="noreferrer">
+                        {autoSync.storeUiUrl}
+                      </a>
+                    </DescriptionListDescription>
+                  </DescriptionListGroup>
+                )}
                 <DescriptionListGroup>
                   <DescriptionListTerm>Skill Name in Registry</DescriptionListTerm>
                   <DescriptionListDescription>

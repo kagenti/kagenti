@@ -45,6 +45,7 @@ import {
   Modal,
   ModalVariant,
   TextInput,
+  Checkbox,
   Icon,
   Dropdown,
   DropdownList,
@@ -70,7 +71,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import yaml from 'js-yaml';
 
-import { agentService, authBridgeService, chatService, configService, shipwrightService, ShipwrightBuildInfo } from '@/services/api';
+import { agentService, authBridgeService, chatService, configService, shipwrightService, ShipwrightBuildInfo, dreamService, skillService } from '@/services/api';
 import { AgentChat } from '@/components/AgentChat';
 import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import type { PluginConfig } from '@/types';
@@ -140,6 +141,89 @@ export const AgentDetailPage: React.FC = () => {
   const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = React.useState('');
   const [actionsMenuOpen, setActionsMenuOpen] = React.useState(false);
+  const [dreamModalOpen, setDreamModalOpen] = React.useState(false);
+  const [dreamResult, setDreamResult] = React.useState<string | null>(null);
+  const [dreamRunId, setDreamRunId] = React.useState<string | null>(null);
+
+  // Store URL (from auto-sync config) — used to point users at the store's
+  // Plugins page where the required ask-runspace plugin is enabled/configured.
+  const autoSyncQuery = useQuery({
+    queryKey: ['skill-autosync'],
+    queryFn: () => skillService.getAutoSync(),
+    enabled: !!features.dreaming && dreamModalOpen,
+  });
+  const storePluginsUrl = autoSyncQuery.data?.storeUiUrl
+    ? `${autoSyncQuery.data.storeUiUrl.replace(/\/$/, '')}/plugins`
+    : null;
+
+  // Skill "dreaming" — status + manual trigger (feature-flagged).
+  const dreamStatusQuery = useQuery({
+    queryKey: ['dream-status', namespace, name],
+    queryFn: () => dreamService.status(namespace!, name!),
+    enabled: !!features.dreaming && dreamModalOpen && !!namespace && !!name,
+  });
+  const dreamMutation = useMutation({
+    mutationFn: () => dreamService.trigger(namespace!, name!),
+    onSuccess: (r) => {
+      if (r.status === 'submitted') {
+        setDreamResult(
+          `Dream submitted — ${r.new_trajectories} new trajectory(ies) (conversations) sent to RunSpace. Optimizing…`
+        );
+        setDreamRunId(r.run_id || null);
+      } else if (r.status === 'no_new_trajectories') {
+        setDreamResult('No new trajectories since the last dream — nothing to optimize.');
+      } else {
+        setDreamResult(`Status: ${r.status}`);
+      }
+      dreamStatusQuery.refetch();
+    },
+    onError: (e: unknown) => setDreamResult(`Dream failed: ${e instanceof Error ? e.message : String(e)}`),
+  });
+
+  // Poll the RunSpace run until it completes, then show its summary.
+  const dreamRunQuery = useQuery({
+    queryKey: ['dream-run', namespace, name, dreamRunId],
+    queryFn: () => dreamService.runStatus(namespace!, name!, dreamRunId!),
+    enabled: !!dreamRunId && dreamModalOpen,
+    refetchInterval: (q) => {
+      const s = (q.state.data as { status?: string } | undefined)?.status;
+      return s && s !== 'pending' ? false : 5000;
+    },
+  });
+
+  // Auto-dream schedule config (persisted thresholds). Loaded from status,
+  // edited in the modal, saved via PUT /thresholds.
+  const DREAM_DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  const [dreamMinTraj, setDreamMinTraj] = React.useState('0');
+  const [dreamDays, setDreamDays] = React.useState<string[]>([]);
+  const [dreamTime, setDreamTime] = React.useState('');
+  const [dreamCfgSaved, setDreamCfgSaved] = React.useState(false);
+  React.useEffect(() => {
+    const d = dreamStatusQuery.data;
+    if (d) {
+      setDreamMinTraj(String(d.minNewTrajectories ?? 0));
+      setDreamDays(d.scheduleDays ?? []);
+      setDreamTime(d.scheduleTime ?? '');
+    }
+  }, [dreamStatusQuery.data]);
+  const dreamCfgMutation = useMutation({
+    mutationFn: () =>
+      dreamService.setThresholds(namespace!, name!, {
+        minNewTrajectories: parseInt(dreamMinTraj || '0', 10),
+        minIntervalSeconds: 0,
+        scheduleDays: dreamDays,
+        scheduleTime: dreamTime,
+      }),
+    onSuccess: () => {
+      setDreamCfgSaved(true);
+      dreamStatusQuery.refetch();
+      window.setTimeout(() => setDreamCfgSaved(false), 4000);
+    },
+  });
+  const toggleDreamDay = (day: string) =>
+    setDreamDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
 
   const deleteMutation = useMutation({
     mutationFn: () => agentService.delete(namespace!, name!),
@@ -400,6 +484,16 @@ export const AgentDetailPage: React.FC = () => {
                   </FlexItem>
                 ));
               })()}
+              {features.dreaming && (
+                <FlexItem>
+                  <Button
+                    variant="secondary"
+                    onClick={() => { setDreamResult(null); setDreamModalOpen(true); }}
+                  >
+                    💤 Dream
+                  </Button>
+                </FlexItem>
+              )}
               <FlexItem>
                 <Dropdown
                   isOpen={actionsMenuOpen}
@@ -1274,6 +1368,165 @@ export const AgentDetailPage: React.FC = () => {
           aria-label="Confirm agent name"
           style={{ marginTop: '8px' }}
         />
+      </Modal>
+
+      {/* Skill Dreaming Modal */}
+      <Modal
+        variant={ModalVariant.medium}
+        title="💤 Dream — optimize this agent's skills"
+        isOpen={dreamModalOpen}
+        onClose={() => { setDreamModalOpen(false); setDreamRunId(null); }}
+        actions={[
+          <Button
+            key="dream"
+            variant="primary"
+            onClick={() => dreamMutation.mutate()}
+            isLoading={dreamMutation.isPending || dreamRunQuery.data?.status === 'pending'}
+            isDisabled={
+              dreamMutation.isPending ||
+              dreamRunQuery.data?.status === 'pending' ||
+              dreamStatusQuery.data?.newTrajectories === 0
+            }
+          >
+            Dream now
+          </Button>,
+          <Button key="close" variant="link" onClick={() => { setDreamModalOpen(false); setDreamRunId(null); }}>
+            Close
+          </Button>,
+        ]}
+      >
+        <TextContent>
+          <Text>
+            Reads <strong>{name}</strong>'s new execution trajectories from Phoenix and runs a
+            RunSpace optimization session that improves the skills the agent used, writing each
+            back to the store as a <strong>new version under the same name</strong> (immutable,
+            git-like lineage). Only new (un-dreamed) trajectories are processed.
+          </Text>
+
+          {/* Setup / prerequisite guidance for new users. */}
+          <Alert
+            variant="info"
+            isInline
+            isPlain
+            title="Setup: dreaming runs on the store's ask-runspace plugin"
+            style={{ marginTop: '12px' }}
+          >
+            <Text component="small">
+              Dreaming hands the trajectories to the <strong>ask-runspace</strong> plugin in the
+              skillberry store — that plugin runs the RunSpace (Claude Code) session and uses the
+              store's own model credentials. Enable and configure it (model / API key) on the
+              store's{' '}
+              {storePluginsUrl ? (
+                <a href={storePluginsUrl} target="_blank" rel="noreferrer">
+                  Plugins page
+                </a>
+              ) : (
+                <strong>Plugins page</strong>
+              )}
+              . No API keys are configured here in Rossoctl.
+            </Text>
+          </Alert>
+
+          {dreamStatusQuery.data && (
+            <Text component="small" style={{ marginTop: '12px', display: 'block' }}>
+              <strong>{dreamStatusQuery.data.newTrajectories}</strong> new trajectory(ies) to dream on
+              {' · '}runs: {dreamStatusQuery.data.dreamedCount}
+              {' · '}last dreamed: {dreamStatusQuery.data.lastDreamedAt || 'never'}
+            </Text>
+          )}
+          {dreamResult && (
+            <Text style={{ marginTop: '12px', fontWeight: 600 }}>{dreamResult}</Text>
+          )}
+
+          {/* Auto-dream schedule config (stored; evaluated by the scheduler iteration). */}
+          <ExpandableSection
+            toggleText="⏰ Auto-dream schedule"
+            style={{ marginTop: '16px' }}
+          >
+            <Text component="small" style={{ display: 'block', marginBottom: 8 }}>
+              Dream automatically instead of clicking manually — when enough new
+              trajectories pile up, and/or on fixed weekdays.
+            </Text>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <Text component="small">Dream after</Text>
+              <TextInput
+                aria-label="minimum new trajectories"
+                type="number"
+                value={dreamMinTraj}
+                onChange={(_e, v) => setDreamMinTraj(v)}
+                style={{ width: 80 }}
+              />
+              <Text component="small">new trajectories collected (0 = off)</Text>
+            </div>
+            <Text component="small" style={{ display: 'block', marginBottom: 6 }}>
+              …and/or on these days:
+            </Text>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+              {DREAM_DAYS.map((d) => (
+                <Checkbox
+                  key={d}
+                  id={`dream-day-${d}`}
+                  label={d.charAt(0).toUpperCase() + d.slice(1)}
+                  isChecked={dreamDays.includes(d)}
+                  onChange={() => toggleDreamDay(d)}
+                />
+              ))}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <Text component="small">at</Text>
+              <TextInput
+                aria-label="schedule time"
+                type="time"
+                value={dreamTime}
+                onChange={(_e, v) => setDreamTime(v)}
+                style={{ width: 140 }}
+              />
+              <Text component="small">(cluster-local, 24h)</Text>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => dreamCfgMutation.mutate()}
+              isLoading={dreamCfgMutation.isPending}
+            >
+              Save schedule
+            </Button>
+            {dreamCfgSaved && (
+              <Text component="small" style={{ marginLeft: 12, color: 'var(--pf-v5-global--success-color--100)' }}>
+                ✓ Saved{dreamDays.length > 0 && dreamTime ? ` — dreams ${dreamDays.map(d => d[0].toUpperCase()+d.slice(1)).join(', ')} at ${dreamTime}` : ''}
+              </Text>
+            )}
+          </ExpandableSection>
+
+          {dreamRunId && dreamRunQuery.data?.status === 'pending' && (
+            <Text component="small" style={{ marginTop: '8px', display: 'block' }}>
+              <Spinner size="sm" /> RunSpace optimizing the skill… (run {dreamRunId})
+            </Text>
+          )}
+          {dreamRunQuery.data?.status === 'ready' && dreamRunQuery.data.summaryMd && (
+            <div
+              style={{
+                marginTop: '16px',
+                padding: '16px',
+                border: '1px solid var(--pf-v5-global--BorderColor--100)',
+                borderRadius: 8,
+                maxHeight: 360,
+                overflow: 'auto',
+                background: 'var(--pf-v5-global--BackgroundColor--200)',
+              }}
+            >
+              <Text component="h4" style={{ marginBottom: 8 }}>RunSpace optimization summary</Text>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {dreamRunQuery.data.summaryMd}
+              </ReactMarkdown>
+            </div>
+          )}
+          {dreamRunQuery.data?.status === 'failed' && (
+            <Text style={{ marginTop: '8px', color: 'var(--pf-v5-global--danger-color--100)' }}>
+              RunSpace run failed — check the store logs.
+            </Text>
+          )}
+        </TextContent>
       </Modal>
     </>
   );

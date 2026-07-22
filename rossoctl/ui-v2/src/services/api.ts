@@ -1514,6 +1514,75 @@ export async function getPodEvents(
 /**
  * Skill service
  */
+export interface DreamStatus {
+  namespace: string;
+  agent: string;
+  lastDreamedTs: string | null;
+  lastDreamedAt: string | null;
+  lastRunId: string;
+  dreamedCount: number;
+  minNewTrajectories: number;
+  minIntervalSeconds: number;
+  scheduleDays: string[];
+  scheduleTime: string;
+  newTrajectories: number;
+}
+
+export interface DreamReport {
+  status: string;
+  namespace: string;
+  agent: string;
+  new_trajectories?: number;
+  new_spans?: number;
+  cursor?: string | null;
+  run_id?: string;
+}
+
+export interface DreamRunStatus {
+  runId: string;
+  status: string | null; // pending | ready | failed
+  summaryMd: string | null;
+}
+
+// Skill "dreaming": read the agent's new Phoenix trajectories and optimize the
+// skills it used via a RunSpace session. Feature-flagged (features.dreaming).
+export const dreamService = {
+  async status(namespace: string, agent: string): Promise<DreamStatus> {
+    return apiFetch(
+      `/dream/${encodeURIComponent(namespace)}/${encodeURIComponent(agent)}`
+    );
+  },
+
+  async trigger(namespace: string, agent: string): Promise<DreamReport> {
+    return apiFetch(
+      `/dream/${encodeURIComponent(namespace)}/${encodeURIComponent(agent)}`,
+      { method: 'POST' }
+    );
+  },
+
+  async setThresholds(
+    namespace: string,
+    agent: string,
+    thresholds: {
+      minNewTrajectories: number;
+      minIntervalSeconds: number;
+      scheduleDays: string[];
+      scheduleTime: string;
+    }
+  ): Promise<{ status: string }> {
+    return apiFetch(
+      `/dream/${encodeURIComponent(namespace)}/${encodeURIComponent(agent)}/thresholds`,
+      { method: 'PUT', body: JSON.stringify(thresholds) }
+    );
+  },
+
+  async runStatus(namespace: string, agent: string, runId: string): Promise<DreamRunStatus> {
+    return apiFetch(
+      `/dream/${encodeURIComponent(namespace)}/${encodeURIComponent(agent)}/runs/${encodeURIComponent(runId)}`
+    );
+  },
+};
+
 export const skillService = {
   async list(namespace: string, query?: string): Promise<Skill[]> {
     const params = new URLSearchParams({ namespace });
