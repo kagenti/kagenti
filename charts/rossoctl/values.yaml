@@ -190,7 +190,7 @@ ui:
   frontend:
     enabled: true
     image: ghcr.io/rossoctl/rossoctl/ui-v2
-    tag: v0.7.0-alpha.5
+    tag: v0.7.0-alpha.6
     resources:
       limits:
         cpu: 100m
@@ -207,7 +207,7 @@ ui:
   # Backend configuration
   backend:
     image: ghcr.io/rossoctl/rossoctl/backend
-    tag: v0.7.0-alpha.5
+    tag: v0.7.0-alpha.6
     # Default registry for source-based builds (Kind: registry.cr-system.svc.cluster.local:5000)
     defaultRegistryUrl: ""
     # Default Shipwright build strategy for internal registries
@@ -233,7 +233,7 @@ ui:
 # ------------------------------------------------------------------
 uiOAuthSecret:
   image: ghcr.io/rossoctl/rossoctl/ui-oauth-secret
-  tag: v0.7.0-alpha.5
+  tag: v0.7.0-alpha.6
   # When true, mount the in-cluster serviceaccount CA
   # into the ui-oauth-secret job via the SSL_CERT_FILE environment variable.
   # When false, the serviceaccount CA is only for the API server
@@ -245,7 +245,7 @@ uiOAuthSecret:
 # ------------------------------------------------------------------
 agentOAuthSecret:
   image: ghcr.io/rossoctl/rossoctl/agent-oauth-secret
-  tag: v0.7.0-alpha.5
+  tag: v0.7.0-alpha.6
   # When true, mount the in-cluster serviceaccount CA
   # into the agent-oauth-secret job via the SSL_CERT_FILE environment variable.
   # When false, the serviceaccount CA is only for the API server
@@ -263,7 +263,7 @@ agentOAuthSecret:
 apiOAuthSecret:
   enabled: false
   image: ghcr.io/rossoctl/rossoctl/api-oauth-secret
-  tag: v0.7.0-alpha.5
+  tag: v0.7.0-alpha.6
   # Client ID for the API service account
   clientId: rossoctl-api
   # Name of the K8s secret to store credentials
@@ -350,7 +350,7 @@ authBridge:
 spiffeIdp:
   image:
     repository: ghcr.io/rossoctl/rossoctl/spiffe-idp-setup
-    tag: v0.7.0-alpha.5
+    tag: v0.7.0-alpha.6
     pullPolicy: IfNotPresent
 
 # ------------------------------------------------------------------
@@ -361,7 +361,7 @@ operator-chart:
     container:
       cmd: /manager
       image:
-        tag: 0.3.0-alpha.8
+        tag: 0.3.0-alpha.10
       args:
       - "--leader-elect"
       - "--metrics-bind-address=:8443"
@@ -397,10 +397,10 @@ operator-chart:
   # sidecar. Client registration is operator-managed.
   defaults:
     images:
-      authbridge: ghcr.io/rossoctl/cortex/authbridge:v0.6.0-alpha.10
-      envoyProxy: ghcr.io/rossoctl/cortex/authbridge-envoy:v0.6.0-alpha.10
-      authbridgeLite: ghcr.io/rossoctl/cortex/authbridge-lite:v0.6.0-alpha.10
-      proxyInit: ghcr.io/rossoctl/cortex/proxy-init:v0.6.0-alpha.10
+      authbridge: ghcr.io/rossoctl/cortex/authbridge:v0.6.0-alpha.12
+      envoyProxy: ghcr.io/rossoctl/cortex/authbridge-envoy:v0.6.0-alpha.12
+      authbridgeLite: ghcr.io/rossoctl/cortex/authbridge-lite:v0.6.0-alpha.12
+      proxyInit: ghcr.io/rossoctl/cortex/proxy-init:v0.6.0-alpha.12
 
 # ------------------------------------------------------------------
 #  SPIFFE Configuration
@@ -448,7 +448,7 @@ phoenix:
 # ------------------------------------------------------------------
 phoenixOAuthSecret:
   image: ghcr.io/rossoctl/rossoctl/phoenix-oauth-secret
-  tag: v0.7.0-alpha.5
+  tag: v0.7.0-alpha.6
   # Keycloak client ID for Phoenix
   clientId: phoenix
   # Kubernetes secret name to store OAuth credentials
@@ -476,7 +476,7 @@ mlflow:
 # ------------------------------------------------------------------
 mlflowOAuthSecret:
   image: ghcr.io/rossoctl/rossoctl/mlflow-oauth-secret
-  tag: v0.7.0-alpha.5
+  tag: v0.7.0-alpha.6
   # Keycloak client ID for MLflow
   clientId: mlflow
   # Kubernetes secret name to store OAuth credentials
