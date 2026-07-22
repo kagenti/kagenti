@@ -200,3 +200,4 @@ rossoctl/kubectl-rossoctl/kubectl-rossoctl
 .cves/
 .claude/scheduled_tasks.lock
 .claude/worktrees/
+.claude/settings.local.json
