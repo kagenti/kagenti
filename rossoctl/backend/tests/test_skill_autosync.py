@@ -153,8 +153,11 @@ class TestApplyDiff:
         local = [_make_local_cm("my-skill", "my-skill", version="1.0", synced_skill=old)]
         _apply_diff(kube, "team1", target, local, "http://reg", "skillberry")
         kube.core_api.patch_namespaced_config_map.assert_called_once()
-        annos = kube.core_api.patch_namespaced_config_map.call_args[1]["body"]["metadata"]["annotations"]
+        annos = kube.core_api.patch_namespaced_config_map.call_args[1]["body"]["metadata"][
+            "annotations"
+        ]
         from app.core.constants import SKILL_DESCRIPTION_ANNOTATION
+
         assert annos[SKILL_DESCRIPTION_ANNOTATION] == "new and improved"
 
 
