@@ -1,7 +1,7 @@
 # Per-User Sandbox Ownership on a Shared OpenShell Gateway
 
 **Status:** Implemented (v0.0.56-rc.2)
-**Issue:** [#1976](https://github.com/kagenti/kagenti/issues/1976)
+**Issue:** [#1976](https://github.com/rossoctl/rossoctl/issues/1976)
 **Relates to:** `docs/research/openshell-mvp.md` §5.2, §10
 
 ## Problem
@@ -50,7 +50,7 @@ server-set label: `openshell.ai/owner = <identity.subject>`.
 
 The gateway validates label values per K8s rules (alnum, `-`, `_`, `.`, <=63 chars).
 Keycloak's `sub` is a UUID and satisfies this. Deployments with email-style subjects
-(`alice@corp`) will fail validation — the Kagenti Keycloak realm must use UUID `sub`
+(`alice@corp`) will fail validation — the Rossoctl Keycloak realm must use UUID `sub`
 (the default). A sanitization helper exists in `auth/ownership.rs` for future
 non-UUID deployments.
 
@@ -81,7 +81,7 @@ is enforced by the gateway's application logic.
 
 ## E2E validation
 
-Test file: `kagenti/tests/e2e/openshell/test_T4_4_per_user_isolation.py`
+Test file: `rossoctl/tests/e2e/openshell/test_T4_4_per_user_isolation.py`
 
 Covers:
 - Create stamps owner from verified identity
@@ -102,4 +102,4 @@ Covers:
 
 - [openshell-mvp.md](openshell-mvp.md) — §5.2 (no per-user ownership), §10 (deferred)
 - [openshell-fork-analysis.md](openshell-fork-analysis.md) — fork branches, store architecture
-- Gateway source: `kagenti/openshell` `crates/openshell-server/src/auth/ownership.rs`
+- Gateway source: `rossoctl/openshell` `crates/openshell-server/src/auth/ownership.rs`

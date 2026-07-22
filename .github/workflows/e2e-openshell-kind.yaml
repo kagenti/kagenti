@@ -23,7 +23,7 @@ on:
       - 'deployments/openshell/**'
       - 'charts/openshell/**'
       - 'scripts/openshell/**'
-      - 'kagenti/tests/e2e/openshell/**'
+      - 'rossoctl/tests/e2e/openshell/**'
       - '.github/scripts/local-setup/openshell-full-test.sh'
       - '.github/scripts/local-setup/openshell-build-agents.sh'
       - '.github/workflows/e2e-openshell-kind.yaml'
@@ -33,7 +33,7 @@ on:
       - 'deployments/openshell/**'
       - 'charts/openshell/**'
       - 'scripts/openshell/**'
-      - 'kagenti/tests/e2e/openshell/**'
+      - 'rossoctl/tests/e2e/openshell/**'
       - '.github/scripts/local-setup/openshell-full-test.sh'
       - '.github/scripts/local-setup/openshell-build-agents.sh'
       - '.github/workflows/e2e-openshell-kind.yaml'
@@ -170,10 +170,10 @@ jobs:
       - name: Collect logs on failure
         if: failure()
         run: |
-          mkdir -p /tmp/kagenti/ci-logs
-          kubectl get pods -A > /tmp/kagenti/ci-logs/all-pods.txt 2>&1 || true
-          kubectl logs -n team1 openshell-server-0 --tail=100 > /tmp/kagenti/ci-logs/gateway.log 2>&1 || true
-          kubectl get events -n team1 --sort-by='.lastTimestamp' > /tmp/kagenti/ci-logs/team1-events.txt 2>&1 || true
+          mkdir -p /tmp/rossoctl/ci-logs
+          kubectl get pods -A > /tmp/rossoctl/ci-logs/all-pods.txt 2>&1 || true
+          kubectl logs -n team1 openshell-server-0 --tail=100 > /tmp/rossoctl/ci-logs/gateway.log 2>&1 || true
+          kubectl get events -n team1 --sort-by='.lastTimestamp' > /tmp/rossoctl/ci-logs/team1-events.txt 2>&1 || true
 
       - name: Upload test results
         if: always()
@@ -182,4 +182,4 @@ jobs:
           name: openshell-kind-e2e-results
           path: |
             test-results/
-            /tmp/kagenti/
+            /tmp/rossoctl/

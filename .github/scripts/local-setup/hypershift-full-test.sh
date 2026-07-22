@@ -2,7 +2,7 @@
 #
 # Run Full HyperShift Test
 #
-# Creates a HyperShift cluster, deploys Kagenti, deploys test agents, and runs E2E tests.
+# Creates a HyperShift cluster, deploys Rossoctl, deploys test agents, and runs E2E tests.
 # Supports both whitelist (--include-*) and blacklist (--skip-*) modes.
 #
 # USAGE:
@@ -17,7 +17,7 @@
 # OPTIONS:
 #   Include flags (whitelist mode - only run specified phases):
 #     --include-cluster-create     Include cluster creation phase
-#     --include-kagenti-install    Include Kagenti platform installation phase
+#     --include-rossoctl-install    Include Rossoctl platform installation phase
 #     --include-agents             Include building/deploying test agents phase
 #     --include-test               Include backend E2E test phase (pytest)
 #     --include-ui-tests           Include UI E2E test phase (Playwright)
@@ -25,15 +25,15 @@
 #
 #   Skip flags (blacklist mode - run all except specified):
 #     --skip-cluster-create        Skip cluster creation (reuse existing cluster)
-#     --skip-kagenti-install       Skip Kagenti platform installation
+#     --skip-rossoctl-install       Skip Rossoctl platform installation
 #     --skip-agents                Skip building/deploying test agents
 #     --skip-test                  Skip running backend E2E tests
 #     --skip-ui-tests              Skip running UI E2E tests
 #     --skip-cluster-destroy       Skip cluster destruction (keep cluster after tests)
 #
 #   Other options:
-#     --clean-kagenti    Uninstall Kagenti before installing (fresh install)
-#     --env ENV          Environment for Kagenti installer (default: ocp)
+#     --clean-rossoctl    Uninstall Rossoctl before installing (fresh install)
+#     --env ENV          Environment for Rossoctl installer (default: ocp)
 #     --with-all         Enable all optional components (Kiali, Builds, Kuadrant, MCP Gateway, Agent Sandbox)
 #     --with-kiali       Enable Kiali + Prometheus
 #     --with-builds      Enable Tekton + Shipwright
@@ -53,7 +53,7 @@
 #   ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy
 #
 #   # CI deploy step - only install + agents (whitelist mode)
-#   ./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-install --include-agents
+#   ./.github/scripts/local-setup/hypershift-full-test.sh --include-rossoctl-install --include-agents
 #
 #   # CI test step - only tests (whitelist mode)
 #   ./.github/scripts/local-setup/hypershift-full-test.sh --include-test
@@ -61,8 +61,8 @@
 #   # Iterate on existing cluster (blacklist mode)
 #   ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-create --skip-cluster-destroy
 #
-#   # Fresh kagenti on existing cluster (whitelist mode)
-#   ./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-install --include-agents --include-test --clean-kagenti
+#   # Fresh rossoctl on existing cluster (whitelist mode)
+#   ./.github/scripts/local-setup/hypershift-full-test.sh --include-rossoctl-install --include-agents --include-test --clean-rossoctl
 #
 #   # Final cleanup - only destroy (whitelist mode)
 #   ./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-destroy
@@ -72,7 +72,7 @@ set -euo pipefail
 
 # Script name for help text (allows wrapper scripts to override)
 SCRIPT_NAME="${SCRIPT_NAME:-$(basename "$0")}"
-SCRIPT_DESCRIPTION="${SCRIPT_DESCRIPTION:-Run full HyperShift test cycle: create cluster, deploy Kagenti, run tests, destroy cluster.}"
+SCRIPT_DESCRIPTION="${SCRIPT_DESCRIPTION:-Run full HyperShift test cycle: create cluster, deploy Rossoctl, run tests, destroy cluster.}"
 
 show_help() {
     cat << EOF
@@ -87,30 +87,30 @@ MODES:
 
 PHASES:
     cluster-create    Create HyperShift cluster (~15 min)
-    kagenti-install   Install Kagenti platform
+    rossoctl-install   Install Rossoctl platform
     agents            Build and deploy test agents (weather-tool, weather-agent)
     test              Run backend E2E tests (pytest)
     ui-tests          Run UI E2E tests (Playwright)
-    kagenti-uninstall Uninstall Kagenti (opt-in, off by default)
+    rossoctl-uninstall Uninstall Rossoctl (opt-in, off by default)
     cluster-destroy   Destroy HyperShift cluster (~10 min)
 
 OPTIONS:
     Include flags (whitelist mode):
         --include-cluster-create     Include cluster creation
-        --include-kagenti-install    Include Kagenti installation
+        --include-rossoctl-install    Include Rossoctl installation
         --include-agents             Include agent deployment
         --include-test               Include backend E2E tests (pytest)
         --include-ui-tests           Include UI E2E tests (Playwright)
-        --include-kagenti-uninstall  Include Kagenti uninstall
+        --include-rossoctl-uninstall  Include Rossoctl uninstall
         --include-cluster-destroy    Include cluster destruction
 
     Skip flags (blacklist mode):
         --skip-cluster-create        Skip cluster creation (use existing)
-        --skip-kagenti-install       Skip Kagenti installation
+        --skip-rossoctl-install       Skip Rossoctl installation
         --skip-agents                Skip agent deployment
         --skip-test                  Skip backend E2E tests
         --skip-ui-tests              Skip UI E2E tests
-        --skip-kagenti-uninstall     Skip Kagenti uninstall (default)
+        --skip-rossoctl-uninstall     Skip Rossoctl uninstall (default)
         --skip-cluster-destroy       Skip cluster destruction (keep cluster)
 
     Run modes:
@@ -118,7 +118,7 @@ OPTIONS:
         --full                       Full run including cluster destroy
 
     Other options:
-        --clean-kagenti              Uninstall Kagenti before installing
+        --clean-rossoctl              Uninstall Rossoctl before installing
         --env ENV                    Environment for installer (default: ocp)
         --with-all                   Enable all optional components (Kiali, Builds, Kuadrant, MCP Gateway, Agent Sandbox)
         --with-kiali                 Enable Kiali + Prometheus
@@ -151,13 +151,13 @@ EXAMPLES:
     $SCRIPT_NAME --include-test
 
     # Fresh install on existing cluster
-    $SCRIPT_NAME --skip-cluster-create --skip-cluster-destroy --clean-kagenti
+    $SCRIPT_NAME --skip-cluster-create --skip-cluster-destroy --clean-rossoctl
 
     # Custom cluster suffix
     $SCRIPT_NAME pr529 --skip-cluster-destroy
 
 CREDENTIALS:
-    For cluster create/destroy: source .env.kagenti-hypershift-custom
+    For cluster create/destroy: source .env.rossoctl-hypershift-custom
     For middle phases only:     export KUBECONFIG=~/clusters/hcp/<cluster-name>/auth/kubeconfig
 
 EOF
@@ -192,11 +192,11 @@ SKIP_INSTALL=false
 SKIP_AGENTS=false
 SKIP_TEST=false
 SKIP_UI_TESTS=false
-SKIP_KAGENTI_UNINSTALL=false
+SKIP_ROSSOCTL_UNINSTALL=false
 SKIP_DESTROY=false
-INCLUDE_KAGENTI_UNINSTALL=false
-CLEAN_KAGENTI=false
-KAGENTI_ENV="${KAGENTI_ENV:-ocp}"
+INCLUDE_ROSSOCTL_UNINSTALL=false
+CLEAN_ROSSOCTL=false
+ROSSOCTL_ENV="${ROSSOCTL_ENV:-ocp}"
 CLUSTER_SUFFIX="${CLUSTER_SUFFIX:-}"  # Preserve env var if set
 WHITELIST_MODE=false
 PYTEST_FILTER=""
@@ -207,7 +207,7 @@ HAS_PHASE_FLAGS=false  # Track if any phase flags were provided
 RHOAI_PROFILE="${RHOAI_PROFILE:-}"
 NO_RHOAI="${NO_RHOAI:-false}"
 
-# Component flags (passed to setup-kagenti.sh)
+# Component flags (passed to setup-rossoctl.sh)
 WITH_ALL=false
 WITH_KIALI=false
 WITH_BUILDS=false
@@ -227,7 +227,7 @@ while [[ $# -gt 0 ]]; do
             HAS_PHASE_FLAGS=true
             shift
             ;;
-        --include-kagenti-install)
+        --include-rossoctl-install)
             INCLUDE_INSTALL=true
             WHITELIST_MODE=true
             HAS_PHASE_FLAGS=true
@@ -251,8 +251,8 @@ while [[ $# -gt 0 ]]; do
             HAS_PHASE_FLAGS=true
             shift
             ;;
-        --include-kagenti-uninstall)
-            INCLUDE_KAGENTI_UNINSTALL=true
+        --include-rossoctl-uninstall)
+            INCLUDE_ROSSOCTL_UNINSTALL=true
             WHITELIST_MODE=true
             HAS_PHASE_FLAGS=true
             shift
@@ -269,7 +269,7 @@ while [[ $# -gt 0 ]]; do
             HAS_PHASE_FLAGS=true
             shift
             ;;
-        --skip-kagenti-install)
+        --skip-rossoctl-install)
             SKIP_INSTALL=true
             HAS_PHASE_FLAGS=true
             shift
@@ -289,8 +289,8 @@ while [[ $# -gt 0 ]]; do
             HAS_PHASE_FLAGS=true
             shift
             ;;
-        --skip-kagenti-uninstall)
-            SKIP_KAGENTI_UNINSTALL=true
+        --skip-rossoctl-uninstall)
+            SKIP_ROSSOCTL_UNINSTALL=true
             HAS_PHASE_FLAGS=true
             shift
             ;;
@@ -299,12 +299,12 @@ while [[ $# -gt 0 ]]; do
             HAS_PHASE_FLAGS=true
             shift
             ;;
-        --clean-kagenti)
-            CLEAN_KAGENTI=true
+        --clean-rossoctl)
+            CLEAN_ROSSOCTL=true
             shift
             ;;
         --env)
-            KAGENTI_ENV="$2"
+            ROSSOCTL_ENV="$2"
             shift 2
             ;;
         --pytest-filter|-k)
@@ -383,24 +383,24 @@ if [ "$WHITELIST_MODE" = "true" ]; then
     RUN_AGENTS=$INCLUDE_AGENTS
     RUN_TEST=$INCLUDE_TEST
     RUN_UI_TESTS=$INCLUDE_UI_TESTS
-    RUN_KAGENTI_UNINSTALL=$INCLUDE_KAGENTI_UNINSTALL
+    RUN_ROSSOCTL_UNINSTALL=$INCLUDE_ROSSOCTL_UNINSTALL
     RUN_DESTROY=$INCLUDE_DESTROY
 else
     # Blacklist mode - default all to true, then apply skips
-    # Note: kagenti-uninstall defaults to false in blacklist mode (opt-in)
+    # Note: rossoctl-uninstall defaults to false in blacklist mode (opt-in)
     RUN_CREATE=true
     RUN_INSTALL=true
     RUN_AGENTS=true
     RUN_TEST=true
     RUN_UI_TESTS=true
-    RUN_KAGENTI_UNINSTALL=false
+    RUN_ROSSOCTL_UNINSTALL=false
     RUN_DESTROY=true
     [ "$SKIP_CREATE" = "true" ] && RUN_CREATE=false
     [ "$SKIP_INSTALL" = "true" ] && RUN_INSTALL=false
     [ "$SKIP_AGENTS" = "true" ] && RUN_AGENTS=false
     [ "$SKIP_TEST" = "true" ] && RUN_TEST=false
     [ "$SKIP_UI_TESTS" = "true" ] && RUN_UI_TESTS=false
-    [ "$SKIP_KAGENTI_UNINSTALL" = "true" ] && RUN_KAGENTI_UNINSTALL=false
+    [ "$SKIP_ROSSOCTL_UNINSTALL" = "true" ] && RUN_ROSSOCTL_UNINSTALL=false
     [ "$SKIP_DESTROY" = "true" ] && RUN_DESTROY=false
 fi
 
@@ -446,19 +446,19 @@ cd "$REPO_ROOT"
 CI_MODE="${GITHUB_ACTIONS:-false}"
 
 # MANAGED_BY_TAG controls cluster naming and IAM scoping:
-#   - Local: defaults to kagenti-hypershift-custom (shared by all developers)
-#   - CI: set via secrets (kagenti-hypershift-ci)
-MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+#   - Local: defaults to rossoctl-hypershift-custom (shared by all developers)
+#   - CI: set via secrets (rossoctl-hypershift-ci)
+MANAGED_BY_TAG="${MANAGED_BY_TAG:-rossoctl-hypershift-custom}"
 
-# Find .env file - priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.kagenti-*
+# Find .env file - priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.rossoctl-*
 find_env_file() {
     if [ -f "$REPO_ROOT/.env.${MANAGED_BY_TAG}" ]; then
         echo "$REPO_ROOT/.env.${MANAGED_BY_TAG}"
     elif [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
         echo "$REPO_ROOT/.env.hypershift-ci"
     else
-        # Find any .env.kagenti-* file
-        ls "$REPO_ROOT"/.env.kagenti-* 2>/dev/null | head -1
+        # Find any .env.rossoctl-* file
+        ls "$REPO_ROOT"/.env.rossoctl-* 2>/dev/null | head -1
     fi
 }
 
@@ -494,7 +494,7 @@ elif [ "$NEEDS_MGMT_CREDS_EARLY" = "true" ]; then
     source "$ENV_FILE"
     log_step "Loaded credentials from $(basename "$ENV_FILE")"
     # Update MANAGED_BY_TAG from env file if it was set there
-    MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+    MANAGED_BY_TAG="${MANAGED_BY_TAG:-rossoctl-hypershift-custom}"
 else
     # Only running middle phases - management cluster credentials not required
     # User just needs KUBECONFIG pointing to the hosted cluster
@@ -506,7 +506,7 @@ CLUSTER_NAME="${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}"
 
 # TWO KUBECONFIGS:
 #   KUBECONFIG       - Hosted cluster kubeconfig (for install/agents/test operations)
-#                      Points to the cluster where Kagenti is deployed
+#                      Points to the cluster where Rossoctl is deployed
 #   MGMT_KUBECONFIG  - Management cluster kubeconfig (for create/destroy cluster operations)
 #                      Points to the HyperShift management cluster
 #
@@ -517,7 +517,7 @@ CLUSTER_NAME="${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}"
 #   For middle phases:  just need KUBECONFIG pointing to the hosted cluster
 #
 #   # Full workflow
-#   source .env.kagenti-hypershift-custom  # Sets MGMT_KUBECONFIG
+#   source .env.rossoctl-hypershift-custom  # Sets MGMT_KUBECONFIG
 #   ./hypershift-full-test.sh --skip-cluster-destroy
 #
 #   # Middle phases only (no create/destroy)
@@ -607,17 +607,17 @@ NEEDS_HOSTED_KUBECONFIG=false
 [ "$RUN_AGENTS" = "true" ] && NEEDS_HOSTED_KUBECONFIG=true
 [ "$RUN_TEST" = "true" ] && NEEDS_HOSTED_KUBECONFIG=true
 [ "$RUN_UI_TESTS" = "true" ] && NEEDS_HOSTED_KUBECONFIG=true
-[ "$RUN_KAGENTI_UNINSTALL" = "true" ] && NEEDS_HOSTED_KUBECONFIG=true
+[ "$RUN_ROSSOCTL_UNINSTALL" = "true" ] && NEEDS_HOSTED_KUBECONFIG=true
 
 echo "Cluster: $CLUSTER_NAME"
 echo ""
 echo "Phases to run:"
 echo "  cluster-create:     $RUN_CREATE"
-echo "  kagenti-install:    $RUN_INSTALL"
+echo "  rossoctl-install:    $RUN_INSTALL"
 echo "  agents:             $RUN_AGENTS"
 echo "  test:               $RUN_TEST"
 echo "  ui-tests:           $RUN_UI_TESTS"
-echo "  kagenti-uninstall:  $RUN_KAGENTI_UNINSTALL"
+echo "  rossoctl-uninstall:  $RUN_ROSSOCTL_UNINSTALL"
 echo "  cluster-destroy:    $RUN_DESTROY"
 echo ""
 
@@ -732,9 +732,9 @@ echo ""
 # Print final configuration summary
 echo "Configuration:"
 echo "  Cluster Name:         $CLUSTER_NAME"
-echo "  Environment:          $KAGENTI_ENV"
+echo "  Environment:          $ROSSOCTL_ENV"
 echo "  Mode:                 $([ "$WHITELIST_MODE" = "true" ] && echo "Whitelist (explicit)" || echo "Blacklist (full run)")"
-echo "  Clean Kagenti:        $CLEAN_KAGENTI"
+echo "  Clean Rossoctl:        $CLEAN_ROSSOCTL"
 echo ""
 echo "Kubeconfig usage:"
 if [ "$NEEDS_MGMT_CREDS" = "true" ]; then
@@ -761,8 +761,8 @@ check_cluster_state() {
 
     # State indicators
     STATE_CLUSTER_EXISTS=false
-    STATE_KAGENTI_DEPS_DEPLOYED=false
-    STATE_KAGENTI_DEPLOYED=false
+    STATE_ROSSOCTL_DEPS_DEPLOYED=false
+    STATE_ROSSOCTL_DEPLOYED=false
     STATE_AGENTS_DEPLOYED=false
     STATE_TESTS_RAN=false
     STATE_TESTS_PASSED=false
@@ -774,14 +774,14 @@ check_cluster_state() {
 
         # Check if we can connect
         if kubectl cluster-info &>/dev/null; then
-            # Check kagenti-deps helm release
-            if helm list -n kagenti-system 2>/dev/null | grep -q "kagenti-deps"; then
-                STATE_KAGENTI_DEPS_DEPLOYED=true
+            # Check rossoctl-deps helm release
+            if helm list -n rossoctl-system 2>/dev/null | grep -q "rossoctl-deps"; then
+                STATE_ROSSOCTL_DEPS_DEPLOYED=true
             fi
 
-            # Check kagenti helm release
-            if helm list -n kagenti-system 2>/dev/null | grep -q "kagenti[^-]"; then
-                STATE_KAGENTI_DEPLOYED=true
+            # Check rossoctl helm release
+            if helm list -n rossoctl-system 2>/dev/null | grep -q "rossoctl[^-]"; then
+                STATE_ROSSOCTL_DEPLOYED=true
             fi
 
             # Check weather-service deployment
@@ -826,31 +826,31 @@ print_state_summary() {
         echo -e "  1. Cluster Created:     $icon_pending  (not found)"
     fi
 
-    # Phase 2: kagenti-deps
-    if [ "$STATE_KAGENTI_DEPS_DEPLOYED" = "true" ]; then
-        echo -e "  2. kagenti-deps:        $icon_done  (helm release found)"
+    # Phase 2: rossoctl-deps
+    if [ "$STATE_ROSSOCTL_DEPS_DEPLOYED" = "true" ]; then
+        echo -e "  2. rossoctl-deps:        $icon_done  (helm release found)"
     elif [ "$STATE_CLUSTER_EXISTS" = "true" ]; then
-        echo -e "  2. kagenti-deps:        $icon_pending  (not deployed)"
+        echo -e "  2. rossoctl-deps:        $icon_pending  (not deployed)"
     else
-        echo -e "  2. kagenti-deps:        ${YELLOW}—${NC}  (requires cluster)"
+        echo -e "  2. rossoctl-deps:        ${YELLOW}—${NC}  (requires cluster)"
     fi
 
-    # Phase 2b: kagenti
-    if [ "$STATE_KAGENTI_DEPLOYED" = "true" ]; then
-        echo -e "  3. kagenti:             $icon_done  (helm release found)"
-    elif [ "$STATE_KAGENTI_DEPS_DEPLOYED" = "true" ]; then
-        echo -e "  3. kagenti:             $icon_pending  (not deployed)"
+    # Phase 2b: rossoctl
+    if [ "$STATE_ROSSOCTL_DEPLOYED" = "true" ]; then
+        echo -e "  3. rossoctl:             $icon_done  (helm release found)"
+    elif [ "$STATE_ROSSOCTL_DEPS_DEPLOYED" = "true" ]; then
+        echo -e "  3. rossoctl:             $icon_pending  (not deployed)"
     else
-        echo -e "  3. kagenti:             ${YELLOW}—${NC}  (requires kagenti-deps)"
+        echo -e "  3. rossoctl:             ${YELLOW}—${NC}  (requires rossoctl-deps)"
     fi
 
     # Phase 3: Agents
     if [ "$STATE_AGENTS_DEPLOYED" = "true" ]; then
         echo -e "  4. Agents Deployed:     $icon_done  (weather-service found)"
-    elif [ "$STATE_KAGENTI_DEPLOYED" = "true" ]; then
+    elif [ "$STATE_ROSSOCTL_DEPLOYED" = "true" ]; then
         echo -e "  4. Agents Deployed:     $icon_pending  (not deployed)"
     else
-        echo -e "  4. Agents Deployed:     ${YELLOW}—${NC}  (requires kagenti)"
+        echo -e "  4. Agents Deployed:     ${YELLOW}—${NC}  (requires rossoctl)"
     fi
 
     # Phase 4: Tests
@@ -884,19 +884,19 @@ suggest_next_command() {
         echo "  source .env.${MANAGED_BY_TAG}"
         echo "  $0 $CLUSTER_SUFFIX --skip-cluster-destroy"
         echo ""
-    elif [ "$STATE_KAGENTI_DEPS_DEPLOYED" != "true" ]; then
-        echo "Suggested next step: Install kagenti-deps + kagenti"
+    elif [ "$STATE_ROSSOCTL_DEPS_DEPLOYED" != "true" ]; then
+        echo "Suggested next step: Install rossoctl-deps + rossoctl"
         echo ""
         echo "  export KUBECONFIG=$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
-        echo "  $0 $CLUSTER_SUFFIX --include-kagenti-install"
+        echo "  $0 $CLUSTER_SUFFIX --include-rossoctl-install"
         echo ""
-    elif [ "$STATE_KAGENTI_DEPLOYED" != "true" ]; then
-        echo "Suggested next step: Complete kagenti installation"
+    elif [ "$STATE_ROSSOCTL_DEPLOYED" != "true" ]; then
+        echo "Suggested next step: Complete rossoctl installation"
         echo ""
         echo "  export KUBECONFIG=$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
-        echo "  $0 $CLUSTER_SUFFIX --include-kagenti-install"
+        echo "  $0 $CLUSTER_SUFFIX --include-rossoctl-install"
         echo ""
-        echo "Note: kagenti-deps is installed but kagenti chart is missing."
+        echo "Note: rossoctl-deps is installed but rossoctl chart is missing."
         echo ""
     elif [ "$STATE_AGENTS_DEPLOYED" != "true" ]; then
         echo "Suggested next step: Deploy test agents"
@@ -989,19 +989,19 @@ if [ "$NEEDS_HOSTED_KUBECONFIG" = "true" ]; then
 fi
 
 # ============================================================================
-# PHASE 2: Install Kagenti Platform
+# PHASE 2: Install Rossoctl Platform
 # ============================================================================
 
 if [ "$RUN_INSTALL" = "true" ]; then
-    log_phase "PHASE 2: Install Kagenti Platform"
+    log_phase "PHASE 2: Install Rossoctl Platform"
 
-    if [ "$CLEAN_KAGENTI" = "true" ]; then
-        log_step "Uninstalling Kagenti (--clean-kagenti)..."
-        ./scripts/ocp/cleanup-kagenti.sh --yes || true
+    if [ "$CLEAN_ROSSOCTL" = "true" ]; then
+        log_step "Uninstalling Rossoctl (--clean-rossoctl)..."
+        ./scripts/ocp/cleanup-rossoctl.sh --yes || true
     fi
 
-    log_step "Installing Kagenti platform..."
-    SETUP_ARGS=(--kagenti-repo "$REPO_ROOT")
+    log_step "Installing Rossoctl platform..."
+    SETUP_ARGS=(--rossoctl-repo "$REPO_ROOT")
 
     # Pass component flags to OCP installer
     if [ "$WITH_ALL" = "true" ]; then
@@ -1016,18 +1016,18 @@ if [ "$RUN_INSTALL" = "true" ]; then
 
     # MLflow integration (operator config, requires RHOAI on cluster)
     if [ "$NO_RHOAI" = "true" ]; then
-        # --skip-mlflow disables kagenti-operator MLflow integration (--enable-mlflow flag + RBAC).
+        # --skip-mlflow disables rossoctl-operator MLflow integration (--enable-mlflow flag + RBAC).
         # RHOAI MLflow CR creation and OTEL endpoint setup still auto-detect via CRD presence.
         SETUP_ARGS+=(--skip-mlflow)
     fi
 
-    ./scripts/ocp/setup-kagenti.sh "${SETUP_ARGS[@]}"
+    ./scripts/ocp/setup-rossoctl.sh "${SETUP_ARGS[@]}"
 
     log_step "Waiting for CRDs..."
-    ./.github/scripts/kagenti-operator/41-wait-crds.sh
+    ./.github/scripts/operator/41-wait-crds.sh
 
 else
-    log_phase "PHASE 2: Skipping Kagenti Installation"
+    log_phase "PHASE 2: Skipping Rossoctl Installation"
 fi
 
 # ============================================================================
@@ -1038,13 +1038,13 @@ if [ "$RUN_AGENTS" = "true" ]; then
     log_phase "PHASE 3: Deploy Test Agents"
 
     log_step "Building weather-tool..."
-    ./.github/scripts/kagenti-operator/71-build-weather-tool.sh
+    ./.github/scripts/operator/71-build-weather-tool.sh
 
     log_step "Deploying weather-tool..."
-    ./.github/scripts/kagenti-operator/72-deploy-weather-tool.sh
+    ./.github/scripts/operator/72-deploy-weather-tool.sh
 
     log_step "Deploying weather-agent..."
-    ./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+    ./.github/scripts/operator/74-deploy-weather-agent.sh
 
     # ── Wait for pods and verify connectivity ──
     log_step "Waiting for agent pods to be ready..."
@@ -1063,7 +1063,7 @@ if [ "$RUN_TEST" = "true" ]; then
 
     log_step "Running E2E tests..."
     # Get agent URL from route (if not already set)
-    # Wait for the route to be created by kagenti-operator (can take a few seconds after deployment is ready)
+    # Wait for the route to be created by rossoctl-operator (can take a few seconds after deployment is ready)
     if [ -z "${AGENT_URL:-}" ]; then
         log_step "Waiting for weather-service route..."
         for i in {1..30}; do
@@ -1100,16 +1100,16 @@ if [ "$RUN_TEST" = "true" ]; then
 
     # OpenShift routes use self-signed certs — always disable SSL verification
     # for E2E tests, regardless of how KEYCLOAK_URL was set.
-    if [ "$KAGENTI_ENV" = "ocp" ]; then
+    if [ "$ROSSOCTL_ENV" = "ocp" ]; then
         export KEYCLOAK_VERIFY_SSL="false"
     fi
 
     # Set config file based on environment
-    export KAGENTI_CONFIG_FILE="${KAGENTI_CONFIG_FILE:-deployments/envs/${KAGENTI_ENV}_values.yaml}"
+    export ROSSOCTL_CONFIG_FILE="${ROSSOCTL_CONFIG_FILE:-deployments/envs/${ROSSOCTL_ENV}_values.yaml}"
 
     log_step "AGENT_URL: $AGENT_URL"
     log_step "KEYCLOAK_URL: $KEYCLOAK_URL"
-    log_step "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
+    log_step "ROSSOCTL_CONFIG_FILE: $ROSSOCTL_CONFIG_FILE"
 
     # Export pytest filter options if specified
     if [ -n "$PYTEST_FILTER" ]; then
@@ -1131,7 +1131,7 @@ if [ "$RUN_TEST" = "true" ]; then
     ./.github/scripts/common/87-setup-test-credentials.sh
 
     # Backend E2E tests (pytest)
-    ./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
+    ./.github/scripts/operator/90-run-e2e-tests.sh
 else
     log_phase "PHASE 4: Skipping E2E Tests"
 fi
@@ -1153,17 +1153,17 @@ else
 fi
 
 # ============================================================================
-# PHASE 5: Kagenti Uninstall (optional)
+# PHASE 5: Rossoctl Uninstall (optional)
 # ============================================================================
 
-if [ "$RUN_KAGENTI_UNINSTALL" = "true" ]; then
-    log_phase "PHASE 5: Uninstall Kagenti Platform"
-    log_step "Running cleanup-kagenti.sh..."
-    ./scripts/ocp/cleanup-kagenti.sh --yes || {
-        log_error "Kagenti uninstall failed (non-fatal)"
+if [ "$RUN_ROSSOCTL_UNINSTALL" = "true" ]; then
+    log_phase "PHASE 5: Uninstall Rossoctl Platform"
+    log_step "Running cleanup-rossoctl.sh..."
+    ./scripts/ocp/cleanup-rossoctl.sh --yes || {
+        log_error "Rossoctl uninstall failed (non-fatal)"
     }
 else
-    log_phase "PHASE 5: Skipping Kagenti Uninstall"
+    log_phase "PHASE 5: Skipping Rossoctl Uninstall"
 fi
 
 # ============================================================================

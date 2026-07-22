@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Run E2E Tests Script - Runs Kagenti E2E tests locally
+# Run E2E Tests Script - Runs Rossoctl E2E tests locally
 # Mirrors GitHub Actions test execution by calling the same scripts
 # Usage:
 #   ./.github/scripts/kind/run-e2e-tests.sh
-#   KAGENTI_CONFIG_FILE=deployments/envs/dev_values.yaml ./.github/scripts/kind/run-e2e-tests.sh
+#   ROSSOCTL_CONFIG_FILE=deployments/envs/dev_values.yaml ./.github/scripts/kind/run-e2e-tests.sh
 #   RUN_AUTHBRIDGE_WEATHER_E2E=1 ./.github/scripts/kind/run-e2e-tests.sh
-#   RUN_AUTHBRIDGE_WEATHER_E2E=1 KAGENTI_EXTENSIONS_ROOT=../kagenti-extensions ./.github/scripts/kind/run-e2e-tests.sh
+#   RUN_AUTHBRIDGE_WEATHER_E2E=1 ROSSOCTL_EXTENSIONS_ROOT=../cortex ./.github/scripts/kind/run-e2e-tests.sh
 
 set -euo pipefail
 
@@ -22,13 +22,13 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 echo ""
 echo "======================================================================="
-echo "              Kagenti E2E Tests (Local)                                "
+echo "              Rossoctl E2E Tests (Local)                                "
 echo "======================================================================="
 echo ""
 
 # Check if platform is running
 echo -e "${BLUE}Checking platform status...${NC}"
-if ! kubectl get namespace kagenti-system &> /dev/null; then
+if ! kubectl get namespace rossoctl-system &> /dev/null; then
     echo -e "${RED}Platform not deployed${NC}"
     echo "  Run: ./.github/scripts/kind/deploy-platform.sh"
     exit 1
@@ -37,21 +37,21 @@ echo -e "${GREEN}Platform is deployed${NC}"
 echo ""
 
 # Set config file if not provided
-if [ -z "${KAGENTI_CONFIG_FILE:-}" ]; then
-    KAGENTI_CONFIG_FILE="$REPO_ROOT/deployments/envs/dev_values.yaml"
-    export KAGENTI_CONFIG_FILE
-    echo -e "${BLUE}Using config: ${KAGENTI_CONFIG_FILE}${NC}"
+if [ -z "${ROSSOCTL_CONFIG_FILE:-}" ]; then
+    ROSSOCTL_CONFIG_FILE="$REPO_ROOT/deployments/envs/dev_values.yaml"
+    export ROSSOCTL_CONFIG_FILE
+    echo -e "${BLUE}Using config: ${ROSSOCTL_CONFIG_FILE}${NC}"
 else
-    echo -e "${BLUE}Using provided KAGENTI_CONFIG_FILE: ${KAGENTI_CONFIG_FILE}${NC}"
-    export KAGENTI_CONFIG_FILE
+    echo -e "${BLUE}Using provided ROSSOCTL_CONFIG_FILE: ${ROSSOCTL_CONFIG_FILE}${NC}"
+    export ROSSOCTL_CONFIG_FILE
 fi
 echo ""
 
 cd "$REPO_ROOT"
 
-# Optional: AuthBridge Weather (advanced) E2E from kagenti-extensions (wave 91).
+# Optional: AuthBridge Weather (advanced) E2E from cortex (wave 91).
 # Set RUN_AUTHBRIDGE_WEATHER_E2E=1 to run after pytest. Requires network (git clone)
-# unless KAGENTI_EXTENSIONS_ROOT points at a local clone.
+# unless ROSSOCTL_EXTENSIONS_ROOT points at a local clone.
 RUN_AUTHBRIDGE_WEATHER_E2E="${RUN_AUTHBRIDGE_WEATHER_E2E:-0}"
 
 # ============================================================================
@@ -78,11 +78,11 @@ echo ""
 echo -e "${BLUE}[3/${TOTAL_STEPS}] Running E2E tests (pytest)...${NC}"
 echo ""
 
-bash .github/scripts/kagenti-operator/90-run-e2e-tests.sh
+bash .github/scripts/operator/90-run-e2e-tests.sh
 
 TEST_RESULT=$?
 
-# Step 4: AuthBridge Weather (advanced) — kagenti-extensions deploy + verify
+# Step 4: AuthBridge Weather (advanced) — cortex deploy + verify
 if [[ "$RUN_AUTHBRIDGE_WEATHER_E2E" == "1" ]]; then
     if [[ $TEST_RESULT -ne 0 ]]; then
         echo -e "${RED}Skipping AuthBridge E2E (pytest failed)${NC}"

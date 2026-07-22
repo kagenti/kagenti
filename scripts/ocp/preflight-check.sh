@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Kagenti OpenShift Pre-flight Check Script
+# Rossoctl OpenShift Pre-flight Check Script
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# This script validates the OpenShift environment before Kagenti installation
+# This script validates the OpenShift environment before Rossoctl installation
 # It checks version compatibility, required tools, and cluster readiness
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -93,8 +93,8 @@ command_exists() {
 
 # Main checks
 main() {
-    print_header "Kagenti OpenShift Pre-flight Checks"
-    echo -e "Validating environment for Kagenti installation...\n"
+    print_header "Rossoctl OpenShift Pre-flight Checks"
+    echo -e "Validating environment for Rossoctl installation...\n"
     
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # Check Required Tools
@@ -179,11 +179,11 @@ main() {
     if [[ -n "$OCP_VERSION" ]]; then
         print_check "INFO" "Detected OpenShift version: $OCP_VERSION"
         
-        # Check minimum version for Kagenti
+        # Check minimum version for Rossoctl
         if version_compare "$OCP_VERSION" "$MIN_OCP_VERSION"; then
-            print_check "PASS" "OpenShift version >= $MIN_OCP_VERSION (Kagenti compatible)"
+            print_check "PASS" "OpenShift version >= $MIN_OCP_VERSION (Rossoctl compatible)"
         else
-            print_check "FAIL" "OpenShift version < $MIN_OCP_VERSION (minimum required for Kagenti)"
+            print_check "FAIL" "OpenShift version < $MIN_OCP_VERSION (minimum required for Rossoctl)"
         fi
         
         # Check version for SPIRE/ZTWIM
@@ -232,11 +232,11 @@ main() {
     echo ""
     if [[ $CHECKS_FAILED -eq 0 ]]; then
         echo -e "${GREEN}${BOLD}✓ Pre-flight checks completed successfully!${NC}"
-        echo -e "You can proceed with Kagenti installation."
+        echo -e "You can proceed with Rossoctl installation."
         echo ""
         echo -e "Next steps:"
         echo -e "  1. Review any warnings above"
-        echo -e "  2. Run the OCP installer: ${BLUE}scripts/ocp/setup-kagenti.sh${NC}"
+        echo -e "  2. Run the OCP installer: ${BLUE}scripts/ocp/setup-rossoctl.sh${NC}"
         echo -e "  3. Or install manually with Helm (see docs/ocp/openshift-install.md)"
         exit 0
     else

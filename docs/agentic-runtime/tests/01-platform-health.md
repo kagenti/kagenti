@@ -1,6 +1,6 @@
 # Platform Health
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_01_platform_health.py`
+> **Test file:** `rossoctl/tests/e2e/openshell/test_01_platform_health.py`
 > **Tests:** 7 | **Pass:** 7 | **Skip:** 0 (Kind, fresh cluster)
 
 ## What This Tests
@@ -17,8 +17,8 @@ graph TB
         GW --> GW_POD
     end
 
-    subgraph kagenti_ns["kagenti-system"]
-        OP["Kagenti Operator<br/>Deployment"]
+    subgraph rossoctl_ns["rossoctl-system"]
+        OP["Rossoctl Operator<br/>Deployment"]
         OP_POD["Operator Pod"]
         OP --> OP_POD
     end
@@ -69,10 +69,10 @@ graph TB
 
 ### test_operator_pod_running
 
-- **What:** At least one kagenti-operator pod must be Running
+- **What:** At least one rossoctl-operator pod must be Running
 - **Asserts:** Pod phase == "Running"
 - **Debug points:** Pod name, phase
-- **Agent coverage:** Operator (kagenti-system namespace)
+- **Agent coverage:** Operator (rossoctl-system namespace)
 - **Skip condition:** No operator pods found (operator may not be deployed)
 
 ### test_all_agent_pods_exist
@@ -110,7 +110,7 @@ Tests use dynamic agent discovery instead of hardcoded names:
 ```python
 def _discover_agents(namespace: str) -> list[str]:
     """Discover agent Deployments with readyReplicas > 0."""
-    result = kubectl get deploy -n {ns} -l kagenti.io/type=agent -o json
+    result = kubectl get deploy -n {ns} -l rossoctl.io/type=agent -o json
     return [d["metadata"]["name"] for d in items if d.status.readyReplicas > 0]
 ```
 
@@ -127,6 +127,6 @@ No expansion needed — this test is complete and covers all deployment scenario
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | Gateway pod not Running | Image pull failure | Check gateway image availability |
-| Operator pod not found | Operator not deployed | Deploy kagenti operator |
+| Operator pod not found | Operator not deployed | Deploy rossoctl operator |
 | Agent pod CrashLoopBackOff | Missing LLM secret | Verify LiteLLM virtual keys |
 | Agent deployment not ready | Image pull pending | Wait for image pull or push to registry |

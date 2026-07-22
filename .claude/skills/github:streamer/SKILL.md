@@ -217,7 +217,7 @@ Or use `/git:rebase` skill which handles this automatically — it always target
 Run the signing script from Claude Code — it uses `--no-gpg-sign` so no password prompts:
 
 ```bash
-cd /path/to/kagenti
+cd /path/to/rossoctl
 ./scripts/sign_all_pr_worktrees.sh pr-feature-flags pr-k2-skills pr-k5-deploy
 
 # List available worktrees
@@ -228,7 +228,7 @@ The script adds `Signed-off-by` trailers (DCO only, no GPG) and force-pushes eac
 
 ### IMPORTANT
 - Always rebase BEFORE signing — signing rewrites commits, rebasing after signing creates duplicates
-- Always use `upstream/main` — NOT `origin/main` (origin is the fork, upstream is kagenti org)
+- Always use `upstream/main` — NOT `origin/main` (origin is the fork, upstream is rossoctl org)
 - Always verify `pwd` and `git branch --show-current` before any rebase — wrong worktree = wrong branch rewritten
 - If rebase has conflicts, resolve them manually — do NOT use `--skip` unless you understand what commit you're dropping
 
@@ -238,7 +238,7 @@ Deploy the stream1 integration branch to a test cluster:
 
 ```bash
 export PATH="/opt/homebrew/opt/helm@3/bin:/Library/Frameworks/Python.framework/Versions/3.13/bin:$PATH"
-source .env.kagenti-team
+source .env.rossoctl-team
 .worktrees/stream1-<name>/.github/scripts/local-setup/hypershift-full-test.sh <cluster-suffix> --skip-cluster-destroy
 ```
 

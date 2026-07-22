@@ -3,13 +3,13 @@ featureFlags:
 
 ui:
   frontend:
-    image: ghcr.io/kagenti/kagenti-ui-v2
+    image: ghcr.io/rossoctl/rossoctl-ui-v2
     tag: latest
   backend:
-    image: ghcr.io/kagenti/kagenti-backend
+    image: ghcr.io/rossoctl/rossoctl-backend
     tag: latest
 
 traceAnalysis:
   image:
-    repository: ghcr.io/kagenti/trace-analysis
+    repository: ghcr.io/rossoctl/trace-analysis
     tag: latest

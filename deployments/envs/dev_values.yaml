@@ -1,8 +1,8 @@
-# Kagenti dev installation configuration
+# Rossoctl dev installation configuration
 
 
 ####################################################################
-# kagenti-deps
+# rossoctl-deps
 ####################################################################
 gatewayApi:
   enabled: true
@@ -21,9 +21,9 @@ kiali:
 
 charts:
   ####################################################################
-  # kagenti-deps
+  # rossoctl-deps
   ####################################################################
-  kagenti-deps:
+  rossoctl-deps:
     enabled: true
     values:
       openshift: false
@@ -50,9 +50,9 @@ charts:
           enabled: true
 
   ####################################################################
-  # kagenti
+  # rossoctl
   ####################################################################
-  kagenti:
+  rossoctl:
     enabled: true
     values:
       openshift: false
@@ -61,7 +61,7 @@ charts:
           enabled: true
         platformOperator:
           enabled: true
-        kagentiOperator:
+        rossoctlOperator:
           enabled: false  # Disabled to avoid ConfigMap collision with platformOperator
         ui:
           enabled: true
@@ -75,7 +75,7 @@ charts:
         auth:
           enabled: true
       # Enable tool workload sidecar injection for token-exchange E2E tests
-      kagenti-operator-chart:
+      operator-chart:
         featureGates:
           injectTools: true
       # MLflow auth disabled for Kind (no Keycloak OAuth needed locally)

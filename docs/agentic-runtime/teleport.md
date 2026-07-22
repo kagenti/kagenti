@@ -1,7 +1,7 @@
 # Teleport: Remote Claude Code Execution in OpenShell Sandboxes
 
 Teleport packages your local Claude Code context (CLAUDE.md, skills, settings)
-into a Kagenti OpenShell sandbox and executes prompts remotely with full
+into a Rossoctl OpenShell sandbox and executes prompts remotely with full
 isolation (Landlock, seccomp, network namespace, OPA policy).
 
 ## Prerequisites
@@ -156,7 +156,7 @@ security boundary between the sandbox and the actual LLM provider:
 ```
 Your machine                    Kind/HyperShift cluster
 ────────────                    ──────────────────────
-                                litellm-proxy-secret (kagenti-system)
+                                litellm-proxy-secret (rossoctl-system)
                                   └─ master-key: sk-real-master-key
                                   └─ .env.maas: MAAS_API_KEY=real-key
                                          │
@@ -213,11 +213,11 @@ Run T7 teleport tests:
 
 ```bash
 # Without LLM (infrastructure only):
-uv run pytest kagenti/tests/e2e/openshell/test_T7_1_teleport.py -v
+uv run pytest rossoctl/tests/e2e/openshell/test_T7_1_teleport.py -v
 
 # With LLM (full lifecycle including prompt):
 OPENSHELL_LLM_AVAILABLE=true \
-  uv run pytest kagenti/tests/e2e/openshell/test_T7_1_teleport.py -v
+  uv run pytest rossoctl/tests/e2e/openshell/test_T7_1_teleport.py -v
 ```
 
 Test coverage (12 tests):
@@ -351,7 +351,7 @@ LiteLLM virtual keys support per-key spending limits:
 
 ```bash
 # Set $5 max budget on the sandbox virtual key
-MASTER_KEY=$(kubectl get secret litellm-proxy-secret -n kagenti-system \
+MASTER_KEY=$(kubectl get secret litellm-proxy-secret -n rossoctl-system \
   -o jsonpath='{.data.master-key}' | base64 -d)
 
 kubectl port-forward deploy/litellm-model-proxy -n team1 4000:4000 &

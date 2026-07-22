@@ -10,7 +10,7 @@
 
 ## Contributor Ladder
 
-Hello! We are excited that you want to learn more about the Kagenti contributor
+Hello! We are excited that you want to learn more about the Rossoctl contributor
 ladder! This contributor ladder outlines the different contributor roles within
 the project, along with the responsibilities and privileges that come with them.
 Community members generally start at the first levels of the "ladder" and
@@ -79,7 +79,7 @@ Process of becoming a Maintainer:
 
 1. Any current Maintainer may nominate a current Contributor to become a new
    Maintainer, by opening a PR against the root of the
-   [kagenti repository](https://github.com/kagenti/kagenti) adding the nominee
+   [rossoctl repository](https://github.com/rossoctl/rossoctl) adding the nominee
    to MAINTAINERS.md.
 2. The nominee will add a comment to the PR testifying that they agree to all
    requirements of becoming a Maintainer.
@@ -123,4 +123,4 @@ contributor level.
 ## Contact
 
 * For inquiries, please reach out to:
-    * [kagenti-maintainers@googlegroups.com](mailto:kagenti-maintainers@googlegroups.com)
+    * [rossoctl-maintainers@googlegroups.com](mailto:rossoctl-maintainers@googlegroups.com)

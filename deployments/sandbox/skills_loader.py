@@ -1,5 +1,5 @@
 """
-Kagenti SkillsLoader — Parse CLAUDE.md + .claude/skills/ into an agent system prompt (Phase 4, C10)
+Rossoctl SkillsLoader — Parse CLAUDE.md + .claude/skills/ into an agent system prompt (Phase 4, C10)
 
 Loads the same instruction files that Claude Code uses locally and converts
 them into a system prompt that any LLM can consume via litellm.

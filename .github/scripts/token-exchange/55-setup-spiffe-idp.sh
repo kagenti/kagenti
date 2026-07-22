@@ -22,7 +22,7 @@ if [[ -z "$SPIRE_NS" ]]; then
 fi
 
 # Detect trust domain from operator
-TRUST_DOMAIN=$(kubectl get deploy kagenti-controller-manager -n kagenti-system -o json 2>/dev/null | \
+TRUST_DOMAIN=$(kubectl get deploy rossoctl-controller-manager -n rossoctl-system -o json 2>/dev/null | \
   jq -r '.spec.template.spec.containers[0].args[]? | select(startswith("--spire-trust-domain=")) | split("=")[1]' 2>/dev/null || true)
 if [[ -z "$TRUST_DOMAIN" ]]; then
   if [[ "$PLATFORM" == "ocp" ]]; then

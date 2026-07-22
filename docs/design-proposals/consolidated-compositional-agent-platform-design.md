@@ -1,6 +1,6 @@
-# Kagenti Implementation Design: Consolidated Compositional Agent Platform Architecture
+# Rossoctl Implementation Design: Consolidated Compositional Agent Platform Architecture
 
-**Authors**: Kagenti Team
+**Authors**: Rossoctl Team
 
 **Begin Design Discussion**: 2026-02-20
 
@@ -12,8 +12,8 @@
 
 - [ ] AgentRuntime CR implementation (identity + observability)
 - [ ] AgentCard CR adaptation (selector change)
-- [x] Mutating webhook implementation (Pod-level targeting, [PR #183](https://github.com/kagenti/kagenti-extensions/pull/183))
-- [x] ConfigMap-based defaults mechanism ([PR #134](https://github.com/kagenti/kagenti-extensions/pull/134))
+- [x] Mutating webhook implementation (Pod-level targeting, [PR #183](https://github.com/rossoctl/cortex/pull/183))
+- [x] ConfigMap-based defaults mechanism ([PR #134](https://github.com/rossoctl/cortex/pull/134))
 - [ ] AgentRuntime controller (applies labels, manages lifecycle)
 - [ ] Controller consolidation (istiod pattern)
 - [ ] Migration tooling
@@ -32,14 +32,14 @@ This proposal distinguishes between **short-term** and **long-term** goals. The 
 
 The immediate goal is a working, secure composition model with minimal complexity:
 
-- **CR-triggered injection via controller-managed labels**: AgentRuntime CR is mandatory. The developer deploys a standard workload **without** kagenti labels and creates an AgentRuntime CR with `targetRef` pointing to the workload. The AgentRuntime controller applies `kagenti.io/type: agent|tool` to the Deployment's PodTemplateSpec. This label change triggers a rolling update — new Pods are created, and the admission webhook injects sidecars at Pod CREATE time. Developer workloads stay completely clean. The `objectSelector` on the webhook means only labeled Pods hit the webhook — no cluster-wide performance cost.
-- **Explicit opt-out supported**: Developers can suppress injection by adding `kagenti.io/inject: disabled` to the PodTemplateSpec labels.
-- **Per-sidecar disable via dedicated labels**: Individual AuthBridge components can be disabled using dedicated labels (`kagenti.io/<sidecar>-inject: "false"`) or feature gates without opting the entire workload out of injection.
+- **CR-triggered injection via controller-managed labels**: AgentRuntime CR is mandatory. The developer deploys a standard workload **without** rossoctl labels and creates an AgentRuntime CR with `targetRef` pointing to the workload. The AgentRuntime controller applies `rossoctl.io/type: agent|tool` to the Deployment's PodTemplateSpec. This label change triggers a rolling update — new Pods are created, and the admission webhook injects sidecars at Pod CREATE time. Developer workloads stay completely clean. The `objectSelector` on the webhook means only labeled Pods hit the webhook — no cluster-wide performance cost.
+- **Explicit opt-out supported**: Developers can suppress injection by adding `rossoctl.io/inject: disabled` to the PodTemplateSpec labels.
+- **Per-sidecar disable via dedicated labels**: Individual AuthBridge components can be disabled using dedicated labels (`rossoctl.io/<sidecar>-inject: "false"`) or feature gates without opting the entire workload out of injection.
 - **Webhook targets Pods at CREATE time**: The `MutatingWebhookConfiguration` targets `pods` at `CREATE` — not Deployments or StatefulSets. This follows the proven pattern used by Istio, Linkerd, and Vault Agent Injector. Developer workload manifests remain unmodified in Git (no injected sidecars in the pod template), eliminating GitOps drift with Argo CD and Flux. Sidecars are visible at the pod level (`kubectl get pod -o yaml`) but not in the Deployment.
-- **Optional namespace gating**: Platform engineers can restrict injection to opted-in namespaces by requiring a `kagenti-enabled: "true"` label on the namespace. The webhook's `namespaceSelector` enforces this. Off by default (all namespaces eligible), but available as an access control mechanism to prevent uncontrolled SPIFFE provisioning.
-- **Webhook with ConfigMap-based defaults**: The webhook reads cluster-level defaults from two ConfigMaps in the `kagenti-webhook-system` namespace:
-  - `kagenti-webhook-feature-gates` — controls which AuthBridge components are enabled globally (`globalEnabled`, `envoyProxy`, `spiffeHelper`, `clientRegistration`)
-  - `kagenti-webhook-defaults` — provides default container images, proxy port configuration, and per-component resource requests/limits for all injected sidecars
+- **Optional namespace gating**: Platform engineers can restrict injection to opted-in namespaces by requiring a `rossoctl-enabled: "true"` label on the namespace. The webhook's `namespaceSelector` enforces this. Off by default (all namespaces eligible), but available as an access control mechanism to prevent uncontrolled SPIFFE provisioning.
+- **Webhook with ConfigMap-based defaults**: The webhook reads cluster-level defaults from two ConfigMaps in the `rossoctl-webhook-system` namespace:
+  - `rossoctl-webhook-feature-gates` — controls which AuthBridge components are enabled globally (`globalEnabled`, `envoyProxy`, `spiffeHelper`, `clientRegistration`)
+  - `rossoctl-webhook-defaults` — provides default container images, proxy port configuration, and per-component resource requests/limits for all injected sidecars
 
 This is the model described in detail throughout this document.
 
@@ -59,7 +59,7 @@ The short-term design already implements: mandatory CR as source of truth, contr
 
 ### 2. ~~Switch Injection Trigger from Label to CR Existence~~ (Moved to Short-Term)
 
-**Status: Part of MVP.** CR-triggered injection via controller-managed labels is now the short-term model. The controller applies `kagenti.io/type` labels to the PodTemplateSpec when an AgentRuntime CR exists, and the webhook injects at Pod CREATE time. See Short-Term section above.
+**Status: Part of MVP.** CR-triggered injection via controller-managed labels is now the short-term model. The controller applies `rossoctl.io/type` labels to the PodTemplateSpec when an AgentRuntime CR exists, and the webhook injects at Pod CREATE time. See Short-Term section above.
 
 ---
 
@@ -90,9 +90,9 @@ This keeps the in-cluster model simple (one flat AgentRuntime per workload, no i
 
 ---
 
-### 4. ~~Make `kagenti.io/type` Label Operator-Managed~~ (Moved to Short-Term)
+### 4. ~~Make `rossoctl.io/type` Label Operator-Managed~~ (Moved to Short-Term)
 
-**Status: Part of MVP.** The `type` field is in the AgentRuntime CR spec. The controller applies `kagenti.io/type` to the PodTemplateSpec. See Short-Term section above.
+**Status: Part of MVP.** The `type` field is in the AgentRuntime CR spec. The controller applies `rossoctl.io/type` to the PodTemplateSpec. See Short-Term section above.
 
 ---
 
@@ -105,7 +105,7 @@ This keeps the in-cluster model simple (one flat AgentRuntime per workload, no i
 
 ```
 Developer creates:
-  1. Deployment/StatefulSet (standard K8s workload, NO Kagenti labels needed)
+  1. Deployment/StatefulSet (standard K8s workload, NO Rossoctl labels needed)
   2. AgentRuntime CR (with targetRef pointing to the workload)
      - Contains: type (agent|tool), identity config, trace config
      - Reasonable defaults for all fields (most can be omitted)
@@ -120,7 +120,7 @@ At admission time:
 Post-admission:
   Operator reconciles AgentRuntime
     -> propagates config updates to running sidecars
-  Operator applies kagenti.io/type label to workload (derived from CR)
+  Operator applies rossoctl.io/type label to workload (derived from CR)
   Operator reconciles AgentCard
     -> fetches and caches agent capabilities
 
@@ -133,7 +133,7 @@ Defaults:
 ### Developer Experience: Minimal Case
 
 ```yaml
-# 1. Standard Deployment (NO kagenti labels — workload stays clean)
+# 1. Standard Deployment (NO rossoctl labels — workload stays clean)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -156,7 +156,7 @@ spec:
             - containerPort: 8080
 ---
 # 2. AgentRuntime CR (mandatory — triggers injection + provides config)
-apiVersion: kagenti.io/v1alpha1
+apiVersion: rossoctl.io/v1alpha1
 kind: AgentRuntime
 metadata:
   name: weather-agent
@@ -170,7 +170,7 @@ spec:
   # All other fields use cluster defaults — only override what you need
 ```
 
-**What happens**: The AgentRuntime controller applies `kagenti.io/type: agent` and `kagenti.io/config-hash` to the Deployment's PodTemplateSpec → rolling update creates new Pods → webhook intercepts Pod CREATE → injects AuthBridge sidecars. Everything else (identity, trace, sidecar config) comes from platform ConfigMap defaults. The Helm chart generates both resources from a single set of values.
+**What happens**: The AgentRuntime controller applies `rossoctl.io/type: agent` and `rossoctl.io/config-hash` to the Deployment's PodTemplateSpec → rolling update creates new Pods → webhook intercepts Pod CREATE → injects AuthBridge sidecars. Everything else (identity, trace, sidecar config) comes from platform ConfigMap defaults. The Helm chart generates both resources from a single set of values.
 
 ---
 
@@ -179,7 +179,7 @@ spec:
 | Current (Short-Term MVP) | Long-Term | Migration |
 |---------|-----------|-----------|
 | Mandatory AgentRuntime CR triggers injection via controller-managed labels | Same | Already the target model |
-| Controller applies `kagenti.io/type` label to PodTemplateSpec | Same | Already the target model |
+| Controller applies `rossoctl.io/type` label to PodTemplateSpec | Same | Already the target model |
 | ConfigMap-based platform defaults | ConfigMap defaults + Helm/Kustomize composition | No migration needed |
 | Webhook targets Pods at CREATE | Same | Already implemented |
 
@@ -192,7 +192,7 @@ spec:
 | CR with `targetRef` triggers integration | MCP Gateway, cert-manager, KEDA | AgentRuntime CR with `targetRef` triggers sidecar injection |
 | Flat CRs, no inheritance | Most Kubernetes operators | One AgentRuntime per workload, no parent/child CRs |
 | Composition via Helm/Kustomize | Industry standard | Defaults and shared config managed outside the cluster |
-| Operator manages derived labels | Istio, Argo CD | Operator applies `kagenti.io/type` based on CR spec |
+| Operator manages derived labels | Istio, Argo CD | Operator applies `rossoctl.io/type` based on CR spec |
 
 
 ---
@@ -201,13 +201,13 @@ spec:
 
 This design proposal consolidates two earlier proposals into a unified architecture for managing AI agent workloads on Kubernetes:
 
-1. The original **Compositional Agent Platform Architecture** ([PR #531](https://github.com/kagenti/kagenti/pull/531)), which proposed replacing the monolithic `Agent` CR with a mutating webhook plus three independent pillar CRs (`TokenExchange`, `AgentTrace`, `AgentCard`).
+1. The original **Compositional Agent Platform Architecture** ([PR #531](https://github.com/rossoctl/rossoctl/pull/531)), which proposed replacing the monolithic `Agent` CR with a mutating webhook plus three independent pillar CRs (`TokenExchange`, `AgentTrace`, `AgentCard`).
 2. A **counter-proposal** advocating for a single `AgentRuntime` reference CR, removal of workload labels, and controller-based injection instead of a webhook.
 
 This consolidated design retains the strengths of both while resolving their disagreements:
 
-- **CR-triggered injection** — the AgentRuntime CR is mandatory; the controller applies `kagenti.io/type` labels to the PodTemplateSpec, triggering a rolling update; the webhook injects sidecars at Pod CREATE time
-- **Developer workloads stay clean** — no kagenti labels in developer manifests; labels are controller-managed
+- **CR-triggered injection** — the AgentRuntime CR is mandatory; the controller applies `rossoctl.io/type` labels to the PodTemplateSpec, triggering a rolling update; the webhook injects sidecars at Pod CREATE time
+- **Developer workloads stay clean** — no rossoctl labels in developer manifests; labels are controller-managed
 - **TokenExchange and AgentTrace are consolidated** into a single `AgentRuntime` CR — reducing resource count while preserving configurability
 - **AgentCard remains a separate CR** — different cardinality model, existing implementation, and distinct concern (discovery vs. runtime)
 - **The mutating webhook is retained** for admission-time sidecar injection — security-first, already implemented
@@ -220,7 +220,7 @@ The result is a two-CR model (`AgentRuntime` + `AgentCard`) atop a label-and-web
 
 This architecture separates configuration into two fundamentally different lifecycle stages that must not be conflated:
 
-**1. Admission-time configuration** — occurs when Pods are created. The AgentRuntime controller applies labels to the PodTemplateSpec, triggering a rolling update. The mutating webhook intercepts each new Pod's CREATE request, reads platform defaults, and injects the AuthBridge sidecars. This is a one-shot operation: the webhook fires, sidecars are injected, and the pod starts. Security is guaranteed — any Pod carrying `kagenti.io/type: agent` (applied by the controller) will have sidecars injected at admission time unless explicitly opted out with `kagenti.io/inject: disabled`.
+**1. Admission-time configuration** — occurs when Pods are created. The AgentRuntime controller applies labels to the PodTemplateSpec, triggering a rolling update. The mutating webhook intercepts each new Pod's CREATE request, reads platform defaults, and injects the AuthBridge sidecars. This is a one-shot operation: the webhook fires, sidecars are injected, and the pod starts. Security is guaranteed — any Pod carrying `rossoctl.io/type: agent` (applied by the controller) will have sidecars injected at admission time unless explicitly opted out with `rossoctl.io/inject: disabled`.
 
 **2. Reconfiguration of running workloads** — occurs after pods are already running. When defaults or an AgentRuntime CR change, those changes must reach the already-running sidecars without restarting pods. This is handled by the operator, which detects configuration drift and propagates updates to running sidecars (see [Configuration Propagation](#configuration-propagation-open-design)). Note that some changes — such as modifications to injected sidecar images or init container configuration — inherently require a pod restart.
 
@@ -229,12 +229,12 @@ These two concerns are handled by different components (webhook vs. operator), o
 ### Architecture at a Glance
 
 ```
-Developer Creates Standard Deployment (NO kagenti labels)
+Developer Creates Standard Deployment (NO rossoctl labels)
   + Creates AgentRuntime CR with targetRef → Deployment
         ↓
 AgentRuntime Controller Reconciles
-  • Applies kagenti.io/type: agent label to PodTemplateSpec
-  • Applies kagenti.io/config-hash annotation (CR + defaults)
+  • Applies rossoctl.io/type: agent label to PodTemplateSpec
+  • Applies rossoctl.io/config-hash annotation (CR + defaults)
   • PodTemplateSpec change triggers rolling update
         ↓
 Webhook Intercepts Pod CREATE (pods carry controller-applied labels)
@@ -261,7 +261,7 @@ Optional: Developer Creates AgentCard CR
 
 ### Prior Proposals
 
-**Original Proposal (Three Pillars)**: Proposed a mutating webhook triggered by an explicit `kagenti.io/inject: enabled` label, plus three independent pillar CRs (`TokenExchange`, `AgentTrace`, `AgentCard`). Strong on composition-over-inheritance thesis, proven ecosystem analysis, and working webhook implementation. Weakness: four objects per fully-configured agent.
+**Original Proposal (Three Pillars)**: Proposed a mutating webhook triggered by an explicit `rossoctl.io/inject: enabled` label, plus three independent pillar CRs (`TokenExchange`, `AgentTrace`, `AgentCard`). Strong on composition-over-inheritance thesis, proven ecosystem analysis, and working webhook implementation. Weakness: four objects per fully-configured agent.
 
 **Counter-Proposal (AgentRuntime)**: Proposed a single `AgentRuntime` CR with `workloadRef`, eliminating labels and the webhook in favor of controller-based injection. Strong on auditability and single-resource-per-agent simplicity. Weaknesses: loses admission-time security guarantees, creates race conditions during injection, requires reimplementing a working webhook.
 
@@ -269,7 +269,7 @@ Optional: Developer Creates AgentCard CR
 
 | Topic | Original | Counter-Proposal | This Design |
 |-------|----------|-------------------|-------------|
-| Labels | Required on workload for injection | Remove entirely | **Controller-managed** — AgentRuntime CR triggers controller to apply `kagenti.io/type` label; `kagenti.io/inject: disabled` to opt out |
+| Labels | Required on workload for injection | Remove entirely | **Controller-managed** — AgentRuntime CR triggers controller to apply `rossoctl.io/type` label; `rossoctl.io/inject: disabled` to opt out |
 | Injection | Mutating webhook | Controller patching | **Webhook** (admission-time, security-first) |
 | CR count | 3 pillar CRs | 1 unified CR | **2 CRs**: AgentRuntime + AgentCard |
 | Defaults | Per-CR defaults | CR sections optional | **Layered**: cluster → namespace → CR |
@@ -296,14 +296,14 @@ The core thesis from the original proposal remains: **higher-level Kubernetes ab
 **Application Developer**:
 
 - As a developer, I want to deploy my AI agent using a standard Kubernetes Deployment and have identity infrastructure injected automatically by creating an AgentRuntime CR — no labels needed in my workload manifest
-- As a developer, I want to classify my workload as an agent or tool by specifying `type` in the AgentRuntime CR spec, so the Kagenti UI displays it correctly and the controller applies the appropriate labels
+- As a developer, I want to classify my workload as an agent or tool by specifying `type` in the AgentRuntime CR spec, so the Rossoctl UI displays it correctly and the controller applies the appropriate labels
 - As a developer, I want to override the platform defaults for my specific workload by specifying overrides in the AgentRuntime CR when the platform defaults don't fit my agent's requirements
 - As a developer, I want to expose my agent's capabilities through a standard discovery mechanism by creating an AgentCard CR so other agents can find and invoke it
 
 **Operations Engineer**:
 
 - As an operations engineer, I want comprehensive observability into agent execution configured through defaults that I don't need to repeat per workload
-- As an operations engineer, I want to remove Kagenti from a workload without disrupting the workload itself
+- As an operations engineer, I want to remove Rossoctl from a workload without disrupting the workload itself
 
 ---
 
@@ -311,8 +311,8 @@ The core thesis from the original proposal remains: **higher-level Kubernetes ab
 
 1. **Compose with existing Kubernetes workload types** — Never require users to abandon Deployment, StatefulSet, or Job
 2. **Minimize per-workload configuration** — An AgentRuntime CR with `targetRef` plus platform defaults are all most agents need
-3. **Retain labels for workload classification** — The Kagenti UI and ecosystem tooling rely on controller-managed `kagenti.io/type` labels to identify agents and tools
-4. **Provide workload-scoped admission-time identity injection** — Pods with controller-applied `kagenti.io/type` labels automatically receive identity infrastructure at admission time; developers opt out with `kagenti.io/inject: disabled` if needed
+3. **Retain labels for workload classification** — The Rossoctl UI and ecosystem tooling rely on controller-managed `rossoctl.io/type` labels to identify agents and tools
+4. **Provide workload-scoped admission-time identity injection** — Pods with controller-applied `rossoctl.io/type` labels automatically receive identity infrastructure at admission time; developers opt out with `rossoctl.io/inject: disabled` if needed
 5. **Consolidate related concerns** — Identity and observability in one CR; discovery separate
 6. **Support dynamic reconfiguration** — Configuration changes without pod restarts where possible; some changes (e.g., modifications to injected sidecar images or init container configuration) may require a pod restart to take effect
 
@@ -321,7 +321,7 @@ The core thesis from the original proposal remains: **higher-level Kubernetes ab
 
 ## Non-Goals
 
-1. **Making labels developer-owned** — `kagenti.io/type` is managed by the AgentRuntime controller, not by developers. The AgentRuntime CR is the developer's declaration
+1. **Making labels developer-owned** — `rossoctl.io/type` is managed by the AgentRuntime controller, not by developers. The AgentRuntime CR is the developer's declaration
 2. **Replacing the mutating webhook with controller-based injection** — The webhook provides security guarantees that controller patching cannot
 3. **Folding AgentCard into AgentRuntime** — Different cardinality model, existing implementation, distinct concern
 4. **Building another workload orchestrator** — Users keep their existing orchestration tools
@@ -338,10 +338,10 @@ The core thesis from the original proposal remains: **higher-level Kubernetes ab
 │ LAYER 1: CR-Triggered Identity Infrastructure                │
 │──────────────────────────────────────────────────────────────│
 │ Trigger: AgentRuntime CR with targetRef → workload           │
-│  → Controller applies kagenti.io/type label to PodTemplate  │
+│  → Controller applies rossoctl.io/type label to PodTemplate  │
 │  → Rolling update creates new Pods with labels               │
 │  → Webhook intercepts Pod CREATE, injects sidecars           │
-│  (opt-out via kagenti.io/inject: disabled)                   │
+│  (opt-out via rossoctl.io/inject: disabled)                   │
 │                                                              │
 │ • Webhook targets Pods at CREATE (not Deployments)           │
 │ • Reads platform defaults from ConfigMaps                    │
@@ -366,13 +366,13 @@ Labels on workloads are **managed by the AgentRuntime controller**, not set by d
 
 | Label | Level | Purpose | Set By |
 |-------|-------|---------|--------|
-| `kagenti.io/type: agent` or `tool` | PodTemplateSpec | **Controller-managed** — classifies the workload and triggers AuthBridge injection via the webhook's `objectSelector` | AgentRuntime controller |
-| `kagenti.io/config-hash` | PodTemplateSpec | **Controller-managed** — hash of resolved configuration (CR + platform defaults); triggers rolling updates on config change | AgentRuntime controller |
-| `kagenti.io/inject: disabled` | PodTemplateSpec | Optional — developer can suppress injection while keeping type classification | Developer |
+| `rossoctl.io/type: agent` or `tool` | PodTemplateSpec | **Controller-managed** — classifies the workload and triggers AuthBridge injection via the webhook's `objectSelector` | AgentRuntime controller |
+| `rossoctl.io/config-hash` | PodTemplateSpec | **Controller-managed** — hash of resolved configuration (CR + platform defaults); triggers rolling updates on config change | AgentRuntime controller |
+| `rossoctl.io/inject: disabled` | PodTemplateSpec | Optional — developer can suppress injection while keeping type classification | Developer |
 
 #### CR-Triggered Injection (Primary Model)
 
-The **primary mechanism** for AuthBridge sidecar injection is the AgentRuntime CR. The developer deploys a standard workload with no kagenti labels:
+The **primary mechanism** for AuthBridge sidecar injection is the AgentRuntime CR. The developer deploys a standard workload with no rossoctl labels:
 
 ```yaml
 apiVersion: apps/v1
@@ -381,9 +381,9 @@ metadata:
   name: weather-agent
   labels:
     app: weather-agent
-    # No kagenti labels — workload manifest stays clean
+    # No rossoctl labels — workload manifest stays clean
 ---
-apiVersion: kagenti.io/v1alpha1
+apiVersion: rossoctl.io/v1alpha1
 kind: AgentRuntime
 metadata:
   name: weather-agent
@@ -396,11 +396,11 @@ spec:
     name: weather-agent
 ```
 
-The AgentRuntime controller sees the CR, applies `kagenti.io/type: agent` and `kagenti.io/config-hash` to the Deployment's PodTemplateSpec. This triggers a rolling update. New Pods carry the labels and match the webhook's `objectSelector`, so the webhook injects sidecars at CREATE time.
+The AgentRuntime controller sees the CR, applies `rossoctl.io/type: agent` and `rossoctl.io/config-hash` to the Deployment's PodTemplateSpec. This triggers a rolling update. New Pods carry the labels and match the webhook's `objectSelector`, so the webhook injects sidecars at CREATE time.
 
 #### Config Hash — One Mechanism for Create, Update, and Delete
 
-The controller maintains a `kagenti.io/config-hash` annotation on the PodTemplateSpec, computed from the resolved configuration (AgentRuntime CR merged with platform defaults). Any configuration change updates the hash, triggering a rolling update:
+The controller maintains a `rossoctl.io/config-hash` annotation on the PodTemplateSpec, computed from the resolved configuration (AgentRuntime CR merged with platform defaults). Any configuration change updates the hash, triggering a rolling update:
 
 | Event | What controller does | Rolling update? | Webhook behavior |
 |-------|---------------------|-----------------|-----------------|
@@ -408,16 +408,16 @@ The controller maintains a `kagenti.io/config-hash` annotation on the PodTemplat
 | **AgentRuntime updated** | Updates config-hash | Yes | Injects with updated config |
 | **AgentRuntime deleted** | Finalizer fires: preserves label, updates config-hash to defaults-only | Yes | Injects with platform defaults |
 
-On deletion, the AgentRuntime CR carries a finalizer (`kagenti.io/cleanup`). The controller preserves the `kagenti.io/type` label, updates the config-hash to reflect defaults only, then removes the finalizer. The workload stays classified as an agent and continues to receive identity infrastructure — just with default configuration.
+On deletion, the AgentRuntime CR carries a finalizer (`rossoctl.io/cleanup`). The controller preserves the `rossoctl.io/type` label, updates the config-hash to reflect defaults only, then removes the finalizer. The workload stays classified as an agent and continues to receive identity infrastructure — just with default configuration.
 
 #### Opting Out of Injection
 
-A developer can suppress injection while keeping type classification by adding `kagenti.io/inject: disabled` to the PodTemplateSpec:
+A developer can suppress injection while keeping type classification by adding `rossoctl.io/inject: disabled` to the PodTemplateSpec:
 
 ```yaml
 labels:
-  kagenti.io/type: agent
-  kagenti.io/inject: disabled   # Classified as agent but sidecars not injected
+  rossoctl.io/type: agent
+  rossoctl.io/inject: disabled   # Classified as agent but sidecars not injected
 ```
 
 This is useful during migration, testing, or for workloads that need the type classification for UI display but are not yet ready for full AuthBridge injection.
@@ -426,7 +426,7 @@ This is useful during migration, testing, or for workloads that need the type cl
 
 The AgentRuntime CR resolves the ownership ambiguity of "who sets the label?":
 
-- **Developer workloads stay clean** — no kagenti labels required from developers
+- **Developer workloads stay clean** — no rossoctl labels required from developers
 - **AgentRuntime CR is the single source of truth** — for both injection trigger and configuration
 - **Admission-time security guarantee** — sidecars are injected at Pod CREATE, no race window
 - **Auditability** — `kubectl get agentruntime -A` shows all enrolled workloads
@@ -439,10 +439,10 @@ Every agent has an AgentRuntime CR, but most only specify `type` and `targetRef`
 ```
 ┌─────────────────────────────────────────────────────┐
 │ Cluster Defaults                                     │
-│ (kagenti-system)                                     │
+│ (rossoctl-system)                                     │
 │                                                      │
 │ • SPIFFE trust domain: cluster.local                 │
-│ • IdP: keycloak.kagenti-system.svc:8080              │
+│ • IdP: keycloak.rossoctl-system.svc:8080              │
 │ • OTEL endpoint: otel-collector.observability:4317   │
 │ • Inbound auth: enabled, port 8080 → 8081            │
 │ • Outbound proxy: port 15123, token exchange enabled │
@@ -476,7 +476,7 @@ Every agent has an AgentRuntime CR, but most only specify `type` and `targetRef`
 | Identity | SPIFFE trust domain | `cluster.local` |
 | Identity | SPIFFE socket path | `unix:///run/spire/agent-sockets/agent.sock` |
 | Identity | IdP provider | Keycloak |
-| Identity | IdP URL | `http://keycloak.kagenti-system.svc:8080` |
+| Identity | IdP URL | `http://keycloak.rossoctl-system.svc:8080` |
 | Identity | IdP realm | `default` |
 | Identity | Inbound auth port | `8080` → `8081` |
 | Identity | Outbound proxy port | `15123` |
@@ -499,7 +499,7 @@ Namespace-level defaults override cluster defaults for any setting. The specific
 **API Structure**:
 
 ```yaml
-apiVersion: kagenti.io/v1alpha1
+apiVersion: rossoctl.io/v1alpha1
 kind: AgentRuntime
 metadata:
   name: weather-agent-runtime
@@ -567,7 +567,7 @@ AgentCard remains a separate CR. It is reproduced here for completeness but is n
 **API Structure**:
 
 ```yaml
-apiVersion: kagenti.io/v1alpha1
+apiVersion: rossoctl.io/v1alpha1
 kind: AgentCard
 metadata:
   name: weather-agent-card
@@ -577,7 +577,7 @@ spec:
   selector:
     matchLabels:
       app: weather-agent
-      kagenti.io/type: agent
+      rossoctl.io/type: agent
 status:
   protocol: "a2a"
   lastSyncTime: "2026-01-21T10:30:00Z"
@@ -636,7 +636,7 @@ The `targetRef` pattern establishes a 1:1 relationship between an AgentRuntime C
 | Agent with custom IdP realm | Deployment + AgentRuntime CR (with identity overrides) | Yes |
 | Fleet of 50 identical agents | 50 Deployments + 50 AgentRuntime CRs (minimal, Helm-generated) | Yes (minimal, templated) |
 | Workload without AgentRuntime CR | No injection occurs — no labels applied | N/A |
-| Agent that should not be injected | Deployment + `kagenti.io/inject: disabled` on PodTemplateSpec | N/A |
+| Agent that should not be injected | Deployment + `rossoctl.io/inject: disabled` on PodTemplateSpec | N/A |
 
 **The 1:1 constraint is not a burden on developers** because most AgentRuntime CRs are minimal (just `type` and `targetRef`). Platform defaults handle the common case. When defaults do not fit a specific workload, the developer adds override fields to the AgentRuntime CR — this is a developer-owned resource, not a platform engineer concern. For fleets, Helm charts template the AgentRuntime CRs from shared values.
 
@@ -655,19 +655,19 @@ The mutating webhook from the original proposal is retained. While the counter-p
 
 The webhook targets `pods` at `CREATE` time — not workload objects like Deployments or StatefulSets. This follows the proven pattern used by Istio, Linkerd, and Vault Agent Injector. Developer workload manifests remain unmodified in Git, eliminating GitOps drift.
 
-The `objectSelector` gates on `kagenti.io/type` (the label applied by the AgentRuntime controller) and excludes `kagenti.io/inject: disabled`. An optional `namespaceSelector` restricts injection to namespaces labeled `kagenti-enabled: "true"`.
+The `objectSelector` gates on `rossoctl.io/type` (the label applied by the AgentRuntime controller) and excludes `rossoctl.io/inject: disabled`. An optional `namespaceSelector` restricts injection to namespaces labeled `rossoctl-enabled: "true"`.
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  name: kagenti-injector
+  name: rossoctl-injector
 webhooks:
-- name: inject.kagenti.io
+- name: inject.rossoctl.io
   clientConfig:
     service:
-      name: kagenti-webhook
-      namespace: kagenti-webhook-system
+      name: rossoctl-webhook
+      namespace: rossoctl-webhook-system
       path: /mutate-workloads-authbridge
     caBundle: ${CA_BUNDLE}
   rules:
@@ -684,15 +684,15 @@ webhooks:
           - kube-system
           - kube-public
           - kube-node-lease
-          - kagenti-webhook-system
+          - rossoctl-webhook-system
     matchLabels:
-      kagenti-enabled: "true"       # Optional namespace gating
+      rossoctl-enabled: "true"       # Optional namespace gating
   objectSelector:
     matchExpressions:
-    - key: kagenti.io/type
+    - key: rossoctl.io/type
       operator: In
       values: ["agent", "tool"]
-    - key: kagenti.io/inject
+    - key: rossoctl.io/inject
       operator: NotIn
       values: ["disabled"]          # Honours explicit opt-out
   admissionReviewVersions: ["v1"]
@@ -702,16 +702,16 @@ webhooks:
   reinvocationPolicy: IfNeeded
 ```
 
-> **Note**: The webhook's `objectSelector` gates on `kagenti.io/type` (applied by the AgentRuntime controller) and excludes `kagenti.io/inject: disabled`. Tool injection requires the `injectTools` feature gate in `kagenti-webhook-feature-gates` to be enabled (default: disabled). The `namespaceSelector` optionally restricts injection to namespaces labeled `kagenti-enabled: "true"`.
+> **Note**: The webhook's `objectSelector` gates on `rossoctl.io/type` (applied by the AgentRuntime controller) and excludes `rossoctl.io/inject: disabled`. Tool injection requires the `injectTools` feature gate in `rossoctl-webhook-feature-gates` to be enabled (default: disabled). The `namespaceSelector` optionally restricts injection to namespaces labeled `rossoctl-enabled: "true"`.
 
 **Webhook Injection Decision Logic**:
 
 ```
 Is this a Pod CREATE request?
   ├─ NO  → Allow (not a Pod)
-  └─ YES → Does Pod carry kagenti.io/type: agent or tool?
+  └─ YES → Does Pod carry rossoctl.io/type: agent or tool?
              ├─ NO  → No injection (objectSelector excludes this Pod)
-             └─ YES → Is kagenti.io/inject: disabled present?
+             └─ YES → Is rossoctl.io/inject: disabled present?
                         ├─ YES → No injection (objectSelector excludes this Pod)
                         └─ NO  → Are sidecars already injected? (idempotency check)
                                    ├─ YES → Allow (already injected)
@@ -722,11 +722,11 @@ Is this a Pod CREATE request?
 
 **Webhook Behavior**:
 
-1. Intercepts Pod CREATE when the Pod carries `kagenti.io/type: agent` (or `tool` with feature gate) and does **not** carry `kagenti.io/inject: disabled`
+1. Intercepts Pod CREATE when the Pod carries `rossoctl.io/type: agent` (or `tool` with feature gate) and does **not** carry `rossoctl.io/inject: disabled`
 2. Guards against non-Pod resources (defense-in-depth against stale webhook configs)
 3. Derives workload name from `GenerateName` (trims trailing `-`) for ServiceAccount and client-registration naming
 4. Checks idempotency — skips if sidecars are already present
-5. Reads cluster defaults from ConfigMaps in `kagenti-webhook-system`
+5. Reads cluster defaults from ConfigMaps in `rossoctl-webhook-system`
 6. Injects AuthBridge sidecars with resolved configuration
 7. Returns a JSON patch with the mutated Pod spec
 
@@ -734,8 +734,8 @@ Is this a Pod CREATE request?
 
 Adding a label to a PodTemplateSpec within a Deployment triggers admission control at two levels:
 
-1. **Deployment admission**: The API request to update the Deployment is intercepted by admission webhooks configured for `deployments`. The Kagenti webhook does NOT target Deployments — it ignores this event.
-2. **Pod admission**: The PodTemplateSpec change triggers a rolling update — as the Deployment controller creates new Pods, each Pod creation request is intercepted by admission webhooks configured for `pods`. The Kagenti webhook targets this event, injecting sidecars into the Pod at CREATE time.
+1. **Deployment admission**: The API request to update the Deployment is intercepted by admission webhooks configured for `deployments`. The Rossoctl webhook does NOT target Deployments — it ignores this event.
+2. **Pod admission**: The PodTemplateSpec change triggers a rolling update — as the Deployment controller creates new Pods, each Pod creation request is intercepted by admission webhooks configured for `pods`. The Rossoctl webhook targets this event, injecting sidecars into the Pod at CREATE time.
 
 This two-step mechanism is what makes CR-triggered injection work: the controller modifies the PodTemplateSpec (step 1), Kubernetes creates new Pods (step 2), and the webhook injects sidecars into those Pods. The developer's Deployment manifest in Git is never modified by the webhook — only the ephemeral Pod objects receive injected sidecars.
 
@@ -751,8 +751,8 @@ spec:
     - group: apps
       kind: Deployment
       jqPathExpressions:
-        - .spec.template.metadata.labels."kagenti.io/type"
-        - .spec.template.metadata.annotations."kagenti.io/config-hash"
+        - .spec.template.metadata.labels."rossoctl.io/type"
+        - .spec.template.metadata.annotations."rossoctl.io/config-hash"
 ```
 
 This is the same approach used for Istio sidecar injection labels.
@@ -765,9 +765,9 @@ This is the same approach used for Istio sidecar injection labels.
 | `spiffe-helper` | Sidecar | Manages SPIFFE workload identity |
 | `envoy-proxy` | Sidecar | Intercepts outbound traffic, performs token exchange |
 
-> **Note: AuthBridge Sidecar Consolidation** — The current AuthBridge implementation uses multiple sidecars as listed above. The Kagenti team plans to consolidate these into fewer containers in the near term. The current multi-sidecar design reflects the initial implementation where each concern was developed independently. Consolidation will reduce per-pod resource overhead, simplify configuration propagation (fewer processes to update), and reduce pod startup latency. The architecture described in this proposal is designed to work with both the current multi-sidecar layout and the future consolidated form — the webhook injects whatever the current AuthBridge implementation requires, and the number of injected containers is an implementation detail transparent to the developer.
+> **Note: AuthBridge Sidecar Consolidation** — The current AuthBridge implementation uses multiple sidecars as listed above. The Rossoctl team plans to consolidate these into fewer containers in the near term. The current multi-sidecar design reflects the initial implementation where each concern was developed independently. Consolidation will reduce per-pod resource overhead, simplify configuration propagation (fewer processes to update), and reduce pod startup latency. The architecture described in this proposal is designed to work with both the current multi-sidecar layout and the future consolidated form — the webhook injects whatever the current AuthBridge implementation requires, and the number of injected containers is an implementation detail transparent to the developer.
 > 
-> **Note: Operator-Managed Client Registration** — Keycloak client registration is now handled by the kagenti-operator controller, not by an injected sidecar. The operator's ClientRegistrationReconciler watches deployments labeled as agents or tools and automatically registers them with Keycloak using credentials from the operator namespace. This eliminates the need for admin credentials in agent namespaces and provides better security isolation.
+> **Note: Operator-Managed Client Registration** — Keycloak client registration is now handled by the rossoctl-operator controller, not by an injected sidecar. The operator's ClientRegistrationReconciler watches deployments labeled as agents or tools and automatically registers them with Keycloak using credentials from the operator namespace. This eliminates the need for admin credentials in agent namespaces and provides better security isolation.
 
 ### Controller Architecture
 
@@ -775,7 +775,7 @@ The webhook and the operator run as independent pods. The webhook handles admiss
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│ Kagenti Webhook Pod (kagenti-webhook-system)           │
+│ Rossoctl Webhook Pod (rossoctl-webhook-system)           │
 │                                                        │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │ Webhook Server                                   │  │
@@ -792,7 +792,7 @@ The webhook and the operator run as independent pods. The webhook handles admiss
 └────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────────┐
-│ Kagenti Operator Pod                                   │
+│ Rossoctl Operator Pod                                   │
 │                                                        │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │ Controller Manager                               │  │
@@ -860,7 +860,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 import os
 
 def setup_telemetry():
-    # OTEL endpoint provided by Kagenti platform via environment or config
+    # OTEL endpoint provided by Rossoctl platform via environment or config
     endpoint = os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT',
                          'otel-collector.observability:4317')
 
@@ -918,7 +918,7 @@ if __name__ == '__main__':
 ### After (Composition — Custom Configuration Needed)
 
 ```yaml
-# Standard Kubernetes Deployment — NO kagenti labels (workload stays clean)
+# Standard Kubernetes Deployment — NO rossoctl labels (workload stays clean)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -943,7 +943,7 @@ spec:
         - containerPort: 8081
 ---
 # AgentRuntime — mandatory, triggers injection + provides config overrides
-apiVersion: kagenti.io/v1alpha1
+apiVersion: rossoctl.io/v1alpha1
 kind: AgentRuntime
 metadata:
   name: weather-agent-runtime
@@ -965,7 +965,7 @@ spec:
       rate: 1.0  # full sampling for this agent
 ---
 # AgentCard — optional, for discovery
-apiVersion: kagenti.io/v1alpha1
+apiVersion: rossoctl.io/v1alpha1
 kind: AgentCard
 metadata:
   name: weather-agent-card
@@ -997,12 +997,12 @@ spec:
 
 1. **Defaults storage mechanism**: How should cluster and namespace defaults be stored and managed? (ConfigMap, dedicated CRD, or other). Current implementation uses ConfigMaps.
 2. **Configuration propagation mechanism**: How should configuration updates reach running sidecars? (See [Configuration Propagation](#configuration-propagation-open-design))
-3. **AgentRuntime CR lifecycle**: ~~Should deleting an AgentRuntime CR revert to defaults or remove configuration entirely?~~ **Resolved**: Deletion reverts to platform defaults. The controller uses a finalizer to preserve the `kagenti.io/type` label and update the config-hash to defaults-only, triggering a rolling update with default configuration.
-4. **~~Injection trigger mechanism~~**: **Resolved**: CR-triggered injection via controller-managed labels. The AgentRuntime CR is mandatory, the controller applies `kagenti.io/type` labels, and the webhook injects at Pod CREATE time. See Short-Term section and [Labels: Controller-Managed Classification](#labels-controller-managed-classification-and-injection-trigger).
+3. **AgentRuntime CR lifecycle**: ~~Should deleting an AgentRuntime CR revert to defaults or remove configuration entirely?~~ **Resolved**: Deletion reverts to platform defaults. The controller uses a finalizer to preserve the `rossoctl.io/type` label and update the config-hash to defaults-only, triggering a rolling update with default configuration.
+4. **~~Injection trigger mechanism~~**: **Resolved**: CR-triggered injection via controller-managed labels. The AgentRuntime CR is mandatory, the controller applies `rossoctl.io/type` labels, and the webhook injects at Pod CREATE time. See Short-Term section and [Labels: Controller-Managed Classification](#labels-controller-managed-classification-and-injection-trigger).
 
 ### Pros
 
-1. **Clear developer intent**: Developers declare workload type via AgentRuntime CR — injection follows automatically, with explicit opt-out available via `kagenti.io/inject: disabled`
+1. **Clear developer intent**: Developers declare workload type via AgentRuntime CR — injection follows automatically, with explicit opt-out available via `rossoctl.io/inject: disabled`
 2. **Secure by default**: Webhook ensures agents never run without identity infrastructure
 3. **Platform engineer friendly**: Defaults set once, override only when needed
 4. **Low object count**: 1 object (Deployment) for common case, up to 3 for full customization
@@ -1017,7 +1017,7 @@ spec:
 2. **Webhook dependency**: If webhook is unavailable, workload creation blocks (mitigated by replicas)
 3. **Defaults complexity**: Three-layer merge adds implementation complexity
 4. **Two CRs still needed for full functionality**: AgentRuntime + AgentCard remain separate resources
-5. **CD tooling drift for controller-managed labels**: When the AgentRuntime controller applies `kagenti.io/type` labels to a Deployment's PodTemplateSpec, GitOps CD tools (Argo CD, Flux) may detect this as configuration drift. Mitigation: Argo CD's server-side diff feature (v2.5+) or `ignoreDifferences` configuration excludes controller-managed labels from drift detection. This is the same pattern used for Istio sidecar injection labels. Note: the webhook itself targets Pods (not Deployments), so sidecar injection does not cause GitOps drift.
+5. **CD tooling drift for controller-managed labels**: When the AgentRuntime controller applies `rossoctl.io/type` labels to a Deployment's PodTemplateSpec, GitOps CD tools (Argo CD, Flux) may detect this as configuration drift. Mitigation: Argo CD's server-side diff feature (v2.5+) or `ignoreDifferences` configuration excludes controller-managed labels from drift detection. This is the same pattern used for Istio sidecar injection labels. Note: the webhook itself targets Pods (not Deployments), so sidecar injection does not cause GitOps drift.
 
 ---
 
@@ -1046,11 +1046,11 @@ spec:
 
 ### Risk 3: Multiple Webhook Ordering Conflicts
 
-**Risk**: Kubernetes clusters running multiple mutating admission webhooks (e.g., Istio sidecar injection, Vault Agent injector, and the Kagenti AuthBridge injector simultaneously) can encounter subtle ordering failures. Kubernetes does not guarantee a deterministic execution order among webhooks within the same `failurePolicy` tier. If one webhook's mutation overwrites or conflicts with another's — for example, both modifying the pod's `initContainers` list or `volumes` — the result depends on execution order, which can vary across API server restarts or cluster upgrades. This produces failures that are intermittent, environment-specific, and hard to reproduce.
+**Risk**: Kubernetes clusters running multiple mutating admission webhooks (e.g., Istio sidecar injection, Vault Agent injector, and the Rossoctl AuthBridge injector simultaneously) can encounter subtle ordering failures. Kubernetes does not guarantee a deterministic execution order among webhooks within the same `failurePolicy` tier. If one webhook's mutation overwrites or conflicts with another's — for example, both modifying the pod's `initContainers` list or `volumes` — the result depends on execution order, which can vary across API server restarts or cluster upgrades. This produces failures that are intermittent, environment-specific, and hard to reproduce.
 
 **Mitigation**:
-- Set `reinvocationPolicy: IfNeeded` on the Kagenti webhook so Kubernetes re-invokes it if a later webhook mutates the object — giving Kagenti a chance to reconcile any overwritten fields
-- Document which container names and volume names the Kagenti webhook uses so operators can identify and resolve conflicts with other webhooks
+- Set `reinvocationPolicy: IfNeeded` on the Rossoctl webhook so Kubernetes re-invokes it if a later webhook mutates the object — giving Rossoctl a chance to reconcile any overwritten fields
+- Document which container names and volume names the Rossoctl webhook uses so operators can identify and resolve conflicts with other webhooks
 - Test explicitly in environments where Istio ambient or sidecar mode is also active, as this is the most common co-tenant webhook
 - Pod-level injection (now implemented) narrows the webhook's scope to pod admission only, matching the pattern used by Istio and other well-established injectors — reducing the conflict surface with other webhooks
 
@@ -1081,13 +1081,13 @@ Unchanged from original proposal:
 ## Implementation Phases
 
 **Phase 1: Webhook Foundation + AgentRuntime CR** (Q1 2026)
-- [x] Pod-level webhook targeting (Pods at CREATE, not Deployments/StatefulSets) — [kagenti-extensions PR #183](https://github.com/kagenti/kagenti-extensions/pull/183)
-- [x] ConfigMap-based platform defaults (`kagenti-webhook-defaults`, `kagenti-webhook-feature-gates`) — [kagenti-extensions PR #134](https://github.com/kagenti/kagenti-extensions/pull/134)
-- [x] Per-sidecar feature gates and precedence system — [kagenti-extensions PRs #110-#116](https://github.com/kagenti/kagenti-extensions/issues/109)
-- [x] Optional namespace gating (`kagenti-enabled: "true"` namespaceSelector)
+- [x] Pod-level webhook targeting (Pods at CREATE, not Deployments/StatefulSets) — [cortex PR #183](https://github.com/rossoctl/cortex/pull/183)
+- [x] ConfigMap-based platform defaults (`rossoctl-webhook-defaults`, `rossoctl-webhook-feature-gates`) — [cortex PR #134](https://github.com/rossoctl/cortex/pull/134)
+- [x] Per-sidecar feature gates and precedence system — [cortex PRs #110-#116](https://github.com/rossoctl/cortex/issues/109)
+- [x] Optional namespace gating (`rossoctl-enabled: "true"` namespaceSelector)
 - [ ] Define lean AgentRuntime v1alpha1 CRD (`targetRef`, `identity`, `trace`)
 - [ ] Implement AgentRuntime controller with targetRef resolution
-- [ ] Controller applies `kagenti.io/type` + `kagenti.io/config-hash` to PodTemplateSpec
+- [ ] Controller applies `rossoctl.io/type` + `rossoctl.io/config-hash` to PodTemplateSpec
 - [ ] Finalizer-based deletion (reverts to platform defaults)
 
 **Phase 2: Observability Maturation** (Q2 2026)
@@ -1105,7 +1105,7 @@ The current AuthBridge implementation injects three containers per pod:
 | `envoy-proxy` | Envoy + go-processor ext-proc (outbound token exchange, inbound JWT validation) | Go + Envoy |
 | `spiffe-helper` | SPIFFE JWT-SVID management | Go |
 
-**Keycloak Client Registration** is now handled by the kagenti-operator's ClientRegistrationReconciler controller rather than an injected sidecar. This provides better security isolation by keeping Keycloak admin credentials in the operator namespace.
+**Keycloak Client Registration** is now handled by the rossoctl-operator's ClientRegistrationReconciler controller rather than an injected sidecar. This provides better security isolation by keeping Keycloak admin credentials in the operator namespace.
 
 **Planned consolidation** (tracked as a separate work item):
 
@@ -1125,7 +1125,7 @@ The current AuthBridge implementation injects three containers per pod:
 2. **Time to First Agent**: Time from `kubectl apply` of a labeled Deployment to a working agent with identity (target: <30s)
 3. **CR-Free Ratio**: Percentage of agents running with defaults only (no AgentRuntime CR) — higher is better
 4. **Configuration Change Latency**: Time from defaults/CR update to sidecar reconfiguration (target: seconds, not minutes — dependent on propagation mechanism)
-5. **Removal Impact**: Zero workload disruption when Kagenti is removed
+5. **Removal Impact**: Zero workload disruption when Rossoctl is removed
 
 ---
 
@@ -1148,4 +1148,4 @@ The current AuthBridge implementation injects three containers per pod:
 
 ---
 
-*Document consolidates proposals from Kagenti Team and Roland Huss, authored with assistance from Claude Opus 4.6.*
+*Document consolidates proposals from Rossoctl Team and Roland Huss, authored with assistance from Claude Opus 4.6.*

@@ -14,23 +14,23 @@
 
 | File | Change |
 |------|--------|
-| `kagenti/ui-v2/src/utils/validation.ts` | Add `isValidUrl` helper |
-| `kagenti/ui-v2/src/utils/validation.test.ts` | Add tests for `isValidUrl` |
-| `kagenti/ui-v2/src/pages/ImportSkillPage.tsx` | New state, useEffect, combobox, auto-fill, error Alert |
+| `rossoctl/ui-v2/src/utils/validation.ts` | Add `isValidUrl` helper |
+| `rossoctl/ui-v2/src/utils/validation.test.ts` | Add tests for `isValidUrl` |
+| `rossoctl/ui-v2/src/pages/ImportSkillPage.tsx` | New state, useEffect, combobox, auto-fill, error Alert |
 
-All changes are in the `kagenti/ui-v2/` directory. Run all commands from there.
+All changes are in the `rossoctl/ui-v2/` directory. Run all commands from there.
 
 ---
 
 ### Task 1: `isValidUrl` utility
 
 **Files:**
-- Modify: `kagenti/ui-v2/src/utils/validation.ts`
-- Modify: `kagenti/ui-v2/src/utils/validation.test.ts`
+- Modify: `rossoctl/ui-v2/src/utils/validation.ts`
+- Modify: `rossoctl/ui-v2/src/utils/validation.test.ts`
 
 - [ ] **Step 1.1: Write the failing tests**
 
-Append to `kagenti/ui-v2/src/utils/validation.test.ts`:
+Append to `rossoctl/ui-v2/src/utils/validation.test.ts`:
 
 ```typescript
 describe('isValidUrl', () => {
@@ -75,7 +75,7 @@ Expected: error like `isValidUrl is not a function` or similar import failure.
 
 - [ ] **Step 1.3: Implement `isValidUrl` in `validation.ts`**
 
-Append to `kagenti/ui-v2/src/utils/validation.ts`:
+Append to `rossoctl/ui-v2/src/utils/validation.ts`:
 
 ```typescript
 /**
@@ -104,7 +104,7 @@ Expected: all `isValidUrl` tests pass, no regressions.
 - [ ] **Step 1.5: Commit**
 
 ```bash
-git add kagenti/ui-v2/src/utils/validation.ts kagenti/ui-v2/src/utils/validation.test.ts
+git add rossoctl/ui-v2/src/utils/validation.ts rossoctl/ui-v2/src/utils/validation.test.ts
 git commit -s -m "feat(ui): add isValidUrl helper to validation utilities"
 ```
 
@@ -113,7 +113,7 @@ git commit -s -m "feat(ui): add isValidUrl helper to validation utilities"
 ### Task 2: State, type, auto-fetch effect, and error Alert in ImportSkillPage
 
 **Files:**
-- Modify: `kagenti/ui-v2/src/pages/ImportSkillPage.tsx`
+- Modify: `rossoctl/ui-v2/src/pages/ImportSkillPage.tsx`
 
 - [ ] **Step 2.1: Add `SkillberrySkill` interface and new state**
 
@@ -240,7 +240,7 @@ Expected: no errors. Fix any type errors before continuing.
 - [ ] **Step 2.6: Commit**
 
 ```bash
-git add kagenti/ui-v2/src/pages/ImportSkillPage.tsx
+git add rossoctl/ui-v2/src/pages/ImportSkillPage.tsx
 git commit -s -m "feat(ui): add skillberry skill list auto-fetch to ImportSkillPage"
 ```
 
@@ -249,7 +249,7 @@ git commit -s -m "feat(ui): add skillberry skill list auto-fetch to ImportSkillP
 ### Task 3: Replace TextInput with filterable combobox and wire auto-fill
 
 **Files:**
-- Modify: `kagenti/ui-v2/src/pages/ImportSkillPage.tsx`
+- Modify: `rossoctl/ui-v2/src/pages/ImportSkillPage.tsx`
 
 - [ ] **Step 3.1: Add new PF and icon imports**
 
@@ -445,7 +445,7 @@ Expected: no new errors. Fix any unused variable warnings.
 - [ ] **Step 3.7: Commit**
 
 ```bash
-git add kagenti/ui-v2/src/pages/ImportSkillPage.tsx
+git add rossoctl/ui-v2/src/pages/ImportSkillPage.tsx
 git commit -s -m "feat(ui): replace skill name text input with filterable combobox in From Registry tab
 
 - Auto-fetch GET /skills/ from skillberry-store when registry URL is valid
@@ -462,7 +462,7 @@ Assisted-By: Claude (Anthropic AI) <noreply@anthropic.com>"
 
 ## Manual Test Checklist
 
-After all tasks are committed, verify these scenarios with the running UI (`http://kagenti-ui.localtest.me:8080`):
+After all tasks are committed, verify these scenarios with the running UI (`http://rossoctl-ui.localtest.me:8080`):
 
 1. Open **Skills → Import Skill → From Registry** tab
 2. With skillberry-store running at `http://localhost:8000`:

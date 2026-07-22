@@ -41,6 +41,9 @@
 | kagenti-extensions | 0 | 1 | |
 | kagenti-operator | 2 | 0 | |
 | pi | 0 | 584 | |
+| rossoctl | 2 | 2 | |
+| rossoctl-operator | 2 | 0 | |
+| pi | 0 | 607 | |
 | serverless-harness | 0 | 1 | |
 
 ---

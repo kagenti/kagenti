@@ -1,7 +1,7 @@
 # GitHub Issue Demo
 
 > **This demo has moved.** The GitHub Issue Agent demo is now maintained in
-> [kagenti-extensions](https://github.com/kagenti/kagenti-extensions) with
+> [cortex](https://github.com/rossoctl/cortex) with
 > AuthBridge integration for zero-trust security.
 
 ## New Location
@@ -10,15 +10,15 @@ Choose your deployment method:
 
 | Guide | Description |
 |-------|-------------|
-| **[UI Deployment](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/github-issue/demo-ui.md)** | Import agent and tool via the Kagenti dashboard |
-| **[Manual Deployment](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/github-issue/demo-manual.md)** | Deploy everything via `kubectl` and YAML manifests |
+| **[UI Deployment](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/github-issue/demo-ui.md)** | Import agent and tool via the Rossoctl dashboard |
+| **[Manual Deployment](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/github-issue/demo-manual.md)** | Deploy everything via `kubectl` and YAML manifests |
 
 ## Why It Moved
 
-The original demo in this file used an older version of the Kagenti UI and did
-not include AuthBridge security features. The new demos in `kagenti-extensions`:
+The original demo in this file used an older version of the Rossoctl UI and did
+not include AuthBridge security features. The new demos in `cortex`:
 
-- Use the **current Kagenti UI** (Import Agent / Import Tool workflow)
+- Use the **current Rossoctl UI** (Import Agent / Import Tool workflow)
 - Add **AuthBridge inbound JWT validation** — requests are validated (signature,
   issuer, audience) before reaching the agent
 - Add **outbound token exchange** (RFC 8693) — when the agent calls the GitHub
@@ -38,5 +38,5 @@ to create fine-grained PAT tokens:
 
 ## All Available Demos
 
-See the [AuthBridge Demos Index](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/README.md)
+See the [AuthBridge Demos Index](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/README.md)
 for a complete list of demos with a recommended learning path.

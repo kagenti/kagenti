@@ -1,9 +1,9 @@
 ---
 name: repo:pr
-description: Kagenti PR format - title, summary, issue linking
+description: Rossoctl PR format - title, summary, issue linking
 ---
 
-# Kagenti PR Conventions
+# Rossoctl PR Conventions
 
 ## PR Title
 

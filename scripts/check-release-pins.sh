@@ -15,12 +15,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-CHARTS_DIR="$REPO_ROOT/charts/kagenti"
+CHARTS_DIR="$REPO_ROOT/charts/rossoctl"
 VALUES_FILE="$CHARTS_DIR/values.yaml"
 CHART_FILE="$CHARTS_DIR/Chart.yaml"
 TEMPLATES_DIR="$CHARTS_DIR/templates"
 
-DEPS_CHARTS_DIR="$REPO_ROOT/charts/kagenti-deps"
+DEPS_CHARTS_DIR="$REPO_ROOT/charts/rossoctl-deps"
 DEPS_VALUES_FILE="$DEPS_CHARTS_DIR/values.yaml"
 
 # ---------------------------------------------------------------------------
@@ -162,12 +162,12 @@ is_unpinned_version() {
 # ---------------------------------------------------------------------------
 
 if [[ ! -f "$VALUES_FILE" ]]; then
-    add_error "charts/kagenti/values.yaml" 0 "file not found"
+    add_error "charts/rossoctl/values.yaml" 0 "file not found"
 else
     matches=$(grep -Fn 'tag: latest' "$VALUES_FILE" || true)
 
     if [[ -z "$matches" ]]; then
-        add_ok "charts/kagenti/values.yaml" "no tag: latest found"
+        add_ok "charts/rossoctl/values.yaml" "no tag: latest found"
     else
         while IFS= read -r match; do
             if [[ -z "$match" ]]; then
@@ -175,7 +175,7 @@ else
             fi
 
             line_number="${match%%:*}"
-            add_error "charts/kagenti/values.yaml" "$line_number" "tag: latest"
+            add_error "charts/rossoctl/values.yaml" "$line_number" "tag: latest"
         done <<< "$matches"
     fi
 fi
@@ -188,12 +188,12 @@ fi
 # ---------------------------------------------------------------------------
 
 if [[ ! -d "$TEMPLATES_DIR" ]]; then
-    add_error "charts/kagenti/templates/" 0 "directory not found"
+    add_error "charts/rossoctl/templates/" 0 "directory not found"
 else
     matches=$(grep -rFn ':latest' "$TEMPLATES_DIR" || true)
 
     if [[ -z "$matches" ]]; then
-        add_ok "charts/kagenti/templates/" "no :latest found"
+        add_ok "charts/rossoctl/templates/" "no :latest found"
     else
         while IFS= read -r match; do
             if [[ -z "$match" ]]; then
@@ -206,7 +206,7 @@ else
             line_number="${rest%%:*}"
             filename=$(basename "$filepath")
 
-            add_error "charts/kagenti/templates/${filename}" "$line_number" ":latest"
+            add_error "charts/rossoctl/templates/${filename}" "$line_number" ":latest"
         done <<< "$matches"
     fi
 fi
@@ -319,7 +319,7 @@ parse_chart_dependencies_with_bash() {
 }
 
 if [[ ! -f "$CHART_FILE" ]]; then
-    add_error "charts/kagenti/Chart.yaml" 0 "file not found"
+    add_error "charts/rossoctl/Chart.yaml" 0 "file not found"
 else
     if command -v yq >/dev/null 2>&1; then
         dep_entries=$(parse_chart_dependencies_with_yq || true)
@@ -344,13 +344,13 @@ else
                     issue="unpinned dependency version: ${version}"
                 fi
 
-                add_error "charts/kagenti/Chart.yaml" "${line_number:-0}" "$issue"
+                add_error "charts/rossoctl/Chart.yaml" "${line_number:-0}" "$issue"
             fi
         done <<< "$dep_entries"
     fi
 
     if [[ "$deps_ok" == "true" ]]; then
-        add_ok "charts/kagenti/Chart.yaml" "all dependency versions pinned"
+        add_ok "charts/rossoctl/Chart.yaml" "all dependency versions pinned"
     fi
 fi
 
@@ -364,7 +364,7 @@ fi
 
 if [[ -f "$CHART_FILE" ]] && [[ -f "$VALUES_FILE" ]]; then
     if ! command -v yq >/dev/null 2>&1; then
-        add_warning "charts/kagenti/Chart.yaml" \
+        add_warning "charts/rossoctl/Chart.yaml" \
             "yq not found — skipping Chart.yaml version/appVersion consistency check"
     else
         chart_version=$(yq eval '.version' "$CHART_FILE" 2>/dev/null || echo "")
@@ -376,17 +376,17 @@ if [[ -f "$CHART_FILE" ]] && [[ -f "$VALUES_FILE" ]]; then
 
         if [[ -n "$platform_tag_stripped" ]] && [[ "$platform_tag_stripped" != "null" ]]; then
             if [[ "$chart_version" != "$platform_tag_stripped" ]]; then
-                add_error "charts/kagenti/Chart.yaml" 0 \
+                add_error "charts/rossoctl/Chart.yaml" 0 \
                     "version ($chart_version) does not match image tags ($platform_tag_stripped) — run scripts/pin-release-tags.sh"
             else
-                add_ok "charts/kagenti/Chart.yaml" "version ($chart_version) matches image tags"
+                add_ok "charts/rossoctl/Chart.yaml" "version ($chart_version) matches image tags"
             fi
 
             if [[ "$chart_app_version" != "$platform_tag_stripped" ]]; then
-                add_error "charts/kagenti/Chart.yaml" 0 \
+                add_error "charts/rossoctl/Chart.yaml" 0 \
                     "appVersion ($chart_app_version) does not match image tags ($platform_tag_stripped) — run scripts/pin-release-tags.sh"
             else
-                add_ok "charts/kagenti/Chart.yaml" "appVersion ($chart_app_version) matches image tags"
+                add_ok "charts/rossoctl/Chart.yaml" "appVersion ($chart_app_version) matches image tags"
             fi
         fi
     fi
@@ -397,23 +397,23 @@ fi
 # ---------------------------------------------------------------------------
 
 if [[ -f "$CHARTS_DIR/Chart.lock" ]]; then
-    add_ok "charts/kagenti/Chart.lock" "present"
+    add_ok "charts/rossoctl/Chart.lock" "present"
 else
-    add_warning "charts/kagenti/Chart.lock" \
+    add_warning "charts/rossoctl/Chart.lock" \
         "not found — run helm dependency update if you have local dependencies"
 fi
 
 # ---------------------------------------------------------------------------
-# Check 5: No "tag: latest" in kagenti-deps values.yaml
+# Check 5: No "tag: latest" in rossoctl-deps values.yaml
 # ---------------------------------------------------------------------------
 
 if [[ ! -f "$DEPS_VALUES_FILE" ]]; then
-    add_warning "charts/kagenti-deps/values.yaml" "file not found (skipping)"
+    add_warning "charts/rossoctl-deps/values.yaml" "file not found (skipping)"
 else
     matches=$(grep -Fn 'tag: latest' "$DEPS_VALUES_FILE" || true)
 
     if [[ -z "$matches" ]]; then
-        add_ok "charts/kagenti-deps/values.yaml" "no tag: latest found"
+        add_ok "charts/rossoctl-deps/values.yaml" "no tag: latest found"
     else
         while IFS= read -r match; do
             if [[ -z "$match" ]]; then
@@ -421,21 +421,21 @@ else
             fi
 
             line_number="${match%%:*}"
-            add_error "charts/kagenti-deps/values.yaml" "$line_number" "tag: latest"
+            add_error "charts/rossoctl-deps/values.yaml" "$line_number" "tag: latest"
         done <<< "$matches"
     fi
 fi
 
 # ---------------------------------------------------------------------------
-# Check 6: kagenti-deps images built by this repo are pinned consistently
+# Check 6: rossoctl-deps images built by this repo are pinned consistently
 #
-# The spiffe-idp-setup image lives in kagenti-deps but is built by this repo.
+# The spiffe-idp-setup image lives in rossoctl-deps but is built by this repo.
 # Its tag must not drift from the main chart's platform image tags.
 # ---------------------------------------------------------------------------
 
 if [[ -f "$DEPS_VALUES_FILE" ]]; then
     if ! command -v yq >/dev/null 2>&1; then
-        add_warning "charts/kagenti-deps/values.yaml" \
+        add_warning "charts/rossoctl-deps/values.yaml" \
             "yq not found — skipping spiffeIdp tag consistency check"
     else
         spiffe_tag=$(yq eval '.spiffeIdp.image.tag' "$DEPS_VALUES_FILE" 2>/dev/null || echo "")
@@ -446,10 +446,10 @@ if [[ -f "$DEPS_VALUES_FILE" ]]; then
 
             if [[ -n "$platform_tag" ]] && [[ "$platform_tag" != "null" ]] \
                && [[ "$spiffe_tag" != "$platform_tag" ]]; then
-                add_error "charts/kagenti-deps/values.yaml" 0 \
+                add_error "charts/rossoctl-deps/values.yaml" 0 \
                     "spiffeIdp.image.tag ($spiffe_tag) differs from platform tag ($platform_tag) — run scripts/pin-release-tags.sh"
             else
-                add_ok "charts/kagenti-deps/values.yaml" \
+                add_ok "charts/rossoctl-deps/values.yaml" \
                     "spiffeIdp.image.tag ($spiffe_tag) consistent with platform"
             fi
         fi

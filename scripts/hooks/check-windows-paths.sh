@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pre-commit hook: warn about Windows-incompatible filenames
 #
-# Kagenti uses colons in skill folder names (e.g., .claude/skills/auth:keycloak-confidential-client/).
+# Rossoctl uses colons in skill folder names (e.g., .claude/skills/auth:keycloak-confidential-client/).
 # These are valid on Linux/macOS but not on native Windows filesystems.
 # Windows users must use WSL — see docs/developer/windows-wsl-setup.md
 

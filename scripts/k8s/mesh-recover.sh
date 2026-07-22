@@ -5,10 +5,10 @@
 # and never re-fetch, so every gateway-routed service returns HTTP 503.
 #
 # This is the classic "long-running / suspended dev Kind cluster" failure
-# (kagenti/kagenti#1899): a host suspend expires the istiod-issued workload
+# (rossoctl/rossoctl#1899): a host suspend expires the istiod-issued workload
 # certs, the Ambient data plane keeps serving them, and all *.localtest.me URLs
 # 503 while every pod still looks Running. The durable fix is upstream
-# (istio/ztunnel#1679); this script is the kagenti-side detect + recover
+# (istio/ztunnel#1679); this script is the rossoctl-side detect + recover
 # mitigation for dev/Kind clusters.
 #
 # Read-only by default: it DETECTS and prints the recommended recovery
@@ -19,7 +19,7 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Logging + command wrapper (self-contained; mirrors scripts/kind/setup-kagenti.sh
+# Logging + command wrapper (self-contained; mirrors scripts/kind/setup-rossoctl.sh
 # so this file can be dropped into a container unchanged by the follow-up
 # CronJob remediator — no external lib sourcing).
 # ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ log_warn()    { if $JSON; then echo "⚠ $1" >&2; else echo "${YELLOW}⚠${NC} $
 log_error()   { echo "${RED}✗${NC} $1" >&2; }
 PROBE_HOST=""
 GATEWAY_URL="${GATEWAY_URL:-http://127.0.0.1:8080}"
-GW_NS="kagenti-system"
+GW_NS="rossoctl-system"
 TIMEOUT=5
 
 usage() {
@@ -55,7 +55,7 @@ Usage: mesh-recover.sh [--fix] [--include-spire] [--probe-host HOST]
   --include-spire  Also check (and with --fix, restart) the SPIRE agent. This is a
                    SEPARATE failure domain (AuthBridge/token-exchange identity), not
                    the cause of the mesh 503 — off by default.
-  --probe-host H   Host header to probe (e.g. kagenti-ui.localtest.me). Default:
+  --probe-host H   Host header to probe (e.g. rossoctl-ui.localtest.me). Default:
                    auto-discovered from the http Gateway's routes.
   --gateway-url U  Gateway base URL to curl. Default: http://127.0.0.1:8080
                    (the Kind port-map; env GATEWAY_URL also honored).
@@ -123,15 +123,15 @@ discover_probe_host() {
   # Pick a BACKEND-DEPENDENT route: some routes (e.g. kiali) redirect (302) at the
   # gateway edge before the ztunnel->backend mTLS hop, so they stay 302 even during
   # a mesh outage and would give a false-healthy. Prefer the platform UI/API routes
-  # in kagenti-system, which return a backend response (200) and flip to 503 when the
+  # in rossoctl-system, which return a backend response (200) and flip to 503 when the
   # mesh is broken.
   [[ -n "$PROBE_HOST" ]] && { echo "$PROBE_HOST"; return; }
   local h
   h=$(kubectl get httproute -n "$GW_NS" -o jsonpath='{range .items[*]}{.spec.hostnames[0]}{"\n"}{end}' 2>/dev/null \
-      | grep -m1 -E 'kagenti-ui|kagenti-api' || true)
+      | grep -m1 -E 'rossoctl-ui|rossoctl-api' || true)
   [[ -z "$h" ]] && h=$(kubectl get httproute -n "$GW_NS" -o jsonpath='{.items[0].spec.hostnames[0]}' 2>/dev/null || true)
   [[ -z "$h" ]] && h=$(kubectl get httproute -A -o jsonpath='{range .items[*]}{.spec.hostnames[0]}{"\n"}{end}' 2>/dev/null | grep -m1 'localtest.me' || true)
-  echo "${h:-kagenti-ui.localtest.me}"
+  echo "${h:-rossoctl-ui.localtest.me}"
 }
 
 # ---------------------------------------------------------------------------

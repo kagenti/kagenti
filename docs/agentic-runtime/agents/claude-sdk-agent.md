@@ -55,7 +55,7 @@ Same as adk-agent (docker build + kind load, or OCP binary build).
 | Skill execution | **Via prompt** | Skill markdown injected into system prompt |
 | HITL approval | L0 | OPA policy mounted, not enforced |
 
-## 6. Kagenti Integration
+## 6. Rossoctl Integration
 
 ### 6.1 Communication Adapter
 A2A JSON-RPC (already implemented).
@@ -65,7 +65,7 @@ None — stateless. Backend stores turns in PostgreSQL.
 
 ### 6.3 Observable Events
 
-| Event | Source | Kagenti UI Component | Phase |
+| Event | Source | Rossoctl UI Component | Phase |
 |-------|--------|---------------------|-------|
 | LLM response | A2A response artifacts | AgentChat | Current |
 | Error (LLM unavailable) | Generic error message | AgentChat | Current |
@@ -148,6 +148,6 @@ kill %1
 
 | Model | Supported | Notes |
 |-------|-----------|-------|
-| Mode 1: Kagenti Deployment | **Current** | Standard Deployment + Service |
+| Mode 1: Rossoctl Deployment | **Current** | Standard Deployment + Service |
 | Mode 1 + Supervisor | Possible | Would enable OPA enforcement |
 | Mode 2: Sandbox CR | Not applicable | Custom code, not a CLI agent |

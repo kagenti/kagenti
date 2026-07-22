@@ -1,6 +1,6 @@
-# Using Local Models with Kagenti
+# Using Local Models with Rossoctl
 
-Kagenti supports any OpenAI-compatible model backend. This guide covers using [Ollama](https://ollama.com/) to run LLM models locally, eliminating the need for an external API key.
+Rossoctl supports any OpenAI-compatible model backend. This guide covers using [Ollama](https://ollama.com/) to run LLM models locally, eliminating the need for an external API key.
 
 ## Table of Contents
 
@@ -15,7 +15,7 @@ Kagenti supports any OpenAI-compatible model backend. This guide covers using [O
 
 ## Overview
 
-Kagenti agents use three environment variables to configure their LLM backend:
+Rossoctl agents use three environment variables to configure their LLM backend:
 
 | Variable | Description | Example (Ollama) | Example (OpenAI) |
 |----------|-------------|------------------|-------------------|
@@ -23,11 +23,11 @@ Kagenti agents use three environment variables to configure their LLM backend:
 | `LLM_API_KEY` | API key | `dummy` (Ollama ignores this) | Your OpenAI API key |
 | `LLM_MODEL` | Model identifier | `qwen2.5:3b` | `gpt-4o-mini-2024-07-18` |
 
-When deploying agents through the Kagenti UI or TUI, you select an LLM preset (`ollama` or `openai`) that populates these values automatically. No code changes are needed to switch between backends.
+When deploying agents through the Rossoctl UI or TUI, you select an LLM preset (`ollama` or `openai`) that populates these values automatically. No code changes are needed to switch between backends.
 
 ## How It Works
 
-Kagenti provides two ways to configure LLM environment variables when deploying agents:
+Rossoctl provides two ways to configure LLM environment variables when deploying agents:
 
 - **UI (ui-v2)**: Import a `.env` file (e.g. `.env.openai` or `.env.ollama`) from GitHub, or manually add env vars in the deploy form.
 - **TUI**: Select the `openai` or `ollama` preset, which injects the appropriate env vars directly into the deployment spec.
@@ -82,7 +82,7 @@ Deploy Ollama as a Kubernetes Deployment within the cluster so agents can reach 
 1. **Create the Ollama Deployment:**
 
    ```bash
-   kubectl apply -n kagenti-system -f - <<'EOF'
+   kubectl apply -n rossoctl-system -f - <<'EOF'
    apiVersion: apps/v1
    kind: Deployment
    metadata:
@@ -134,13 +134,13 @@ Deploy Ollama as a Kubernetes Deployment within the cluster so agents can reach 
 2. **Pull a model inside the pod:**
 
    ```bash
-   kubectl exec -n kagenti-system deploy/ollama -- ollama pull qwen2.5:3b
+   kubectl exec -n rossoctl-system deploy/ollama -- ollama pull qwen2.5:3b
    ```
 
 3. **Configure the agent's `LLM_API_BASE`** to point to the in-cluster service. When deploying an agent via the UI or TUI, set `LLM_API_BASE` to:
 
    ```
-   http://ollama.kagenti-system.svc.cluster.local:11434/v1
+   http://ollama.rossoctl-system.svc.cluster.local:11434/v1
    ```
 
 ### Option 2: Use an External Ollama Server
@@ -175,16 +175,16 @@ For production OpenShift deployments, consider:
 The default `ollama` preset points to `http://host.docker.internal:11434/v1`, which works for Kind but not for OpenShift. When deploying agents on OpenShift, set `LLM_API_BASE` to the in-cluster Ollama service URL:
 
 ```
-http://ollama.kagenti-system.svc.cluster.local:11434/v1
+http://ollama.rossoctl-system.svc.cluster.local:11434/v1
 ```
 
-You can set this via the UI (add it as an env var when deploying the agent) or the TUI (use `--env LLM_API_BASE=http://ollama.kagenti-system.svc.cluster.local:11434/v1`).
+You can set this via the UI (add it as an env var when deploying the agent) or the TUI (use `--env LLM_API_BASE=http://ollama.rossoctl-system.svc.cluster.local:11434/v1`).
 
 ---
 
 ## Tested Models
 
-The following models have been tested with Kagenti agents:
+The following models have been tested with Rossoctl agents:
 
 ### Ollama Models
 

@@ -88,7 +88,7 @@
       "Resource": "*",
       "Condition": {
         "StringEquals": {
-          "ec2:ResourceTag/kagenti.io/managed-by": "${MANAGED_BY_TAG}"
+          "ec2:ResourceTag/rossoctl.io/managed-by": "${MANAGED_BY_TAG}"
         }
       }
     },
@@ -103,7 +103,7 @@
       "Resource": "*",
       "Condition": {
         "StringEquals": {
-          "ec2:ResourceTag/kagenti.io/managed-by": "${MANAGED_BY_TAG}"
+          "ec2:ResourceTag/rossoctl.io/managed-by": "${MANAGED_BY_TAG}"
         }
       }
     },
@@ -147,7 +147,7 @@
       "Resource": "*",
       "Condition": {
         "StringEquals": {
-          "elasticloadbalancing:ResourceTag/kagenti.io/managed-by": "${MANAGED_BY_TAG}"
+          "elasticloadbalancing:ResourceTag/rossoctl.io/managed-by": "${MANAGED_BY_TAG}"
         }
       }
     },

@@ -1,6 +1,6 @@
 # Cloud Native Agent Platform
 
-The Kagenti Cloud Native Agent Platform architecture is organized into multiple components that  support the integration of services and systems within a Kubernetes-based cloud native environment.
+The Rossoctl Cloud Native Agent Platform architecture is organized into multiple components that  support the integration of services and systems within a Kubernetes-based cloud native environment.
 
 ```mermaid
 %%{ init: {"themeVariables": { 'fontFamily': "Arial", 'primaryColor': '#1f77b4', 'edgeLabelBackground':'#ffffff'}} }%%
@@ -9,9 +9,9 @@ graph TB
   subgraph Kubernetes
     direction TB
     
-    subgraph kagenti-system ["kagenti-system Namespace"]
+    subgraph rossoctl-system ["rossoctl-system Namespace"]
       IngressGateway["Ingress Gateway"]
-      KagentiUI["Kagenti UI"]
+      RossoctlUI["Rossoctl UI"]
       Shipwright["Shipwright (Builds)"]
       Kiali["Kiali"]
     end
@@ -51,7 +51,7 @@ graph TB
   end
   
   style Kubernetes fill:#f9f9f9,stroke:#333,stroke-width:2px;
-  style kagenti-system fill:#f1f3f4,stroke:#888;
+  style rossoctl-system fill:#f1f3f4,stroke:#888;
   style gateway-system fill:#e8f4ea,stroke:#888;
   style spire-system fill:#fef3e8,stroke:#888;
   style default_namespace fill:#f1f3f4,stroke:#888;
@@ -78,7 +78,7 @@ graph TB
 ## Infrastructure
 
 - **Ingress Gateway**: serves as the entry point for routing external HTTP requests to internal services within the platform.
-It is deployed in the `kagenti-system` namespace.
+It is deployed in the `rossoctl-system` namespace.
 
 - **Istio Ambient Service Mesh**: Istio Ambient Service Mesh is the new data plane mode for Istio that implements a *service mesh* without sidecar proxies. Ambient Mesh achieves this by using a shared agent called a *Ztunnel* to connect and authenticate elements within the mesh. It also allows for L7 processing when needed by deploying additional *Waypoint* proxies per namespace, accessing the full range of Istio features. 
 
@@ -86,7 +86,7 @@ It is deployed in the `kagenti-system` namespace.
 
 - **Waypoint Egress Gateway**: manages external communication with outside services or networks, ensuring secure egress traffic from the mesh. A Waypoint is part of the Istio Ambient data plane and acts as a proxy enabling traffic management policies such as routing, load balancing, and retries. Egress gateways enable the implementation of policies for external tool calls, serving as a key enforcement point.
 
-- **Shipwright Build System**: [Shipwright](https://shipwright.io) is a cloud-native build framework for building container images directly in Kubernetes. Kagenti uses Shipwright to build both agents and MCP tools from source code. Shipwright supports multiple build strategies including `buildah` for external registries with TLS and `buildah-insecure-push` for internal registries without TLS verification.
+- **Shipwright Build System**: [Shipwright](https://shipwright.io) is a cloud-native build framework for building container images directly in Kubernetes. Rossoctl uses Shipwright to build both agents and MCP tools from source code. Shipwright supports multiple build strategies including `buildah` for external registries with TLS and `buildah-insecure-push` for internal registries without TLS verification.
 
 - **MCP Gateway**: The MCP Gateway provides a unified entry point for [Model Context Protocol (MCP)](https://modelcontextprotocol.io) servers and tools. Deployed in the `gateway-system` namespace, it acts as a routing layer that enables agents to discover and invoke MCP tools. The gateway uses Envoy as a proxy for request routing, load balancing, and authentication. Agents access MCP tools through the gateway using standard HTTP requests, which are then routed to the appropriate tool services.
 

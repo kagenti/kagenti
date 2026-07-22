@@ -1,13 +1,13 @@
 # Pending Questions and Investigation Paths
 
 > Back to [main doc](openshell-integration.md) |
-> Sources: [Paolo's integration proposal](https://github.com/kagenti/kagenti/pull/1300),
+> Sources: [Paolo's integration proposal](https://github.com/rossoctl/rossoctl/pull/1300),
 > PoC implementation (PR #1300), alignment analysis, codebase research
 
 ## Status Legend
 
 - **ANSWERED** — Our PoC has a concrete answer with evidence
-- **OPEN** — Needs discussion with OpenShell/Kagenti teams
+- **OPEN** — Needs discussion with OpenShell/Rossoctl teams
 - **INVESTIGATING** — Research in progress, partial answers
 - **BLOCKED** — Needs upstream OpenShell changes
 - **TESTED** — Covered by E2E tests with pass/skip status
@@ -18,7 +18,7 @@
 
 ### Q1.1: How do long-running A2A agents fit the OpenShell model?
 
-**Status:** ANSWERED — MVP design doc ([#1364](https://github.com/kagenti/kagenti/pull/1364)) defines 3 deployment tiers. PoC validated Tier 2 (supervised) and Tier 3 (plain). MVP adds gateway-per-tenant ([#1363](https://github.com/kagenti/kagenti/issues/1363)).
+**Status:** ANSWERED — MVP design doc ([#1364](https://github.com/rossoctl/rossoctl/pull/1364)) defines 3 deployment tiers. PoC validated Tier 2 (supervised) and Tier 3 (plain). MVP adds gateway-per-tenant ([#1363](https://github.com/rossoctl/rossoctl/issues/1363)).
 
 The goal is to use OpenShell for ALL agents — not just interactive CLI sandboxes.
 Custom A2A agents (ADK, Claude SDK, LangGraph) should get the same security
@@ -26,7 +26,7 @@ benefits (Landlock, seccomp, OPA egress, zero-secret credentials) as builtin
 sandbox agents.
 
 **Current PoC:** Two separate deployment models coexist:
-- Custom A2A agents → Kagenti Deployment (no supervisor, K8s Secrets for creds)
+- Custom A2A agents → Rossoctl Deployment (no supervisor, K8s Secrets for creds)
 - Builtin sandboxes → OpenShell Sandbox CR (supervisor, gateway creds)
 
 **Target architecture — 3 deployment tiers:**
@@ -63,7 +63,7 @@ The upgrade path to Tier 2/1 is additive — existing agents don't break.
 - Tier 2 (supervised A2A): `weather-agent-supervised` — all 12 enforcement tests pass
 - Tier 3 (plain deployment): All A2A connectivity, skill execution tests pass
 
-### Q1.2: How should the Kagenti UI expose sandbox sessions?
+### Q1.2: How should the Rossoctl UI expose sandbox sessions?
 
 **Status:** OPEN
 
@@ -76,15 +76,15 @@ The upgrade path to Tier 2/1 is additive — existing agents don't break.
 
 **Impact on tests:** None immediate. Phase 2 UI integration work.
 
-### Q1.3: How does `openshell sandbox sessions` interact with Kagenti session management?
+### Q1.3: How does `openshell sandbox sessions` interact with Rossoctl session management?
 
-**Status:** PARTIALLY ANSWERED — MVP uses per-gateway SQLite (design doc §3.1). Session persistence via dtach ([#1354](https://github.com/kagenti/kagenti/issues/1354)). Full Kagenti backend integration is beyond-MVP (design doc §10).
+**Status:** PARTIALLY ANSWERED — MVP uses per-gateway SQLite (design doc §3.1). Session persistence via dtach ([#1354](https://github.com/rossoctl/rossoctl/issues/1354)). Full Rossoctl backend integration is beyond-MVP (design doc §10).
 
-OpenShell gateway tracks sessions in its own DB (SQLite/Postgres). Kagenti backend
+OpenShell gateway tracks sessions in its own DB (SQLite/Postgres). Rossoctl backend
 has a separate session store in PostgreSQL. These are independent systems.
 
 **Candidates:**
-1. **Single session store:** Kagenti backend IS the session store. Gateway delegates via gRPC.
+1. **Single session store:** Rossoctl backend IS the session store. Gateway delegates via gRPC.
 2. **Dual stores with sync:** Both store sessions. A reconciliation loop syncs state.
 3. **Gateway sessions for SSH, backend sessions for A2A:** Each system owns its protocol.
 
@@ -130,12 +130,12 @@ However, we use `privileged: true` SCC, not the reduced capability set.
 
 **TODO:** Test with `allowPrivilegedContainer: false` + specific capabilities on OCP.
 
-### Q2.3: K8s Secrets (Kagenti) vs placeholder tokens (OpenShell)?
+### Q2.3: K8s Secrets (Rossoctl) vs placeholder tokens (OpenShell)?
 
-**Status:** ANSWERED — MVP uses Keycloak credentials driver ([#1355](https://github.com/kagenti/kagenti/issues/1355)) for OAuth2 client_credentials. Static API keys via OpenShell native provider store. K8s Secrets remain for Tier 3 agents. | **Related:** Q1.1 (3-tier model), Q8.1 (port bridge), Q8.3 (rearchitecture)
+**Status:** ANSWERED — MVP uses Keycloak credentials driver ([#1355](https://github.com/rossoctl/rossoctl/issues/1355)) for OAuth2 client_credentials. Static API keys via OpenShell native provider store. K8s Secrets remain for Tier 3 agents. | **Related:** Q1.1 (3-tier model), Q8.1 (port bridge), Q8.3 (rearchitecture)
 
 Two credential models exist:
-- **Kagenti:** API keys in K8s Secrets, injected via `secretKeyRef`
+- **Rossoctl:** API keys in K8s Secrets, injected via `secretKeyRef`
 - **OpenShell:** Placeholder tokens (`openshell:resolve:env:*`) resolved by supervisor proxy
 
 **Candidates:**
@@ -160,12 +160,12 @@ the supervised agent. Three tests: deny unauthorized, allow authorized, log deni
 
 ## 3. LLM Integration and Inference Routing
 
-### Q3.1: OpenShell inference router vs Kagenti LiteLLM — which is canonical?
+### Q3.1: OpenShell inference router vs Rossoctl LiteLLM — which is canonical?
 
 **Status:** OPEN | **Related:** Q8.2 (model validation), Q1.1 (tier determines routing)
 
 Both route LLM traffic. OpenShell's inference router strips credentials and injects
-backend keys. Kagenti's LiteLLM provides model routing, virtual keys, and budget tracking.
+backend keys. Rossoctl's LiteLLM provides model routing, virtual keys, and budget tracking.
 
 **Candidates:**
 1. **LiteLLM as backend for inference router:** OpenShell proxy routes to LiteLLM endpoint.
@@ -215,9 +215,9 @@ No A2A agent currently preserves context across requests. The ADK agent returns
 `contextId` but creates a new one per request (upstream ADK gap).
 
 **Candidates:**
-1. **Backend-managed context (recommended):** Kagenti backend stores history in PostgreSQL.
+1. **Backend-managed context (recommended):** Rossoctl backend stores history in PostgreSQL.
    Each turn, backend sends full history as part of the A2A request. Agent is stateless.
-   - Investigation: Implement in `kagenti/backend/app/services/session_db.py`
+   - Investigation: Implement in `rossoctl/backend/app/services/session_db.py`
    - Effort: Medium (backend code + A2A adapter)
 2. **Agent-side PVC session store:** Agent reads/writes session state to PVC.
    - Investigation: Add PVC to ADK/Claude SDK deployments, implement checkpoint/resume
@@ -256,10 +256,10 @@ The gateway's `ExecSandbox` RPC supports:
 - Timeout configuration
 - PTY support
 
-The Kagenti backend would call `ExecSandbox(command=["opencode", "--prompt", "..."])`
+The Rossoctl backend would call `ExecSandbox(command=["opencode", "--prompt", "..."])`
 to send a prompt to an OpenCode sandbox. Response is streamed back.
 
-**Hurdle:** No Kagenti backend adapter for ExecSandbox gRPC exists yet. Need to
+**Hurdle:** No Rossoctl backend adapter for ExecSandbox gRPC exists yet. Need to
 implement a gRPC client in the FastAPI backend that bridges A2A requests to
 ExecSandbox calls.
 
@@ -269,7 +269,7 @@ ExecSandbox calls.
 
 ## 5. Observability and Audit
 
-### Q5.1: How should supervisor events reach Kagenti's OTel pipeline?
+### Q5.1: How should supervisor events reach Rossoctl's OTel pipeline?
 
 **Status:** OPEN
 
@@ -281,44 +281,44 @@ Neither exports to OTLP.
 2. **Gateway OTLP exporter:** Gateway aggregates supervisor logs and exports via OTLP.
 3. **Sidecar collector:** OTel collector sidecar in sandbox pod scrapes supervisor logs.
 
-### Q5.2: How does Kagenti get LLM usage data from the supervisor proxy?
+### Q5.2: How does Rossoctl get LLM usage data from the supervisor proxy?
 
 **Status:** OPEN
 
 The supervisor's HTTP CONNECT proxy handles LLM egress but doesn't instrument
-token counts, latency, or cost. Kagenti tracks these via `LlmUsagePanel`.
+token counts, latency, or cost. Rossoctl tracks these via `LlmUsagePanel`.
 
 **Candidates:**
 1. **Proxy-level instrumentation:** Upstream — supervisor proxy emits OTLP spans with
    token counts extracted from HTTP response bodies.
 2. **Agent-side instrumentation:** Each agent SDK (ADK, Anthropic) emits its own spans.
    Already partially implemented in agent code.
-3. **LiteLLM tracking:** LiteLLM records all requests. Kagenti reads from LiteLLM's DB.
+3. **LiteLLM tracking:** LiteLLM records all requests. Rossoctl reads from LiteLLM's DB.
 
-### Q5.3: OCSF vs Kagenti event schema for audit trail?
+### Q5.3: OCSF vs Rossoctl event schema for audit trail?
 
 **Status:** OPEN
 
-OpenShell uses OCSF (Open Cybersecurity Schema Framework). Kagenti uses custom
+OpenShell uses OCSF (Open Cybersecurity Schema Framework). Rossoctl uses custom
 event schema stored in PostgreSQL.
 
 **Candidates:**
-1. **OCSF everywhere:** Kagenti adopts OCSF for audit events. More industry-standard.
-2. **Kagenti schema everywhere:** OpenShell exports events in Kagenti's format.
+1. **OCSF everywhere:** Rossoctl adopts OCSF for audit events. More industry-standard.
+2. **Rossoctl schema everywhere:** OpenShell exports events in Rossoctl's format.
 3. **Dual export:** Both formats via adapters. Most flexible, most complex.
 
 ---
 
 ## 6. Multi-Tenancy and Lifecycle
 
-### Q6.1: Should Kagenti operator manage per-tenant gateway lifecycle?
+### Q6.1: Should Rossoctl operator manage per-tenant gateway lifecycle?
 
 **Status:** OPEN
 
 The proposal recommends gateway-per-tenant (one gateway per team namespace).
 
 **Candidates:**
-1. **Operator-managed:** Kagenti operator creates gateway StatefulSet per namespace.
+1. **Operator-managed:** Rossoctl operator creates gateway StatefulSet per namespace.
    AgentRuntime CR triggers gateway provisioning.
 2. **Helm-per-team:** Each team onboarded via `helm install openshell-team-X`.
 3. **Shared gateway:** Single gateway with namespace-scoped RBAC (needs upstream multi-tenancy).
@@ -331,14 +331,14 @@ Orphaned PVCs and Sandbox CRs accumulate. No automatic cleanup exists.
 
 **Candidates:**
 1. **CronJob cleanup:** Per-namespace CronJob deletes sandboxes older than TTL.
-2. **Operator finalizers:** Kagenti operator adds finalizers to Sandbox CRs for cleanup.
+2. **Operator finalizers:** Rossoctl operator adds finalizers to Sandbox CRs for cleanup.
 3. **Gateway TTL:** Upstream — gateway auto-deletes sandboxes after configurable timeout.
 
 ### Q6.3: AgentTask CRD vs AgentRuntime CRD?
 
 **Status:** OPEN
 
-The proposal introduces AgentTask CRD for headless agents. Kagenti has AgentRuntime CRD.
+The proposal introduces AgentTask CRD for headless agents. Rossoctl has AgentRuntime CRD.
 
 **Recommendation:** Extend AgentRuntime CRD with a `mode: headless` field rather
 than creating a separate CRD. Avoids CRD proliferation.
@@ -387,13 +387,13 @@ has `OPENAI_API_KEY` + `OPENAI_BASE_URL` env vars set by the fulltest script.
 
 ### Q7.3: How to test context continuity without backend session store?
 
-**Status:** BLOCKED (needs Kagenti backend work) | **Related:** Q4.1 (architecture decision)
+**Status:** BLOCKED (needs Rossoctl backend work) | **Related:** Q4.1 (architecture decision)
 
 No agent preserves contextId across requests. The ADK agent creates a new contextId
 per request (upstream `to_a2a()` behavior).
 
 **Workaround options:**
-1. **Backend session store:** Kagenti backend reconstructs context from DB each turn.
+1. **Backend session store:** Rossoctl backend reconstructs context from DB each turn.
    This is the long-term solution (Phase 2).
 2. **Agent-side history in prompt:** Include prior conversation in each A2A request text.
    Quick hack: `a2a_send(url, f"Previous: {history}\n\nNew: {msg}")`.
@@ -514,12 +514,12 @@ Anthropic messages API format and validates `claude-*` model names.
 **Status:** INVESTIGATING
 
 [RFC 0001](https://github.com/NVIDIA/OpenShell/pull/836) introduces:
-- Pluggable compute drivers (Kagenti as driver)
+- Pluggable compute drivers (Rossoctl as driver)
 - Pluggable credential backends (K8s Secrets, Vault)
 - Composable subsystems (compute, credentials, identity, sandbox identity)
 
 This architecture would enable:
-- Kagenti-managed credential injection without supervisor netns issues
+- Rossoctl-managed credential injection without supervisor netns issues
 - Model routing through the credential subsystem
 - Custom compute drivers that don't create netns when not needed
 
@@ -541,7 +541,7 @@ Our tests create Sandbox CRs via kubectl which bypasses the gateway. Creating
 via gateway's `CreateSandbox` gRPC would give us credential injection for free.
 
 **Action items:**
-1. Port bridge sidecar: Kagenti contribution (no upstream changes needed)
+1. Port bridge sidecar: Rossoctl contribution (no upstream changes needed)
 2. Model rewriting: Use LiteLLM model aliases as workaround
 3. Sandbox creation: Use gateway `CreateSandbox` gRPC instead of kubectl
 
@@ -579,7 +579,7 @@ Sources: [OpenCode providers docs](https://opencode.ai/docs/providers),
 
 **Status:** OPEN (architecture decision) | **Related:** Q1.1 (tiers), Q2.3 (credential model)
 
-AuthBridge (Kagenti's [identity sidecar](../authbridge-combined-sidecar.md))
+AuthBridge (Rossoctl's [identity sidecar](../authbridge-combined-sidecar.md))
 and the OpenShell supervisor provide complementary security layers:
 - AuthBridge: inbound JWT validation, outbound token exchange, SPIFFE identity
 - Supervisor: Landlock, seccomp, netns, OPA egress filtering, credential injection
@@ -590,7 +590,7 @@ They cannot currently coexist because:
 3. Inbound traffic hits AuthBridge but can't reach the agent in the supervisor's netns
 4. Outbound credential injection conflicts: supervisor strips headers, AuthBridge injects tokens
 
-**Current PoC fix:** Supervised agents use `kagenti.io/inject: disabled` to
+**Current PoC fix:** Supervised agents use `rossoctl.io/inject: disabled` to
 prevent AuthBridge injection. This means supervised agents have no inbound
 JWT validation, no SPIFFE identity, and no outbound token exchange.
 
@@ -659,12 +659,12 @@ for the planned test matrix.
 
 **Status:** ANSWERED (2026-04-26 debugging)
 
-The Kagenti operator webhook (`0.2.0-alpha.24`) injects sidecars expecting
+The Rossoctl operator webhook (`0.2.0-alpha.24`) injects sidecars expecting
 `authbridge-unified-config` ConfigMap. Older clusters may have `authbridge-config`
 (different name). When the ConfigMap is missing, the `envoy-proxy` container
 crashes with `open /etc/authbridge/config.yaml: no such file or directory`.
 
-**Fix for supervised agents:** Use `kagenti.io/inject: disabled` label.
+**Fix for supervised agents:** Use `rossoctl.io/inject: disabled` label.
 **Fix for non-supervised agents:** Ensure the ConfigMap name matches the
-webhook version. The Kagenti Helm chart should create both ConfigMaps
+webhook version. The Rossoctl Helm chart should create both ConfigMaps
 or the webhook should detect which exists.

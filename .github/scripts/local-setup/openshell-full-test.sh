@@ -2,7 +2,7 @@
 #
 # OpenShell Full Test — Thin Orchestrator
 #
-# Deploys and tests OpenShell + Kagenti on Kind or HyperShift (OCP).
+# Deploys and tests OpenShell + Rossoctl on Kind or HyperShift (OCP).
 # Delegates all work to layered sub-scripts in scripts/openshell/.
 #
 # USAGE:
@@ -13,7 +13,7 @@
 #   ./.github/scripts/local-setup/openshell-full-test.sh --skip-cluster-create --skip-cluster-destroy
 #
 #   # HyperShift — create new cluster, deploy, test, keep cluster
-#   source .env.kagenti-hypershift-custom
+#   source .env.rossoctl-hypershift-custom
 #   ./.github/scripts/local-setup/openshell-full-test.sh --platform ocp --skip-cluster-destroy ostest
 #
 #   # HyperShift — iterate on existing cluster
@@ -24,13 +24,13 @@
 #   --platform kind|ocp     Platform (default: auto-detect from KUBECONFIG)
 #   --skip-cluster-create   Reuse existing cluster
 #   --skip-cluster-destroy  Keep cluster after test
-#   --skip-install          Skip Kagenti platform installation
+#   --skip-install          Skip Rossoctl platform installation
 #   --skip-images           Skip image builds (Phase 3)
 #   --skip-agents           Skip agent deployment within tenants
 #   --skip-test             Skip E2E test phase
 #   --sequential            Run tests sequentially (default: 4 parallel workers)
 #   --workers N             Number of parallel pytest workers (default: 4, 0=sequential)
-#   --cluster-name NAME     Kind cluster name (default: kagenti)
+#   --cluster-name NAME     Kind cluster name (default: rossoctl)
 #   [positional]            HyperShift cluster suffix (e.g., "ostest")
 #
 
@@ -50,9 +50,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${GITHUB_WORKSPACE:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
 
 # ── Defaults ──────────────────────────────────────────────────────
-KAGENTI_ENV="openshell"
+ROSSOCTL_ENV="openshell"
 PLATFORM=""
-CLUSTER_NAME="${CLUSTER_NAME:-kagenti}"
+CLUSTER_NAME="${CLUSTER_NAME:-rossoctl}"
 CLUSTER_SUFFIX=""
 SKIP_CREATE=false
 SKIP_DESTROY=false
@@ -127,7 +127,7 @@ fi
 export PLATFORM
 
 # ── HyperShift-specific setup ───────────────────────────────────
-MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+MANAGED_BY_TAG="${MANAGED_BY_TAG:-rossoctl-hypershift-custom}"
 
 if [ "$PLATFORM" = "ocp" ]; then
     if [ -z "$CLUSTER_SUFFIX" ]; then
@@ -181,12 +181,12 @@ if [ "$PLATFORM" = "ocp" ]; then
 else
     echo "  Cluster:   $CLUSTER_NAME (Kind)"
 fi
-echo "  Env:       $KAGENTI_ENV"
+echo "  Env:       $ROSSOCTL_ENV"
 echo "  Helm:      $(helm version --short 2>/dev/null)"
 echo "  LLM:       $([ "$MAAS_SOURCED" = "true" ] && echo "available" || echo "none")"
 echo "  Phases:"
 echo "    1. cluster-create:  $([ "$SKIP_CREATE"  = "true" ] && echo SKIP || echo RUN)"
-echo "    2. kagenti-install: $([ "$SKIP_INSTALL" = "true" ] && echo SKIP || echo RUN)"
+echo "    2. rossoctl-install: $([ "$SKIP_INSTALL" = "true" ] && echo SKIP || echo RUN)"
 echo "    3. build-images:    $([ "$SKIP_IMAGES"  = "true" ] && echo SKIP || echo RUN)"
 echo "    4. deploy-shared:   RUN"
 echo "    5. deploy-tenants:  RUN (agents: $([ "$SKIP_AGENTS" = "true" ] && echo SKIP || echo RUN))"
@@ -210,7 +210,7 @@ if [ "$SKIP_CREATE" = "false" ]; then
         CLUSTER_NAME="$CLUSTER_NAME" ./.github/scripts/kind/create-cluster.sh
     else
         log_phase "PHASE 1: Create HyperShift Cluster"
-        export KUBECONFIG="${MGMT_KUBECONFIG:-$HOME/.kube/kagenti-team-mgmt.kubeconfig}"
+        export KUBECONFIG="${MGMT_KUBECONFIG:-$HOME/.kube/rossoctl-team-mgmt.kubeconfig}"
 
         # Clean up stale cluster from cancelled/failed CI runs
         if [ -n "${HCP_CLUSTER_NAME:-}" ]; then
@@ -248,18 +248,18 @@ if [ "$PLATFORM" = "ocp" ] && [ "$SKIP_IMAGES" = "false" ]; then
 fi
 
 # ============================================================================
-# PHASE 2: Install Kagenti Platform
+# PHASE 2: Install Rossoctl Platform
 # ============================================================================
 if [ "$SKIP_INSTALL" = "false" ]; then
-    log_phase "PHASE 2: Install Kagenti Platform (OpenShell profile)"
+    log_phase "PHASE 2: Install Rossoctl Platform (OpenShell profile)"
 
     if [ "$PLATFORM" = "ocp" ]; then
-        # OCP: Use the Helm-based installer (scripts/ocp/setup-kagenti.sh)
+        # OCP: Use the Helm-based installer (scripts/ocp/setup-rossoctl.sh)
         # This handles cert-manager, Keycloak, SPIRE, Istio, and the operator.
         # Skip UI/MLflow/MCP Gateway for OpenShell PoC.
         log_step "Running Helm-based OCP installer..."
-        "$REPO_ROOT/scripts/ocp/setup-kagenti.sh" \
-            --kagenti-repo "$REPO_ROOT" \
+        "$REPO_ROOT/scripts/ocp/setup-rossoctl.sh" \
+            --rossoctl-repo "$REPO_ROOT" \
             --skip-ui \
             --skip-mlflow \
             --skip-mcp-gateway \
@@ -269,18 +269,18 @@ if [ "$SKIP_INSTALL" = "false" ]; then
         log_step "Creating secrets..."
         ./.github/scripts/common/20-create-secrets.sh
 
-        log_step "Running platform installer (--env $KAGENTI_ENV)..."
-        ./.github/scripts/kagenti-operator/30-run-installer.sh --env "$KAGENTI_ENV"
+        log_step "Running platform installer (--env $ROSSOCTL_ENV)..."
+        ./.github/scripts/operator/30-run-installer.sh --env "$ROSSOCTL_ENV"
         ./.github/scripts/common/40-wait-platform-ready.sh
         ./.github/scripts/common/70-configure-dockerhost.sh
     fi
 
-    log_step "Waiting for Kagenti Operator CRDs..."
-    kubectl wait --for=condition=established crd/agentruntimes.agent.kagenti.dev --timeout=120s 2>/dev/null || {
+    log_step "Waiting for Rossoctl Operator CRDs..."
+    kubectl wait --for=condition=established crd/agentruntimes.agent.rossoctl.dev --timeout=120s 2>/dev/null || {
         log_warn "AgentRuntime CRD not found — continuing."
     }
 else
-    log_phase "PHASE 2: Skipping Kagenti Installation"
+    log_phase "PHASE 2: Skipping Rossoctl Installation"
 fi
 
 # ============================================================================
@@ -367,7 +367,7 @@ if [ "$SKIP_TEST" = "false" ]; then
         log_step "Loaded openshell test user credentials from K8s secret"
     fi
 
-    export KAGENTI_CONFIG_FILE="deployments/envs/dev_values_openshell.yaml"
+    export ROSSOCTL_CONFIG_FILE="deployments/envs/dev_values_openshell.yaml"
     export OPENSHELL_GATEWAY_NAMESPACE="team1"
 
     if [ "$MAAS_SOURCED" = "true" ]; then
@@ -376,11 +376,11 @@ if [ "$SKIP_TEST" = "false" ]; then
         log_step "LLM tests enabled (models: $OPENSHELL_LLM_MODELS)"
     fi
 
-    # Enable backend API tests if kagenti-backend is deployed and available
-    if kubectl get deploy kagenti-backend -n team1 &>/dev/null; then
-        if kubectl wait --for=condition=Available deploy/kagenti-backend -n team1 --timeout=60s &>/dev/null; then
+    # Enable backend API tests if rossoctl-backend is deployed and available
+    if kubectl get deploy rossoctl-backend -n team1 &>/dev/null; then
+        if kubectl wait --for=condition=Available deploy/rossoctl-backend -n team1 --timeout=60s &>/dev/null; then
             export OPENSHELL_BACKEND_AVAILABLE=true
-            log_step "Backend API tests enabled (kagenti-backend ready)"
+            log_step "Backend API tests enabled (rossoctl-backend ready)"
         fi
     fi
 
@@ -393,7 +393,7 @@ if [ "$SKIP_TEST" = "false" ]; then
         fi
     fi
 
-    TEST_DIR="kagenti/tests/e2e/openshell"
+    TEST_DIR="rossoctl/tests/e2e/openshell"
     if [ -d "$TEST_DIR" ]; then
         PYTEST_ARGS=(-v --timeout=300)
         if [ "$PYTEST_WORKERS" -gt 0 ] 2>/dev/null; then
@@ -424,7 +424,7 @@ if [ "$SKIP_DESTROY" = "false" ]; then
         CLUSTER_NAME="$CLUSTER_NAME" ./.github/scripts/kind/destroy-cluster.sh
     else
         log_phase "PHASE 7: Destroy HyperShift Cluster"
-        export KUBECONFIG="${MGMT_KUBECONFIG:-$HOME/.kube/kagenti-team-mgmt.kubeconfig}"
+        export KUBECONFIG="${MGMT_KUBECONFIG:-$HOME/.kube/rossoctl-team-mgmt.kubeconfig}"
         ./.github/scripts/hypershift/destroy-cluster.sh "$CLUSTER_SUFFIX"
     fi
 else

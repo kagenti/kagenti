@@ -7,7 +7,7 @@ control injection, and how to switch modes.
 
 ```bash
 # List container names in the running pod
-kubectl get pods -n team1 -l kagenti.io/type=agent \
+kubectl get pods -n team1 -l rossoctl.io/type=agent \
   -o jsonpath='{range .items[*]}{.metadata.name}{" → "}{.spec.containers[*].name}{"\n"}{end}'
 
 # Or for a specific deployment
@@ -32,20 +32,20 @@ kubectl get pods -n team1 -l app=weather-service \
 > goroutine inside AuthBridge itself for compatibility with external file readers
 > — not by a separate binary. SPIRE integration is enabled or disabled via the
 > `SPIRE_ENABLED` env var, which the operator sets per workload based on the
-> `kagenti.io/spiffe-helper-inject` label.
+> `rossoctl.io/spiffe-helper-inject` label.
 
 ## Label vocabulary
 
 Labels are set on the **pod template** (e.g. `Deployment.spec.template.metadata.labels`).
-The operator applies `kagenti.io/type` automatically via the AgentRuntime reconciler —
+The operator applies `rossoctl.io/type` automatically via the AgentRuntime reconciler —
 you normally do not need to set it yourself.
 
 ### Pre-filter labels (control whether injection runs at all)
 
 | Label | Values | Behavior |
 |---|---|---|
-| `kagenti.io/type` | `agent` \| `tool` | **Required for injection.** Only `agent` and `tool` workloads are mutated. Set automatically by the operator. |
-| `kagenti.io/inject` | `disabled` | Set to `disabled` to opt this workload out of all sidecar injection. Any other value (or absent) allows injection. |
+| `rossoctl.io/type` | `agent` \| `tool` | **Required for injection.** Only `agent` and `tool` workloads are mutated. Set automatically by the operator. |
+| `rossoctl.io/inject` | `disabled` | Set to `disabled` to opt this workload out of all sidecar injection. Any other value (or absent) allows injection. |
 
 ### Per-sidecar opt-out labels
 
@@ -53,14 +53,14 @@ These let you disable a specific sidecar while leaving others active.
 
 | Label | Default | Set to `false` to… |
 |---|---|---|
-| `kagenti.io/envoy-proxy-inject` | inject (when feature gate is on) | Disable the `envoy-proxy` sidecar (envoy-sidecar mode only) |
-| `kagenti.io/spiffe-helper-inject` | inject (enabled) | Suppress SPIRE — sets `SPIRE_ENABLED=false` on the sidecar, preventing the go-spiffe workload API source from being opened |
+| `rossoctl.io/envoy-proxy-inject` | inject (when feature gate is on) | Disable the `envoy-proxy` sidecar (envoy-sidecar mode only) |
+| `rossoctl.io/spiffe-helper-inject` | inject (enabled) | Suppress SPIRE — sets `SPIRE_ENABLED=false` on the sidecar, preventing the go-spiffe workload API source from being opened |
 
 ### Deprecated label
 
 | Annotation | Status | Replacement |
 |---|---|---|
-| `kagenti.io/authbridge-mode` | **Deprecated** — still honored | Set `mode:` in the namespace `authbridge-runtime-config` ConfigMap |
+| `rossoctl.io/authbridge-mode` | **Deprecated** — still honored | Set `mode:` in the namespace `authbridge-runtime-config` ConfigMap |
 
 ### Examples
 
@@ -68,17 +68,17 @@ These let you disable a specific sidecar while leaving others active.
 # Opt this workload out of all injection
 metadata:
   labels:
-    kagenti.io/inject: "disabled"
+    rossoctl.io/inject: "disabled"
 
 # Keep injection but disable SPIRE
 metadata:
   labels:
-    kagenti.io/spiffe-helper-inject: "false"
+    rossoctl.io/spiffe-helper-inject: "false"
 
 # Disable the envoy-proxy sidecar in envoy-sidecar mode
 metadata:
   labels:
-    kagenti.io/envoy-proxy-inject: "false"
+    rossoctl.io/envoy-proxy-inject: "false"
 ```
 
 ## How to switch modes
@@ -86,7 +86,7 @@ metadata:
 Mode is resolved by the **mutating webhook** from this chain (first non-empty wins):
 
 1. `mode:` field in the namespace-level `authbridge-runtime-config` ConfigMap
-2. `kagenti.io/authbridge-mode` pod annotation *(deprecated — still honored)*
+2. `rossoctl.io/authbridge-mode` pod annotation *(deprecated — still honored)*
 3. Cluster-wide default: `proxy-sidecar`
 
 > **Note on `AgentRuntime.Spec.AuthBridgeMode`:** This field exists on the CRD and is
@@ -110,32 +110,32 @@ data:
 ### Verify the resolved mode
 
 ```bash
-kubectl logs -n kagenti-system deploy/kagenti-operator \
+kubectl logs -n rossoctl-system deploy/operator \
   | grep "resolved authbridge mode"
 ```
 
 ## Cluster-admin feature gates
 
-Feature gates are loaded from the `kagenti-feature-gates` ConfigMap in the
+Feature gates are loaded from the `rossoctl-feature-gates` ConfigMap in the
 operator's namespace and take effect immediately (no restart needed).
 
 | Gate | Default | Controls |
 |---|---|---|
 | `globalEnabled` | `true` | Master kill switch — set to `false` to disable all sidecar injection cluster-wide |
 | `envoyProxy` | `true` | Whether the `envoy-proxy` sidecar is injected (envoy-sidecar mode) |
-| `injectTools` | `false` | Whether `kagenti.io/type=tool` workloads receive injection (agents are always injected) |
+| `injectTools` | `false` | Whether `rossoctl.io/type=tool` workloads receive injection (agents are always injected) |
 | `perWorkloadConfigResolution` | `false` | When `true`, webhook reads namespace ConfigMaps at admission time and injects literal env var values instead of `valueFrom` references |
 
-Source of truth: [`internal/webhook/config/feature_gates.go`](https://github.com/kagenti/kagenti-operator/blob/main/kagenti-operator/internal/webhook/config/feature_gates.go)
+Source of truth: [`internal/webhook/config/feature_gates.go`](https://github.com/rossoctl/operator/blob/main/operator/internal/webhook/config/feature_gates.go)
 
 ## Full injection decision flow
 
 ```
 Pod admitted by webhook
-  └─ kagenti.io/type ∈ {agent, tool}?  — No → skip
+  └─ rossoctl.io/type ∈ {agent, tool}?  — No → skip
        └─ globalEnabled=true?  — No → skip
             └─ type=tool and injectTools=false?  — Yes → skip
-                 └─ kagenti.io/inject=disabled?  — Yes → skip
+                 └─ rossoctl.io/inject=disabled?  — Yes → skip
                       └─ Resolve mode (namespace CM → annotation → default)
                            ├─ waypoint → skip (standalone deployment)
                            ├─ proxy-sidecar / lite
@@ -152,4 +152,4 @@ Pod admitted by webhook
 
 - [Deployment Guide](deployment-guide.md) — mode details, configuration, troubleshooting
 - [Security Model](security-model.md) — mTLS, SPIFFE identity, token exchange
-- [AuthBridge Architecture](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/README.md) — sequence diagrams, protocol details
+- [AuthBridge Architecture](https://github.com/rossoctl/cortex/blob/main/authbridge/README.md) — sequence diagrams, protocol details

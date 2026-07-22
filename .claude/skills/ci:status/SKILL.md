@@ -13,7 +13,7 @@ Check the current CI status for a PR and create task items for any failures.
 `gh run view --log-failed` and artifact downloads MUST redirect:
 
 ```bash
-export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-ci}"
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/rossoctl-ci}"
 mkdir -p "$LOG_DIR"
 
 # Small output OK inline:

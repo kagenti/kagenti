@@ -102,7 +102,7 @@ log_info "Step 1: Removing agent resources in namespace $TENANT..."
 
 if kubectl get namespace "$TENANT" &>/dev/null; then
   # Delete agent deployments (label matches deploy-tenant.sh)
-  AGENT_DEPLOYMENTS=$(kubectl get deployments -n "$TENANT" -l "kagenti.io/type=agent" -o name 2>/dev/null || true)
+  AGENT_DEPLOYMENTS=$(kubectl get deployments -n "$TENANT" -l "rossoctl.io/type=agent" -o name 2>/dev/null || true)
   if [[ -n "$AGENT_DEPLOYMENTS" ]]; then
     for dep in $AGENT_DEPLOYMENTS; do
       log_info "  Deleting $dep"
@@ -120,7 +120,7 @@ if kubectl get namespace "$TENANT" &>/dev/null; then
   fi
 
   # Delete skills configmap
-  run_cmd kubectl delete configmap kagenti-skills -n "$TENANT" --ignore-not-found
+  run_cmd kubectl delete configmap rossoctl-skills -n "$TENANT" --ignore-not-found
 
   # Delete openshell-supervisor ServiceAccount
   run_cmd kubectl delete serviceaccount openshell-supervisor -n "$TENANT" --ignore-not-found

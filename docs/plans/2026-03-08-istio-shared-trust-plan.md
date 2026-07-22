@@ -2,13 +2,13 @@
 
 > **[Historical — Ansible installer removed]** This plan contains references to the Ansible installer
 > (`deployments/ansible/`) which has been removed. The Helm chart now handles shared trust setup
-> directly, and OCP installs use `scripts/ocp/setup-kagenti.sh`.
+> directly, and OCP installs use `scripts/ocp/setup-rossoctl.sh`.
 
 <!-- markdownlint-disable-next-line MD028 -->
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Replace the Shared Trust Pattern workaround with proper cert-manager-based shared CA for dual Istio control planes (Kagenti + RHOAI).
+**Goal:** Replace the Shared Trust Pattern workaround with proper cert-manager-based shared CA for dual Istio control planes (Rossoctl + RHOAI).
 
 **Architecture:** cert-manager generates a shared root CA and intermediate certificates. A Helm template creates the cert-manager resources (ClusterIssuers, Certificates). An Ansible task transforms the cert-manager secrets into Istio's `cacerts` format and restarts both istiods. Both istiods auto-detect the shared CA, eliminating the ConfigMap race condition. [Note: Ansible installer removed; this logic is now in the Helm chart]
 
@@ -21,7 +21,7 @@
 ### Task 1: Create cert-manager Shared Trust Helm Template
 
 **Files:**
-- Create: `charts/kagenti-deps/templates/rhoai-shared-trust.yaml`
+- Create: `charts/rossoctl-deps/templates/rhoai-shared-trust.yaml`
 
 **Step 1: Create the Helm template**
 
@@ -32,7 +32,7 @@ This template creates cert-manager resources to generate a shared root CA and in
 {{- /*
   Istio Multi-Mesh Shared Trust via cert-manager
 
-  When RHOAI is installed alongside Kagenti, two Istio control planes exist
+  When RHOAI is installed alongside Rossoctl, two Istio control planes exist
   (default + openshift-gateway) with different self-signed CAs. This creates
   a shared root CA so both istiods trust each other's workload certificates.
 
@@ -50,7 +50,7 @@ kind: ClusterIssuer
 metadata:
   name: istio-mesh-root-selfsigned
   labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "rossoctl.labels" . | nindent 4 }}
 spec:
   selfSigned: {}
 ---
@@ -59,9 +59,9 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: istio-mesh-root-ca
-  namespace: {{ .Values.rhoai.trustNamespace | default "kagenti-system" }}
+  namespace: {{ .Values.rhoai.trustNamespace | default "rossoctl-system" }}
   labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "rossoctl.labels" . | nindent 4 }}
 spec:
   isCA: true
   commonName: istio-mesh-root-ca
@@ -81,19 +81,19 @@ kind: ClusterIssuer
 metadata:
   name: istio-mesh-ca
   labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "rossoctl.labels" . | nindent 4 }}
 spec:
   ca:
     secretName: istio-mesh-root-ca-secret
 ---
-# Step 4: Intermediate CA for Kagenti istiod (istio-system)
+# Step 4: Intermediate CA for Rossoctl istiod (istio-system)
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: istio-cacerts-default
   namespace: istio-system
   labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "rossoctl.labels" . | nindent 4 }}
 spec:
   isCA: true
   commonName: istio-ca-default
@@ -114,7 +114,7 @@ metadata:
   name: istio-cacerts-openshift-gateway
   namespace: openshift-ingress
   labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
+    {{- include "rossoctl.labels" . | nindent 4 }}
 spec:
   isCA: true
   commonName: istio-ca-openshift-gateway
@@ -133,7 +133,7 @@ spec:
 **Step 2: Commit**
 
 ```bash
-git add charts/kagenti-deps/templates/rhoai-shared-trust.yaml
+git add charts/rossoctl-deps/templates/rhoai-shared-trust.yaml
 git commit -s -m "feat: add cert-manager shared trust for dual Istio control planes"
 ```
 
@@ -144,7 +144,7 @@ git commit -s -m "feat: add cert-manager shared trust for dual Istio control pla
 > [Note: Ansible installer removed; this logic is now in the Helm chart]
 
 **Files:**
-- Modify: `deployments/ansible/roles/kagenti_installer/tasks/05_install_rhoai.yaml`
+- Modify: `deployments/ansible/roles/rossoctl_installer/tasks/05_install_rhoai.yaml`
 
 **Step 1: Add cacerts transformation after DSC ready**
 
@@ -162,14 +162,14 @@ Add after the DSC ready wait block, before the final `when: rhoai.enabled`:
     # Istio expects a secret named "cacerts" with keys ca-cert.pem/ca-key.pem/
     # root-cert.pem/cert-chain.pem. Transform and create.
 
-    - name: Wait for cert-manager to generate Kagenti intermediate CA
+    - name: Wait for cert-manager to generate Rossoctl intermediate CA
       command: >-
         kubectl get secret istio-cacerts-default-cert -n istio-system
         -o jsonpath='{.data.tls\.crt}'
-      register: kagenti_cacert_check
+      register: rossoctl_cacert_check
       retries: 30
       delay: 10
-      until: kagenti_cacert_check.rc == 0 and kagenti_cacert_check.stdout | length > 0
+      until: rossoctl_cacert_check.rc == 0 and rossoctl_cacert_check.stdout | length > 0
       changed_when: false
 
     - name: Wait for cert-manager to generate RHOAI intermediate CA
@@ -182,7 +182,7 @@ Add after the DSC ready wait block, before the final `when: rhoai.enabled`:
       until: rhoai_cacert_check.rc == 0 and rhoai_cacert_check.stdout | length > 0
       changed_when: false
 
-    - name: Create cacerts secret for Kagenti istiod (istio-system)
+    - name: Create cacerts secret for Rossoctl istiod (istio-system)
       shell: |
         # Read cert-manager generated certs
         CA_CERT=$(kubectl get secret istio-cacerts-default-cert -n istio-system -o jsonpath='{.data.tls\.crt}' | base64 -d)
@@ -218,15 +218,15 @@ Add after the DSC ready wait block, before the final `when: rhoai.enabled`:
       args:
         executable: /bin/bash
 
-    - name: Restart Kagenti istiod to pick up shared CA
+    - name: Restart Rossoctl istiod to pick up shared CA
       command: kubectl rollout restart deployment/istiod -n istio-system
-      register: kagenti_istiod_restart
+      register: rossoctl_istiod_restart
 
     - name: Restart RHOAI istiod to pick up shared CA
       command: kubectl rollout restart deployment/istiod-openshift-gateway -n openshift-ingress
       register: rhoai_istiod_restart
 
-    - name: Wait for Kagenti istiod rollout
+    - name: Wait for Rossoctl istiod rollout
       command: kubectl rollout status deployment/istiod -n istio-system --timeout=120s
 
     - name: Wait for RHOAI istiod rollout
@@ -234,7 +234,7 @@ Add after the DSC ready wait block, before the final `when: rhoai.enabled`:
 
     - name: Delete stale CA ConfigMaps to force recreation with shared CA
       shell: |
-        for ns in kagenti-system gateway-system team1 team2 keycloak mcp-system; do
+        for ns in rossoctl-system gateway-system team1 team2 keycloak mcp-system; do
           kubectl delete configmap istio-ca-root-cert -n $ns --ignore-not-found 2>/dev/null
         done
       args:
@@ -253,7 +253,7 @@ Add after the DSC ready wait block, before the final `when: rhoai.enabled`:
 **Step 2: Commit**
 
 ```bash
-git add deployments/ansible/roles/kagenti_installer/tasks/05_install_rhoai.yaml
+git add deployments/ansible/roles/rossoctl_installer/tasks/05_install_rhoai.yaml
 git commit -s -m "feat: transform cert-manager certs to Istio cacerts and restart istiods"
 ```
 
@@ -262,7 +262,7 @@ git commit -s -m "feat: transform cert-manager certs to Istio cacerts and restar
 ### Task 3: Remove Shared Trust Pattern Skip Condition
 
 **Files:**
-- Modify: `deployments/ansible/roles/kagenti_installer/tasks/main.yml`
+- Modify: `deployments/ansible/roles/rossoctl_installer/tasks/main.yml`
 
 **Step 1: Update the Shared Trust Pattern block**
 
@@ -272,7 +272,7 @@ The current condition is:
 ```yaml
   when:
     - enable_openshift | default(false)
-    - (charts['kagenti-deps']...).istio.enabled | bool
+    - (charts['rossoctl-deps']...).istio.enabled | bool
     - not (rhoai.enabled | default(false))
 ```
 
@@ -287,7 +287,7 @@ Find the comment starting with `# On OpenShift AI clusters (RHOAI 2.x)` and upda
 **Step 3: Commit**
 
 ```bash
-git add deployments/ansible/roles/kagenti_installer/tasks/main.yml
+git add deployments/ansible/roles/rossoctl_installer/tasks/main.yml
 git commit -s -m "docs: update Shared Trust Pattern comments to reference cert-manager solution"
 ```
 
@@ -296,7 +296,7 @@ git commit -s -m "docs: update Shared Trust Pattern comments to reference cert-m
 ### Task 4: Update E2E Tests for Shared Trust Validation
 
 **Files:**
-- Modify: `kagenti/tests/e2e/common/test_rhoai_integration.py`
+- Modify: `rossoctl/tests/e2e/common/test_rhoai_integration.py`
 
 **Step 1: Update the ztunnel test to also verify shared CA**
 
@@ -307,18 +307,18 @@ Add a test that verifies both istiods use the same root CA:
     def test_shared_root_ca(self, k8s_client):
         """Verify both Istio control planes share the same root CA."""
         # Read CA ConfigMaps from two different namespaces
-        cm_kagenti = k8s_client.read_namespaced_config_map(
+        cm_rossoctl = k8s_client.read_namespaced_config_map(
             name="istio-ca-root-cert",
-            namespace="kagenti-system",
+            namespace="rossoctl-system",
         )
         cm_gateway = k8s_client.read_namespaced_config_map(
             name="istio-ca-root-cert",
             namespace="gateway-system",
         )
-        kagenti_ca = cm_kagenti.data.get("root-cert.pem", "")
+        rossoctl_ca = cm_rossoctl.data.get("root-cert.pem", "")
         gateway_ca = cm_gateway.data.get("root-cert.pem", "")
-        assert kagenti_ca == gateway_ca, (
-            "Root CA mismatch between kagenti-system and gateway-system. "
+        assert rossoctl_ca == gateway_ca, (
+            "Root CA mismatch between rossoctl-system and gateway-system. "
             "Both Istio control planes should share the same root CA."
         )
 ```
@@ -326,7 +326,7 @@ Add a test that verifies both istiods use the same root CA:
 **Step 2: Commit**
 
 ```bash
-git add kagenti/tests/e2e/common/test_rhoai_integration.py
+git add rossoctl/tests/e2e/common/test_rhoai_integration.py
 git commit -s -m "test: add shared root CA verification for dual Istio control planes"
 ```
 
@@ -334,15 +334,15 @@ git commit -s -m "test: add shared root CA verification for dual Istio control p
 
 ### Task 5: Integration Test on HyperShift
 
-**Step 1: Deploy on kagenti-team-rho2 cluster**
+**Step 1: Deploy on rossoctl-team-rho2 cluster**
 
 ```bash
-cd /Users/ladas/Projects/OCTO/kagenti/kagenti
-source .env.kagenti-team
+cd /Users/ladas/Projects/OCTO/rossoctl/rossoctl
+source .env.rossoctl-team
 export PATH="/opt/homebrew/Cellar/helm@3/3.20.0/bin:$PATH"
-KUBECONFIG=~/clusters/hcp/kagenti-team-rho2/auth/kubeconfig \
+KUBECONFIG=~/clusters/hcp/rossoctl-team-rho2/auth/kubeconfig \
   .claude/worktrees/rhoai-integration/.github/scripts/local-setup/hypershift-full-test.sh rho2 \
-  --skip-cluster-create --skip-cluster-destroy --include-kagenti-install --include-test --env ocp
+  --skip-cluster-create --skip-cluster-destroy --include-rossoctl-install --include-test --env ocp
 ```
 
 **Step 2: Verify**

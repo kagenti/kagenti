@@ -1,4 +1,4 @@
-# Kagenti Agent Sandbox Template — with Squid Proxy Sidecar (Phase 2)
+# Rossoctl Agent Sandbox Template — with Squid Proxy Sidecar (Phase 2)
 #
 # Security layers:
 #   C16: read-only root, caps dropped, non-root, no SA token, seccomp
@@ -14,13 +14,13 @@
 apiVersion: extensions.agents.x-k8s.io/v1alpha1
 kind: SandboxTemplate
 metadata:
-  name: kagenti-agent-sandbox
+  name: rossoctl-agent-sandbox
   namespace: team1
 spec:
   podTemplate:
     metadata:
       labels:
-        app.kubernetes.io/part-of: kagenti
+        app.kubernetes.io/part-of: rossoctl
         app.kubernetes.io/component: agent-sandbox
     spec:
       automountServiceAccountToken: false

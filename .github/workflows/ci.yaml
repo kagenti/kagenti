@@ -60,14 +60,14 @@ jobs:
           }
 
       # Note: E2E tests are run in the e2e-kind.yaml and e2e-hypershift.yaml
-      # workflows which have full Kubernetes clusters with Kagenti deployed
+      # workflows which have full Kubernetes clusters with Rossoctl deployed
 
   backend-tests:
     runs-on: ubuntu-latest
 
     defaults:
       run:
-        working-directory: kagenti/backend
+        working-directory: rossoctl/backend
 
     steps:
       - name: Checkout repository
@@ -94,7 +94,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: backend-coverage
-          path: kagenti/backend/coverage.xml
+          path: rossoctl/backend/coverage.xml
           retention-days: 30
 
   tui:
@@ -103,7 +103,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: kagenti/tui
+        working-directory: rossoctl/tui
 
     steps:
       - name: Checkout repository
@@ -112,8 +112,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6
         with:
-          go-version-file: kagenti/tui/go.mod
-          cache-dependency-path: kagenti/tui/go.sum
+          go-version-file: rossoctl/tui/go.mod
+          cache-dependency-path: rossoctl/tui/go.sum
 
       - name: Run go vet
         run: go vet ./...
@@ -148,13 +148,13 @@ jobs:
 
       - name: Build chart dependencies
         run: |
-          helm dependency build charts/kagenti-deps
-          helm dependency build charts/kagenti
+          helm dependency build charts/rossoctl-deps
+          helm dependency build charts/rossoctl
 
       - name: Run chart unit tests
         run: |
-          helm unittest charts/kagenti-deps
-          helm unittest charts/kagenti
+          helm unittest charts/rossoctl-deps
+          helm unittest charts/rossoctl
 
       - name: Install kubeconform
         run: |
@@ -164,7 +164,7 @@ jobs:
 
       - name: Validate rendered templates with kubeconform
         run: |
-          helm template test charts/kagenti-deps \
+          helm template test charts/rossoctl-deps \
             --set openshift=false \
             --set components.spire.enabled=false \
             | kubeconform -strict -summary \

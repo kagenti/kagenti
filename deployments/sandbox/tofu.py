@@ -1,5 +1,5 @@
 """
-Kagenti TOFU (Trust On First Use) — Config file integrity verification (Phase 6, C4+C15)
+Rossoctl TOFU (Trust On First Use) — Config file integrity verification (Phase 6, C4+C15)
 
 On first sandbox creation, hashes CLAUDE.md, settings.json, and sources.json
 and stores them in a ConfigMap. On subsequent runs, verifies hashes match.
@@ -93,7 +93,7 @@ class TofuVerifier:
                         "name": self.configmap_name,
                         "namespace": self.namespace,
                         "labels": {
-                            "app.kubernetes.io/part-of": "kagenti",
+                            "app.kubernetes.io/part-of": "rossoctl",
                             "app.kubernetes.io/component": "tofu-store",
                         },
                     },

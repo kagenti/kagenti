@@ -1,6 +1,6 @@
 # Credential Security
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_T1_6_credential_security.py`
+> **Test file:** `rossoctl/tests/e2e/openshell/test_T1_6_credential_security.py`
 > **Tests:** 15 | **Pass:** 15 | **Skip:** 0 (Kind, fresh cluster)
 
 ## What This Tests
@@ -111,7 +111,7 @@ graph TB
 | Secret | Namespace | Key Name | Used By |
 |--------|-----------|----------|---------|
 | `litellm-virtual-keys` | `team1` | `api-key` | adk_agent, claude_sdk_agent |
-| `litellm-proxy-secret` | `kagenti-system` | `master-key` | LiteLLM proxy admin |
+| `litellm-proxy-secret` | `rossoctl-system` | `master-key` | LiteLLM proxy admin |
 
 ## Future Expansion
 

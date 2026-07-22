@@ -234,9 +234,9 @@ Date: <date>
 
 ### For multi-repo scans
 
-When scanning across repos (e.g., all kagenti org repos):
+When scanning across repos (e.g., all rossoctl org repos):
 
-1. Clone each repo to `/tmp/kagenti-scan/<repo-name>` with `--depth 1 --branch main`
+1. Clone each repo to `/tmp/rossoctl-scan/<repo-name>` with `--depth 1 --branch main`
 2. Run Phases 1-3 on each
 3. Add a "Cross-Repo Security Gaps" section comparing CI scanning, Dependabot, action pinning, secret detection across repos
 4. Separate findings by: upstream/main vs feature branches/worktrees

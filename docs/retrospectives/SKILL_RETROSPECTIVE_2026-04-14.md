@@ -42,14 +42,14 @@ upgrade), approved 6 low-risk PRs, and created the `github:dependabot` skill.
 
 | Action | Skills | Reason | Priority |
 |--------|--------|--------|----------|
-| Parameterize | All 7 hardcoded github skills | Use `$OWNER/$REPO` variables instead of `kagenti/kagenti` | High |
+| Parameterize | All 7 hardcoded github skills | Use `$OWNER/$REPO` variables instead of `rossoctl/rossoctl` | High |
 
 This is the single highest-impact improvement. 7 of 9 github skills hardcode
-`kagenti/kagenti`, making them unusable in other repos. The new
+`rossoctl/rossoctl`, making them unusable in other repos. The new
 `github:dependabot` skill already uses variables — the others should follow.
 
 **Approach**: Add a "Variables" section at the top of each skill (matching
-`github:dependabot` pattern), then find-replace `kagenti/kagenti` with
+`github:dependabot` pattern), then find-replace `rossoctl/rossoctl` with
 `$OWNER/$REPO` in all commands. For skills that reference repo-specific details
 (like namespace names or file paths), keep those as-is but add a note that they
 are repo-specific.

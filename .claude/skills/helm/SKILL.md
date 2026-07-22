@@ -1,11 +1,11 @@
 ---
 name: helm
-description: Helm chart development and debugging for Kagenti
+description: Helm chart development and debugging for Rossoctl
 ---
 
 # Helm Skills
 
-Helm chart management for the Kagenti platform.
+Helm chart management for the Rossoctl platform.
 
 ## Available Skills
 
@@ -19,5 +19,5 @@ Helm chart management for the Kagenti platform.
 
 ## Related Skills
 
-- `kagenti:deploy` - Platform deployment using Helm
+- `rossoctl:deploy` - Platform deployment using Helm
 - `k8s:health` - Platform health after Helm changes

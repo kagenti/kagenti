@@ -79,7 +79,7 @@ fi
 
 # --- Ensure dedicated ServiceAccounts ---
 log_info "Ensuring dedicated ServiceAccounts"
-WORKLOADS=$(kubectl get deploy -n "$TX_NAMESPACE" -l 'kagenti.io/type in (agent,tool)' -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
+WORKLOADS=$(kubectl get deploy -n "$TX_NAMESPACE" -l 'rossoctl.io/type in (agent,tool)' -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
 if [[ -z "$WORKLOADS" ]]; then
   WORKLOADS=$(kubectl get deploy -n "$TX_NAMESPACE" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null | grep -E "tx-e2e-" || true)
 fi
@@ -109,7 +109,7 @@ if [[ -n "$TOKEN" ]]; then
 fi
 
 log_info "Deleting old credential secrets"
-for SECRET in $(kubectl get secrets -n "$TX_NAMESPACE" -o name 2>/dev/null | grep kagenti-keycloak-client-credentials); do
+for SECRET in $(kubectl get secrets -n "$TX_NAMESPACE" -o name 2>/dev/null | grep rossoctl-keycloak-client-credentials); do
   kubectl delete "$SECRET" -n "$TX_NAMESPACE" 2>/dev/null || true
 done
 

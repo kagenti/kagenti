@@ -82,7 +82,7 @@ fi
 # ── Preflight ────────────────────────────────────────────────────────────────
 if ! command -v openshell &>/dev/null; then
   log_error "openshell CLI not found in PATH"
-  log_error "Build from https://github.com/kagenti/OpenShell (mvp branch):"
+  log_error "Build from https://github.com/rossoctl/OpenShell (mvp branch):"
   log_error "  cargo build --release -p openshell-cli && cp target/release/openshell ~/.local/bin/"
   exit 1
 fi

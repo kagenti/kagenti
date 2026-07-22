@@ -1,6 +1,6 @@
 ---
 name: hypershift:cluster
-description: Create and destroy HyperShift clusters on AWS for testing Kagenti platform. Manages ephemeral OpenShift clusters.
+description: Create and destroy HyperShift clusters on AWS for testing Rossoctl platform. Manages ephemeral OpenShift clusters.
 ---
 
 # HyperShift Cluster Management Skill
@@ -12,7 +12,7 @@ Create, destroy, and manage HyperShift clusters on AWS for testing.
 - Need to create a test OpenShift cluster on AWS
 - Destroying a cluster after testing
 - User asks "create hypershift cluster" or "destroy cluster"
-- Testing Kagenti on real OpenShift (not Kind)
+- Testing Rossoctl on real OpenShift (not Kind)
 
 ## Prerequisites
 
@@ -34,17 +34,17 @@ Before creating clusters, ensure setup is complete:
 ### Quick Create (Default Suffix)
 
 ```bash
-# Creates: kagenti-hypershift-custom-<username>
+# Creates: rossoctl-hypershift-custom-<username>
 ./.github/scripts/hypershift/create-cluster.sh
 ```
 
 ### Create with Custom Suffix
 
 ```bash
-# Creates: kagenti-hypershift-custom-pr529
+# Creates: rossoctl-hypershift-custom-pr529
 ./.github/scripts/hypershift/create-cluster.sh pr529
 
-# Creates: kagenti-hypershift-custom-mytest
+# Creates: rossoctl-hypershift-custom-mytest
 ./.github/scripts/hypershift/create-cluster.sh mytest
 ```
 
@@ -66,7 +66,7 @@ OCP_VERSION=4.19.5 ./.github/scripts/hypershift/create-cluster.sh
 | `INSTANCE_TYPE` | m5.xlarge | AWS instance type |
 | `OCP_VERSION` | 4.20.11 | OpenShift version |
 | `CLUSTER_SUFFIX` | username | Suffix for cluster name |
-| `MANAGED_BY_TAG` | kagenti-hypershift-custom | IAM scope prefix |
+| `MANAGED_BY_TAG` | rossoctl-hypershift-custom | IAM scope prefix |
 
 ## Destroy Cluster
 
@@ -84,7 +84,7 @@ OCP_VERSION=4.19.5 ./.github/scripts/hypershift/create-cluster.sh
 ### Destroy by Full Name
 
 ```bash
-./.github/scripts/hypershift/destroy-cluster.sh kagenti-hypershift-custom-pr529
+./.github/scripts/hypershift/destroy-cluster.sh rossoctl-hypershift-custom-pr529
 ```
 
 ## After Cluster Creation
@@ -99,19 +99,19 @@ export KUBECONFIG=~/clusters/hcp/<cluster-name>/auth/kubeconfig
 oc get nodes
 oc get clusterversion
 
-# 3. Deploy Kagenti platform
-./.github/scripts/kagenti-operator/30-run-installer.sh --env ocp
-./.github/scripts/kagenti-operator/41-wait-crds.sh
+# 3. Deploy Rossoctl platform
+./.github/scripts/operator/30-run-installer.sh --env ocp
+./.github/scripts/operator/41-wait-crds.sh
 
 # 4. Deploy demo agents
-./.github/scripts/kagenti-operator/71-build-weather-tool.sh
-./.github/scripts/kagenti-operator/72-deploy-weather-tool.sh
-./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+./.github/scripts/operator/71-build-weather-tool.sh
+./.github/scripts/operator/72-deploy-weather-tool.sh
+./.github/scripts/operator/74-deploy-weather-agent.sh
 
 # 5. Run E2E tests
 export AGENT_URL="https://$(oc get route -n team1 weather-service -o jsonpath='{.spec.host}')"
-export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
-./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
+export ROSSOCTL_CONFIG_FILE=deployments/envs/ocp_values.yaml
+./.github/scripts/operator/90-run-e2e-tests.sh
 ```
 
 ## Full Test Workflow
@@ -135,8 +135,8 @@ Clusters are named: `${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}`
 
 | MANAGED_BY_TAG | Use Case | Example |
 |----------------|----------|---------|
-| `kagenti-hypershift-custom` | Local development (default) | kagenti-hypershift-custom-ladas |
-| `kagenti-hypershift-ci` | CI/CD pipelines | kagenti-hypershift-ci-pr529 |
+| `rossoctl-hypershift-custom` | Local development (default) | rossoctl-hypershift-custom-ladas |
+| `rossoctl-hypershift-ci` | CI/CD pipelines | rossoctl-hypershift-ci-pr529 |
 
 ## Troubleshooting
 
@@ -144,7 +144,7 @@ Clusters are named: `${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}`
 
 ```bash
 # Check HostedCluster status (use management cluster kubeconfig)
-source .env.kagenti-hypershift-custom  # or .env.hypershift-ci
+source .env.rossoctl-hypershift-custom  # or .env.hypershift-ci
 oc get hostedcluster -n clusters
 
 # Check conditions

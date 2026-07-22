@@ -26,7 +26,7 @@
 #   - Logged into OpenShift (HyperShift management cluster): oc whoami
 #
 # CONFIGURATION:
-#   MANAGED_BY_TAG   - Primary identifier for all resources (default: kagenti-hypershift-ci)
+#   MANAGED_BY_TAG   - Primary identifier for all resources (default: rossoctl-hypershift-ci)
 #                      Used for: naming prefix, IAM ARN scoping, resource tagging
 #   AWS_REGION       - AWS region (auto-detected from cluster, fallback: us-east-1)
 #
@@ -35,17 +35,17 @@
 #
 #   1. RESOURCE NAMING:
 #      - All AWS/OpenShift resources are prefixed with MANAGED_BY_TAG
-#      - Example: IAM user "kagenti-hypershift-ci", role "kagenti-hypershift-ci-role"
+#      - Example: IAM user "rossoctl-hypershift-ci", role "rossoctl-hypershift-ci-role"
 #
 #   2. IAM ARN SCOPING:
 #      - Policies restrict operations to resources matching "${MANAGED_BY_TAG}-*"
-#      - Example: S3 buckets, IAM roles must match "kagenti-hypershift-ci-*"
+#      - Example: S3 buckets, IAM roles must match "rossoctl-hypershift-ci-*"
 #
 #   3. RESOURCE TAGGING:
-#      - All created resources get tag: kagenti.io/managed-by=${MANAGED_BY_TAG}
-#      - Applied via: --additional-tags kagenti.io/managed-by=${MANAGED_BY_TAG}
+#      - All created resources get tag: rossoctl.io/managed-by=${MANAGED_BY_TAG}
+#      - Applied via: --additional-tags rossoctl.io/managed-by=${MANAGED_BY_TAG}
 #      - Enables tag-based IAM conditions for EC2/ELB delete/mutate operations
-#      - Namespaced tag key (kagenti.io/) avoids conflicts with other tools
+#      - Namespaced tag key (rossoctl.io/) avoids conflicts with other tools
 #
 #   CRITICAL: Cluster names MUST be prefixed with MANAGED_BY_TAG!
 #      - create-cluster.sh auto-generates: ${MANAGED_BY_TAG}-<random>
@@ -139,11 +139,11 @@ base64_decode() {
 # Primary identifier - used for naming, IAM scoping, and tagging
 # Format: lowercase alphanumeric with hyphens, 5-27 chars
 #
-# For CI: Set via secrets (MANAGED_BY_TAG=kagenti-hypershift-ci)
-# For local: Defaults to kagenti-hypershift-custom (shared by all developers)
+# For CI: Set via secrets (MANAGED_BY_TAG=rossoctl-hypershift-ci)
+# For local: Defaults to rossoctl-hypershift-custom (shared by all developers)
 #
 # IMPORTANT: Must export for envsubst to work in render_policy()
-export MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+export MANAGED_BY_TAG="${MANAGED_BY_TAG:-rossoctl-hypershift-custom}"
 
 # ============================================================================
 # Validate MANAGED_BY_TAG format and length
@@ -186,15 +186,15 @@ if ! [[ "$MANAGED_BY_TAG" =~ ^[a-z][a-z0-9-]{4,26}$ ]]; then
         echo "" >&2
     fi
     echo "Examples of valid values:" >&2
-    echo "  - kagenti-hypershift-ci     (21 chars)" >&2
-    echo "  - kagenti-hypershift-custom (26 chars)" >&2
+    echo "  - rossoctl-hypershift-ci     (21 chars)" >&2
+    echo "  - rossoctl-hypershift-custom (26 chars)" >&2
     echo "  - myproject-ci              (12 chars)" >&2
     echo "" >&2
     exit 1
 fi
 
 # Generate policy name from MANAGED_BY_TAG (capitalize, remove hyphens)
-# e.g., "kagenti-hypershift-ci" -> "KagentiHypershiftCi"
+# e.g., "rossoctl-hypershift-ci" -> "RossoctlHypershiftCi"
 POLICY_NAME_BASE=$(echo "$MANAGED_BY_TAG" | sed -E 's/(^|-)([a-z])/\U\2/g')
 
 # Derived names - ALL use MANAGED_BY_TAG as prefix
@@ -468,7 +468,7 @@ echo ""
 #      - Could be scoped to specific zone ID if known
 #
 # CRITICAL: Cluster names MUST start with "${MANAGED_BY_TAG}-" for scoping!
-#   Good: kagenti-hypershift-ci-local, kagenti-hypershift-ci-pr123
+#   Good: rossoctl-hypershift-ci-local, rossoctl-hypershift-ci-pr123
 #   Bad:  my-test-cluster (bypasses S3 and IAM scoping)
 #
 
@@ -846,8 +846,8 @@ export BASE_DOMAIN="${BASE_DOMAIN}"
 # Resource Naming and Tagging
 # =============================================================================
 # MANAGED_BY_TAG is the primary identifier for all resources
-# Tag key: kagenti.io/managed-by (namespaced to avoid conflicts)
-# Pass to ansible: -e "additional_tags=kagenti.io/managed-by=\${MANAGED_BY_TAG}"
+# Tag key: rossoctl.io/managed-by (namespaced to avoid conflicts)
+# Pass to ansible: -e "additional_tags=rossoctl.io/managed-by=\${MANAGED_BY_TAG}"
 export MANAGED_BY_TAG="${MANAGED_BY_TAG}"
 
 # =============================================================================
@@ -907,23 +907,23 @@ export MGMT_KUBECONFIG="\${HOME}/.kube/${MANAGED_BY_TAG}-mgmt.kubeconfig"
 export AGENT_URL="https://weather-service-team1.apps.${MANAGED_BY_TAG}-\${CLUSTER_SUFFIX}.${BASE_DOMAIN}"
 export KEYCLOAK_URL="https://keycloak-keycloak.apps.${MANAGED_BY_TAG}-\${CLUSTER_SUFFIX}.${BASE_DOMAIN}"
 export KEYCLOAK_VERIFY_SSL="false"
-export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
+export ROSSOCTL_CONFIG_FILE=deployments/envs/ocp_values.yaml
 ENVFILE
 
 chmod 600 "$ENV_FILE"
 
 # Add to .gitignore if not already there (use pattern to cover all variations)
 if [ -f .gitignore ]; then
-    if ! grep -q "^\.env\.kagenti-\*$" .gitignore 2>/dev/null; then
-        # Add pattern for all kagenti .env files
-        echo ".env.kagenti-*" >> .gitignore
+    if ! grep -q "^\.env\.rossoctl-\*$" .gitignore 2>/dev/null; then
+        # Add pattern for all rossoctl .env files
+        echo ".env.rossoctl-*" >> .gitignore
         # Also keep legacy pattern for backwards compatibility
         grep -q "^\.env\.hypershift-ci$" .gitignore 2>/dev/null || echo ".env.hypershift-ci" >> .gitignore
-        log_success "Added .env.kagenti-* pattern to .gitignore"
+        log_success "Added .env.rossoctl-* pattern to .gitignore"
     fi
 else
     cat > .gitignore << 'GITIGNORE'
-.env.kagenti-*
+.env.rossoctl-*
 .env.hypershift-ci
 GITIGNORE
     log_success "Created .gitignore with .env patterns"

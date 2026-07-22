@@ -3,19 +3,19 @@
 ## Passover Document
 
 This document captures the full scope of work for building custom trace/mesh
-visualizations in the Kagenti UI. Start a new worktree and a new Claude instance
+visualizations in the Rossoctl UI. Start a new worktree and a new Claude instance
 for this work.
 
 ---
 
 ## 1. Overview
 
-The Kagenti UI currently links out to external dashboards (MLflow, Phoenix, Kiali)
+The Rossoctl UI currently links out to external dashboards (MLflow, Phoenix, Kiali)
 for observability. This initiative adds:
 
-1. **MLflow API proxy** in the Kagenti backend — direct access to trace data
+1. **MLflow API proxy** in the Rossoctl backend — direct access to trace data
 2. **Kiali API proxy** — read-only access to service mesh data (RBAC-scoped)
-3. **Custom graph visualizations** — interactive graphs in the Kagenti UI based on
+3. **Custom graph visualizations** — interactive graphs in the Rossoctl UI based on
    trace and mesh data, going beyond the tree view
 4. **Trace-mesh correlation** — linking LLM traces with service mesh traffic
 
@@ -25,12 +25,12 @@ for observability. This initiative adds:
 
 ### 2.1 Goal
 
-Expose MLflow trace data through the Kagenti backend API so the UI can build
+Expose MLflow trace data through the Rossoctl backend API so the UI can build
 custom visualizations without navigating to external MLflow UI.
 
 ### 2.2 Required Backend Work
 
-- **New router**: `kagenti/backend/app/routers/mlflow_proxy.py`
+- **New router**: `rossoctl/backend/app/routers/mlflow_proxy.py`
 - **Endpoints** (under `/api/v1/mlflow/`):
   - `GET /experiments` — list experiments
   - `GET /experiments/{id}/traces` — list traces for an experiment
@@ -38,7 +38,7 @@ custom visualizations without navigating to external MLflow UI.
   - `GET /traces/{trace_id}/spans` — get all spans for a trace
   - `GET /traces/search` — search traces by attributes (agent name, namespace, time range)
 - **Auth**: Forward Keycloak token to MLflow (mlflow-oidc-auth accepts the same tokens)
-- **Config**: MLflow URL from `kagenti-config` ConfigMap or env var
+- **Config**: MLflow URL from `rossoctl-config` ConfigMap or env var
 - **RBAC consideration**: Namespace-scoped filtering of traces based on user's namespace access
 
 ### 2.3 MLflow REST API Reference
@@ -49,7 +49,7 @@ MLflow exposes REST API at `<MLFLOW_URL>/api/2.0/mlflow/`:
 - `GET /ajax-api/2.0/mlflow/traces?experiment_id=X` — list traces (newer MLflow)
 - `GET /ajax-api/2.0/mlflow/traces/{request_id}` — trace detail
 
-The mlflow-oidc-auth plugin protects these with OIDC tokens. The Kagenti backend
+The mlflow-oidc-auth plugin protects these with OIDC tokens. The Rossoctl backend
 already has the auth middleware to obtain tokens.
 
 ### 2.4 Current State
@@ -66,12 +66,12 @@ already has the auth middleware to obtain tokens.
 
 ### 3.1 Goal
 
-Read-only Kiali API access through Kagenti backend, scoped by RBAC to the user's
+Read-only Kiali API access through Rossoctl backend, scoped by RBAC to the user's
 allowed namespaces.
 
 ### 3.2 Required Backend Work
 
-- **New router**: `kagenti/backend/app/routers/kiali_proxy.py`
+- **New router**: `rossoctl/backend/app/routers/kiali_proxy.py`
 - **Endpoints** (under `/api/v1/kiali/`):
   - `GET /graph` — service mesh graph for specified namespaces
   - `GET /namespaces/{ns}/services` — services in a namespace
@@ -95,7 +95,7 @@ Kiali exposes REST API at `<KIALI_URL>/api/`:
 
 ### 3.4 Current State
 
-- Kiali deployed via kagenti-deps Helm chart
+- Kiali deployed via rossoctl-deps Helm chart
 - Uses OpenShift OAuth for authentication
 - Connected to Istio Ambient mode for traffic data
 - `KIALI_URL` is discovered from cluster routes
@@ -107,7 +107,7 @@ Kiali exposes REST API at `<KIALI_URL>/api/`:
 
 ### 4.1 Goal
 
-Build interactive graph components in the Kagenti UI that visualize trace and mesh
+Build interactive graph components in the Rossoctl UI that visualize trace and mesh
 data better than tree views.
 
 ### 4.2 Visualization Types
@@ -251,7 +251,7 @@ Correlation:
 
 ### 6.1 Prerequisites
 
-- HyperShift cluster with Kagenti deployed (use `hypershift:cluster` skill)
+- HyperShift cluster with Rossoctl deployed (use `hypershift:cluster` skill)
 - MLflow with traces from agent interactions
 - Kiali with mesh traffic visible
 - Ask for hosted cluster access first: `/tdd:hypershift`
@@ -260,7 +260,7 @@ Correlation:
 
 ```bash
 # Create worktree for this work
-cd /Users/ladas/Projects/OCTO/kagenti/kagenti
+cd /Users/ladas/Projects/OCTO/rossoctl/rossoctl
 git worktree add .worktrees/custom-viz -b feat/custom-visualizations
 ```
 
@@ -290,13 +290,13 @@ Use `/tdd:hypershift` for iterative development:
 
 | File | Purpose |
 |------|---------|
-| `kagenti/backend/app/routers/agents.py` | Pattern for new routers |
-| `kagenti/backend/app/routers/chat.py` | Streaming response pattern |
-| `kagenti/backend/app/main.py` | Router registration |
-| `kagenti/ui-v2/src/services/` | API service layer pattern |
-| `kagenti/ui-v2/src/pages/ObservabilityPage.tsx` | Current observability page |
-| `kagenti/ui-v2/src/App.tsx` | Route registration |
-| `charts/kagenti/templates/` | Helm chart for new config |
+| `rossoctl/backend/app/routers/agents.py` | Pattern for new routers |
+| `rossoctl/backend/app/routers/chat.py` | Streaming response pattern |
+| `rossoctl/backend/app/main.py` | Router registration |
+| `rossoctl/ui-v2/src/services/` | API service layer pattern |
+| `rossoctl/ui-v2/src/pages/ObservabilityPage.tsx` | Current observability page |
+| `rossoctl/ui-v2/src/App.tsx` | Route registration |
+| `charts/rossoctl/templates/` | Helm chart for new config |
 | `docs/auth/keycloak-patterns.md` | Auth patterns for proxy |
 | `.claude/skills/auth/` | Auth setup skills |
 | `.claude/skills/genai/` | GenAI semantic conventions |
@@ -308,8 +308,8 @@ Use `/tdd:hypershift` for iterative development:
 The proxy routers will need:
 
 ```yaml
-# In kagenti-config ConfigMap or backend env
-MLFLOW_INTERNAL_URL: "http://mlflow.kagenti-system.svc.cluster.local:5000"
+# In rossoctl-config ConfigMap or backend env
+MLFLOW_INTERNAL_URL: "http://mlflow.rossoctl-system.svc.cluster.local:5000"
 KIALI_INTERNAL_URL: "http://kiali.istio-system.svc.cluster.local:20001"
 ```
 

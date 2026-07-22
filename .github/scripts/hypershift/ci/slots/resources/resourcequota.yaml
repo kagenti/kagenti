@@ -7,15 +7,15 @@
 #
 # Verify with:
 #   oc get resourcequota -n clusters
-#   oc describe resourcequota kagenti-ci-hostedcluster-limit -n clusters
+#   oc describe resourcequota rossoctl-ci-hostedcluster-limit -n clusters
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: kagenti-ci-hostedcluster-limit
+  name: rossoctl-ci-hostedcluster-limit
   namespace: clusters
   labels:
-    app: kagenti-ci
-    managed-by: kagenti-hypershift-ci
+    app: rossoctl-ci
+    managed-by: rossoctl-hypershift-ci
 spec:
   hard:
     # Hard limit: max 4 HostedClusters in clusters namespace

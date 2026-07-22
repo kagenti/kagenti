@@ -13,7 +13,7 @@ class TestIsAllowed:
 
     def test_allowed_by_pattern(self, tmp_path, sources_json_path):
         mgr = RepoManager(str(tmp_path), sources_json_path)
-        allowed, reason = mgr.is_allowed("https://github.com/kagenti/extensions")
+        allowed, reason = mgr.is_allowed("https://github.com/rossoctl/extensions")
         assert allowed is True
         assert "Allowed" in reason
 
@@ -61,23 +61,23 @@ class TestClone:
         # Simulate 3 already cloned (limit is 3 in fixture)
         mgr._cloned_repos = ["a", "b", "c"]
         with pytest.raises(RuntimeError, match="Max repos limit"):
-            mgr.clone("https://github.com/kagenti/another")
+            mgr.clone("https://github.com/rossoctl/another")
 
     def test_clone_success(self, tmp_path, sources_json_path):
         """Successful clone returns path and records URL."""
         mgr = RepoManager(str(tmp_path), sources_json_path)
         mock_result = MagicMock(returncode=0, stdout="", stderr="")
         with patch("subprocess.run", return_value=mock_result):
-            dest = mgr.clone("https://github.com/kagenti/extensions")
+            dest = mgr.clone("https://github.com/rossoctl/extensions")
             assert dest == tmp_path / "repos" / "extensions"
-            assert "https://github.com/kagenti/extensions" in mgr.list_cloned()
+            assert "https://github.com/rossoctl/extensions" in mgr.list_cloned()
 
     def test_repo_name_derivation(self, tmp_path, sources_json_path):
         """Strips .git suffix and uses last URL segment."""
         mgr = RepoManager(str(tmp_path), sources_json_path)
         mock_result = MagicMock(returncode=0, stdout="", stderr="")
         with patch("subprocess.run", return_value=mock_result):
-            dest = mgr.clone("https://github.com/kagenti/my-repo.git")
+            dest = mgr.clone("https://github.com/rossoctl/my-repo.git")
             assert dest.name == "my-repo"
 
     def test_clone_failure_raises_runtime_error(self, tmp_path, sources_json_path):
@@ -86,4 +86,4 @@ class TestClone:
         mock_result = MagicMock(returncode=1, stderr="fatal: repo not found")
         with patch("subprocess.run", return_value=mock_result):
             with pytest.raises(RuntimeError, match="git clone failed"):
-                mgr.clone("https://github.com/kagenti/missing")
+                mgr.clone("https://github.com/rossoctl/missing")

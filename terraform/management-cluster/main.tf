@@ -25,9 +25,9 @@ provider "aws" {
 
   default_tags {
     tags = {
-      "kagenti.io/managed-by" = var.managed_by_tag
-      "kagenti.io/purpose"    = "hypershift-management-cluster"
-      "kagenti.io/ocp-version" = var.ocp_version
+      "rossoctl.io/managed-by" = var.managed_by_tag
+      "rossoctl.io/purpose"    = "hypershift-management-cluster"
+      "rossoctl.io/ocp-version" = var.ocp_version
     }
   }
 }

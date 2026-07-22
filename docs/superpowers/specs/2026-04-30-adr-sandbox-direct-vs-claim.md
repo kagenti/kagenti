@@ -2,13 +2,13 @@
 
 **Status:** Proposed
 **Date:** 2026-04-30
-**Epic:** [#1155](https://github.com/kagenti/kagenti/issues/1155)
+**Epic:** [#1155](https://github.com/rossoctl/rossoctl/issues/1155)
 **Context:** [Agent-Sandbox Upstream Issues](2026-04-30-agent-sandbox-upstream-issues.md),
 [Workload Type Design Spec](2026-04-21-agent-sandbox-workload-type-design.md)
 
 ## Decision
 
-The kagenti backend should create `Sandbox` CRs directly, bypassing
+The rossoctl backend should create `Sandbox` CRs directly, bypassing
 `SandboxTemplate` and `SandboxClaim`. This applies to both Phase 1 and the
 default path going forward, with SandboxClaim support deferred to a future
 phase if demand materializes.
@@ -31,7 +31,7 @@ scaling, and expiry. The **extensions layer** (SandboxTemplate + SandboxClaim)
 adds network policy management, warm pool adoption, env var injection policies,
 and secure defaults.
 
-The question is whether kagenti should target the Sandbox API directly or go
+The question is whether rossoctl should target the Sandbox API directly or go
 through the claim-based abstraction.
 
 ## Options Evaluated
@@ -74,9 +74,9 @@ in PVC management. In fact, the SandboxClaim controller only copies
 
 ### What SandboxTemplate + SandboxClaim adds
 
-| Capability | Kagenti equivalent | Gap? |
+| Capability | Rossoctl equivalent | Gap? |
 |---|---|---|
-| **NetworkPolicy (secure defaults)** — ingress from sandbox-router only, egress to public internet, blocks RFC1918/metadata server, overrides DNS to 8.8.8.8 | Istio ambient mesh (mTLS between all pods), AuthBridge envoy-proxy (OAuth2 enforcement on every request), per-namespace network policies | **No gap.** Kagenti's mesh-level isolation is stronger than the template-scoped NetworkPolicy. |
+| **NetworkPolicy (secure defaults)** — ingress from sandbox-router only, egress to public internet, blocks RFC1918/metadata server, overrides DNS to 8.8.8.8 | Istio ambient mesh (mTLS between all pods), AuthBridge envoy-proxy (OAuth2 enforcement on every request), per-namespace network policies | **No gap.** Rossoctl's mesh-level isolation is stronger than the template-scoped NetworkPolicy. |
 | **Warm pool adoption** — pre-provisioned pods for fast cold-start | Not implemented | **Gap, but not needed for Phase 1.** Cold-start is acceptable for initial release. |
 | **Env var injection policy** — template controls whether claims can inject/override env vars | Backend controls env vars directly, webhook injects sidecar config | **No gap.** Simpler model — the backend is the single source of truth. |
 | **Secure defaults** — `automountServiceAccountToken: false`, DNS override to public resolvers | Backend sets `automountServiceAccountToken: false` in manifest builder. DNS handled by mesh. | **No gap.** Backend applies these directly. |
@@ -85,7 +85,7 @@ in PVC management. In fact, the SandboxClaim controller only copies
 
 ### Operator compatibility
 
-This is the decisive factor. The kagenti-operator's AgentRuntime controller
+This is the decisive factor. The rossoctl-operator's AgentRuntime controller
 reconciles against the **workload object** specified in `spec.targetRef`. With
 the claim-based flow:
 
@@ -102,7 +102,7 @@ The operator writes labels, annotations, and config-hash to the Sandbox's
 (claim-uid label, template-ref-hash label, pod-name annotation during warm pool
 adoption). This creates **three concurrent writers** on the same object:
 
-1. **kagenti-operator** — writes config-hash, kagenti labels
+1. **rossoctl-operator** — writes config-hash, rossoctl labels
 2. **Sandbox controller** — writes pod-name annotation, reconciles pod metadata
 3. **SandboxClaim controller** — writes claim-uid, template-ref-hash, pod-name (adoption)
 
@@ -147,7 +147,7 @@ claim layer adds no value for rollout handling.
 ## Decision Rationale
 
 1. **Every capability SandboxTemplate/SandboxClaim provides is already covered
-   by kagenti's platform layer** (Istio ambient, AuthBridge, webhook injection,
+   by rossoctl's platform layer** (Istio ambient, AuthBridge, webhook injection,
    operator config management). The claim layer would be redundant
    infrastructure.
 
@@ -184,7 +184,7 @@ claim layer adds no value for rollout handling.
 
 ### Negative
 
-- No shared NetworkPolicy per template. Kagenti's mesh provides equivalent
+- No shared NetworkPolicy per template. Rossoctl's mesh provides equivalent
   isolation, but clusters without Istio would need to manage NetworkPolicies
   separately.
 - No warm pool adoption. Cold-start time for Sandbox agents equals pod creation
@@ -210,5 +210,5 @@ If SandboxClaim support is needed later:
 - [Agent-Sandbox Upstream Issues](2026-04-30-agent-sandbox-upstream-issues.md)
 - [Agent-Sandbox Workload Type Design](2026-04-21-agent-sandbox-workload-type-design.md)
 - [kubernetes-sigs/agent-sandbox#581](https://github.com/kubernetes-sigs/agent-sandbox/issues/581) — Pod rollout
-- [kagenti-operator#316](https://github.com/kagenti/kagenti-operator/pull/316) — Operator Sandbox support PR
-- [Epic #1155](https://github.com/kagenti/kagenti/issues/1155) — Sandbox workload type
+- [rossoctl-operator#316](https://github.com/rossoctl/operator/pull/316) — Operator Sandbox support PR
+- [Epic #1155](https://github.com/rossoctl/rossoctl/issues/1155) — Sandbox workload type

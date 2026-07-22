@@ -37,12 +37,12 @@ Usage:
         --session-id <uuid> --project-dir <path>
 
     python3 .claude/scripts/session-analytics.py --phase comment \
-        --stats-file /tmp/kagenti/session/stats.json \
-        --target pr --number 652 --repo kagenti/kagenti
+        --stats-file /tmp/rossoctl/session/stats.json \
+        --target pr --number 652 --repo rossoctl/rossoctl
 
     python3 .claude/scripts/session-analytics.py --phase extract \
-        --repo kagenti/kagenti --from 2026-01-01 --to 2026-02-15 \
-        --output-dir /tmp/kagenti/session/
+        --repo rossoctl/rossoctl --from 2026-01-01 --to 2026-02-15 \
+        --output-dir /tmp/rossoctl/session/
 """
 
 import argparse
@@ -90,7 +90,7 @@ def parse_args():
     p.add_argument(
         "--output-dir",
         help="Output directory for CSV/MD/HTML",
-        default="/tmp/kagenti/session/",
+        default="/tmp/rossoctl/session/",
     )
 
     return p.parse_args()
@@ -398,7 +398,7 @@ def run_stats(args):
         stats["project"] = args.repo
 
     # Output
-    output_path = args.stats_file or f"/tmp/kagenti/session/{args.session_id[:8]}-stats.json"
+    output_path = args.stats_file or f"/tmp/rossoctl/session/{args.session_id[:8]}-stats.json"
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(stats, f, indent=2)
@@ -413,7 +413,7 @@ def run_stats(args):
 **Step 3: Test with a real session**
 
 Run: `python3 .claude/scripts/session-analytics.py --phase stats --session-id 00b11888-7e0c-4fb4-bb39-32ea32e09b64`
-Expected: JSON stats output written to `/tmp/kagenti/session/00b11888-stats.json`
+Expected: JSON stats output written to `/tmp/rossoctl/session/00b11888-stats.json`
 
 **Step 4: Commit**
 
@@ -627,7 +627,7 @@ def run_mermaid(args):
 
 **Step 2: Test with real stats**
 
-Run: `python3 .claude/scripts/session-analytics.py --phase mermaid --stats-file /tmp/kagenti/session/00b11888-stats.json --skills-dir .claude/skills/`
+Run: `python3 .claude/scripts/session-analytics.py --phase mermaid --stats-file /tmp/rossoctl/session/00b11888-stats.json --skills-dir .claude/skills/`
 Expected: Diagrams JSON written with annotated Mermaid content.
 
 **Step 3: Commit**
@@ -879,7 +879,7 @@ def run_comment(args):
 Run: `python3 -c "
 import json, sys; sys.path.insert(0, '.claude/scripts')
 exec(open('.claude/scripts/session-analytics.py').read())
-with open('/tmp/kagenti/session/00b11888-stats.json') as f:
+with open('/tmp/rossoctl/session/00b11888-stats.json') as f:
     stats = json.load(f)
 print(format_session_comment(stats))
 "`
@@ -1427,7 +1427,7 @@ def run_full_pipeline(args):
 
     # Set stats file for subsequent phases if not set
     if not args.stats_file:
-        args.stats_file = f"/tmp/kagenti/session/{args.session_id[:8]}-stats.json"
+        args.stats_file = f"/tmp/rossoctl/session/{args.session_id[:8]}-stats.json"
 
     print("\n=== Phase 2: Mermaid ===")
     run_mermaid(args)
@@ -1444,7 +1444,7 @@ def run_full_pipeline(args):
 **Step 2: Add self-test mode**
 
 Add `--self-test` flag that:
-1. Creates a minimal JSONL fixture in `/tmp/kagenti/session/test/`
+1. Creates a minimal JSONL fixture in `/tmp/rossoctl/session/test/`
 2. Runs `--phase stats` against it
 3. Runs `--phase mermaid` against the output
 4. Verifies the comment format
@@ -1600,16 +1600,16 @@ git commit -s -m "feat: add session:post integration hooks to TDD skills"
 
 1. Pick an existing PR (or the current PR for this branch)
 2. Run: `python3 .claude/scripts/session-analytics.py --phase stats --session-id <current-session>`
-3. Run: `python3 .claude/scripts/session-analytics.py --phase mermaid --stats-file /tmp/kagenti/session/<id>-stats.json`
+3. Run: `python3 .claude/scripts/session-analytics.py --phase mermaid --stats-file /tmp/rossoctl/session/<id>-stats.json`
 4. Review the formatted comment output locally
-5. Post to the PR: `python3 .claude/scripts/session-analytics.py --phase comment --stats-file /tmp/kagenti/session/<id>-stats.json --target pr --number <N> --repo kagenti/kagenti`
+5. Post to the PR: `python3 .claude/scripts/session-analytics.py --phase comment --stats-file /tmp/rossoctl/session/<id>-stats.json --target pr --number <N> --repo rossoctl/rossoctl`
 6. Verify the comment appears correctly on GitHub
-7. Run summary: `python3 .claude/scripts/session-analytics.py --phase summary --number <N> --repo kagenti/kagenti`
+7. Run summary: `python3 .claude/scripts/session-analytics.py --phase summary --number <N> --repo rossoctl/rossoctl`
 8. Verify the pinned summary matches the individual comment
 
 **Step 2: Run extract on the same PR**
 
-1. Run: `python3 .claude/scripts/session-analytics.py --phase extract --repo kagenti/kagenti --from-date 2026-02-15 --output-dir /tmp/kagenti/session/`
+1. Run: `python3 .claude/scripts/session-analytics.py --phase extract --repo rossoctl/rossoctl --from-date 2026-02-15 --output-dir /tmp/rossoctl/session/`
 2. Verify CSV has correct columns and data
 3. Verify MD report is readable
 4. Open HTML dashboard in browser
