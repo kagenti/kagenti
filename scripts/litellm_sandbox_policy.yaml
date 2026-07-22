@@ -1,0 +1,159 @@
+version: 1
+filesystem_policy:
+  read_write:
+    - /sandbox
+    - /tmp
+    - /Users
+    - /dev
+network_policies:
+  ibm_litellm:
+    name: IBM LiteLLM
+    endpoints:
+      - host: ete-litellm.ai-models.vpc-int.res.ibm.com
+        port: 443
+        access: full
+      - host: "*.apps.ykt1.hcp.res.ibm.com"
+        port: 443
+        access: full
+      - host: apps.ykt1.hcp.res.ibm.com
+        port: 443
+        access: full
+    binaries:
+      - path: /usr/local/bin/claude
+      - path: /usr/bin/curl
+      - path: /usr/bin/node
+      - path: /usr/local/bin/node
+  claude_code:
+    name: Claude Code infra
+    endpoints:
+      - host: api.anthropic.com
+        port: 443
+        access: full
+      - host: statsig.anthropic.com
+        port: 443
+      - host: sentry.io
+        port: 443
+      - host: platform.claude.com
+        port: 443
+      - host: downloads.claude.ai
+        port: 443
+        access: full
+      - host: "*.pythonhosted.org"
+        port: 443
+        access: full
+      - host: files.pythonhosted.org
+        port: 443
+        access: full
+      - host: s3.us-south.cloud-object-storage.appdomain.cloud
+        port: 443
+        access: full
+      - host: "*.cloud-object-storage.appdomain.cloud"
+        port: 443
+        access: full
+      - host: registry.npmjs.org
+        port: 443
+        access: full
+        allow_encoded_slash: true
+    binaries:
+      - path: /usr/local/bin/claude
+      - path: /usr/bin/curl
+      - path: /usr/bin/node
+      - path: /usr/local/bin/node
+  bob_install:
+    name: Bob shell installer and runtime
+    endpoints:
+      - host: s3.us-south.cloud-object-storage.appdomain.cloud
+        port: 443
+      - host: "*.cloud-object-storage.appdomain.cloud"
+        port: 443
+      - host: registry.npmjs.org
+        port: 443
+        access: full
+        allow_encoded_slash: true
+      - host: "*.npmjs.org"
+        port: 443
+        access: full
+      - host: bob.ibm.com
+        port: 443
+        access: full
+      - host: "*.bob.ibm.com"
+        port: 443
+        access: full
+      - host: api.us-east.bob.ibm.com
+        port: 443
+        access: full
+    binaries:
+      - path: /usr/bin/curl
+      - path: /usr/bin/npm
+      - path: /usr/bin/node
+      - path: /usr/local/bin/node
+      - path: /usr/local/bin/npm
+      - path: /usr/local/bin/npx
+      - path: /sandbox/.npm-global/bin/bob
+      - path: /sandbox/.npm-global/bin/npm
+      - path: /sandbox/.npm-global/bin/npx
+  web_search:
+    name: Web Search and Fetch
+    endpoints:
+      - host: "*.google.com"
+        port: 443
+      - host: google.com
+        port: 443
+      - host: "*.googleapis.com"
+        port: 443
+      - host: "*.bing.com"
+        port: 443
+      - host: bing.com
+        port: 443
+      - host: "*.duckduckgo.com"
+        port: 443
+      - host: duckduckgo.com
+        port: 443
+    binaries:
+      - path: /usr/local/bin/claude
+      - path: /usr/bin/curl
+      - path: /usr/bin/node
+      - path: /usr/local/bin/node
+  web_fetch:
+    name: Web Fetch common sites
+    endpoints:
+      - host: github.com
+        port: 443
+        access: full
+      - host: "*.github.com"
+        port: 443
+        access: full
+      - host: "*.githubusercontent.com"
+        port: 443
+        access: full
+      - host: stackoverflow.com
+        port: 443
+      - host: "*.stackoverflow.com"
+        port: 443
+      - host: "*.stackexchange.com"
+        port: 443
+      - host: "*.wikipedia.org"
+        port: 443
+      - host: wikipedia.org
+        port: 443
+      - host: "*.npmjs.com"
+        port: 443
+      - host: npmjs.com
+        port: 443
+      - host: pypi.org
+        port: 443
+      - host: "*.pypi.org"
+        port: 443
+      - host: "*.readthedocs.io"
+        port: 443
+      - host: "*.docs.rs"
+        port: 443
+    binaries:
+      - path: /usr/local/bin/claude
+      - path: /usr/bin/node
+      - path: /usr/local/bin/node
+      - path: /usr/bin/curl
+      - path: /usr/bin/git
+      - path: /usr/local/bin/git
+      - path: /usr/lib/git-core/git-remote-http
+      - path: /usr/lib/git-core/git-remote-https
