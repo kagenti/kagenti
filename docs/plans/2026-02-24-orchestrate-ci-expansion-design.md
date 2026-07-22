@@ -5,23 +5,23 @@
 
 ## Problem
 
-The `orchestrate:ci` skill generates basic lint/test/build workflows but the kagenti/kagenti
+The `orchestrate:ci` skill generates basic lint/test/build workflows but the rossoctl/rossoctl
 main repo has evolved a comprehensive CI standard with 14 workflows covering security scanning,
 dependency review, action pinning, least-privilege permissions, and more. Satellite repos in the
-kagenti org score 0.5-3.5 out of 5 on CI maturity. The orchestrate skills need to encode the
+rossoctl org score 0.5-3.5 out of 5 on CI maturity. The orchestrate skills need to encode the
 full standard.
 
 ## Analysis
 
-### Kagenti Org CI Maturity
+### Rossoctl Org CI Maturity
 
 | Repo | Score | Key Gaps |
 |------|-------|----------|
-| kagenti (main) | 4/5 | No unit tests in CI, no CODEOWNERS, dependabot Actions-only |
-| kagenti-operator | 3.5/5 | Nested workflow structure, no security scanning |
+| rossoctl (main) | 4/5 | No unit tests in CI, no CODEOWNERS, dependabot Actions-only |
+| rossoctl-operator | 3.5/5 | Nested workflow structure, no security scanning |
 | plugins-adapter | 3/5 | No dependabot, no security scanning |
 | .github | 3/5 | Org config, reusable workflows |
-| kagenti-extensions | 2/5 | Tests commented out, no security scanning |
+| cortex | 2/5 | Tests commented out, no security scanning |
 | agent-examples | 1.5/5 | Tests commented out, no pre-commit |
 | agentic-control-plane | 1/5 | No CI at all |
 | workload-harness | 0.5/5 | No CI at all |

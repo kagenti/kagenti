@@ -1,6 +1,6 @@
 ---
 name: tdd:kind
-description: TDD workflow with Kind cluster - fast local iteration for Kagenti development
+description: TDD workflow with Kind cluster - fast local iteration for Rossoctl development
 ---
 
 # TDD-Kind Workflow
@@ -29,7 +29,7 @@ kind get clusters 2>/dev/null
 - **Cluster exists AND this session owns it** → reuse it (skip creation, run tests)
 - **Cluster exists AND another session owns it** → **STOP**. Do not proceed. Inform the user:
   > A Kind cluster is already running (likely from another session).
-  > Options: (a) wait for that session to finish, (b) switch to `tdd:ci` for CI-only iteration, (c) explicitly destroy the existing cluster first with `kind delete cluster --name kagenti`.
+  > Options: (a) wait for that session to finish, (b) switch to `tdd:ci` for CI-only iteration, (c) explicitly destroy the existing cluster first with `kind delete cluster --name rossoctl`.
 
 To determine ownership: if the current task list or conversation created this cluster, it's yours. Otherwise assume another session owns it.
 
@@ -101,7 +101,7 @@ This gate runs once per session, not on every iteration.
 
 ```bash
 # Session-scoped log directory — use worktree name to avoid collisions
-export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-tdd}"
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/rossoctl-tdd}"
 mkdir -p "$LOG_DIR"
 ```
 
@@ -189,7 +189,7 @@ uv lock --upgrade-package a2a-sdk
 python -m venv /tmp/ci-test-env
 source /tmp/ci-test-env/bin/activate
 pip install -e ".[test]"
-pytest kagenti/tests/e2e/common -v --timeout=300
+pytest rossoctl/tests/e2e/common -v --timeout=300
 deactivate
 ```
 

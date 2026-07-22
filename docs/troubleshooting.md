@@ -1,6 +1,6 @@
 # Troubleshooting
 
-## Issues during Kagenti installation
+## Issues during Rossoctl installation
 
 ### Installation reports "exceeded its progress deadline"
 
@@ -17,7 +17,7 @@ export DOCKER_HOST="unix://$HOME/.colima/docker.sock"
 ### Blank UI page on macOS after installation
 On macOS, if **Privacy and Content Restrictions** are enabled (under  
 System Settings → Screen Time → Content & Privacy Restrictions),  
-then after the Kagenti installation completes, opening the UI may display a blank loading page.
+then after the Rossoctl installation completes, opening the UI may display a blank loading page.
 
 To fix, disable these restrictions and restart the UI.
 
@@ -72,13 +72,13 @@ most likely your Github token expired.
 Error text:
 
 ```console
- failed to authorize: failed to fetch oauth token: unexpected status from GET request to https://ghcr.io/token?scope=repository%3Akagenti%2Fkagenti-client-registration%3Apull&service=ghcr.io: 403 Forbidden
+ failed to authorize: failed to fetch oauth token: unexpected status from GET request to https://ghcr.io/token?scope=repository%3Arossoctl%2Frossoctl-client-registration%3Apull&service=ghcr.io: 403 Forbidden
 ```
 
 Check your [personal access token (classic)](https://github.com/settings/personal-access-tokens/).
 Make sure to grant scopes `all:repo`, `write:packages`, and `read:packages`.
 
-You may also get "ghcr.io: 403 Forbidden" errors installing Helm charts during Kagenti installation.  You may have cached credentials that are no longer valid.  The fix is `docker logout ghcr.io`.
+You may also get "ghcr.io: 403 Forbidden" errors installing Helm charts during Rossoctl installation.  You may have cached credentials that are no longer valid.  The fix is `docker logout ghcr.io`.
 
 ## Issues during runtime
 
@@ -90,23 +90,23 @@ Restart the following:
 
 ```shell
 kubectl rollout restart daemonset -n istio-system  ztunnel
-kubectl rollout restart -n kagenti-system deployment http-istio
+kubectl rollout restart -n rossoctl-system deployment http-istio
 ```
 
 ### Need to edit ENV values
 
-If you need to update the values in `charts/kagenti/.secrets.yaml` file, e.g., `githubToken`,
+If you need to update the values in `charts/rossoctl/.secrets.yaml` file, e.g., `githubToken`,
 delete the secret in all your auto-created namespaces, then re-run the installer:
 
 ```shell
 kubectl get secret --all-namespaces
 kubectl -n my-namespace delete github-token-secret
-scripts/kind/setup-kagenti.sh
+scripts/kind/setup-rossoctl.sh
 ```
 
 ### Agent log shows communication errors
 
-Kagenti UI shows Connection errors:
+Rossoctl UI shows Connection errors:
 
 ```console
 An unexpected error occurred during A2A chat streaming: HTTP Error 503: Network communication error: peer closed connection without sending complete message body (incomplete chunked read)
@@ -115,7 +115,7 @@ An unexpected error occurred during A2A chat streaming: HTTP Error 503: Network 
 Agent log shows errors:
 
 ```console
-kagenti$ kubectl -n teams logs -f weather-service-7f984f478d-4jzv9
+rossoctl$ kubectl -n teams logs -f weather-service-7f984f478d-4jzv9
 .
 .
 ERROR:    Exception in ASGI application
@@ -140,7 +140,7 @@ Then try the prompt again.
 
 ### Keycloak stops working
 
-Keycloak stops working and logs show [connection errors](https://github.com/kagenti/kagenti/issues/115).
+Keycloak stops working and logs show [connection errors](https://github.com/rossoctl/rossoctl/issues/115).
 
 At this time there is no reliable sequence of bringing down and up again
 postgres and keycloak. The only reliable approach found so far is either to destroy and re-install
@@ -149,12 +149,12 @@ the cluster or delete and re-install keycloak as follows:
 ```shell
 # Delete and re-apply keycloak resources
 helm uninstall keycloak -n keycloak
-scripts/kind/setup-kagenti.sh
+scripts/kind/setup-rossoctl.sh
 
 # Restart related services
 kubectl rollout restart daemonset -n istio-system ztunnel
-kubectl rollout restart -n kagenti-system deployment http-istio
-kubectl rollout restart -n kagenti-system deployment kagenti-ui
+kubectl rollout restart -n rossoctl-system deployment http-istio
+kubectl rollout restart -n rossoctl-system deployment rossoctl-ui
 ```
 
 Deployed agents may need to be restarted to update the Keycloak client.
@@ -165,7 +165,7 @@ kubectl rollout restart -n <agent-namespace> deployment <agent-deployment e.g. w
 
 ### Cert-Manager Webhook Errors
 
-When running the kagenti helm chart upgrade, you may encounter an error stating `failed calling webhook "webhook.cert-manager.io" because the x509 certificate has expired.` This occurs when the internal certificates used by cert-manager to communicate with the Kubernetes API server are no longer valid, preventing the validation of resources like Certificates and Issuers.
+When running the rossoctl helm chart upgrade, you may encounter an error stating `failed calling webhook "webhook.cert-manager.io" because the x509 certificate has expired.` This occurs when the internal certificates used by cert-manager to communicate with the Kubernetes API server are no longer valid, preventing the validation of resources like Certificates and Issuers.
 
 To resolve this, you must force cert-manager to regenerate its internal CA and certificates by following these steps:
 

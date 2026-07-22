@@ -1,42 +1,42 @@
-# CLAUDE.md - Kagenti Organization Guide
+# CLAUDE.md - Rossoctl Organization Guide
 
-This document provides context for AI assistants working across the Kagenti organization repositories.
+This document provides context for AI assistants working across the Rossoctl organization repositories.
 
 ## Organization Overview
 
-**Kagenti** is a cloud-native middleware platform for deploying and orchestrating AI agents. The project provides a framework-neutral, scalable, and secure infrastructure for running agents built with any framework through standardized protocols (A2A, MCP).
+**Rossoctl** is a cloud-native middleware platform for deploying and orchestrating AI agents. The project provides a framework-neutral, scalable, and secure infrastructure for running agents built with any framework through standardized protocols (A2A, MCP).
 
-**Website**: [kagenti.io](http://kagenti.io)
-**GitHub Organization**: [github.com/kagenti](https://github.com/kagenti)
-**Slack**: [Kagenti Slack](https://ibm.biz/kagenti-slack)
+**Website**: [rossoctl.io](http://rossoctl.io)
+**GitHub Organization**: [github.com/rossoctl](https://github.com/rossoctl)
+**Slack**: [Rossoctl Slack](https://ibm.biz/rossoctl-slack)
 
 ## Repository Structure
 
-The Kagenti organization consists of the following repositories:
+The Rossoctl organization consists of the following repositories:
 
 | Repository | Language | Description |
 |------------|----------|-------------|
-| **[kagenti](https://github.com/kagenti/kagenti)** | Python | UI dashboard and documentation |
-| **[kagenti-operator](https://github.com/kagenti/kagenti-operator)** | Go | Kubernetes operator for agent/tool lifecycle management |
-| **[mcp-gateway](https://github.com/kagenti/mcp-gateway)** | Go | Envoy-based MCP Gateway for tool federation |
-| **[agent-examples](https://github.com/kagenti/agent-examples)** | Python | Sample agents and tools for the platform |
-| **[kagenti-extensions](https://github.com/kagenti/kagenti-extensions)** | Go | Extensions and plugins |
-| **[agentic-control-plane](https://github.com/kagenti/agentic-control-plane)** | Python | Control plane of specialized A2A agents |
-| **[plugins-adapter](https://github.com/kagenti/plugins-adapter)** | Python | Guardrails configuration for MCP Gateway |
-| **[.github](https://github.com/kagenti/.github)** | HTML | Project website (Hugo-based) |
+| **[rossoctl](https://github.com/rossoctl/rossoctl)** | Python | UI dashboard and documentation |
+| **[rossoctl-operator](https://github.com/rossoctl/operator)** | Go | Kubernetes operator for agent/tool lifecycle management |
+| **[mcp-gateway](https://github.com/rossoctl/mcp-gateway)** | Go | Envoy-based MCP Gateway for tool federation |
+| **[agent-examples](https://github.com/rossoctl/examples)** | Python | Sample agents and tools for the platform |
+| **[cortex](https://github.com/rossoctl/cortex)** | Go | Extensions and plugins |
+| **[agentic-control-plane](https://github.com/rossoctl/agentic-control-plane)** | Python | Control plane of specialized A2A agents |
+| **[plugins-adapter](https://github.com/rossoctl/plugins-adapter)** | Python | Guardrails configuration for MCP Gateway |
+| **[.github](https://github.com/rossoctl/.github)** | HTML | Project website (Hugo-based) |
 
 ---
 
 ## Repository Details
 
-### 1. kagenti (Main Repository)
+### 1. rossoctl (Main Repository)
 
 **Purpose**: Primary entry point containing the web UI and documentation.
 
 **Key Components**:
 ```
-kagenti/
-├── kagenti/
+rossoctl/
+├── rossoctl/
 │   ├── ui-v2/                 # React (PatternFly) frontend
 │   │   ├── src/pages/         # Page components
 │   │   └── src/services/      # API client
@@ -46,7 +46,7 @@ kagenti/
 │   ├── auth/                  # OAuth secret generation utilities
 │   ├── tests/e2e/             # End-to-end tests
 │   └── examples/              # Example configurations
-├── charts/                    # Helm charts (kagenti, kagenti-deps)
+├── charts/                    # Helm charts (rossoctl, rossoctl-deps)
 ├── deployments/
 │   └── envs/                  # Environment-specific values
 └── docs/                      # Documentation
@@ -56,15 +56,15 @@ kagenti/
 ```bash
 # Deploy to Kind cluster
 # From repository root
-cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
-# Edit charts/kagenti/.secrets.yaml with your values
-scripts/kind/setup-kagenti.sh
+cp charts/rossoctl/.secrets_template.yaml charts/rossoctl/.secrets.yaml
+# Edit charts/rossoctl/.secrets.yaml with your values
+scripts/kind/setup-rossoctl.sh
 
 # Run UI locally
-cd kagenti/backend
+cd rossoctl/backend
 uv run uvicorn app.main:app --reload --port 8000
 # In a separate terminal:
-cd kagenti/ui-v2
+cd rossoctl/ui-v2
 npm run dev
 
 # Lint
@@ -73,7 +73,7 @@ make lint
 
 ---
 
-### 2. kagenti-operator
+### 2. rossoctl-operator
 
 **Purpose**: Kubernetes operator managing agent/tool deployment and lifecycle.
 
@@ -84,15 +84,15 @@ Manages complex multi-component applications through:
 - **Component CR**: Individual deployable units (Agent, Tool, Infrastructure)
 - **Platform CR**: Orchestration layer managing collections of Components
 
-#### Kagenti Operator (`kagenti-operator/`)
+#### Rossoctl Operator (`operator/`)
 Manages agent lifecycle and discovery:
 - **AgentCard CR**: Agent deployment and lifecycle
 
-**Note**: Container image builds are now handled by Shipwright Build/BuildRun CRDs directly, triggered by the Kagenti UI. The UI creates Deployment + Service resources for both agents and tools after builds complete.
+**Note**: Container image builds are now handled by Shipwright Build/BuildRun CRDs directly, triggered by the Rossoctl UI. The UI creates Deployment + Service resources for both agents and tools after builds complete.
 
 **Key Files**:
 ```
-kagenti-operator/
+operator/
 ├── platform-operator/
 │   ├── api/v1alpha1/
 │   │   ├── component_types.go    # Component CRD definition
@@ -104,7 +104,7 @@ kagenti-operator/
 │   └── config/
 │       ├── crd/bases/            # CRD YAML definitions
 │       └── samples/              # Example CRs
-├── kagenti-operator/
+├── operator/
 │   ├── api/v1alpha1/
 │   │   └── agent_types.go
 │   └── internal/controller/
@@ -119,12 +119,12 @@ kind: Build
 metadata:
   name: weather-service
   labels:
-    kagenti.io/type: agent  # or "tool"
+    rossoctl.io/type: agent  # or "tool"
 spec:
   source:
     type: Git
     git:
-      url: https://github.com/kagenti/agent-examples
+      url: https://github.com/rossoctl/examples
       revision: main
     contextDir: a2a/weather_service
   strategy:
@@ -144,7 +144,7 @@ spec:
 ```
 
 **Agent Deployment**: Agents are now deployed as standard Kubernetes Deployments + Services
-(the old Component CRD from `kagenti.operator.dev` has been removed).
+(the old Component CRD from `rossoctl.operator.dev` has been removed).
 See `docs/plans/migrate-agent-crd-to-workloads.md` for details.
 
 **Commands**:
@@ -238,15 +238,15 @@ agent_name/
 
 ### 5. agentic-control-plane
 
-**Purpose**: Kubernetes control plane composed of specialized A2A agents coordinated through Kagenti CRDs.
+**Purpose**: Kubernetes control plane composed of specialized A2A agents coordinated through Rossoctl CRDs.
 
 **Concept**: Uses AI agents themselves to manage and orchestrate the platform, creating a self-managing system.
 
 ---
 
-### 6. kagenti-extensions
+### 6. cortex
 
-**Purpose**: Extensions and plugins for the Kagenti platform.
+**Purpose**: Extensions and plugins for the Rossoctl platform.
 
 **Examples**:
 - Custom deployers
@@ -304,9 +304,9 @@ GET  /sse                       # Server-sent events (legacy)
 | **SPIRE/SPIFFE** | Workload identity | `zero-trust-workload-identity-manager` |
 | **Keycloak** | OAuth/OIDC identity provider | `keycloak` |
 | **Shipwright** | Container image builds for agents/tools | `shipwright-build` |
-| **Kubernetes Gateway API** | Ingress routing | `kagenti-system` |
-| **Phoenix** | LLM observability/tracing | `kagenti-system` |
-| **Kiali** | Service mesh visualization | `kagenti-system` |
+| **Kubernetes Gateway API** | Ingress routing | `rossoctl-system` |
+| **Phoenix** | LLM observability/tracing | `rossoctl-system` |
+| **Kiali** | Service mesh visualization | `rossoctl-system` |
 | **Envoy** | MCP Gateway proxy | `gateway-system` |
 
 ---
@@ -323,21 +323,21 @@ GET  /sse                       # Server-sent events (legacy)
 ### Quick Start
 ```bash
 # Clone main repo
-git clone https://github.com/kagenti/kagenti.git
-cd kagenti
+git clone https://github.com/rossoctl/rossoctl.git
+cd rossoctl
 
 # Configure secrets
-cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
+cp charts/rossoctl/.secrets_template.yaml charts/rossoctl/.secrets.yaml
 # Edit .secrets.yaml with your values
 
 # Deploy to Kind cluster
-scripts/kind/setup-kagenti.sh
+scripts/kind/setup-rossoctl.sh
 ```
 
 ### Access URLs (Kind)
 | Service | URL |
 |---------|-----|
-| Kagenti UI | `http://kagenti-ui.localtest.me:8080` |
+| Rossoctl UI | `http://rossoctl-ui.localtest.me:8080` |
 | Keycloak | `http://keycloak.localtest.me:8080` |
 | Phoenix | `http://phoenix.localtest.me:8080` |
 | Kiali | `http://kiali.localtest.me:8080` |
@@ -351,7 +351,7 @@ Default credentials: `admin` / `admin`
 
 | Namespace | Purpose |
 |-----------|---------|
-| `kagenti-system` | Platform components (UI, operator, ingress) |
+| `rossoctl-system` | Platform components (UI, operator, ingress) |
 | `gateway-system` | MCP Gateway (Envoy proxy) |
 | `mcp-system` | MCP broker/controller |
 | `keycloak` | Keycloak server |
@@ -366,29 +366,29 @@ Default credentials: `admin` / `admin`
 
 ```yaml
 # Component type
-kagenti.io/type: agent | tool
+rossoctl.io/type: agent | tool
 
 # Protocol (prefix-based, multiple allowed)
-protocol.kagenti.io/a2a: ""
-protocol.kagenti.io/mcp: ""
+protocol.rossoctl.io/a2a: ""
+protocol.rossoctl.io/mcp: ""
 
 # Framework
-kagenti.io/framework: LangGraph | CrewAI | AG2 | Python
+rossoctl.io/framework: LangGraph | CrewAI | AG2 | Python
 
 # Enable namespace for agents
-kagenti-enabled: "true"
+rossoctl-enabled: "true"
 
 # Created by
-app.kubernetes.io/created-by: kagenti-operator | kagenti-ui
+app.kubernetes.io/created-by: rossoctl-operator | rossoctl-ui
 
 # Shipwright build labels
-kagenti.io/build-name: <build-name>      # Links BuildRun to Build
-kagenti.io/shipwright-build: <build-name> # Links Agent/MCPServer to its Build
-kagenti.io/built-by: shipwright          # Indicates resource was built from source
+rossoctl.io/build-name: <build-name>      # Links BuildRun to Build
+rossoctl.io/shipwright-build: <build-name> # Links Agent/MCPServer to its Build
+rossoctl.io/built-by: shipwright          # Indicates resource was built from source
 
 # Shipwright build annotations
-kagenti.io/agent-config: <json>          # Agent config stored during build
-kagenti.io/tool-config: <json>           # Tool config stored during build
+rossoctl.io/agent-config: <json>          # Agent config stored during build
+rossoctl.io/tool-config: <json>           # Tool config stored during build
 ```
 
 ---
@@ -411,8 +411,8 @@ kagenti.io/tool-config: <json>           # Tool config stored during build
 ### Git Workflow
 ```bash
 # Fork and clone
-git clone https://github.com/<your-username>/kagenti.git
-git remote add upstream https://github.com/kagenti/kagenti.git
+git clone https://github.com/<your-username>/rossoctl.git
+git remote add upstream https://github.com/rossoctl/rossoctl.git
 
 # Create branch
 git checkout -b feature/my-feature
@@ -435,13 +435,13 @@ pre-commit run --all-files
 
 ## Testing
 
-### End-to-End Tests (kagenti)
+### End-to-End Tests (rossoctl)
 ```bash
-cd kagenti/tests
+cd rossoctl/tests
 uv run pytest e2e/ -v
 ```
 
-### Operator Tests (kagenti-operator)
+### Operator Tests (rossoctl-operator)
 ```bash
 cd platform-operator
 make test
@@ -460,8 +460,8 @@ make e2e
 
 ### Check Operator Logs
 ```bash
-kubectl logs -n kagenti-system -l app=kagenti-operator -f
-kubectl logs -n kagenti-system -l app=platform-operator -f
+kubectl logs -n rossoctl-system -l app=rossoctl-operator -f
+kubectl logs -n rossoctl-system -l app=platform-operator -f
 ```
 
 ### Check Component Status
@@ -500,9 +500,9 @@ Access Kiali dashboard at `http://kiali.localtest.me:8080`
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                      kagenti-system Namespace                     │  │
+│  │                      rossoctl-system Namespace                     │  │
 │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐  │  │
-│  │  │ Kagenti UI │  │  Platform  │  │  Ingress   │  │   Kiali    │  │  │
+│  │  │ Rossoctl UI │  │  Platform  │  │  Ingress   │  │   Kiali    │  │  │
 │  │  │ (Streamlit)│  │  Operator  │  │  Gateway   │  │  Phoenix   │  │  │
 │  │  └────────────┘  └────────────┘  └────────────┘  └────────────┘  │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
@@ -538,13 +538,13 @@ Access Kiali dashboard at `http://kiali.localtest.me:8080`
 
 ## License
 
-All Kagenti repositories are licensed under **Apache 2.0**.
+All Rossoctl repositories are licensed under **Apache 2.0**.
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/kagenti/kagenti/blob/main/CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](https://github.com/rossoctl/rossoctl/blob/main/CONTRIBUTING.md) for guidelines.
 
 Key points:
 - Fork the repository

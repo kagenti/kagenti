@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: Test-driven development workflows for Kagenti - CI, HyperShift, and Kind
+description: Test-driven development workflows for Rossoctl - CI, HyperShift, and Kind
 ---
 
 ```mermaid
@@ -46,7 +46,7 @@ flowchart TD
 
 # TDD Skills
 
-Test-driven development workflows for iterative Kagenti development.
+Test-driven development workflows for iterative Rossoctl development.
 
 ## Entry Point Router
 
@@ -72,10 +72,10 @@ When active, the workflow visually tracks progress through the diagram, highligh
 1. Create the debug output directory:
 
 ```bash
-mkdir -p /tmp/kagenti/tdd/
+mkdir -p /tmp/rossoctl/tdd/
 ```
 
-2. Initialize the state file on first invocation. The script creates `/tmp/kagenti/tdd/tdd-debug-state.json` automatically.
+2. Initialize the state file on first invocation. The script creates `/tmp/rossoctl/tdd/tdd-debug-state.json` automatically.
 
 ### At Each Phase Transition
 
@@ -86,14 +86,14 @@ python3 .claude/scripts/tdd-debug-diagram.py \
   --template .claude/skills/tdd/tdd-workflow.mmd \
   --current-node <NODE_ID> \
   --edge-counts '{"<FROM>-><TO>": <count>, ...}' \
-  --output /tmp/kagenti/tdd/debug-diagram.mmd
+  --output /tmp/rossoctl/tdd/debug-diagram.mmd
 ```
 
 Node IDs match the diagram: `START`, `INPUT`, `ISSUE`, `PR`, `LOCAL`, `DETECT`, `ANALYZE`, `CHECKPR`, `FORK`, `RESEARCH`, `WORKTREE`, `RCACI`, `TDDCI`, `HS`, `KIND`, `MOVETOPR`, `REVIEWS`, `DONE`.
 
 ### State Tracking
 
-The script maintains `/tmp/kagenti/tdd/tdd-debug-state.json` with:
+The script maintains `/tmp/rossoctl/tdd/tdd-debug-state.json` with:
 - `current_node` - where in the workflow we are now
 - `edge_counts` - how many times each edge has been traversed
 - `history` - ordered list of nodes visited with timestamps
@@ -103,7 +103,7 @@ The script maintains `/tmp/kagenti/tdd/tdd-debug-state.json` with:
 When debug mode is active and the workflow enters a sub-skill (`tdd:ci`, `tdd:kind`, `tdd:hypershift`), pass the debug flag through:
 
 1. Use the sub-skill's own `.mmd` template (e.g., `.claude/skills/tdd:ci/tdd-ci-workflow.mmd`)
-2. Continue updating `/tmp/kagenti/tdd/tdd-debug-state.json` with the sub-skill's node transitions
+2. Continue updating `/tmp/rossoctl/tdd/tdd-debug-state.json` with the sub-skill's node transitions
 3. When the sub-skill completes, resume tracking in the parent `tdd-workflow.mmd`
 
 ### Report Current Position
@@ -126,11 +126,11 @@ Read the issue body and full conversation thread to understand:
 ### Step 2: Check for existing work
 
 ```bash
-gh pr list --repo kagenti/kagenti --state open --search "<issue-number>"
+gh pr list --repo rossoctl/rossoctl --state open --search "<issue-number>"
 ```
 
 ```bash
-gh pr list --repo kagenti/kagenti --state closed --search "<issue-number>" --limit 5
+gh pr list --repo rossoctl/rossoctl --state closed --search "<issue-number>" --limit 5
 ```
 
 ### Step 3: Route based on findings
@@ -216,7 +216,7 @@ Escalate to `tdd:hypershift` after 3+ CI failures.
 1. **Fetch all review comments**:
 
 ```bash
-gh api repos/kagenti/kagenti/pulls/<number>/comments
+gh api repos/rossoctl/rossoctl/pulls/<number>/comments
 ```
 
 ```bash
@@ -320,7 +320,7 @@ and being re-read on every subsequent turn.
 
 ```bash
 # Session-scoped log directory — ALWAYS set before running commands
-export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-tdd}"
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/rossoctl-tdd}"
 mkdir -p "$LOG_DIR"
 ```
 

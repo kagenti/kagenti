@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Regression test for https://github.com/kagenti/kagenti/issues/1822
+# Regression test for https://github.com/rossoctl/rossoctl/issues/1822
 #
-# `_adopt_for_helm` in setup-kagenti.sh builds an optional `-n <ns>` flag as a
+# `_adopt_for_helm` in setup-rossoctl.sh builds an optional `-n <ns>` flag as a
 # bash array. When the helper is called for cluster-scoped resources (no
 # namespace), that array stays empty. Under `set -u` (nounset), Bash < 4.4 —
 # notably macOS's system Bash 3.2 — aborts with
 #
-#     setup-kagenti.sh: line NNN: ns_flag[@]: unbound variable
+#     setup-rossoctl.sh: line NNN: ns_flag[@]: unbound variable
 #
 # when expanding "${ns_flag[@]}". The OpenShift installer enables `set -u`
 # (`set -euo pipefail`), so the install dies right after creating the
 # istio-mesh-root-ca certificate.
 #
-# This test extracts the *real* function from setup-kagenti.sh and exercises
+# This test extracts the *real* function from setup-rossoctl.sh and exercises
 # both the cluster-scoped (empty namespace) and namespaced paths under
 # `set -u`. Reproduce the original failure under old Bash:
 #
@@ -26,7 +26,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET="$SCRIPT_DIR/../setup-kagenti.sh"
+TARGET="$SCRIPT_DIR/../setup-rossoctl.sh"
 
 # Extract just the _adopt_for_helm function definition (no need to run the
 # whole installer, which executes top-level install steps on source).

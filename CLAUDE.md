@@ -1,8 +1,8 @@
-# CLAUDE.md - Kagenti Repository
+# CLAUDE.md - Rossoctl Repository
 
 ## Project Overview
 
-**Kagenti** is a cloud-native middleware platform for deploying and orchestrating AI agents. It provides framework-neutral infrastructure for running agents (LangGraph, CrewAI, AG2, etc.) with authentication, authorization, trusted identity, and scaling.
+**Rossoctl** is a cloud-native middleware platform for deploying and orchestrating AI agents. It provides framework-neutral infrastructure for running agents (LangGraph, CrewAI, AG2, etc.) with authentication, authorization, trusted identity, and scaling.
 
 ## Quick Start
 
@@ -13,21 +13,21 @@
 # Show service URLs
 ./.github/scripts/local-setup/show-services.sh
 
-# Access UI at http://kagenti-ui.localtest.me:8080 (see show-services.sh for credentials)
+# Access UI at http://rossoctl-ui.localtest.me:8080 (see show-services.sh for credentials)
 ```
 
 ## Repository Structure
 
 ```
-kagenti/
-├── kagenti/
+rossoctl/
+├── rossoctl/
 │   ├── ui-v2/              # React frontend
 │   ├── backend/            # FastAPI backend
 │   ├── tests/e2e/          # E2E tests
 │   └── examples/           # Example agents/tools
 ├── charts/                 # Helm charts
-│   ├── kagenti/            # Main platform chart
-│   └── kagenti-deps/       # Dependencies
+│   ├── rossoctl/            # Main platform chart
+│   └── rossoctl-deps/       # Dependencies
 ├── deployments/
 │   └── envs/               # Environment values
 ├── .claude/skills/         # Claude Code skills
@@ -39,8 +39,8 @@ kagenti/
 | Task | Command |
 |------|---------|
 | Deploy to Kind | `./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy` |
-| Deploy to OpenShift | `scripts/ocp/setup-kagenti.sh` |
-| Run E2E tests | `uv run pytest kagenti/tests/e2e/ -v` |
+| Deploy to OpenShift | `scripts/ocp/setup-rossoctl.sh` |
+| Run E2E tests | `uv run pytest rossoctl/tests/e2e/ -v` |
 | Run linter | `make lint` |
 | Pre-commit | `pre-commit run --all-files` |
 
@@ -69,14 +69,14 @@ HyperShift hosted cluster kubeconfigs are stored at:
 ```
 
 Examples:
-- `~/clusters/hcp/kagenti-hypershift-custom-uitst/auth/kubeconfig`
-- `~/clusters/hcp/kagenti-hypershift-custom-mlflow/auth/kubeconfig`
+- `~/clusters/hcp/rossoctl-hypershift-custom-uitst/auth/kubeconfig`
+- `~/clusters/hcp/rossoctl-hypershift-custom-mlflow/auth/kubeconfig`
 
 Use with kubectl/oc commands (auto-approved in settings.json):
 
 ```bash
-export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-uitst/auth/kubeconfig
-kubectl get pods -n kagenti-system
+export KUBECONFIG=~/clusters/hcp/rossoctl-hypershift-custom-uitst/auth/kubeconfig
+kubectl get pods -n rossoctl-system
 ```
 
 The management cluster kubeconfig is separate (in `~/.kube/`).
@@ -88,7 +88,7 @@ Run worktree code from main repo (keeps credentials in one place):
 ```bash
 # Stay in main repo
 # For HyperShift: source .env.<MANAGED_BY_TAG> (see .github/scripts/local-setup/README.md)
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 
 # Run worktree's test script
 .worktrees/my-feature/.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy
@@ -106,7 +106,7 @@ source .env.kagenti-hypershift-custom
 
 ## Namespaces
 
-- `kagenti-system` - Platform components
+- `rossoctl-system` - Platform components
 - `keycloak` - Identity provider
 - `team1`, `team2` - Agent namespaces
 
@@ -127,9 +127,9 @@ Any command that produces more than ~5 lines MUST redirect to a session-scoped l
 
 ```bash
 # Set a session-scoped log directory (use worktree/cluster name to avoid collisions)
-export LOG_DIR=/tmp/kagenti/tdd/$WORKTREE   # TDD sessions
-export LOG_DIR=/tmp/kagenti/rca/$WORKTREE   # RCA sessions
-export LOG_DIR=/tmp/kagenti/k8s/$CLUSTER    # K8s debugging
+export LOG_DIR=/tmp/rossoctl/tdd/$WORKTREE   # TDD sessions
+export LOG_DIR=/tmp/rossoctl/rca/$WORKTREE   # RCA sessions
+export LOG_DIR=/tmp/rossoctl/k8s/$CLUSTER    # K8s debugging
 mkdir -p $LOG_DIR
 
 # Pattern: redirect output, return only exit code
@@ -179,8 +179,8 @@ and lets us decouple merge velocity from release readiness.
 ### Rules
 
 1. **Always off by default.** The flag must default to `False` / `off`.
-2. **Use the canonical mechanism.** Flags live in `kagenti/backend/app/core/config.py`
-   as `kagenti_feature_flag_<name>: bool = False` and are exposed to the frontend
+2. **Use the canonical mechanism.** Flags live in `rossoctl/backend/app/core/config.py`
+   as `rossoctl_feature_flag_<name>: bool = False` and are exposed to the frontend
    via the `GET /api/v1/config/features` endpoint (see `app/routers/config.py`).
 3. **Guard at the module boundary.** Feature-flagged modules are conditionally
    imported in `app/main.py`. Follow the existing pattern (try/except with
@@ -192,10 +192,10 @@ and lets us decouple merge velocity from release readiness.
 
 | Flag | Controls |
 |------|----------|
-| `kagenti_feature_flag_sandbox` | Sandboxed agent runtime UI and APIs |
-| `kagenti_feature_flag_integrations` | Third-party integration endpoints |
-| `kagenti_feature_flag_triggers` | Event-driven trigger system |
-| `kagenti_feature_flag_admin` | Platform Status card and /platform-status endpoint |
+| `rossoctl_feature_flag_sandbox` | Sandboxed agent runtime UI and APIs |
+| `rossoctl_feature_flag_integrations` | Third-party integration endpoints |
+| `rossoctl_feature_flag_triggers` | Event-driven trigger system |
+| `rossoctl_feature_flag_admin` | Platform Status card and /platform-status endpoint |
 
 ### TODO
 
@@ -231,7 +231,7 @@ Task lists can be shared or session-specific:
 ### Shared task list (collaboration/handoff)
 
 ```bash
-CLAUDE_CODE_TASK_LIST_ID=kagenti-shared claude
+CLAUDE_CODE_TASK_LIST_ID=rossoctl-shared claude
 ```
 
 All sessions using the same ID see the same tasks.
@@ -281,6 +281,6 @@ The work is the developer's; Claude Code assists. This applies to:
 - [Components](docs/components.md)
 - [AI Ops / Claude Code](docs/ai-ops/README.md)
 - [Demos](docs/demos/README.md)
-- [AuthBridge Demos](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/README.md) — Zero-trust agent demos (weather agent, github issue, webhook, multi-target) in kagenti-extensions
+- [AuthBridge Demos](https://github.com/rossoctl/cortex/blob/main/authbridge/demos/README.md) — Zero-trust agent demos (weather agent, github issue, webhook, multi-target) in cortex
 - [Skills and Patterns](docs/skills/README.md)
 - [Keycloak Patterns](docs/auth/keycloak-patterns.md)

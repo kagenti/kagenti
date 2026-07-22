@@ -1,0 +1,621 @@
+{{- if .Values.components.mlflow.enabled }}
+{{- if or .Values.mlflow.auth.enabled .Values.openshift }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rossoctl.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mlflow-resource-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rossoctl.labels" . | nindent 4 }}
+rules:
+  {{- if .Values.mlflow.auth.enabled }}
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ .Values.mlflow.auth.secretName | default "mlflow-oauth-secret" | quote }}]
+    verbs: ["get"]
+  {{- end }}
+  {{- if .Values.openshift }}
+  # Allow reading route to auto-detect hostname for allowed-hosts
+  - apiGroups: ["route.openshift.io"]
+    resources: ["routes"]
+    resourceNames: ["mlflow"]
+    verbs: ["get"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mlflow-resource-reader-binding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rossoctl.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: mlflow
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: mlflow-resource-reader
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+{{- if and .Values.mlflow.auth.enabled (.Capabilities.APIVersions.Has "security.istio.io/v1") }}
+---
+# Waypoint proxy for MLflow to enable L7 AuthorizationPolicy in Ambient mode.
+# ztunnel (L4) cannot evaluate HTTP path-based rules; waypoint handles L7.
+# NOTE: Requires Istio CRDs to be installed first (security.istio.io/v1)
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: mlflow-waypoint
+  namespace: {{ .Release.Namespace }}
+  labels:
+    istio.io/waypoint-for: service
+    {{- include "rossoctl.labels" . | nindent 4 }}
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE
+---
+# AuthorizationPolicy to control access to MLflow /v1/traces endpoint.
+# Uses targetRefs to attach to the waypoint proxy for L7 policy evaluation.
+# The OTEL collector authenticates via OAuth2 client credentials to MLflow.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: mlflow-traces-from-otel
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rossoctl.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - kind: Service
+      group: ""
+      name: mlflow
+  action: ALLOW
+  rules:
+    # Allow OTEL collector to push traces (mTLS + OAuth2 authenticated)
+    # Note: Istio uses cluster.local trust domain, not SPIRE trust domain
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/{{ .Release.Namespace }}/sa/otel-collector"
+      to:
+        - operation:
+            methods: ["POST"]
+            paths: ["/v1/traces", "/v1/traces/*"]
+    # Allow all other traffic (OIDC auth handled at application level)
+    - to:
+        - operation:
+            notPaths: ["/v1/traces", "/v1/traces/*"]
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: mlflow
+    {{- include "rossoctl.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow
+  template:
+    metadata:
+      labels:
+        app: mlflow
+    spec:
+      {{- if or .Values.mlflow.auth.enabled .Values.openshift }}
+      serviceAccountName: mlflow
+      {{- end }}
+      containers:
+      - name: mlflow
+        image: ghcr.io/mlflow/mlflow:v3.9.0
+        command:
+        - /bin/bash
+        - -c
+        - |
+          export HOME=/tmp && \
+          pip install --no-cache-dir --quiet "psycopg[binary]" && \
+          {{- if .Values.mlflow.auth.enabled }}
+          pip install --no-cache-dir --quiet "mlflow-oidc-auth>=7.3.1,<8" && \
+          {{- end }}
+          {{- if and .Values.openshift .Values.mlflow.auth.enabled }}
+          # Combine system CAs with the ingress CA so Python can verify both
+          # public CAs (e.g. Let's Encrypt on ROSA) and custom OpenShift CAs
+          SYS_CA=$(find /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem -maxdepth 0 2>/dev/null | head -1) && \
+          cat "${SYS_CA:-/dev/null}" /etc/pki/ingress-ca/ingress-ca.pem > /tmp/combined-ca.pem && \
+          export SSL_CERT_FILE=/tmp/combined-ca.pem && \
+          export REQUESTS_CA_BUNDLE=/tmp/combined-ca.pem && \
+          {{- end }}
+          {{- if .Values.openshift }}
+          # Read auto-detected route hostname if available
+          ROUTE_HOST=""
+          if [ -f /tmp/route-config/hostname ]; then
+            ROUTE_HOST=$(cat /tmp/route-config/hostname)
+            echo "Auto-detected route hostname: $ROUTE_HOST"
+          fi
+          # Build allowed hosts list (include port variants for internal service access)
+          ALLOWED_HOSTS="mlflow,mlflow:5000,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}:5000,mlflow.{{ .Release.Namespace }}.svc.cluster.local,mlflow.{{ .Release.Namespace }}.svc.cluster.local:5000,localhost,127.0.0.1"
+          if [ -n "$ROUTE_HOST" ]; then
+            ALLOWED_HOSTS="$ROUTE_HOST,$ALLOWED_HOSTS"
+            CORS_ORIGIN="https://$ROUTE_HOST"
+          else
+            CORS_ORIGIN="https://mlflow-{{ .Release.Namespace }}.apps.{{ .Values.domain | default "cluster.local" }}"
+          fi
+          {{- else }}
+          ALLOWED_HOSTS="mlflow.{{ .Values.domain | default "localtest.me" }}:*,mlflow:*,mlflow.{{ .Release.Namespace }}:5000,mlflow.{{ .Release.Namespace }}.svc.cluster.local:5000,localhost:*,127.0.0.1:*"
+          ALLOWED_HOSTS="$ALLOWED_HOSTS,mlflow.{{ .Values.domain | default "localtest.me" }},mlflow,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}.svc.cluster.local,localhost,127.0.0.1"
+          CORS_ORIGIN="{{ .Values.mlflow.corsOrigin | default (printf "http://mlflow.%s:%s" (.Values.domain | default "localtest.me") (toString (.Values.ingressPort | default 8080))) }}"
+          {{- end }}
+          export MLFLOW_SERVER_ALLOWED_HOSTS="$ALLOWED_HOSTS" && \
+          {{- if .Values.mlflow.auth.enabled }}
+          export MLFLOW_SERVER_ALLOWED_HOSTS="$ALLOWED_HOSTS" && \
+          export MLFLOW_SERVER_CORS_ALLOWED_ORIGINS="$CORS_ORIGIN" && \
+          export MLFLOW_CORS_ALLOWED_ORIGINS="$CORS_ORIGIN" && \
+          # Set MLflow config via environment variables (used by mlflow_oidc_auth.app)
+          # Both BACKEND_STORE_URI and TRACKING_URI needed for otel_router to use PostgreSQL
+          export MLFLOW_BACKEND_STORE_URI="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mlflow" && \
+          export MLFLOW_TRACKING_URI="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mlflow" && \
+          export MLFLOW_ARTIFACTS_DESTINATION="/mlflow/artifacts" && \
+          export _MLFLOW_SERVER_ARTIFACT_ROOT="/mlflow/artifacts" && \
+          export _MLFLOW_SERVER_FILE_STORE="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mlflow" && \
+          export MLFLOW_HOST="0.0.0.0" && \
+          export MLFLOW_PORT="5000" && \
+          # Initialize MLflow database (create tables + run alembic upgrades)
+          # Uses _initialize_tables which does create_all() first (safe for fresh DB)
+          # then _upgrade_db() for any pending migrations.
+          # mlflow db upgrade alone fails on fresh DBs (tries ALTER before CREATE)
+          python3 -c "
+          from mlflow.store.db.utils import _initialize_tables, create_sqlalchemy_engine_with_retry
+          import os
+          engine = create_sqlalchemy_engine_with_retry(os.environ['MLFLOW_BACKEND_STORE_URI'])
+          _initialize_tables(engine)
+          print('MLflow database tables created')
+          " && \
+          mlflow db upgrade "$MLFLOW_BACKEND_STORE_URI" && \
+          echo "MLflow database migrations complete" && \
+          python -c '
+          # IMPORTANT: Patch BEFORE importing app (app is created at import time)
+          from mlflow_oidc_auth.middleware.auth_middleware import AuthMiddleware
+          import mlflow_oidc_auth.middleware.fastapi_permission_middleware as fpm
+          import mlflow_oidc_auth.hooks.before_request as _before_request
+
+          # Assert patched APIs exist — fail fast on mlflow-oidc-auth upgrades
+          assert hasattr(AuthMiddleware, "_is_unprotected_route"), \
+              "mlflow-oidc-auth API changed: AuthMiddleware._is_unprotected_route not found"
+          assert hasattr(fpm, "_find_fastapi_validator"), \
+              "mlflow-oidc-auth API changed: _find_fastapi_validator not found"
+          assert hasattr(_before_request, "_is_unprotected_route"), \
+              "mlflow-oidc-auth API changed: before_request._is_unprotected_route not found"
+
+          # Patch 1: Exclude /v1/traces, /version, /ping from OIDC auth (FastAPI gate)
+          # The OTel collector authenticates via OAuth2 client credentials (Bearer token)
+          # but may not have a user profile in the MLflow users table.
+          # /version and /ping are health-check endpoints that should never require auth.
+          # Skip auth entirely — Istio mTLS protects /v1/traces.
+          original_is_unprotected = AuthMiddleware._is_unprotected_route
+          def patched_is_unprotected(self, path: str) -> bool:
+              if path.startswith("/v1/traces") or path in ("/version", "/ping"):
+                  return True
+              return original_is_unprotected(self, path)
+          AuthMiddleware._is_unprotected_route = patched_is_unprotected
+          print("Excluded /v1/traces, /version, /ping from OIDC auth (FastAPI gate)")
+
+          # Patch 1b: Exclude /version, /ping from Flask before_request auth gate
+          # /version and /ping are Flask routes that pass through both FastAPI middleware
+          # AND the Flask before_request hook. Without this patch, Gate A (above) skips
+          # auth (so no username is set), then Gate B returns 401 because username is None.
+          # /health is already natively exempt at this layer.
+          _original_flask_is_unprotected = _before_request._is_unprotected_route
+          def _patched_flask_is_unprotected(path: str) -> bool:
+              if path in ("/version", "/ping"):
+                  return True
+              return _original_flask_is_unprotected(path)
+          _before_request._is_unprotected_route = _patched_flask_is_unprotected
+          print("Excluded /version, /ping from Flask before_request auth gate")
+
+          # Patch 2: Skip permission validation for /v1/traces
+          # mlflow-oidc-auth v7+ adds a FastAPI permission middleware that checks
+          # experiment UPDATE permission for the OTel endpoint. Since we skip auth
+          # above (no username), the permission check would return 401.
+          original_find_validator = fpm._find_fastapi_validator
+          def patched_find_validator(path: str):
+              if path.startswith("/v1/traces"):
+                  return None
+              return original_find_validator(path)
+          fpm._find_fastapi_validator = patched_find_validator
+          print("Skipped permission validation for /v1/traces")
+
+          # Patch 3: Rewrite OIDC discovery jwks_uri to use internal Keycloak URL
+          # Keycloak returns the public hostname (KC_HOSTNAME) in its discovery
+          # document, but from inside the cluster we need the internal service URL.
+          import mlflow_oidc_auth.auth as _auth_module
+          _original_get_oidc_jwks = _auth_module._get_oidc_jwks
+          def _patched_get_oidc_jwks(force_refresh=False):
+              import os, requests as _req
+              from mlflow_oidc_auth.config import config as _cfg
+              if _cfg.OIDC_DISCOVERY_URL is None:
+                  raise ValueError("OIDC_DISCOVERY_URL is not set")
+              discovery = _req.get(_cfg.OIDC_DISCOVERY_URL).json()
+              jwks_uri = discovery.get("jwks_uri", "")
+              # Rewrite public hostname to internal service URL
+              internal_url = _cfg.OIDC_DISCOVERY_URL.rsplit("/realms/", 1)[0]
+              public_issuer = discovery.get("issuer", "")
+              public_base = public_issuer.rsplit("/realms/", 1)[0] if "/realms/" in public_issuer else ""
+              if public_base and public_base in jwks_uri:
+                  jwks_uri = jwks_uri.replace(public_base, internal_url)
+              return _req.get(jwks_uri).json()
+          _auth_module._get_oidc_jwks = _patched_get_oidc_jwks
+          print("Patched OIDC JWKS fetch to use internal Keycloak URL")
+
+          # NOW import the app (which will use our patched functions)
+          from mlflow_oidc_auth.app import app
+
+          # CORS: the stock MLflow UI fetch() requires Access-Control-Allow-Origin
+          # when mlflow-oidc-auth is enabled (the auth redirect on expired sessions
+          # triggers opaque-redirect handling in the browser Fetch spec).
+          from starlette.middleware.cors import CORSMiddleware
+          import os as _os
+          _allowed_origins = [
+              o.strip() for o in
+              _os.environ.get("MLFLOW_CORS_ALLOWED_ORIGINS", "").split(",")
+              if o.strip()
+          ] or ["*"]
+          app.add_middleware(
+              CORSMiddleware,
+              allow_origins=_allowed_origins,
+              allow_credentials=True,
+              allow_methods=["*"],
+              allow_headers=["*"],
+          )
+          print(f"Added CORS middleware (origins={_allowed_origins})")
+
+          # Gate /v1/traces with 503 until database init completes
+          # This prevents OTEL collector from permanently dropping traces
+          # during the ~100s init window (alembic migrations + user/experiment creation)
+          import threading
+          _db_init_complete = threading.Event()
+
+          from starlette.middleware.base import BaseHTTPMiddleware
+          from starlette.responses import Response
+
+          class InitGateMiddleware(BaseHTTPMiddleware):
+              async def dispatch(self, request, call_next):
+                  if request.url.path.startswith("/v1/traces") and not _db_init_complete.is_set():
+                      return Response(
+                          content="MLflow database initialization in progress",
+                          status_code=503,
+                          headers={"Retry-After": "10"},
+                      )
+                  return await call_next(request)
+
+          app.add_middleware(InitGateMiddleware)
+          print("Added init gate middleware (503 on /v1/traces until DB ready)")
+
+          # Initialize database in a background thread after alembic migrations complete
+          # The app import triggers alembic migrations lazily, so we must wait for tables
+          import os
+          import time as time_module
+
+          def init_database():
+              """Initialize Default experiment and service account user after migrations."""
+              import psycopg
+              db_uri = os.environ.get("MLFLOW_BACKEND_STORE_URI")
+              if not db_uri:
+                  return
+
+              # Phase 1: Create Default experiment (MLflow core tables)
+              max_retries = 60
+              for attempt in range(max_retries):
+                  try:
+                      with psycopg.connect(db_uri) as conn:
+                          with conn.cursor() as cur:
+                              ts = int(time_module.time() * 1000)
+                              cur.execute(
+                                  "INSERT INTO experiments (experiment_id, name, artifact_location, lifecycle_stage, creation_time, last_update_time) "
+                                  "VALUES (0, %s, %s, %s, %s, %s) ON CONFLICT (experiment_id) DO NOTHING",
+                                  ("Default", "/mlflow/artifacts/0", "active", ts, ts)
+                              )
+                              conn.commit()
+                              if cur.rowcount > 0:
+                                  print("Created Default experiment (id=0)")
+                              else:
+                                  print("Default experiment already exists")
+                              break
+                  except Exception as e:
+                      if attempt < max_retries - 1:
+                          print(f"Waiting for experiments table (attempt {attempt + 1}/{max_retries}): {e}")
+                          time_module.sleep(5)
+                      else:
+                          print(f"Warning: Could not create Default experiment after {max_retries} attempts: {e}")
+
+              # Phase 2: Create users (mlflow-oidc-auth tables, may take longer)
+              for attempt in range(max_retries):
+                  try:
+                      with psycopg.connect(db_uri) as conn:
+                          with conn.cursor() as cur:
+                              for uname, dname, admin, svc in [
+                                  ("service-account-mlflow", "MLflow Service Account", False, True),
+                                  ("admin", "Admin User", True, False),
+                              ]:
+                                  cur.execute(
+                                      "INSERT INTO users (username, display_name, is_admin, is_service_account) "
+                                      "VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                                      (uname, dname, admin, svc)
+                                  )
+                                  if cur.rowcount > 0:
+                                      print(f"Created user: {uname}")
+                              conn.commit()
+                              break
+                  except Exception as e:
+                      if attempt < max_retries - 1:
+                          time_module.sleep(5)
+                      else:
+                          print(f"Warning: Could not create users after {max_retries} attempts: {e}")
+
+          # Start database initialization in background thread
+          # This allows uvicorn to start serving while we wait for migrations
+          def init_and_signal():
+              try:
+                  init_database()
+              finally:
+                  _db_init_complete.set()
+                  print("Database init complete - /v1/traces endpoint now accepting requests")
+
+          init_thread = threading.Thread(target=init_and_signal, daemon=True)
+          init_thread.start()
+          print("Started database initialization thread")
+
+          import uvicorn
+          uvicorn.run(app, host="0.0.0.0", port=5000, log_level="info")
+          '
+          {{- else }}
+          mlflow server \
+            --host=0.0.0.0 \
+            --port=5000 \
+            --allowed-hosts "$ALLOWED_HOSTS" \
+            --backend-store-uri=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mlflow \
+            --default-artifact-root=/mlflow/artifacts
+          {{- end }}
+        {{- if .Values.mlflow.auth.enabled }}
+        envFrom:
+        - secretRef:
+            name: {{ .Values.mlflow.auth.secretName | default "mlflow-oauth-secret" }}
+        {{- end }}
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: otel-db-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: otel-db-secret
+              key: password
+        - name: MLFLOW_ENABLE_PROXY_MULTIPART_UPLOAD
+          value: "true"
+        {{- if .Values.mlflow.auth.enabled }}
+        - name: OIDC_USERS_DB_URI
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/mlflow"
+        - name: OIDC_ALEMBIC_VERSION_TABLE
+          value: "mlflow_oidc_alembic_version"
+        - name: DEFAULT_LANDING_PAGE_IS_PERMISSIONS
+          value: "false"
+        {{- end }}
+        ports:
+        - containerPort: 5000
+          name: http
+          protocol: TCP
+        startupProbe:
+          tcpSocket:
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 30  # Allow up to 5 minutes for startup
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "100m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: mlflow-artifacts
+          mountPath: /mlflow/artifacts
+        {{- if .Values.openshift }}
+        - name: route-config
+          mountPath: /tmp/route-config
+          readOnly: true
+        {{- end }}
+        {{- if and .Values.openshift .Values.mlflow.auth.enabled }}
+        # Mount ingress CA for JWKS verification (external Keycloak URL)
+        - name: ingress-ca
+          mountPath: /etc/pki/ingress-ca
+          readOnly: true
+        {{- end }}
+      initContainers:
+      {{- if .Values.openshift }}
+      # Detect route hostname for allowed-hosts configuration
+      - name: detect-route-hostname
+        image: {{ .Values.common.kubectlImage | default "bitnami/kubectl:latest" }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Detecting MLflow route hostname..."
+          # Wait for route to exist (may take a moment after initial deploy)
+          for i in $(seq 1 30); do
+            HOSTNAME=$(kubectl get route mlflow -n {{ .Release.Namespace }} -o jsonpath='{.spec.host}' 2>/dev/null)
+            if [ -n "$HOSTNAME" ]; then
+              echo "Route hostname: $HOSTNAME"
+              echo "$HOSTNAME" > /tmp/route-config/hostname
+              exit 0
+            fi
+            echo "Waiting for route... ($i/30)"
+            sleep 2
+          done
+          echo "Warning: Could not detect route hostname, using fallback"
+          # Fallback to default pattern if route detection fails
+          echo "mlflow-{{ .Release.Namespace }}.apps.{{ .Values.domain | default "cluster.local" }}" > /tmp/route-config/hostname
+        volumeMounts:
+        - name: route-config
+          mountPath: /tmp/route-config
+      {{- end }}
+      {{- if .Values.mlflow.auth.enabled }}
+      # Wait for OAuth secret to exist before starting MLflow
+      # This prevents MLflow from running unauthenticated
+      - name: wait-for-oauth-secret
+        image: {{ .Values.common.kubectlImage | default "bitnami/kubectl:latest" }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Waiting for mlflow-oauth-secret to be created..."
+          until kubectl get secret {{ .Values.mlflow.auth.secretName | default "mlflow-oauth-secret" }} -n {{ .Release.Namespace }} 2>/dev/null; do
+            echo "Secret not found, waiting..."
+            sleep 5
+          done
+          echo "OAuth secret found, MLflow can start with authentication enabled"
+      {{- end }}
+      - name: create-db
+        image: {{ .Values.common.postgresImage | default "postgres:16" }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Waiting for PostgreSQL to be ready..."
+          for i in $(seq 1 60); do
+            if PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U $POSTGRES_USER -d postgres -c "SELECT 1" >/dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              break
+            fi
+            echo "Waiting for PostgreSQL... ($i/60)"
+            sleep 2
+          done
+          echo "Creating MLflow database if not exists..."
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U $POSTGRES_USER -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'mlflow'" | grep -q 1 || \
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U $POSTGRES_USER -d postgres -c "CREATE DATABASE mlflow"
+          echo "Database ready"
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: otel-db-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: otel-db-secret
+              key: password
+      volumes:
+      - name: mlflow-artifacts
+        emptyDir: {}
+      {{- if .Values.openshift }}
+      - name: route-config
+        emptyDir: {}
+      {{- end }}
+      {{- if and .Values.openshift .Values.mlflow.auth.enabled }}
+      # OpenShift ingress CA for JWKS verification
+      # Copied from openshift-config-managed/default-ingress-cert by pre-install Job
+      - name: ingress-ca
+        configMap:
+          name: otel-ingress-ca
+          items:
+            - key: ca-bundle.crt
+              path: ingress-ca.pem
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: mlflow
+    {{- include "rossoctl.labels" . | nindent 4 }}
+    {{- if and .Values.mlflow.auth.enabled (.Capabilities.APIVersions.Has "security.istio.io/v1") }}
+    # Route traffic through waypoint proxy for L7 AuthorizationPolicy
+    # NOTE: Only applied when Istio CRDs are available
+    istio.io/use-waypoint: mlflow-waypoint
+    {{- end }}
+spec:
+  selector:
+    app: mlflow
+  ports:
+  - name: http
+    port: 5000
+    targetPort: 5000
+    protocol: TCP
+  type: ClusterIP
+---
+{{- if .Values.openshift }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rossoctl.labels" . | nindent 4 }}
+  annotations:
+    openshift.io/host.generated: "true"
+spec:
+  path: /
+  port:
+    targetPort: 5000
+  to:
+    kind: Service
+    name: mlflow
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- else }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rossoctl.labels" . | nindent 4 }}
+    app: mlflow
+spec:
+  parentRefs:
+    - name: http
+      namespace: {{ .Release.Namespace }}
+  hostnames:
+    - mlflow.{{ .Values.domain | default "localtest.me" }}
+  rules:
+    - backendRefs:
+        - name: mlflow
+          port: 5000
+{{- end }}
+{{- end }}

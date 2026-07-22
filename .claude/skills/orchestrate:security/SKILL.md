@@ -132,7 +132,7 @@ All commits must be signed off (`git commit -s`).
 ## Step 4: LICENSE
 
 Check if LICENSE exists. If missing:
-- Check the org's standard license (most kagenti repos use Apache 2.0)
+- Check the org's standard license (most rossoctl repos use Apache 2.0)
 - Add the appropriate LICENSE file
 - If unsure, flag in the PR for maintainer decision
 

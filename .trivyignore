@@ -5,7 +5,7 @@
 # AVD-DS-0002: mlflow-oauth-secret runs in OpenShift with random UID
 # The Dockerfile sets g=u permissions for OpenShift compatibility (random UID assignment).
 # Adding a fixed USER directive would conflict with OpenShift's security model.
-# File: kagenti/auth/mlflow-oauth-secret/Dockerfile
+# File: rossoctl/auth/mlflow-oauth-secret/Dockerfile
 # Note: This is a global suppression (Trivy doesn't support per-file suppressions for DS-* checks)
 AVD-DS-0002
 
@@ -24,7 +24,7 @@ AVD-KSV-0041
 # AVD-KSV-0048: ClusterRole managing pods/deployments (required for CI cleanup)
 AVD-KSV-0048
 
-# AVD-KSV-0049: ClusterRole managing configmaps (required for Kagenti config)
+# AVD-KSV-0049: ClusterRole managing configmaps (required for Rossoctl config)
 AVD-KSV-0049
 
 # Sandbox deployment manifests use trusted registries:

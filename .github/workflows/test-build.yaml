@@ -80,9 +80,9 @@ jobs:
       matrix:
         image_config:
           - name: ui-v2
-            path: ./kagenti
+            path: ./rossoctl
           - name: backend
-            path: ./kagenti
+            path: ./rossoctl
 
     steps:
       - name: Checkout repository

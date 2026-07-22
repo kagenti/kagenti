@@ -1,6 +1,6 @@
 # Use Cases
 
-Scenarios that define the Kagenti vision across verticals. Each maps to a
+Scenarios that define the Rossoctl vision across verticals. Each maps to a
 persona from [PERSONAS_AND_ROLES.md](../PERSONAS_AND_ROLES.md). Detailed
 drill-downs are linked where they exist.
 
@@ -108,4 +108,4 @@ agents, tool-calling agents, MCP tool approval models, and sandboxing profile
 selection.
 
 See: [agentic-runtime/use-cases.md](agentic-runtime/use-cases.md)
-(PR [#1005](https://github.com/kagenti/kagenti/pull/1005))
+(PR [#1005](https://github.com/rossoctl/rossoctl/pull/1005))

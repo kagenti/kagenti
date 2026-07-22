@@ -4,14 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - 'kagenti/**'
+      - 'rossoctl/**'
       - 'charts/**'
       - 'deployments/**'
       - '.github/**'
       - 'pyproject.toml'
       - 'uv.lock'
-      - 'kagenti/ui-v2/package.json'
-      - 'kagenti/ui-v2/package-lock.json'
+      - 'rossoctl/ui-v2/package.json'
+      - 'rossoctl/ui-v2/package-lock.json'
   # NOTE: For PR E2E testing, use /run-e2e comment trigger (see e2e-hypershift-pr.yaml)
   # This workflow only handles push to main and manual dispatch.
   workflow_dispatch:
@@ -34,7 +34,7 @@ on:
         required: false
         default: '6'
       dep_builds:
-        description: 'JSON array of dependency builds, e.g. [{"repo":"kagenti/kagenti-extensions","ref":"fix/branch"}]'
+        description: 'JSON array of dependency builds, e.g. [{"repo":"rossoctl/cortex","ref":"fix/branch"}]'
         required: false
         default: '[]'
 
@@ -61,7 +61,7 @@ jobs:
   # ============================================================================
   # E2E Tests Job - This is the main check that determines PR mergeability
   # ============================================================================
-  e2e-ocp-kagenti-operator:
+  e2e-ocp-rossoctl-operator:
     name: Deploy & Test
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -154,13 +154,13 @@ jobs:
           BASE_DOMAIN: ${{ secrets.BASE_DOMAIN }}
           OCP_VERSION: ${{ env.OCP_VERSION }}
 
-      - name: Deploy Kagenti
+      - name: Deploy Rossoctl
         if: success()
-        run: bash .github/scripts/hypershift/ci/70-deploy-kagenti.sh
+        run: bash .github/scripts/hypershift/ci/70-deploy-rossoctl.sh
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          KAGENTI_DEP_BUILDS: ${{ inputs.dep_builds }}
+          ROSSOCTL_DEP_BUILDS: ${{ inputs.dep_builds }}
 
       - name: Build platform images from source (backend, ui-v2, agent-oauth-secret)
         if: success()
@@ -203,7 +203,7 @@ jobs:
         run: bash .github/scripts/hypershift/ci/80-run-e2e-tests.sh
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
-          KAGENTI_CONFIG_FILE: deployments/envs/ocp_ci_values.yaml
+          ROSSOCTL_CONFIG_FILE: deployments/envs/ocp_ci_values.yaml
 
       # ── Token Exchange E2E (community KC = fatal, RHBK = non-fatal) ──
       - name: Setup Keycloak realm for token exchange
@@ -212,9 +212,9 @@ jobs:
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
 
-      - name: Enable kagenti in token exchange namespace
+      - name: Enable rossoctl in token exchange namespace
         if: success()
-        run: bash .github/scripts/token-exchange/50-enable-kagenti-ns.sh
+        run: bash .github/scripts/token-exchange/50-enable-rossoctl-ns.sh
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
           PLATFORM: ocp
@@ -251,7 +251,7 @@ jobs:
           sleep 30
           # Wait for the client-credentials Secret the injected pod mounts (operator registers it async).
           for i in $(seq 1 30); do
-            CREDS=$(kubectl get secrets -n tx-e2e -o name | grep -c kagenti-keycloak-client-credentials || echo "0")
+            CREDS=$(kubectl get secrets -n tx-e2e -o name | grep -c rossoctl-keycloak-client-credentials || echo "0")
             [ "$CREDS" -ge 2 ] && echo "Credentials ready ($CREDS)" && break
             echo "Waiting for credentials ($CREDS/2)..."
             sleep 10
@@ -283,7 +283,7 @@ jobs:
           bash .github/scripts/token-exchange/35-install-keycloak-ocp.sh rhbk
           # Re-run full setup + tests
           bash .github/scripts/token-exchange/40-setup-keycloak-realm.sh
-          bash .github/scripts/token-exchange/50-enable-kagenti-ns.sh
+          bash .github/scripts/token-exchange/50-enable-rossoctl-ns.sh
           bash .github/scripts/token-exchange/55-setup-spiffe-idp.sh
           bash .github/scripts/token-exchange/70-deploy-test-workloads.sh
           bash .github/scripts/token-exchange/56-enable-spiffe.sh
@@ -291,7 +291,7 @@ jobs:
           sleep 30
           # Wait for the client-credentials Secret the injected pod mounts (operator registers it async).
           for i in $(seq 1 30); do
-            CREDS=$(kubectl get secrets -n tx-e2e -o name | grep -c kagenti-keycloak-client-credentials || echo "0")
+            CREDS=$(kubectl get secrets -n tx-e2e -o name | grep -c rossoctl-keycloak-client-credentials || echo "0")
             [ "$CREDS" -ge 2 ] && echo "Credentials ready ($CREDS)" && break
             echo "Waiting for credentials ($CREDS/2)..."
             sleep 10
@@ -319,16 +319,16 @@ jobs:
         run: |
           echo "=== Trivy Kubernetes Cluster Security Scan ==="
           echo ""
-          echo "Scanning deployed Kagenti platform for security issues..."
+          echo "Scanning deployed Rossoctl platform for security issues..."
           echo ""
 
           # Install Trivy
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 
-          # Scan Kagenti namespaces for misconfigurations
-          echo "--- Scanning kagenti-system namespace ---"
+          # Scan Rossoctl namespaces for misconfigurations
+          echo "--- Scanning rossoctl-system namespace ---"
           trivy k8s --kubeconfig "$KUBECONFIG" \
-            --include-namespaces kagenti-system \
+            --include-namespaces rossoctl-system \
             --severity HIGH,CRITICAL \
             --report summary \
             --timeout 10m || true
@@ -368,7 +368,7 @@ jobs:
     name: Cleanup
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [e2e-ocp-kagenti-operator]
+    needs: [e2e-ocp-rossoctl-operator]
     # Always run cleanup to destroy any resources with this PR's CLUSTER_SUFFIX
     # This handles: failed runs, cancelled runs, and stale resources from previous runs
     # Only skip if skip_destroy is explicitly set (for debugging)
@@ -416,7 +416,7 @@ jobs:
 
       - name: Release CI slot
         if: always()
-        run: bash .github/scripts/hypershift/ci/slots/release.sh "${{ needs.e2e-ocp-kagenti-operator.outputs.slot_id }}"
+        run: bash .github/scripts/hypershift/ci/slots/release.sh "${{ needs.e2e-ocp-rossoctl-operator.outputs.slot_id }}"
 
       - name: Summary
         if: always()
@@ -426,5 +426,5 @@ jobs:
           MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
           OCP_VERSION: ${{ env.OCP_VERSION }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
-          E2E_RESULT: ${{ needs.e2e-ocp-kagenti-operator.result }}
+          E2E_RESULT: ${{ needs.e2e-ocp-rossoctl-operator.result }}
           SKIP_DESTROY: ${{ inputs.skip_destroy || 'false' }}

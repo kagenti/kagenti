@@ -38,7 +38,7 @@ Before running setup:
 
 ## What local-setup.sh Does
 
-1. **Loads credentials** from `.env.kagenti-hypershift-custom` or `.env.hypershift-ci`
+1. **Loads credentials** from `.env.rossoctl-hypershift-custom` or `.env.hypershift-ci`
 2. **Installs hcp CLI** from OpenShift console to `~/.local/bin`
 3. **Clones hypershift-automation** repository (Ladas fork with additional-tags support)
 4. **Installs ansible collections**: kubernetes.core, amazon.aws, community.general
@@ -55,7 +55,7 @@ Before running setup:
 
 Expected output:
 ```
-✓ Loaded credentials from .env.kagenti-hypershift-custom
+✓ Loaded credentials from .env.rossoctl-hypershift-custom
 ✓ hcp CLI installed to ~/.local/bin
 ✓ Cloned to .../hypershift-automation
 ✓ Ansible collections installed
@@ -111,7 +111,7 @@ git clone -b add-additional-tags-support https://github.com/Ladas/hypershift-aut
 
 ## Credentials File Structure
 
-The setup creates `.env.kagenti-hypershift-custom` (or `.env.hypershift-ci`):
+The setup creates `.env.rossoctl-hypershift-custom` (or `.env.hypershift-ci`):
 
 ```bash
 # AWS credentials (scoped to MANAGED_BY_TAG)
@@ -120,12 +120,12 @@ export AWS_SECRET_ACCESS_KEY="..."
 export AWS_REGION="us-east-1"
 
 # Cluster configuration
-export MANAGED_BY_TAG="kagenti-hypershift-custom"
+export MANAGED_BY_TAG="rossoctl-hypershift-custom"
 export BASE_DOMAIN="octo-emerging.redhataicoe.com"
-export HCP_ROLE_NAME="kagenti-hypershift-custom-hcp-role"
+export HCP_ROLE_NAME="rossoctl-hypershift-custom-hcp-role"
 
 # Management cluster access
-export KUBECONFIG="$HOME/.kube/kagenti-hypershift-ci-mgmt.kubeconfig"
+export KUBECONFIG="$HOME/.kube/rossoctl-hypershift-ci-mgmt.kubeconfig"
 
 # Pull secret (for accessing Red Hat registries)
 export PULL_SECRET='{"auths":{...}}'
@@ -145,7 +145,7 @@ ansible-galaxy collection list | grep -E "kubernetes|amazon|community"
 aws sts get-caller-identity
 
 # Check management cluster access
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 oc get hostedclusters -n clusters
 ```
 
@@ -182,7 +182,7 @@ ls -la ../hypershift-automation
 
 ```bash
 # Verify credentials work
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 aws sts get-caller-identity
 
 # If using wrong credentials (e.g., CI instead of admin)

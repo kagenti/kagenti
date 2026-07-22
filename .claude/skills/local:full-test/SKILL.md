@@ -1,11 +1,11 @@
 ---
 name: local:full-test
-description: Run full end-to-end test workflows for Kagenti. Supports Kind and HyperShift clusters with automated setup and testing.
+description: Run full end-to-end test workflows for Rossoctl. Supports Kind and HyperShift clusters with automated setup and testing.
 ---
 
 # Local Full Test Skill
 
-Run complete end-to-end test workflows that create clusters, deploy Kagenti, and run tests.
+Run complete end-to-end test workflows that create clusters, deploy Rossoctl, and run tests.
 
 ## When to Use
 
@@ -45,7 +45,7 @@ oc login https://api.your-cluster.example.com:6443 -u kubeadmin -p <password>
 ./.github/scripts/hypershift/local-setup.sh
 
 # Full test with HyperShift cluster (keeps cluster after)
-source .env.kagenti-hypershift-custom
+source .env.rossoctl-hypershift-custom
 ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy
 
 # With custom suffix
@@ -64,7 +64,7 @@ The `kind-full-test.sh` script runs:
 
 1. **Cleanup** - Remove existing cluster (optional)
 2. **Create Cluster** - Create Kind cluster
-3. **Deploy Platform** - Deploy Kagenti platform
+3. **Deploy Platform** - Deploy Rossoctl platform
 4. **Deploy Agents** - Build and deploy demo agents
 5. **Run E2E Tests** - Execute test suite
 6. **Show Access** - Display UI access information
@@ -88,8 +88,8 @@ SKIP_TESTS=true ./.github/scripts/local-setup/kind-full-test.sh
 The `hypershift-full-test.sh` script runs:
 
 1. **Create Cluster** - Create HyperShift cluster on AWS (~15 min)
-2. **Deploy Platform** - Deploy Kagenti platform
-3. **Wait for CRDs** - Wait for Kagenti CRDs
+2. **Deploy Platform** - Deploy Rossoctl platform
+3. **Wait for CRDs** - Wait for Rossoctl CRDs
 4. **Apply Pipelines** - Apply Tekton pipeline templates
 5. **Build Tools** - Build weather tool via Tekton
 6. **Deploy Agents** - Deploy weather agent and tool
@@ -137,18 +137,18 @@ The `hypershift-full-test.sh` script runs:
 export KUBECONFIG=~/clusters/hcp/<cluster-name>/auth/kubeconfig
 
 # 3. Deploy platform
-./.github/scripts/kagenti-operator/30-run-installer.sh --env ocp
-./.github/scripts/kagenti-operator/41-wait-crds.sh
+./.github/scripts/operator/30-run-installer.sh --env ocp
+./.github/scripts/operator/41-wait-crds.sh
 
 # 4. Deploy agents
-./.github/scripts/kagenti-operator/71-build-weather-tool.sh
-./.github/scripts/kagenti-operator/72-deploy-weather-tool.sh
-./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+./.github/scripts/operator/71-build-weather-tool.sh
+./.github/scripts/operator/72-deploy-weather-tool.sh
+./.github/scripts/operator/74-deploy-weather-agent.sh
 
 # 5. Run E2E tests
 export AGENT_URL="https://$(oc get route -n team1 weather-service -o jsonpath='{.spec.host}')"
-export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
-./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
+export ROSSOCTL_CONFIG_FILE=deployments/envs/ocp_values.yaml
+./.github/scripts/operator/90-run-e2e-tests.sh
 
 # 6. Cleanup (when done)
 ./.github/scripts/hypershift/destroy-cluster.sh <suffix>
@@ -162,19 +162,19 @@ export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
 ```
 
 Output includes:
-- Kagenti UI URL
+- Rossoctl UI URL
 - Keycloak URL
 - Phoenix URL
 - Kiali URL
 - Agent endpoints
 - Port-forward commands
 
-## Deploy Kagenti Operator Only
+## Deploy Rossoctl Operator Only
 
 For testing just the operator:
 
 ```bash
-./.github/scripts/local-setup/deploy-kagenti-operator.sh
+./.github/scripts/local-setup/deploy-rossoctl-operator.sh
 ```
 
 ## Environment Variables
@@ -195,8 +195,8 @@ HyperShift workflows use **two separate kubeconfigs**:
 
 | Kubeconfig | Purpose | Location |
 |------------|---------|----------|
-| **Management cluster** | Create/destroy hosted clusters | Set via `KUBECONFIG` in `.env.kagenti-hypershift-custom` |
-| **Hosted cluster** | Deploy Kagenti, run tests | `~/clusters/hcp/<cluster-name>/auth/kubeconfig` |
+| **Management cluster** | Create/destroy hosted clusters | Set via `KUBECONFIG` in `.env.rossoctl-hypershift-custom` |
+| **Hosted cluster** | Deploy Rossoctl, run tests | `~/clusters/hcp/<cluster-name>/auth/kubeconfig` |
 
 The script automatically switches between them at phase boundaries.
 
@@ -206,7 +206,7 @@ When only running install/agents/test (skipping create/destroy), you can set jus
 
 ```bash
 # No need to source .env - just set the hosted cluster kubeconfig
-export HOSTED_KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-ladas/auth/kubeconfig
+export HOSTED_KUBECONFIG=~/clusters/hcp/rossoctl-hypershift-custom-ladas/auth/kubeconfig
 ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-create --skip-cluster-destroy
 ```
 
@@ -234,7 +234,7 @@ kubectl get pods -A | grep -v Running
 
 # Specific namespace
 kubectl get pods -n team1
-kubectl get pods -n kagenti-system
+kubectl get pods -n rossoctl-system
 ```
 
 ### View Logs
@@ -244,7 +244,7 @@ kubectl get pods -n kagenti-system
 kubectl logs -n team1 deployment/weather-service --tail=100
 
 # Operator logs
-kubectl logs -n kagenti-system -l app=kagenti-operator --tail=100
+kubectl logs -n rossoctl-system -l app=rossoctl-operator --tail=100
 ```
 
 ### Check Events
@@ -260,7 +260,7 @@ kubectl get events -A --sort-by='.lastTimestamp' | tail -30
 ./.github/scripts/kind/run-e2e-tests.sh
 
 # Or for HyperShift
-./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
+./.github/scripts/operator/90-run-e2e-tests.sh
 ```
 
 ## Comparison: Kind vs HyperShift
@@ -278,7 +278,7 @@ kubectl get events -A --sort-by='.lastTimestamp' | tail -30
 
 - **kind:cluster**: Manage Kind clusters
 - **hypershift:cluster**: Manage HyperShift clusters
-- **kagenti:operator**: Deploy Kagenti operator
+- **rossoctl:operator**: Deploy Rossoctl operator
 - **local:testing**: Detailed local testing guide
 
 ## Related Documentation

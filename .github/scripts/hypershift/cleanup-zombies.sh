@@ -23,7 +23,7 @@
 #   ./.github/scripts/hypershift/cleanup-zombies.sh --cluster <cluster-name> --force
 #
 # EXAMPLES:
-#   source .env.kagenti-hypershift-custom
+#   source .env.rossoctl-hypershift-custom
 #   ./.github/scripts/hypershift/cleanup-zombies.sh --force
 #
 
@@ -39,8 +39,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # Zombie thresholds
 MAX_CLUSTER_AGE_HOURS=${MAX_CLUSTER_AGE_HOURS:-6}  # Clusters older than 6h are zombies
 NAMESPACE="clusters"
-MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
-LEASE_PREFIX="kagenti-ci-slot"
+MANAGED_BY_TAG="${MANAGED_BY_TAG:-rossoctl-hypershift-custom}"
+LEASE_PREFIX="rossoctl-ci-slot"
 
 # Mode
 FORCE=false
@@ -299,7 +299,7 @@ echo ""
 
 # Verify prerequisites
 if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
-    log_error "AWS credentials not set. Run: source .env.kagenti-hypershift-custom"
+    log_error "AWS credentials not set. Run: source .env.rossoctl-hypershift-custom"
     exit 1
 fi
 
@@ -343,7 +343,7 @@ if [ -z "$clusters_json" ]; then
     log_info "No HostedClusters found"
 else
     # Get all CI slot leases to check for orphans
-    leases=$(oc get leases -n clusters -l app=kagenti-ci \
+    leases=$(oc get leases -n clusters -l app=rossoctl-ci \
         -o jsonpath='{range .items[*]}{.spec.holderIdentity}{"\n"}{end}' 2>/dev/null || echo "")
 
     while IFS='|' read -r cluster_name created deletion_ts; do

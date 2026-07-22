@@ -1,6 +1,6 @@
-# Kagenti Components
+# Rossoctl Components
 
-This document provides detailed information about each component of the Kagenti platform.
+This document provides detailed information about each component of the Rossoctl platform.
 
 ## Table of Contents
 
@@ -9,7 +9,7 @@ This document provides detailed information about each component of the Kagenti 
 - [Agent Lifecycle Operator](#agent-lifecycle-operator)
 - [MCP Gateway](#mcp-gateway)
 - [Plugins adapter](#plugins-adapter)
-- [Kagenti UI](#kagenti-ui)
+- [Rossoctl UI](#rossoctl-ui)
 - [Identity & Auth Bridge](#identity--auth-bridge)
 - [Infrastructure Services](#infrastructure-services)
 - [Supported Agent Frameworks](#supported-agent-frameworks)
@@ -19,7 +19,7 @@ This document provides detailed information about each component of the Kagenti 
 
 ## Overview
 
-Kagenti is a cloud-native middleware providing a **framework-neutral**, **scalable**, and **secure** platform for deploying and orchestrating AI agents through a standardized REST API. It addresses the gap between agent development frameworks and production deployment by providing:
+Rossoctl is a cloud-native middleware providing a **framework-neutral**, **scalable**, and **secure** platform for deploying and orchestrating AI agents through a standardized REST API. It addresses the gap between agent development frameworks and production deployment by providing:
 
 - **Authentication and Authorization** — Secure access control for agents and tools
 - **Trusted Identity** — SPIRE-managed workload identities
@@ -32,7 +32,7 @@ Kagenti is a cloud-native middleware providing a **framework-neutral**, **scalab
 
 Despite the extensive variety of frameworks available for developing agent-based applications, there is a distinct lack of standardized methods for deploying and operating agent code in production environments, as well as for exposing it through a standardized API. Agents are adept at reasoning, planning, and interacting with various tools, but their full potential can be limited by deployment challenges.
 
-Kagenti addresses this gap by enhancing existing agent frameworks with production-ready infrastructure.
+Rossoctl addresses this gap by enhancing existing agent frameworks with production-ready infrastructure.
 
 For a detailed architecture diagram showing component interactions and data flow, see [Technical Details](./tech-details.md).
 
@@ -40,7 +40,7 @@ For a detailed architecture diagram showing component interactions and data flow
 
 ## Architecture Diagram
 
-All the Kagenti components and their deployment namespaces
+All the Rossoctl components and their deployment namespaces
 
 ```shell
 ┌───────────────────────────────────────────────────────────────────────┐
@@ -48,9 +48,9 @@ All the Kagenti components and their deployment namespaces
 ├───────────────────────────────────────────────────────────────────────┤
 │                                                                       │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │                      kagenti-system Namespace                   │  │
+│  │                      rossoctl-system Namespace                   │  │
 │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐ │  │
-│  │  │ Kagenti UI │  │ Shipwright │  │  Ingress   │  │   Kiali    │ │  │
+│  │  │ Rossoctl UI │  │ Shipwright │  │  Ingress   │  │   Kiali    │ │  │
 │  │  │            │  │  (Builds)  │  │  Gateway   │  │            │ │  │
 │  │  │            │  │            │  │            │  │            │ │  │
 │  │  └────────────┘  └────────────┘  └────────────┘  └────────────┘ │  │
@@ -86,7 +86,7 @@ All the Kagenti components and their deployment namespaces
 
 ## Agent Deployment Architecture
 
-Kagenti deploys agents using standard Kubernetes workloads (Deployments + Services), providing a simple, portable, and operator-free deployment model.
+Rossoctl deploys agents using standard Kubernetes workloads (Deployments + Services), providing a simple, portable, and operator-free deployment model.
 
 ### Capabilities
 
@@ -100,7 +100,7 @@ Kagenti deploys agents using standard Kubernetes workloads (Deployments + Servic
 
 ### Container Build System
 
-Kagenti uses [Shipwright](https://shipwright.io) for building container images from source:
+Rossoctl uses [Shipwright](https://shipwright.io) for building container images from source:
 
 | Strategy | Use Case | Description |
 |----------|----------|-------------|
@@ -125,10 +125,10 @@ metadata:
   name: weather-service
   namespace: team1
   labels:
-    protocol.kagenti.io/a2a: ""
-    kagenti.io/framework: LangGraph
+    protocol.rossoctl.io/a2a: ""
+    rossoctl.io/framework: LangGraph
     app.kubernetes.io/name: weather-service
-    app.kubernetes.io/managed-by: kagenti-ui
+    app.kubernetes.io/managed-by: rossoctl-ui
 spec:
   replicas: 1
   selector:
@@ -137,12 +137,12 @@ spec:
   template:
     metadata:
       labels:
-        protocol.kagenti.io/a2a: ""
+        protocol.rossoctl.io/a2a: ""
         app.kubernetes.io/name: weather-service
     spec:
       containers:
         - name: agent
-          image: ghcr.io/kagenti/weather-service:latest
+          image: ghcr.io/rossoctl/weather-service:latest
           env:
             - name: PORT
               value: "8000"
@@ -176,10 +176,10 @@ spec:
 ```
 
 ```yaml
-# AgentRuntime - Enrolls the workload with the kagenti-operator.
-# The operator applies the kagenti.io/type label and triggers
+# AgentRuntime - Enrolls the workload with the rossoctl-operator.
+# The operator applies the rossoctl.io/type label and triggers
 # AuthBridge sidecar injection automatically.
-apiVersion: agent.kagenti.dev/v1alpha1
+apiVersion: agent.rossoctl.dev/v1alpha1
 kind: AgentRuntime
 metadata:
   name: weather-service
@@ -201,13 +201,13 @@ kind: Build
 metadata:
   name: weather-service
   labels:
-    kagenti.io/type: agent
-    protocol.kagenti.io/a2a: ""
+    rossoctl.io/type: agent
+    protocol.rossoctl.io/a2a: ""
 spec:
   source:
     type: Git
     git:
-      url: https://github.com/kagenti/agent-examples
+      url: https://github.com/rossoctl/examples
       revision: main
     contextDir: a2a/weather_service
   strategy:
@@ -221,7 +221,7 @@ spec:
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    Kagenti UI                       │
+│                    Rossoctl UI                       │
 ├─────────────────────────────────────────────────────┤
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
 │  │   Import    │  │   Build     │  │   Deploy    │  │
@@ -242,11 +242,11 @@ All agent workloads use consistent labels for discovery:
 
 | Label | Value | Purpose |
 |-------|-------|---------|
-| `kagenti.io/type` | `agent` | Identifies resource as a Kagenti agent (operator-managed via AgentRuntime CR) |
-| `protocol.kagenti.io/<name>` | `""` | Protocol support (e.g. `protocol.kagenti.io/a2a`) |
-| `kagenti.io/framework` | `LangGraph`, `CrewAI`, etc. | Agent framework |
+| `rossoctl.io/type` | `agent` | Identifies resource as a Rossoctl agent (operator-managed via AgentRuntime CR) |
+| `protocol.rossoctl.io/<name>` | `""` | Protocol support (e.g. `protocol.rossoctl.io/a2a`) |
+| `rossoctl.io/framework` | `LangGraph`, `CrewAI`, etc. | Agent framework |
 | `app.kubernetes.io/name` | `<agent-name>` | Standard K8s app name |
-| `app.kubernetes.io/managed-by` | `kagenti-ui` | Resource manager |
+| `app.kubernetes.io/managed-by` | `rossoctl-ui` | Resource manager |
 
 ---
 
@@ -329,13 +329,13 @@ kind: Build
 metadata:
   name: weather-tool
   labels:
-    kagenti.io/type: tool
-    protocol.kagenti.io/streamable_http: ""
+    rossoctl.io/type: tool
+    protocol.rossoctl.io/streamable_http: ""
 spec:
   source:
     type: Git
     git:
-      url: https://github.com/kagenti/agent-examples
+      url: https://github.com/rossoctl/examples
       revision: main
     contextDir: mcp/weather_tool
   strategy:
@@ -353,8 +353,8 @@ metadata:
   name: weather-tool
   namespace: team1
   labels:
-    protocol.kagenti.io/mcp: ""
-    kagenti.io/transport: streamable_http
+    protocol.rossoctl.io/mcp: ""
+    rossoctl.io/transport: streamable_http
     app.kubernetes.io/name: weather-tool
 spec:
   replicas: 1
@@ -364,8 +364,8 @@ spec:
   template:
     metadata:
       labels:
-        protocol.kagenti.io/mcp: ""
-        kagenti.io/transport: streamable_http
+        protocol.rossoctl.io/mcp: ""
+        rossoctl.io/transport: streamable_http
         app.kubernetes.io/name: weather-tool
     spec:
       containers:
@@ -377,8 +377,8 @@ spec:
 ```
 
 ```yaml
-# AgentRuntime - Enrolls the tool with the kagenti-operator
-apiVersion: agent.kagenti.dev/v1alpha1
+# AgentRuntime - Enrolls the tool with the rossoctl-operator
+apiVersion: agent.rossoctl.dev/v1alpha1
 kind: AgentRuntime
 metadata:
   name: weather-tool
@@ -400,7 +400,7 @@ For detailed tool deployment instructions, see [Importing a New Tool](./new-tool
 
 ## Plugins Adapter
 
-**Repository**: [kagenti/plugins-adapter](https://github.com/kagenti/plugins-adapter)
+**Repository**: [rossoctl/plugins-adapter](https://github.com/rossoctl/plugins-adapter)
 
 The Plugins Adapter enables dynamic plugin loading and execution within Envoy-based gateways, including the [MCP gateway](#mcp-gateway), via Envoy's External Processing API (ext_proc). It allows runtime extension of gateway capabilities without recompiling or redeploying the gateway.
 
@@ -415,9 +415,9 @@ The Plugins Adapter enables dynamic plugin loading and execution within Envoy-ba
 
 ---
 
-## Kagenti UI
+## Rossoctl UI
 
-**Location**: `kagenti/ui-v2/`
+**Location**: `rossoctl/ui-v2/`
 
 A modern web dashboard built with React ([PatternFly](https://www.patternfly.org/get-started/develop/) frontend and FastAPI backend for managing agents and tools.
 
@@ -454,19 +454,19 @@ A modern web dashboard built with React ([PatternFly](https://www.patternfly.org
 
 ```bash
 # Kind cluster
-open http://kagenti-ui.localtest.me:8080
+open http://rossoctl-ui.localtest.me:8080
 
 # OpenShift
-kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.status.ingress[0].host}'
+kubectl get route rossoctl-ui -n rossoctl-system -o jsonpath='{.status.ingress[0].host}'
 ```
 
 ---
 
 ## Identity & Auth Bridge
 
-**Repository**: [kagenti/kagenti-extensions/AuthBridge](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)
+**Repository**: [rossoctl/cortex/AuthBridge](https://github.com/rossoctl/cortex/tree/main/authbridge)
 
-Kagenti provides a unified framework for identity and authorization in agentic systems, replacing static credentials with dynamic, short-lived tokens. We call this collection of assets **Auth Bridge**.
+Rossoctl provides a unified framework for identity and authorization in agentic systems, replacing static credentials with dynamic, short-lived tokens. We call this collection of assets **Auth Bridge**.
 
 **Auth Bridge** solves a critical challenge in microservices and agentic architectures: **how can workloads authenticate and communicate securely without pre-provisioned static credentials?**
 
@@ -474,17 +474,17 @@ Kagenti provides a unified framework for identity and authorization in agentic s
 
 | Component | Purpose | Repository |
 |-----------|---------|------------|
-| **[AuthProxy](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** | Inbound JWT validation (JWKS) and outbound token exchange | `AuthBridge/AuthProxy` |
+| **[AuthProxy](https://github.com/rossoctl/cortex/tree/main/authbridge)** | Inbound JWT validation (JWKS) and outbound token exchange | `AuthBridge/AuthProxy` |
 | **[SPIRE](https://spiffe.io/docs/latest/spire-about/)** | Workload identity and attestation | External |
 | **[Keycloak](https://www.keycloak.org/)** | Identity provider and access management | External |
 
 ### Keycloak Client Registration (Operator-Managed)
 
-Keycloak client registration is handled by the kagenti-operator's ClientRegistrationReconciler controller:
+Keycloak client registration is handled by the rossoctl-operator's ClientRegistrationReconciler controller:
 
-- Reconciles AgentRuntime CRs to apply `kagenti.io/type` labels to target workloads and trigger sidecar injection
+- Reconciles AgentRuntime CRs to apply `rossoctl.io/type` labels to target workloads and trigger sidecar injection
 - Uses **SPIFFE ID** as client identifier (e.g., `spiffe://localtest.me/ns/team/sa/my-agent`)
-- Reads Keycloak admin credentials from the operator namespace (`kagenti-system`)
+- Reads Keycloak admin credentials from the operator namespace (`rossoctl-system`)
 - Creates a secret in the agent namespace containing client credentials
 - Eliminates the need for admin credentials in agent namespaces
 
@@ -546,10 +546,10 @@ An Envoy-based sidecar that handles both **inbound JWT validation** and **outbou
 
 | Feature | Description |
 |---------|-------------|
-| **User Management** | Create and manage Kagenti users |
-| **Client Registration** | OAuth clients for agents and UI (automated registration via kagenti-operator's ClientRegistrationReconciler) |
+| **User Management** | Create and manage Rossoctl users |
+| **Client Registration** | OAuth clients for agents and UI (automated registration via rossoctl-operator's ClientRegistrationReconciler) |
 | **Token Exchange** | Exchange tokens between audiences ([RFC 8693](https://datatracker.ietf.org/doc/html/rfc8693)) |
-| **SSO** | Single sign-on across Kagenti components |
+| **SSO** | Single sign-on across Rossoctl components |
 
 ### Authorization Pattern
 
@@ -596,7 +596,7 @@ open http://spire-tornjak-ui.localtest.me:8080/
 
 The Ingress Gateway routes external HTTP requests to internal services using the [Kubernetes Gateway API](https://gateway-api.sigs.k8s.io).
 
-- **Namespace**: `kagenti-system`
+- **Namespace**: `rossoctl-system`
 - **Implementation**: Istio Gateway
 
 ### Istio Ambient Mesh
@@ -620,11 +620,11 @@ The Ingress Gateway routes external HTTP requests to internal services using the
 
 ### Phoenix (Tracing) -- Optional
 
-LLM observability and tracing for agent interactions. Phoenix is **disabled by default** and can be enabled via `components.phoenix.enabled: true` in both the `kagenti-deps` and `kagenti` charts. Requires `components.otel.enabled: true`.
+LLM observability and tracing for agent interactions. Phoenix is **disabled by default** and can be enabled via `components.phoenix.enabled: true` in both the `rossoctl-deps` and `rossoctl` charts. Requires `components.otel.enabled: true`.
 
 ### Skillberry Store (Skill Registry) -- Optional
 
-In-cluster [skillberry-store](https://github.com/skillberry-ai/skillberry-store) skill registry. **Disabled by default**; enabled via `components.skillberryStore.enabled: true` in the `kagenti` chart (the Kind setup script's `--with-skills` flag sets it automatically). When enabled, the store runs as a single-replica Deployment (REST API on `8000`, web UI on `8002`, filesystem storage on a PVC at `/data`) and the chart seeds the `kagenti-skill-autosync-config` ConfigMap so the backend autosync loop polls it — no external registry or `--skill-registry-allowed-hosts` allow-listing required. Behavior is additionally gated by `featureFlags.externalSkills`. The store UI is exposed via an HTTPRoute at `http://skillberry-store.<domain>:8080`, and the Kagenti UI's "Manage in Skillberry Store" links point there (the ConfigMap also carries a `store-ui-url` the backend surfaces, since the in-cluster `registry-url` is server-side only and not browser-reachable).
+In-cluster [skillberry-store](https://github.com/skillberry-ai/skillberry-store) skill registry. **Disabled by default**; enabled via `components.skillberryStore.enabled: true` in the `rossoctl` chart (the Kind setup script's `--with-skills` flag sets it automatically). When enabled, the store runs as a single-replica Deployment (REST API on `8000`, web UI on `8002`, filesystem storage on a PVC at `/data`) and the chart seeds the `rossoctl-skill-autosync-config` ConfigMap so the backend autosync loop polls it — no external registry or `--skill-registry-allowed-hosts` allow-listing required. Behavior is additionally gated by `featureFlags.externalSkills`. The store UI is exposed via an HTTPRoute at `http://skillberry-store.<domain>:8080`, and the Rossoctl UI's "Manage in Skillberry Store" links point there (the ConfigMap also carries a `store-ui-url` the backend surfaces, since the in-cluster `registry-url` is server-side only and not browser-reachable).
 
 Because the store serves its UI with the Vite dev server (which rejects unknown `Host` headers), the chart sets `VITE_ALLOWED_HOSTS` on the store pod to the gateway host (derived from `skillberryStore.allowedHosts`, defaulting to `skillberry-store.<domain>`) so the gateway URL works. This requires a store image with `VITE_ALLOWED_HOSTS` support (≥ 0.2.0).
 
@@ -634,7 +634,7 @@ The image defaults to `ghcr.io/skillberry-ai/skillberry-store:0.2.0` and is over
 
 ## Supported Agent Frameworks
 
-Kagenti is framework-neutral and supports agents built with any framework that can be exposed via the A2A protocol:
+Rossoctl is framework-neutral and supports agents built with any framework that can be exposed via the A2A protocol:
 
 | Framework | Description | Use Case |
 |-----------|-------------|----------|

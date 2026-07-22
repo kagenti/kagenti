@@ -108,7 +108,7 @@ spec:
     - from:
         - source:
             principals:
-              - "cluster.local/ns/kagenti-system/sa/otel-collector"
+              - "cluster.local/ns/rossoctl-system/sa/otel-collector"
       to:
         - operation:
             methods: ["POST"]
@@ -150,7 +150,7 @@ metadata:
 
 ## Helm Chart Integration
 
-See `charts/kagenti-deps/templates/mlflow.yaml` for the full implementation.
+See `charts/rossoctl-deps/templates/mlflow.yaml` for the full implementation.
 
 Key values:
 ```yaml
@@ -174,7 +174,7 @@ from kubernetes import client, config
 # Get credentials from K8s secret
 config.load_kube_config()
 k8s = client.CoreV1Api()
-secret = k8s.read_namespaced_secret("mlflow-oauth-secret", "kagenti-system")
+secret = k8s.read_namespaced_secret("mlflow-oauth-secret", "rossoctl-system")
 
 client_id = base64.b64decode(secret.data["OIDC_CLIENT_ID"]).decode()
 client_secret = base64.b64decode(secret.data["OIDC_CLIENT_SECRET"]).decode()
@@ -203,7 +203,7 @@ validates the token audience and will reject tokens from other clients.
 
 Verify patches are applied:
 ```bash
-kubectl logs -n kagenti-system deploy/mlflow -c mlflow | grep "otel_router"
+kubectl logs -n rossoctl-system deploy/mlflow -c mlflow | grep "otel_router"
 # Should see: "Patched get_all_routers() to include otel_router"
 # Should see: "Excluded /v1/traces from OIDC auth (mTLS via Istio)"
 ```
@@ -212,7 +212,7 @@ kubectl logs -n kagenti-system deploy/mlflow -c mlflow | grep "otel_router"
 
 Check MLflow logs for SSL errors:
 ```bash
-kubectl logs -n kagenti-system deploy/mlflow -c mlflow | grep -i "ssl\|cert\|jwks"
+kubectl logs -n rossoctl-system deploy/mlflow -c mlflow | grep -i "ssl\|cert\|jwks"
 ```
 
 If you see `CERTIFICATE_VERIFY_FAILED`, the CA bundle is incomplete. On OpenShift/HyperShift:
@@ -233,18 +233,18 @@ Ensure both `MLFLOW_BACKEND_STORE_URI` AND `MLFLOW_TRACKING_URI` are set to Post
 
 1. Check OTEL collector logs:
 ```bash
-kubectl logs -n kagenti-system deploy/otel-collector | grep mlflow
+kubectl logs -n rossoctl-system deploy/otel-collector | grep mlflow
 ```
 
 2. Verify trace count in database:
 ```bash
-kubectl exec -n kagenti-system postgres-otel-0 -- \
+kubectl exec -n rossoctl-system postgres-otel-0 -- \
   psql -U postgres -d mlflow -c "SELECT COUNT(*) FROM trace_info;"
 ```
 
 3. Check AuthorizationPolicy:
 ```bash
-kubectl get authorizationpolicy -n kagenti-system mlflow-traces-from-otel -o yaml
+kubectl get authorizationpolicy -n rossoctl-system mlflow-traces-from-otel -o yaml
 ```
 
 ## Known Limitations

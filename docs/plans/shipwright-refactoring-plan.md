@@ -2,10 +2,10 @@
 
 ## Overview
 
-This plan outlines the refactoring of the Kagenti UI to trigger container image builds via **Shipwright Build** (`build.shipwright.io`) instead of the current AgentBuild CRD + Tekton pipeline approach. The plan covers both **agents** and **MCP tools**.
+This plan outlines the refactoring of the Rossoctl UI to trigger container image builds via **Shipwright Build** (`build.shipwright.io`) instead of the current AgentBuild CRD + Tekton pipeline approach. The plan covers both **agents** and **MCP tools**.
 
 ### Current State
-- **Agents**: UI creates `AgentBuild` CRD → Kagenti Operator triggers Tekton Pipeline
+- **Agents**: UI creates `AgentBuild` CRD → Rossoctl Operator triggers Tekton Pipeline
 - **Agent CRD** references `AgentBuild` via `imageSource.buildRef`
 - **Tools**: Only support deployment from existing container images (no build from source)
 
@@ -47,7 +47,7 @@ This plan outlines the refactoring of the Kagenti UI to trigger container image 
 
 ### 1.1 Add Shipwright Constants
 
-**File**: `kagenti/backend/app/core/constants.py`
+**File**: `rossoctl/backend/app/core/constants.py`
 
 Add new constants:
 ```python
@@ -67,7 +67,7 @@ DEFAULT_BUILD_TIMEOUT = "15m"
 
 ### 1.2 Add Shipwright Models
 
-**File**: `kagenti/backend/app/routers/agents.py`
+**File**: `rossoctl/backend/app/routers/agents.py`
 
 Add new Pydantic models:
 ```python
@@ -88,7 +88,7 @@ class CreateAgentRequest(BaseModel):
 
 ### 1.3 Add Shipwright Manifest Builders
 
-**File**: `kagenti/backend/app/routers/agents.py`
+**File**: `rossoctl/backend/app/routers/agents.py`
 
 Add new functions:
 
@@ -114,7 +114,7 @@ def _build_shipwright_buildrun_manifest(build_name: str, namespace: str) -> dict
 
 ### 1.4 Add Shipwright API Endpoints
 
-**File**: `kagenti/backend/app/routers/agents.py`
+**File**: `rossoctl/backend/app/routers/agents.py`
 
 Add new endpoints:
 
@@ -127,7 +127,7 @@ Add new endpoints:
 
 ### 1.5 Modify Agent Creation Flow
 
-**File**: `kagenti/backend/app/routers/agents.py`
+**File**: `rossoctl/backend/app/routers/agents.py`
 
 Modify `create_agent` function:
 
@@ -177,7 +177,7 @@ async def create_agent(request: CreateAgentRequest, kube: KubernetesService):
 
 ### 2.1 Add Build Strategy State
 
-**File**: `kagenti/ui-v2/src/pages/ImportAgentPage.tsx`
+**File**: `rossoctl/ui-v2/src/pages/ImportAgentPage.tsx`
 
 Add new state:
 ```typescript
@@ -191,7 +191,7 @@ const [buildTimeout, setBuildTimeout] = useState('15m');
 
 ### 2.2 Add API Service Methods
 
-**File**: `kagenti/ui-v2/src/services/api.ts`
+**File**: `rossoctl/ui-v2/src/services/api.ts`
 
 Add new methods:
 ```typescript
@@ -223,7 +223,7 @@ export const buildService = {
 
 ### 2.3 Add Build Strategy Selector Component
 
-**File**: `kagenti/ui-v2/src/components/BuildStrategySelector.tsx`
+**File**: `rossoctl/ui-v2/src/components/BuildStrategySelector.tsx`
 
 Create new component:
 ```typescript
@@ -248,7 +248,7 @@ export const BuildStrategySelector: React.FC<BuildStrategySelectorProps> = ({
 
 ### 2.4 Update Import Agent Form
 
-**File**: `kagenti/ui-v2/src/pages/ImportAgentPage.tsx`
+**File**: `rossoctl/ui-v2/src/pages/ImportAgentPage.tsx`
 
 Add new form sections:
 
@@ -294,7 +294,7 @@ const mutation = useMutation({
 
 **Solution**: Store agent configuration in the Shipwright Build's annotations.
 
-**File**: `kagenti/backend/app/routers/agents.py`
+**File**: `rossoctl/backend/app/routers/agents.py`
 
 In `_build_shipwright_build_manifest()`:
 ```python
@@ -312,13 +312,13 @@ if request.servicePorts:
 
 # Add to Build manifest
 manifest["metadata"]["annotations"] = {
-    "kagenti.io/agent-config": json.dumps(agent_config),
+    "rossoctl.io/agent-config": json.dumps(agent_config),
 }
 ```
 
 ### 3.2 Add Comprehensive Build Info Endpoint
 
-**File**: `kagenti/backend/app/routers/agents.py`
+**File**: `rossoctl/backend/app/routers/agents.py`
 
 ```python
 class ShipwrightBuildInfoResponse(BaseModel):
@@ -353,7 +353,7 @@ async def get_shipwright_build_info(...) -> ShipwrightBuildInfoResponse:
 
 ### 3.3 Finalize Build Endpoint
 
-**File**: `kagenti/backend/app/routers/agents.py`
+**File**: `rossoctl/backend/app/routers/agents.py`
 
 ```python
 @router.post("/{namespace}/{name}/finalize-shipwright-build")
@@ -373,12 +373,12 @@ async def finalize_shipwright_build(
     # 4. Merge request with stored config (request takes precedence)
     # 5. Create Agent CRD with built image
     # 6. Create HTTPRoute if createHttpRoute is true
-    # 7. Add kagenti.io/shipwright-build annotation to Agent
+    # 7. Add rossoctl.io/shipwright-build annotation to Agent
 ```
 
 ### 3.4 Build Progress Page
 
-**File**: `kagenti/ui-v2/src/pages/BuildProgressPage.tsx`
+**File**: `rossoctl/ui-v2/src/pages/BuildProgressPage.tsx`
 
 A dedicated page at `/agents/:namespace/:name/build` that:
 - Polls build info every 5 seconds using `shipwrightService.getBuildInfo()`
@@ -403,9 +403,9 @@ useEffect(() => {
 ### 3.5 Smart Navigation Flow
 
 **Files**:
-- `kagenti/ui-v2/src/App.tsx` - Add route for `/agents/:namespace/:name/build`
-- `kagenti/ui-v2/src/pages/ImportAgentPage.tsx` - Navigate to build page after submission
-- `kagenti/ui-v2/src/pages/AgentDetailPage.tsx` - Redirect to build page if build exists but agent doesn't
+- `rossoctl/ui-v2/src/App.tsx` - Add route for `/agents/:namespace/:name/build`
+- `rossoctl/ui-v2/src/pages/ImportAgentPage.tsx` - Navigate to build page after submission
+- `rossoctl/ui-v2/src/pages/AgentDetailPage.tsx` - Redirect to build page if build exists but agent doesn't
 
 **Import Flow**:
 1. User submits form → Creates Build + BuildRun
@@ -421,9 +421,9 @@ useEffect(() => {
 
 ### 3.6 Agent Detail Page - Shipwright Build Status
 
-**File**: `kagenti/ui-v2/src/pages/AgentDetailPage.tsx`
+**File**: `rossoctl/ui-v2/src/pages/AgentDetailPage.tsx`
 
-For agents built with Shipwright (have `kagenti.io/shipwright-build` annotation):
+For agents built with Shipwright (have `rossoctl.io/shipwright-build` annotation):
 - Fetch and display Shipwright Build status on the Status tab
 - Show Build info (name, strategy, output image, Git source)
 - Show latest BuildRun info (phase, duration, output image with digest)
@@ -436,7 +436,7 @@ For agents built with Shipwright (have `kagenti.io/shipwright-build` annotation)
 
 ### 4.1 Feature Flag (Already Implemented)
 
-**File**: `kagenti/backend/app/core/config.py`
+**File**: `rossoctl/backend/app/core/config.py`
 
 ```python
 class Settings(BaseSettings):
@@ -447,7 +447,7 @@ class Settings(BaseSettings):
 
 ### 4.2 Backend Deprecation
 
-**File**: `kagenti/backend/app/routers/agents.py`
+**File**: `rossoctl/backend/app/routers/agents.py`
 
 **Implemented changes:**
 1. Marked `get_agent_build_status` endpoint as deprecated using FastAPI's `deprecated=True`
@@ -470,7 +470,7 @@ async def get_agent_build_status(...):
 
 ### 4.3 UI Migration
 
-**File**: `kagenti/ui-v2/src/pages/ImportAgentPage.tsx`
+**File**: `rossoctl/ui-v2/src/pages/ImportAgentPage.tsx`
 
 **Implemented changes:**
 1. Removed "Use Shipwright" checkbox - Shipwright is now always used for source builds
@@ -501,7 +501,7 @@ async def get_agent_build_status(...):
 
 ### 5.1 Backend Unit Tests ✅
 
-**File**: `kagenti/backend/tests/test_shipwright.py`
+**File**: `rossoctl/backend/tests/test_shipwright.py`
 
 **Implemented 33 unit tests covering:**
 
@@ -554,7 +554,7 @@ async def get_agent_build_status(...):
 
 ### 5.2 Integration Tests ✅
 
-**File**: `kagenti/tests/e2e/common/test_shipwright_build.py`
+**File**: `rossoctl/tests/e2e/common/test_shipwright_build.py`
 
 **Implemented tests covering:**
 
@@ -596,7 +596,7 @@ async def get_agent_build_status(...):
 
 ### 6.1 Create Shared Build Module
 
-**File**: `kagenti/backend/app/services/shipwright.py` (NEW)
+**File**: `rossoctl/backend/app/services/shipwright.py` (NEW)
 
 Extract common functionality into a dedicated service module:
 
@@ -726,13 +726,13 @@ def extract_resource_config_from_build(build: dict, resource_type: ResourceType)
     Returns:
         Parsed configuration dict or None
     """
-    annotation_key = f"kagenti.io/{resource_type.value}-config"
+    annotation_key = f"rossoctl.io/{resource_type.value}-config"
     # Common implementation...
 ```
 
 ### 6.2 Shared Pydantic Models
 
-**File**: `kagenti/backend/app/models/shipwright.py` (NEW)
+**File**: `rossoctl/backend/app/models/shipwright.py` (NEW)
 
 Move shared models to a dedicated module:
 
@@ -780,7 +780,7 @@ class ShipwrightBuildInfoResponse(BaseModel):
 
 ### 6.3 Refactor Agent Router to Use Shared Utilities
 
-**File**: `kagenti/backend/app/routers/agents.py`
+**File**: `rossoctl/backend/app/routers/agents.py`
 
 Update agent router to use the shared module:
 
@@ -806,8 +806,8 @@ def _build_shipwright_build_manifest(request: CreateAgentRequest) -> dict:
         output=BuildOutputConfig(...),
         config=request.shipwrightConfig or ShipwrightBuildConfig(),
         labels={
-            "kagenti.io/protocol": request.protocol,
-            "kagenti.io/framework": request.framework,
+            "rossoctl.io/protocol": request.protocol,
+            "rossoctl.io/framework": request.framework,
         },
         resource_config={
             "protocol": request.protocol,
@@ -820,7 +820,7 @@ def _build_shipwright_build_manifest(request: CreateAgentRequest) -> dict:
 
 ### 6.4 Shared Frontend Build Service
 
-**File**: `kagenti/ui-v2/src/services/shipwright.ts` (NEW)
+**File**: `rossoctl/ui-v2/src/services/shipwright.ts` (NEW)
 
 Create a generic build service:
 
@@ -900,7 +900,7 @@ export const shipwrightService = {
 
 ### 6.5 Generic Build Progress Page Component
 
-**File**: `kagenti/ui-v2/src/components/BuildProgressView.tsx` (NEW)
+**File**: `rossoctl/ui-v2/src/components/BuildProgressView.tsx` (NEW)
 
 Extract build progress UI into a reusable component:
 
@@ -943,7 +943,7 @@ export const BuildProgressView: React.FC<BuildProgressViewProps> = ({
 
 ### 7.1 Update CreateToolRequest Model
 
-**File**: `kagenti/backend/app/routers/tools.py`
+**File**: `rossoctl/backend/app/routers/tools.py`
 
 Add source build fields to the tool creation request:
 
@@ -980,7 +980,7 @@ class CreateToolRequest(BaseModel):
 
 ### 7.2 Add Tool Build Manifest Generation
 
-**File**: `kagenti/backend/app/routers/tools.py`
+**File**: `rossoctl/backend/app/routers/tools.py`
 
 ```python
 from app.services.shipwright import (
@@ -1025,8 +1025,8 @@ def _build_tool_shipwright_build_manifest(request: CreateToolRequest) -> dict:
         output=output,
         config=request.shipwrightConfig or ShipwrightBuildConfig(),
         labels={
-            "kagenti.io/protocol": request.protocol,
-            "kagenti.io/framework": request.framework,
+            "rossoctl.io/protocol": request.protocol,
+            "rossoctl.io/framework": request.framework,
         },
         resource_config=tool_config,
     )
@@ -1034,7 +1034,7 @@ def _build_tool_shipwright_build_manifest(request: CreateToolRequest) -> dict:
 
 ### 7.3 Add Tool Shipwright Endpoints
 
-**File**: `kagenti/backend/app/routers/tools.py`
+**File**: `rossoctl/backend/app/routers/tools.py`
 
 Add new endpoints for Shipwright builds:
 
@@ -1077,13 +1077,13 @@ async def finalize_tool_shipwright_build(
     3. Read tool config from Build annotations
     4. Create MCPServer CRD with built image
     5. Create HTTPRoute if createHttpRoute is true
-    6. Add kagenti.io/shipwright-build annotation to MCPServer
+    6. Add rossoctl.io/shipwright-build annotation to MCPServer
     """
 ```
 
 ### 7.4 Update Tool Creation Flow
 
-**File**: `kagenti/backend/app/routers/tools.py`
+**File**: `rossoctl/backend/app/routers/tools.py`
 
 Modify `create_tool` to support source builds:
 
@@ -1118,7 +1118,7 @@ async def create_tool(
             build_name=request.name,
             namespace=request.namespace,
             resource_type=ResourceType.TOOL,
-            labels={"kagenti.io/tool-name": request.name},
+            labels={"rossoctl.io/tool-name": request.name},
         )
         buildrun = kube.create_custom_resource(
             group=SHIPWRIGHT_CRD_GROUP,
@@ -1141,7 +1141,7 @@ async def create_tool(
 
 ### 7.5 Update Tool Deletion to Clean Up Builds
 
-**File**: `kagenti/backend/app/routers/tools.py`
+**File**: `rossoctl/backend/app/routers/tools.py`
 
 Update `delete_tool` to also delete Shipwright resources:
 
@@ -1161,7 +1161,7 @@ async def delete_tool(
             version=SHIPWRIGHT_CRD_VERSION,
             namespace=namespace,
             plural=SHIPWRIGHT_BUILDRUNS_PLURAL,
-            label_selector=f"kagenti.io/build-name={name}",
+            label_selector=f"rossoctl.io/build-name={name}",
         )
         for buildrun in buildruns:
             kube.delete_custom_resource(...)
@@ -1200,7 +1200,7 @@ async def delete_tool(
 
 ### 8.1 Add Deployment Method Selection
 
-**File**: `kagenti/ui-v2/src/pages/ImportToolPage.tsx`
+**File**: `rossoctl/ui-v2/src/pages/ImportToolPage.tsx`
 
 Add deployment method toggle:
 
@@ -1224,7 +1224,7 @@ const [buildTimeout, setBuildTimeout] = useState('15m');
 
 ### 8.2 Update Tool Form UI
 
-**File**: `kagenti/ui-v2/src/pages/ImportToolPage.tsx`
+**File**: `rossoctl/ui-v2/src/pages/ImportToolPage.tsx`
 
 Add form sections for source builds:
 
@@ -1248,7 +1248,7 @@ Add form sections for source builds:
 
 ### 8.3 Add Tool Build Progress Page
 
-**File**: `kagenti/ui-v2/src/pages/ToolBuildProgressPage.tsx` (NEW)
+**File**: `rossoctl/ui-v2/src/pages/ToolBuildProgressPage.tsx` (NEW)
 
 Create build progress page for tools (uses shared component):
 
@@ -1275,7 +1275,7 @@ export const ToolBuildProgressPage: React.FC = () => {
 
 ### 8.4 Add Route for Tool Build Page
 
-**File**: `kagenti/ui-v2/src/App.tsx`
+**File**: `rossoctl/ui-v2/src/App.tsx`
 
 ```typescript
 // Add route for tool build progress
@@ -1284,9 +1284,9 @@ export const ToolBuildProgressPage: React.FC = () => {
 
 ### 8.5 Update Tool Detail Page
 
-**File**: `kagenti/ui-v2/src/pages/ToolDetailPage.tsx`
+**File**: `rossoctl/ui-v2/src/pages/ToolDetailPage.tsx`
 
-For tools built with Shipwright (have `kagenti.io/shipwright-build` annotation):
+For tools built with Shipwright (have `rossoctl.io/shipwright-build` annotation):
 - Fetch and display Shipwright Build status on Status tab
 - Show Build info (strategy, output image, Git source)
 - Show latest BuildRun info (phase, duration)
@@ -1305,7 +1305,7 @@ For tools built with Shipwright (have `kagenti.io/shipwright-build` annotation):
 
 ### 9.1 Backend Unit Tests
 
-**File**: `kagenti/backend/tests/test_shipwright_tools.py` (NEW)
+**File**: `rossoctl/backend/tests/test_shipwright_tools.py` (NEW)
 
 Test cases:
 - Tool Build manifest generation
@@ -1316,7 +1316,7 @@ Test cases:
 
 ### 9.2 Shared Utility Tests
 
-**File**: `kagenti/backend/tests/test_shipwright_shared.py` (NEW)
+**File**: `rossoctl/backend/tests/test_shipwright_shared.py` (NEW)
 
 Test cases:
 - `select_build_strategy()` for various registries
@@ -1327,7 +1327,7 @@ Test cases:
 
 ### 9.3 Integration Tests
 
-**File**: `kagenti/tests/e2e/common/test_shipwright_tool_build.py` (NEW)
+**File**: `rossoctl/tests/e2e/common/test_shipwright_tool_build.py` (NEW)
 
 Test cases:
 - Create Shipwright Build for a tool
@@ -1338,7 +1338,7 @@ Test cases:
 ### 9.4 CI Script Updates
 
 **Files**:
-- `.github/scripts/kagenti-operator/75-deploy-weather-tool-shipwright.sh` (NEW)
+- `.github/scripts/operator/75-deploy-weather-tool-shipwright.sh` (NEW)
 
 Create CI script for building tools with Shipwright:
 
@@ -1347,24 +1347,24 @@ Create CI script for building tools with Shipwright:
 # Deploy weather-tool via Shipwright build
 
 # 1. Apply Shipwright Build
-kubectl apply -f "$REPO_ROOT/kagenti/examples/tools/weather_tool_shipwright_build.yaml"
+kubectl apply -f "$REPO_ROOT/rossoctl/examples/tools/weather_tool_shipwright_build.yaml"
 
 # 2. Create BuildRun
-BUILDRUN_NAME=$(kubectl create -f "$REPO_ROOT/kagenti/examples/tools/weather_tool_shipwright_buildrun.yaml" -o jsonpath='{.metadata.name}')
+BUILDRUN_NAME=$(kubectl create -f "$REPO_ROOT/rossoctl/examples/tools/weather_tool_shipwright_buildrun.yaml" -o jsonpath='{.metadata.name}')
 
 # 3. Wait for BuildRun to succeed
 kubectl wait --for=condition=Succeeded --timeout=600s buildrun/$BUILDRUN_NAME -n team1
 
 # 4. Apply MCPServer with built image
-kubectl apply -f "$REPO_ROOT/kagenti/examples/tools/weather_tool_shipwright.yaml"
+kubectl apply -f "$REPO_ROOT/rossoctl/examples/tools/weather_tool_shipwright.yaml"
 ```
 
 ### 9.5 Example Tool Manifests
 
 **Files** (NEW):
-- `kagenti/examples/tools/weather_tool_shipwright_build.yaml`
-- `kagenti/examples/tools/weather_tool_shipwright_buildrun.yaml`
-- `kagenti/examples/tools/weather_tool_shipwright.yaml`
+- `rossoctl/examples/tools/weather_tool_shipwright_build.yaml`
+- `rossoctl/examples/tools/weather_tool_shipwright_buildrun.yaml`
+- `rossoctl/examples/tools/weather_tool_shipwright.yaml`
 
 ### 9.6 Manual Testing Checklist
 
@@ -1415,15 +1415,15 @@ metadata:
   name: weather-service
   namespace: team1
   labels:
-    kagenti.io/type: agent
-    kagenti.io/protocol: a2a
-    kagenti.io/framework: LangGraph
-    app.kubernetes.io/created-by: kagenti-ui
+    rossoctl.io/type: agent
+    rossoctl.io/protocol: a2a
+    rossoctl.io/framework: LangGraph
+    app.kubernetes.io/created-by: rossoctl-ui
 spec:
   source:
     type: Git
     git:
-      url: https://github.com/kagenti/agent-examples
+      url: https://github.com/rossoctl/examples
       revision: main
       cloneSecret: github-shipwright-secret
     contextDir: a2a/weather_service
@@ -1450,9 +1450,9 @@ metadata:
   generateName: weather-service-run-
   namespace: team1
   labels:
-    kagenti.io/type: agent
-    kagenti.io/agent-name: weather-service
-    app.kubernetes.io/created-by: kagenti-ui
+    rossoctl.io/type: agent
+    rossoctl.io/agent-name: weather-service
+    app.kubernetes.io/created-by: rossoctl-ui
 spec:
   build:
     name: weather-service
@@ -1502,11 +1502,11 @@ The following components are shared between agent and tool builds:
 
 | Label/Annotation | Values | Purpose |
 |------------------|--------|---------|
-| `kagenti.io/type` | `agent`, `tool` | Resource type identifier |
-| `kagenti.io/shipwright-build` | Build name | Link resource to its Build |
-| `kagenti.io/agent-config` | JSON | Agent config in Build annotation |
-| `kagenti.io/tool-config` | JSON | Tool config in Build annotation |
-| `kagenti.io/build-name` | Build name | Label on BuildRuns |
+| `rossoctl.io/type` | `agent`, `tool` | Resource type identifier |
+| `rossoctl.io/shipwright-build` | Build name | Link resource to its Build |
+| `rossoctl.io/agent-config` | JSON | Agent config in Build annotation |
+| `rossoctl.io/tool-config` | JSON | Tool config in Build annotation |
+| `rossoctl.io/build-name` | Build name | Label on BuildRuns |
 
 ---
 

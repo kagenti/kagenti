@@ -16,7 +16,7 @@ permissions: {}
 
 env:
   REGISTRY: ghcr.io
-  REPO: kagenti/kagenti
+  REPO: rossoctl/rossoctl
   CHARTS_PATH: ./charts
 
 jobs:
@@ -33,26 +33,26 @@ jobs:
       matrix:
         image_config:
           - name: ui-v2
-            context: ./kagenti
+            context: ./rossoctl
             dockerfile: ui-v2/Dockerfile
           - name: backend
-            context: ./kagenti
+            context: ./rossoctl
             dockerfile: backend/Dockerfile
             smoke_cmd: "python -c \"from app.main import app; print('smoke-test: ok')\""
           - name: ui-oauth-secret
-            context: ./kagenti
+            context: ./rossoctl
             dockerfile: auth/ui-oauth-secret/Dockerfile
           - name: agent-oauth-secret
-            context: ./kagenti
+            context: ./rossoctl
             dockerfile: auth/agent-oauth-secret/Dockerfile
           - name: api-oauth-secret
-            context: ./kagenti
+            context: ./rossoctl
             dockerfile: auth/api-oauth-secret/Dockerfile
           - name: mlflow-oauth-secret
-            context: ./kagenti
+            context: ./rossoctl
             dockerfile: auth/mlflow-oauth-secret/Dockerfile
           - name: spiffe-idp-setup
-            context: ./kagenti
+            context: ./rossoctl
             dockerfile: auth/spiffe-idp-setup/Dockerfile
 
     steps:
@@ -161,14 +161,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Package and push kagenti chart
+      - name: Package and push rossoctl chart
         if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
           chartVersion=$(echo "$REF_NAME" | cut -c 2-)
-          chartPackageName="kagenti-${chartVersion}.tgz"
-          cd ${{ env.CHARTS_PATH }}/kagenti
+          chartPackageName="rossoctl-${chartVersion}.tgz"
+          cd ${{ env.CHARTS_PATH }}/rossoctl
           echo "Fetching Helm chart dependencies..."
           helm dependency update
           yq e ".ui.frontend.tag = \"${REF_NAME}\"" -i values.yaml
@@ -180,14 +180,14 @@ jobs:
           helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
           helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}
 
-      - name: Package and push kagenti-deps chart
+      - name: Package and push rossoctl-deps chart
         if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
           chartVersion=$(echo "$REF_NAME" | cut -c 2-)
-          chartPackageName="kagenti-deps-${chartVersion}.tgz"
-          cd ${{ env.CHARTS_PATH }}/kagenti-deps
+          chartPackageName="rossoctl-deps-${chartVersion}.tgz"
+          cd ${{ env.CHARTS_PATH }}/rossoctl-deps
           echo "Fetching Helm chart dependencies..."
           helm dependency update
           yq e ".spiffeIdp.image.tag = \"${REF_NAME}\"" -i values.yaml

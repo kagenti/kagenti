@@ -1,0 +1,36 @@
+# Copyright 2025 IBM Corp.
+# Licensed under the Apache License, Version 2.0
+#
+# Regression tests for the rossoctl-ui (frontend / nginx) Deployment.
+# See https://github.com/rossoctl/rossoctl/issues/1991 — on large OpenShift
+# nodes nginx's default `worker_processes auto` spawned one worker per host
+# CPU, blowing past the old 128Mi limit and OOMKilling the pod. The image
+# now pins worker_processes (see rossoctl/ui-v2/Dockerfile, guarded in CI),
+# and the chart sets a modestly higher memory limit as defense-in-depth.
+suite: rossoctl-ui frontend
+templates:
+  - templates/ui.yaml
+set:
+  openshift: false
+tests:
+  - it: gives the frontend container enough memory headroom (regression #1991)
+    # Select the rossoctl-ui Deployment by its unique container name so the
+    # assertion is robust to Helm's kind-based document ordering.
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: frontend
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: metadata.name
+          value: rossoctl-ui
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 256Mi
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: 100m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 64Mi

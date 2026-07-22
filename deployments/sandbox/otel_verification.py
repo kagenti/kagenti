@@ -1,5 +1,5 @@
 """
-Kagenti Sandbox OTEL Verification — AuthBridge trace verification (Phase 9, C13)
+Rossoctl Sandbox OTEL Verification — AuthBridge trace verification (Phase 9, C13)
 
 Verifies that AuthBridge ext_proc creates proper root spans with GenAI/MLflow
 attributes for sandbox agent invocations. This tests the observability pipeline:
@@ -129,7 +129,7 @@ def verify_sandbox_traces(
 
 # E2E test integration
 E2E_TEST_TEMPLATE = '''
-# Add to kagenti/tests/e2e/common/test_sandbox_traces.py:
+# Add to rossoctl/tests/e2e/common/test_sandbox_traces.py:
 
 import pytest
 from otel_verification import verify_sandbox_traces

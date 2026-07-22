@@ -1,0 +1,67 @@
+/* Rossoctl App Demo — design tokens derived from rossoctl/ui-v2 */
+
+:root {
+  --rossoctl-primary: #0066cc;
+  --rossoctl-primary-dark: #004080;
+  --rossoctl-masthead-bg: #151515;
+  --rossoctl-sidebar-bg: #212427;
+  --rossoctl-status-ready: #3e8635;
+  --rossoctl-status-not-ready: #c9190b;
+  --rossoctl-status-pending: #f0ab00;
+  --rossoctl-text-primary: #151515;
+  --rossoctl-text-secondary: #6a6e73;
+  --rossoctl-border: #d2d2d2;
+  --rossoctl-bg-secondary: #f0f0f0;
+}
+
+/* PatternFly overrides */
+:root {
+  --pf-v5-global--primary-color--100: var(--rossoctl-primary);
+  --pf-v5-global--link--Color: var(--rossoctl-primary);
+}
+
+/* Masthead styling */
+.pf-v5-c-masthead {
+  --pf-v5-c-masthead--BackgroundColor: var(--rossoctl-masthead-bg);
+}
+
+/* Page background */
+.pf-v5-c-page__main-section {
+  padding: 24px;
+}
+
+/* Agent cards hover */
+.pf-v5-c-card.pf-m-clickable:hover {
+  box-shadow: var(--pf-v5-global--BoxShadow--md, 0 4px 8px rgba(0, 0, 0, 0.12));
+  transform: translateY(-1px);
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+/* Chat message bubbles */
+.pf-v5-c-card {
+  border-radius: 8px;
+}
+
+/* Brand text in masthead */
+.pf-v5-c-brand {
+  color: #fff;
+}
+
+/* Smooth transitions */
+* {
+  transition-property: background-color, border-color, color;
+  transition-duration: 0.15s;
+  transition-timing-function: ease;
+}
+
+/* Remove transition from inputs to avoid sluggish typing */
+input,
+textarea,
+select {
+  transition: none;
+}
+
+body {
+  margin: 0;
+  font-family: var(--pf-v5-global--FontFamily--text);
+}

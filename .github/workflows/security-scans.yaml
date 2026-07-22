@@ -312,16 +312,16 @@ jobs:
           echo "=== Bandit Python Security Scan ==="
           echo ""
 
-          # Check if kagenti directory exists
-          if [ ! -d "kagenti" ]; then
-            echo "No kagenti/ directory found, skipping Python security scan"
+          # Check if rossoctl directory exists
+          if [ ! -d "rossoctl" ]; then
+            echo "No rossoctl/ directory found, skipping Python security scan"
             exit 0
           fi
 
           # Run Bandit - scan main code (excluding examples which may have intentional patterns)
           # First pass: HIGH severity only on main code - this WILL fail the build
           echo "--- Checking for HIGH severity issues in main code ---"
-          HIGH_ISSUES=$(bandit -r kagenti/ \
+          HIGH_ISSUES=$(bandit -r rossoctl/ \
             --severity-level high \
             --confidence-level high \
             --exclude '**/tests/*,**/.venv/*,**/node_modules/*,**/examples/*' \
@@ -329,7 +329,7 @@ jobs:
 
           if [ "$HIGH_ISSUES" -gt 0 ]; then
             echo "Found $HIGH_ISSUES HIGH severity issues in main code:"
-            bandit -r kagenti/ \
+            bandit -r rossoctl/ \
               --severity-level high \
               --confidence-level high \
               --exclude '**/tests/*,**/.venv/*,**/node_modules/*,**/examples/*' \
@@ -342,7 +342,7 @@ jobs:
           # Second pass: Show all issues (including examples) for visibility
           echo ""
           echo "--- Full scan (informational) ---"
-          bandit -r kagenti/ \
+          bandit -r rossoctl/ \
             --severity-level medium \
             --confidence-level medium \
             --exclude '**/tests/*,**/.venv/*,**/node_modules/*' \
@@ -436,7 +436,7 @@ jobs:
           scan-ref: '.'
           severity: 'CRITICAL,HIGH,MEDIUM'
           # Skip examples directory - contains intentional simplified configs for demos
-          skip-dirs: 'kagenti/examples'
+          skip-dirs: 'rossoctl/examples'
           # Use .trivyignore for documented exceptions (base images, CI RBAC)
           trivyignores: '.trivyignore'
           # Use trivy.yaml for trusted registries and other config
@@ -449,7 +449,7 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           scan-type: 'config'
-          scan-ref: 'kagenti/examples'
+          scan-ref: 'rossoctl/examples'
           severity: 'CRITICAL,HIGH,MEDIUM'
           # Examples are informational only - don't fail the build
           exit-code: '0'

@@ -32,7 +32,7 @@ MODE=""
 FORCE=false
 GATEWAY_URL="${GATEWAY_URL:-http://127.0.0.1:8080}"
 ISTIOD_NS="istio-system"
-STATE_DIR="/tmp/kagenti/mesh-test"
+STATE_DIR="/tmp/rossoctl/mesh-test"
 STATE_FILE="${STATE_DIR}/istiod-replicas"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RECOVER="${HERE}/mesh-recover.sh"
@@ -84,8 +84,8 @@ ztunnel_ns()    { kubectl get ds -A -l app=ztunnel -o jsonpath='{.items[0].metad
 probe_host() {
   # Backend-dependent route (see mesh-recover.sh) — kiali-style edge redirects hide outages.
   local h
-  h=$(kubectl get httproute -n kagenti-system -o jsonpath='{range .items[*]}{.spec.hostnames[0]}{"\n"}{end}' 2>/dev/null | grep -m1 -E 'kagenti-ui|kagenti-api' || true)
-  echo "${h:-kagenti-ui.localtest.me}"
+  h=$(kubectl get httproute -n rossoctl-system -o jsonpath='{range .items[*]}{.spec.hostnames[0]}{"\n"}{end}' 2>/dev/null | grep -m1 -E 'rossoctl-ui|rossoctl-api' || true)
+  echo "${h:-rossoctl-ui.localtest.me}"
 }
 probe_code()    { curl -s -o /dev/null -w '%{http_code}' -m 5 -H "Host: $(probe_host)" "${GATEWAY_URL}/" 2>/dev/null || echo 000; }
 

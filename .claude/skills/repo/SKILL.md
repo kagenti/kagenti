@@ -5,7 +5,7 @@ description: Repository-specific conventions for PRs and issues
 
 # Repository Conventions
 
-Kagenti-specific conventions for pull requests and issues.
+Rossoctl-specific conventions for pull requests and issues.
 
 ## Auto-Select Sub-Skill
 

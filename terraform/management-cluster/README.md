@@ -52,10 +52,10 @@ cd terraform/management-cluster
 terraform init
 
 # Run full deployment (creates workspace automatically)
-./scripts/deploy-full.sh terraform-kagenti-team.tfvars
+./scripts/deploy-full.sh terraform-rossoctl-team.tfvars
 
 # Or skip MCE installation
-./scripts/deploy-full.sh terraform-kagenti-team.tfvars --skip-mce
+./scripts/deploy-full.sh terraform-rossoctl-team.tfvars --skip-mce
 ```
 
 The script will:
@@ -258,7 +258,7 @@ export AWS_ACCESS_KEY_ID="..."
 export AWS_SECRET_ACCESS_KEY="..."
 export AWS_REGION="us-east-1"
 
-# Create hosted cluster (via existing kagenti scripts)
+# Create hosted cluster (via existing rossoctl scripts)
 cd ../../
 ./.github/scripts/local-setup/hypershift-full-test.sh test1 \
   --skip-cluster-destroy

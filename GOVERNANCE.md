@@ -1,6 +1,6 @@
-# Kagenti Project Governance
+# Rossoctl Project Governance
 
-The Kagenti project is dedicated to providing a secure, open source platform for
+The Rossoctl project is dedicated to providing a secure, open source platform for
 deploying and orchestrating autonomous AI agents on Kubernetes. This governance
 explains how the project is run.
 
@@ -15,7 +15,7 @@ explains how the project is run.
 
 ## Values
 
-The Kagenti project and its leadership embrace the following values:
+The Rossoctl project and its leadership embrace the following values:
 
 * Openness: Communication and decision-making happens in the open and is
   discoverable for future reference. As much as possible, all discussions and
@@ -37,14 +37,14 @@ The Kagenti project and its leadership embrace the following values:
 
 ## Maintainers
 
-Kagenti Maintainers have write access to the
-[project GitHub repository](https://github.com/kagenti/kagenti). They can merge their
+Rossoctl Maintainers have write access to the
+[project GitHub repository](https://github.com/rossoctl/rossoctl). They can merge their
 own patches or patches from others. The current maintainers can be found in
 [MAINTAINERS.md](./MAINTAINERS.md).  Maintainers collectively manage the
 project's resources and contributors.
 
 This privilege is granted with some expectation of responsibility: maintainers
-are people who care about the Kagenti project and want to help it grow and
+are people who care about the Rossoctl project and want to help it grow and
 improve. A maintainer is not just someone who can make changes, but someone who
 has demonstrated their ability to collaborate with the team, get the most
 knowledgeable people to review code and docs, contribute high-quality code, and
@@ -72,7 +72,7 @@ To become a Maintainer you need to demonstrate the following:
 * understanding of the project's code base and coding and documentation style.
 
 A new Maintainer must be proposed by an existing Maintainer by opening a PR
-against the root of the [kagenti repository](https://github.com/kagenti/kagenti)
+against the root of the [rossoctl repository](https://github.com/rossoctl/rossoctl)
 adding the nominee to MAINTAINERS.md.  The nominee will add a comment to the PR
 testifying that they agree to all requirements of becoming a Maintainer.
 A simple majority of existing Maintainers must approve the PR.
@@ -81,7 +81,7 @@ to employer or demographics.
 
 Maintainers who are selected will be granted the necessary GitHub rights,
 and invited to the
-[private maintainer mailing list](mailto:kagenti-maintainers@googlegroups.com).
+[private maintainer mailing list](mailto:rossoctl-maintainers@googlegroups.com).
 
 ### Removing a Maintainer
 
@@ -116,7 +116,7 @@ accused of a CoC violation.
 
 [Code of Conduct](./CODE_OF_CONDUCT.md) violations by community members will
 be discussed and resolved on the
-[private Maintainer mailing list](mailto:kagenti-maintainers@googlegroups.com).
+[private Maintainer mailing list](mailto:rossoctl-maintainers@googlegroups.com).
 If a Maintainer is directly involved in the report, the Maintainers will instead
 designate two Maintainers to work with the Code of Conduct Committee in
 resolving it.
@@ -134,12 +134,12 @@ holes and breaches according to the [security policy](SECURITY.md).
 
 ## Voting
 
-While most business in Kagenti is conducted by
+While most business in Rossoctl is conducted by
 "[lazy consensus](https://community.apache.org/committers/lazyConsensus.html)",
 periodically the Maintainers may need to vote on specific actions or changes.
 A vote can be taken on
-[the developer mailing list](mailto:kagenti-contributors@googlegroups.com) or
-[the private Maintainer mailing list](mailto:kagenti-maintainers@googlegroups.com)
+[the developer mailing list](mailto:rossoctl-contributors@googlegroups.com) or
+[the private Maintainer mailing list](mailto:rossoctl-maintainers@googlegroups.com)
 for security or conduct matters. Any Maintainer may demand a vote be taken.
 
 Most votes require a simple majority of all Maintainers to succeed, except where

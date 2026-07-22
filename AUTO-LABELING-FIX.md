@@ -44,9 +44,9 @@ ENABLE_AUTO_CLEANUP="${ENABLE_AUTO_CLEANUP:-false}"
 if [ "$ENABLE_AUTO_CLEANUP" = "true" ]; then
     # Apply labels using MGMT_KUBECONFIG
     KUBECONFIG="$MGMT_KUBECONFIG" oc label hostedcluster "$CLUSTER_NAME" -n clusters \
-        "kagenti.io/auto-cleanup=enabled" \
-        "kagenti.io/ttl-hours=$TTL_HOURS" \
-        "kagenti.io/cluster-type=$CLUSTER_TYPE" \
+        "rossoctl.io/auto-cleanup=enabled" \
+        "rossoctl.io/ttl-hours=$TTL_HOURS" \
+        "rossoctl.io/cluster-type=$CLUSTER_TYPE" \
         --overwrite
 fi
 ```
@@ -70,8 +70,8 @@ Clusters are labeled based on their name pattern:
 |---------|-----|--------------|----------|
 | `*-pr-*`, `*-pr[0-9]*` | 3h | `ci-pr` | Pull request tests |
 | `*-main-*`, `*-merge-*` | 6h | `ci-main` | Post-merge tests |
-| `kagenti-hypershift-ci-*` | 3h | `ci-generic` | Generic CI tests |
-| `kagenti-hypershift-custom-*`, `*-team-*` | 168h (1 week) | `dev` | Development clusters |
+| `rossoctl-hypershift-ci-*` | 3h | `ci-generic` | Generic CI tests |
+| `rossoctl-hypershift-custom-*`, `*-team-*` | 168h (1 week) | `dev` | Development clusters |
 | Other | 24h | `unknown` | Fallback |
 
 ### 3. Environment Variable Override
@@ -86,27 +86,27 @@ AUTO_CLEANUP_TTL_HOURS=12 ENABLE_AUTO_CLEANUP=true \
 
 ### Test Results (2026-03-06)
 
-**Test Cluster:** `kagenti-team-test`
+**Test Cluster:** `rossoctl-team-test`
 **Pattern Match:** `*-team-*` → TTL=168h, type=dev
 
 **Labels Applied:**
 ```json
 {
-  "kagenti.io/auto-cleanup": "enabled",
-  "kagenti.io/cluster-type": "dev",
-  "kagenti.io/ttl-hours": "168"
+  "rossoctl.io/auto-cleanup": "enabled",
+  "rossoctl.io/cluster-type": "dev",
+  "rossoctl.io/ttl-hours": "168"
 }
 ```
 
 **Cleanup Script Detection:**
 ```
-✓ OK: kagenti-team-test
+✓ OK: rossoctl-team-test
    Age: 17m | TTL: 168h | Type: dev
 ```
 
 **Stale Detection (TTL=0):**
 ```
-⚠ STALE: kagenti-team-test
+⚠ STALE: rossoctl-team-test
    Age: 18m | TTL: 0h | Over by: 18m
    Would delete (use --apply to execute)
 ```
@@ -124,9 +124,9 @@ After the fix, clusters created with `ENABLE_AUTO_CLEANUP=true` get these labels
 
 | Label | Example Value | Purpose |
 |-------|---------------|------------|
-| `kagenti.io/auto-cleanup` | `enabled` | Marks cluster for auto-cleanup |
-| `kagenti.io/ttl-hours` | `3` / `6` / `168` | TTL in hours (pattern-based) |
-| `kagenti.io/cluster-type` | `ci-pr` / `ci-main` / `dev` | Cluster category |
+| `rossoctl.io/auto-cleanup` | `enabled` | Marks cluster for auto-cleanup |
+| `rossoctl.io/ttl-hours` | `3` / `6` / `168` | TTL in hours (pattern-based) |
+| `rossoctl.io/cluster-type` | `ci-pr` / `ci-main` / `dev` | Cluster category |
 
 **Note:** The `created-at` label was not implemented because Kubernetes labels don't allow colons in values. The cleanup script uses `.metadata.creationTimestamp` instead.
 

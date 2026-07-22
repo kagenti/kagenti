@@ -1,10 +1,10 @@
-# Kagenti Project Personas and Roles Documentation
+# Rossoctl Project Personas and Roles Documentation
 
-This document outlines the core personas that the Kagenti platform serves across its repository ecosystem.
+This document outlines the core personas that the Rossoctl platform serves across its repository ecosystem.
 
 ## Overview
 
-Kagenti is a cloud-native middleware platform that provides framework-neutral, scalable, and secure infrastructure for deploying and orchestrating AI agents. The platform serves three primary persona categories: **Developers**, **Operators/Administrators**, and **End Users**.
+Rossoctl is a cloud-native middleware platform that provides framework-neutral, scalable, and secure infrastructure for deploying and orchestrating AI agents. The platform serves three primary persona categories: **Developers**, **Operators/Administrators**, and **End Users**.
 
 ---
 
@@ -14,7 +14,7 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 **Description**: Developers who create AI agents using various frameworks.
 
-**Primary Repository**: [agent-examples](https://github.com/kagenti/agent-examples)
+**Primary Repository**: [agent-examples](https://github.com/rossoctl/examples)
 
 **Frameworks Supported**:
 
@@ -34,10 +34,10 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 **Getting Started**:
 
 1. Review instructions in [new-agent](docs/new-agent.md) documentation
-2. Clone [agent-examples](https://github.com/kagenti/agent-examples) repository
+2. Clone [agent-examples](https://github.com/rossoctl/examples) repository
 3. Explore framework-specific examples (`a2a/slack_researcher`, `a2a/weather_service`)
 4. Use sample Dockerfiles and configurations as templates
-5. Access Kagenti UI and navigate to "Import New Agent"
+5. Access Rossoctl UI and navigate to "Import New Agent"
 6. Deploy using your GitHub repository
 
 ---
@@ -46,7 +46,7 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 **Description**: Developers who create Model Context Protocol (MCP) tools that agents can interact with.
 
-**Primary Repository**: [agent-examples](https://github.com/kagenti/agent-examples)
+**Primary Repository**: [agent-examples](https://github.com/rossoctl/examples)
 
 **Tool Categories**:
 
@@ -64,10 +64,10 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 **Getting Started**:
 
-1. Study MCP tool examples in [agent-examples](https://github.com/kagenti/agent-examples) (`mcp/slack_tool`, `mcp/weather_tool`)
+1. Study MCP tool examples in [agent-examples](https://github.com/rossoctl/examples) (`mcp/slack_tool`, `mcp/weather_tool`)
 2. Implement your tool following MCP protocol standards
 3. Create appropriate Dockerfile and configuration files
-4. Access "Import New Tool" in Kagenti UI
+4. Access "Import New Tool" in Rossoctl UI
 5. Register tool with MCP Gateway for discovery
 
 ---
@@ -76,7 +76,7 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 **Description**: Go developers who build and maintain the Envoy-based MCP Gateway that connects agents to tools via the Model Context Protocol.
 
-**Primary Repository**: [mcp-gateway](https://github.com/kagenti/mcp-gateway)
+**Primary Repository**: [mcp-gateway](https://github.com/rossoctl/mcp-gateway)
 
 **Key Responsibilities**:
 
@@ -97,7 +97,7 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 **Getting Started**:
 
-1. Clone [mcp-gateway](https://github.com/kagenti/mcp-gateway) repository
+1. Clone [mcp-gateway](https://github.com/rossoctl/mcp-gateway) repository
 2. Set up Go development environment
 3. Study Envoy proxy architecture and filter development
 4. Understand MCP protocol specification and implementation
@@ -107,13 +107,13 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 ### 1.4 Operator Developer
 
-**Description**: Go developers who build and maintain Kubernetes operators for the Kagenti ecosystem.
+**Description**: Go developers who build and maintain Kubernetes operators for the Rossoctl ecosystem.
 
-**Primary Repository**: [kagenti-operator](https://github.com/kagenti/kagenti-operator)
+**Primary Repository**: [rossoctl-operator](https://github.com/rossoctl/operator)
 
 **Key Responsibilities**:
 
-- Develop and maintain the kagenti-operator
+- Develop and maintain the rossoctl-operator
 - Create custom resource definitions (CRDs) for agents and components
 - Implement controller logic for agent/tool lifecycle management
 - Build operator extensions and integrations
@@ -121,7 +121,7 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 **CRDs Managed**:
 
-- `agents.agent.kagenti.dev/v1alpha1` (legacy, being replaced by standard Deployments)
+- `agents.agent.rossoctl.dev/v1alpha1` (legacy, being replaced by standard Deployments)
 - `mcpserverregistrations.mcp.kuadrant.io/v1alpha1`
 
 **Technical Skills**:
@@ -134,7 +134,7 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 **Getting Started**:
 
-1. Clone [kagenti-operator](https://github.com/kagenti/kagenti-operator) repository
+1. Clone [rossoctl-operator](https://github.com/rossoctl/operator) repository
 2. Set up Go development environment
 3. Study existing CRDs and controller implementations
 4. Develop custom operators using controller-runtime
@@ -144,13 +144,13 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 ### 1.5 Extensions Developer
 
-**Description**: Developers who create extensions and plugins to extend Kagenti platform capabilities.
+**Description**: Developers who create extensions and plugins to extend Rossoctl platform capabilities.
 
 **Primary Repositories**:
 
-- [kagenti-extensions](https://github.com/kagenti/kagenti-extensions) - Core extensions (Go)
-- [plugins-adapter](https://github.com/kagenti/plugins-adapter) - Guardrails and policy plugins (Python)
-- [agentic-control-plane](https://github.com/kagenti/agentic-control-plane) - A2A control plane agents (Python)
+- [cortex](https://github.com/rossoctl/cortex) - Core extensions (Go)
+- [plugins-adapter](https://github.com/rossoctl/plugins-adapter) - Guardrails and policy plugins (Python)
+- [agentic-control-plane](https://github.com/rossoctl/agentic-control-plane) - A2A control plane agents (Python)
 
 **Extension Types**:
 
@@ -162,7 +162,7 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 **Technical Skills**:
 
-- Go programming (for kagenti-extensions)
+- Go programming (for cortex)
 - Python programming (for plugins-adapter, agentic-control-plane)
 - Kubernetes API and controller development
 - Plugin architecture design
@@ -179,13 +179,13 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 ### 1.6 UI Developer
 
-**Description**: Developers who build and maintain the Kagenti user interface and dashboard.
+**Description**: Developers who build and maintain the Rossoctl user interface and dashboard.
 
-**Primary Repository**: [kagenti](https://github.com/kagenti/kagenti) (UI components in `kagenti/ui-v2/` and `kagenti/backend/`)
+**Primary Repository**: [rossoctl](https://github.com/rossoctl/rossoctl) (UI components in `rossoctl/ui-v2/` and `rossoctl/backend/`)
 
 **Key Responsibilities**:
 
-- Develop and maintain the Kagenti web dashboard
+- Develop and maintain the Rossoctl web dashboard
 - Build agent and tool management interfaces
 - Create observability and monitoring dashboards
 - Implement identity management UI components
@@ -201,11 +201,11 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 **Getting Started**:
 
-1. Clone [kagenti](https://github.com/kagenti/kagenti) repository
-2. Navigate to `kagenti/ui-v2/` (frontend) and `kagenti/backend/` (API) directories
+1. Clone [rossoctl](https://github.com/rossoctl/rossoctl) repository
+2. Navigate to `rossoctl/ui-v2/` (frontend) and `rossoctl/backend/` (API) directories
 3. Study existing UI components and architecture
 4. Set up local development environment
-5. Test UI changes with local Kagenti deployment
+5. Test UI changes with local Rossoctl deployment
 
 ---
 
@@ -213,13 +213,13 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 ### 2.1 Platform Operator (Admin)
 
-**Description**: Administrators responsible for deploying, managing, and operating the Kagenti platform infrastructure.
+**Description**: Administrators responsible for deploying, managing, and operating the Rossoctl platform infrastructure.
 
-**Primary Repository**: [kagenti](https://github.com/kagenti/kagenti) (UI and installer scripts)
+**Primary Repository**: [rossoctl](https://github.com/rossoctl/rossoctl) (UI and installer scripts)
 
 **Key Responsibilities**:
 
-- Deploy Kagenti platform using the bash installer (`scripts/kind/setup-kagenti.sh` for Kind, `scripts/ocp/setup-kagenti.sh` for OpenShift).
+- Deploy Rossoctl platform using the bash installer (`scripts/kind/setup-rossoctl.sh` for Kind, `scripts/ocp/setup-rossoctl.sh` for OpenShift).
 - Manage platform component lifecycle:
   - **Core Components**: registry, tekton, cert-manager, operator, istio, spire
   - **Gateway Components**: mcp-gateway, ingress-gateway, shared-gateway-access
@@ -231,18 +231,18 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 **Tools Used**:
 
-- Bash installer (`scripts/kind/setup-kagenti.sh`, `scripts/ocp/setup-kagenti.sh`)
+- Bash installer (`scripts/kind/setup-rossoctl.sh`, `scripts/ocp/setup-rossoctl.sh`)
 - Kubernetes CLI tools (`kubectl`)
-- Kagenti UI dashboard
+- Rossoctl UI dashboard
 - Observability dashboards (Kiali, Phoenix, MCP Inspector)
 
 **Getting Started**:
 
-1. Install Kagenti using the bash installer: `scripts/kind/setup-kagenti.sh` (Kind) or `scripts/ocp/setup-kagenti.sh` (OpenShift)
+1. Install Rossoctl using the bash installer: `scripts/kind/setup-rossoctl.sh` (Kind) or `scripts/ocp/setup-rossoctl.sh` (OpenShift)
 2. Configure cluster components as needed
 3. Set up monitoring and observability
 4. Enable agent and tool namespaces with proper labels
-5. Deploy kagenti-operator for CRD management
+5. Deploy rossoctl-operator for CRD management
 
 ---
 
@@ -311,7 +311,7 @@ Review Identity Patterns in [identity documentation](docs/identity-guide.md) for
 **Management Tools**:
 
 - Keycloak Admin Console (`http://keycloak.localtest.me:8080`)
-- Kagenti UI Admin page
+- Rossoctl UI Admin page
 - SPIRE server management tools
 - Identity management scripts
 
@@ -329,7 +329,7 @@ Review Identity Patterns in [identity documentation](docs/identity-guide.md) for
 
 ### 3.1 End User
 
-**Description**: Business users and developers who interact with deployed agents through the Kagenti UI or APIs.
+**Description**: Business users and developers who interact with deployed agents through the Rossoctl UI or APIs.
 
 **User Access Levels**:
 
@@ -339,7 +339,7 @@ Review Identity Patterns in [identity documentation](docs/identity-guide.md) for
 
 **Key Activities**:
 
-- Submit queries and requests to agents via Kagenti UI
+- Submit queries and requests to agents via Rossoctl UI
 - Review agent responses and outputs
 - Monitor agent task execution
 - Access agent-generated reports and insights
@@ -347,7 +347,7 @@ Review Identity Patterns in [identity documentation](docs/identity-guide.md) for
 
 **Integration Types**:
 
-- Kagenti UI dashboard
+- Rossoctl UI dashboard
 - REST API clients
 - A2A protocol consumers
 - Webhook receivers
@@ -383,20 +383,20 @@ Review Identity Patterns in [identity documentation](docs/identity-guide.md) for
 
 | Repository | Primary Personas |
 |------------|------------------|
-| **[kagenti](https://github.com/kagenti/kagenti)** | Platform Operator, UI Developer, End User |
-| **[agent-examples](https://github.com/kagenti/agent-examples)** | Agent Developer, Tool Developer |
-| **[mcp-gateway](https://github.com/kagenti/mcp-gateway)** | MCP Gateway Developer, MCP Gateway Operator |
-| **[kagenti-operator](https://github.com/kagenti/kagenti-operator)** | Operator Developer, Platform Operator |
-| **[kagenti-extensions](https://github.com/kagenti/kagenti-extensions)** | Extensions Developer |
-| **[agentic-control-plane](https://github.com/kagenti/agentic-control-plane)** | Extensions Developer, Agent Developer |
-| **[plugins-adapter](https://github.com/kagenti/plugins-adapter)** | Extensions Developer, Security Specialist |
-| **[.github](https://github.com/kagenti/.github)** | UI Developer |
+| **[rossoctl](https://github.com/rossoctl/rossoctl)** | Platform Operator, UI Developer, End User |
+| **[agent-examples](https://github.com/rossoctl/examples)** | Agent Developer, Tool Developer |
+| **[mcp-gateway](https://github.com/rossoctl/mcp-gateway)** | MCP Gateway Developer, MCP Gateway Operator |
+| **[rossoctl-operator](https://github.com/rossoctl/operator)** | Operator Developer, Platform Operator |
+| **[cortex](https://github.com/rossoctl/cortex)** | Extensions Developer |
+| **[agentic-control-plane](https://github.com/rossoctl/agentic-control-plane)** | Extensions Developer, Agent Developer |
+| **[plugins-adapter](https://github.com/rossoctl/plugins-adapter)** | Extensions Developer, Security Specialist |
+| **[.github](https://github.com/rossoctl/.github)** | UI Developer |
 
 ---
 
 ## Conclusion
 
-The Kagenti platform serves **10 core personas** across eight specialized repositories:
+The Rossoctl platform serves **10 core personas** across eight specialized repositories:
 
 - **Developers** (6): Agent, Tool, MCP Gateway, Operator, Extensions, UI
 - **Operators/Administrators** (3): Platform Operator, MCP Gateway Operator, Security Specialist
@@ -404,7 +404,7 @@ The Kagenti platform serves **10 core personas** across eight specialized reposi
 
 **Get Involved**:
 
-- 🌐 **Website**: [kagenti.io](http://kagenti.io)
-- 💬 **Slack**: [Join our community](https://ibm.biz/kagenti-slack)
-- 📖 **Blog**: [Kagenti Medium Publication](https://medium.com/kagenti-the-agentic-platform)
-- 🐙 **GitHub**: [github.com/kagenti](https://github.com/kagenti)
+- 🌐 **Website**: [rossoctl.io](http://rossoctl.io)
+- 💬 **Slack**: [Join our community](https://ibm.biz/rossoctl-slack)
+- 📖 **Blog**: [Rossoctl Medium Publication](https://medium.com/rossoctl-the-agentic-platform)
+- 🐙 **GitHub**: [github.com/rossoctl](https://github.com/rossoctl)

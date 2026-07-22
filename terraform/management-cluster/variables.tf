@@ -67,7 +67,7 @@ variable "worker_instance_type" {
 variable "managed_by_tag" {
   description = "Tag to identify who manages this infrastructure"
   type        = string
-  default     = "kagenti-hypershift-mgmt"
+  default     = "rossoctl-hypershift-mgmt"
 }
 
 variable "kubeconfig_path" {

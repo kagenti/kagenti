@@ -10,14 +10,14 @@ please report it responsibly.
 1. **Do NOT create public GitHub issues** for security vulnerabilities
 2. **GitHub Security Advisories (preferred)**: Report vulnerabilities privately via
    [GitHub Security Advisories](../../security/advisories/new)
-3. **Email**: Send reports to **security@kagenti.io**
+3. **Email**: Send reports to **security@rossoctl.io**
 4. **Include**: A clear description of the vulnerability, steps to reproduce,
    affected versions, and potential impact
 
 ### Security Contacts
 
-- **kagenti-maintainers@googlegroups.com**
-- **security@kagenti.io**
+- **rossoctl-maintainers@googlegroups.com**
+- **security@rossoctl.io**
 
 ### What to Expect
 

@@ -1,10 +1,10 @@
 # Kiali Service Mesh Observability
 
-Kiali provides real-time visualization and validation of the Istio service mesh in Kagenti. It is used both as a developer dashboard and as an automated E2E validation tool in CI.
+Kiali provides real-time visualization and validation of the Istio service mesh in Rossoctl. It is used both as a developer dashboard and as an automated E2E validation tool in CI.
 
 ## Architecture
 
-### How Kiali Fits in Kagenti
+### How Kiali Fits in Rossoctl
 
 ```mermaid
 graph TB
@@ -31,7 +31,7 @@ graph TB
     PYTEST -->|REST API| KIALI
 ```
 
-### Kagenti Traffic Flow
+### Rossoctl Traffic Flow
 
 ```mermaid
 graph LR
@@ -42,8 +42,8 @@ graph LR
         TOOL["weather-tool<br/>(MCP Tool)"]
     end
 
-    subgraph "kagenti-system"
-        UI["Kagenti UI"]
+    subgraph "rossoctl-system"
+        UI["Rossoctl UI"]
         OTEL["OTEL Collector"]
         PHOENIX2["Phoenix"]
     end
@@ -72,7 +72,7 @@ Our Kiali E2E validation tests run after all other tests complete (two-phase app
 
 ### 1. Istio Configuration Validation
 
-Queries Kiali for misconfigurations in Istio resources across all Kagenti namespaces:
+Queries Kiali for misconfigurations in Istio resources across all Rossoctl namespaces:
 
 | Resource | What's Checked |
 |----------|---------------|
@@ -129,7 +129,7 @@ sequenceDiagram
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KIALI_URL` | Auto-detect | Override Kiali endpoint |
-| `KIALI_NAMESPACES` | Kagenti namespaces | Comma-separated list |
+| `KIALI_NAMESPACES` | Rossoctl namespaces | Comma-separated list |
 | `KIALI_IGNORE_NAMESPACES` | OpenShift AI, GPU | Namespaces to skip |
 | `KIALI_SKIP_VALIDATION_CODES` | None | Validation codes to ignore |
 | `KIALI_FAIL_ON_WARNINGS` | true | Fail on config warnings |
@@ -142,16 +142,16 @@ The test file doubles as a CLI tool for ad-hoc scanning:
 
 ```bash
 # Basic validation scan
-python kagenti/tests/e2e/test_kiali_validations.py
+python rossoctl/tests/e2e/test_kiali_validations.py
 
 # With traffic analysis over 2 hours
-python kagenti/tests/e2e/test_kiali_validations.py --check-traffic --duration 2h
+python rossoctl/tests/e2e/test_kiali_validations.py --check-traffic --duration 2h
 
 # JSON output for automation
-python kagenti/tests/e2e/test_kiali_validations.py --json --check-traffic
+python rossoctl/tests/e2e/test_kiali_validations.py --json --check-traffic
 
 # Scan specific namespaces
-python kagenti/tests/e2e/test_kiali_validations.py --namespaces team1,team2
+python rossoctl/tests/e2e/test_kiali_validations.py --namespaces team1,team2
 ```
 
 ## Sample CI Output
@@ -164,7 +164,7 @@ python kagenti/tests/e2e/test_kiali_validations.py --namespaces team1,team2
 
   STATUS   SOURCE                                   DEST                                     PROTO  REQS     ERR%     mTLS
   --------------------------------------------------------------------------------------------------------
-  PASS     kagenti-system/otel-collector             kagenti-system/phoenix                   http   342      0.0%     yes
+  PASS     rossoctl-system/otel-collector             rossoctl-system/phoenix                   http   342      0.0%     yes
   PASS     team1/weather-service                     team1/weather-tool                       http   156      0.0%     yes
   PASS     team1/weather-service                     keycloak/keycloak                        http   48       0.0%     yes
   FAIL     team1/weather-service                     external/api-service                     http   12       8.3%     NO

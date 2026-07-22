@@ -15,14 +15,14 @@ on:
     types: [opened, synchronize, reopened]
     branches: [main]
     paths:
-      - 'kagenti/**'
+      - 'rossoctl/**'
       - 'charts/**'
       - 'deployments/**'
       - '.github/**'
       - 'pyproject.toml'
       - 'uv.lock'
-      - 'kagenti/ui-v2/package.json'
-      - 'kagenti/ui-v2/package-lock.json'
+      - 'rossoctl/ui-v2/package.json'
+      - 'rossoctl/ui-v2/package-lock.json'
 
 permissions:
   contents: read

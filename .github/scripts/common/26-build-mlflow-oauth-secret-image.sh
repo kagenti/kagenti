@@ -6,15 +6,15 @@ source "$SCRIPT_DIR/../lib/logging.sh"
 
 log_step "26" "Building mlflow-oauth-secret image from source"
 
-IMAGE_NAME="$(grep -A5 'mlflowOAuthSecret:' "$REPO_ROOT/charts/kagenti/values.yaml" | grep 'image:' | grep -v '#' | awk '{print $2}')"
-IMAGE_TAG="$(grep -A5 'mlflowOAuthSecret:' "$REPO_ROOT/charts/kagenti/values.yaml" | grep 'tag:' | awk '{print $2}')"
+IMAGE_NAME="$(grep -A5 'mlflowOAuthSecret:' "$REPO_ROOT/charts/rossoctl/values.yaml" | grep 'image:' | grep -v '#' | awk '{print $2}')"
+IMAGE_TAG="$(grep -A5 'mlflowOAuthSecret:' "$REPO_ROOT/charts/rossoctl/values.yaml" | grep 'tag:' | awk '{print $2}')"
 FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 
-NAMESPACE="kagenti-system"
+NAMESPACE="rossoctl-system"
 JOB_NAME="mlflow-oauth-secret-job"
 
 # Only run if MLflow auth is enabled
-MLFLOW_AUTH_ENABLED=$(helm get values kagenti -n "$NAMESPACE" -o json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('mlflow',{}).get('auth',{}).get('enabled',False))" 2>/dev/null || echo "False")
+MLFLOW_AUTH_ENABLED=$(helm get values rossoctl -n "$NAMESPACE" -o json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('mlflow',{}).get('auth',{}).get('enabled',False))" 2>/dev/null || echo "False")
 if [ "$MLFLOW_AUTH_ENABLED" != "True" ]; then
     log_info "MLflow auth not enabled, skipping mlflow-oauth-secret image build"
     exit 0
@@ -61,7 +61,7 @@ EOF
 
     log_info "Starting OpenShift binary build from source..."
     OC_BUILD=$(oc start-build "$BUILD_NAME" -n "$BUILD_NS" \
-        --from-dir="$REPO_ROOT/kagenti/" --follow=false -o name 2>/dev/null || echo "")
+        --from-dir="$REPO_ROOT/rossoctl/" --follow=false -o name 2>/dev/null || echo "")
     if [ -z "$OC_BUILD" ]; then
         log_error "Failed to start build"
         exit 1
@@ -95,10 +95,10 @@ else
     # ── Kind / vanilla Kubernetes: local build + kind load ──
     log_info "Building image: ${FULL_IMAGE}"
     docker build -t "${FULL_IMAGE}" \
-        -f "$REPO_ROOT/kagenti/auth/mlflow-oauth-secret/Dockerfile" \
-        "$REPO_ROOT/kagenti/"
+        -f "$REPO_ROOT/rossoctl/auth/mlflow-oauth-secret/Dockerfile" \
+        "$REPO_ROOT/rossoctl/"
 
-    CLUSTER_NAME="${KIND_CLUSTER_NAME:-kagenti}"
+    CLUSTER_NAME="${KIND_CLUSTER_NAME:-rossoctl}"
     log_info "Loading image into Kind cluster '${CLUSTER_NAME}'..."
     kind load docker-image "${FULL_IMAGE}" --name "${CLUSTER_NAME}"
 
@@ -114,9 +114,9 @@ sleep 2
 
 # Render only the hook job template from the chart, patch the image,
 # and apply it directly to the cluster.
-helm template kagenti "$REPO_ROOT/charts/kagenti" -n "$NAMESPACE" \
+helm template rossoctl "$REPO_ROOT/charts/rossoctl" -n "$NAMESPACE" \
     --show-only templates/mlflow-oauth-secret-job.yaml \
-    -f <(helm get values kagenti -n "$NAMESPACE" -o yaml) \
+    -f <(helm get values rossoctl -n "$NAMESPACE" -o yaml) \
     --set "mlflowOAuthSecret.image=$(echo "$NEW_IMAGE" | cut -d: -f1)" \
     --set "mlflowOAuthSecret.tag=$(echo "$NEW_IMAGE" | cut -d: -f2)" \
     --set "mlflowOAuthSecret.imagePullPolicy=Always" \

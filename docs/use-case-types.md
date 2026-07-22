@@ -1,5 +1,5 @@
-# Kagenti Use Cases 
-Kagenti supports deploying and orchestrating multiple categories of AI‑driven use cases. Each category reflects a distinct operational model and security posture, and Kagenti’s system design aims to support all of them.
+# Rossoctl Use Cases 
+Rossoctl supports deploying and orchestrating multiple categories of AI‑driven use cases. Each category reflects a distinct operational model and security posture, and Rossoctl’s system design aims to support all of them.
 
 1. Knowledge & Analysis Insight Service​
 2. User-Authorized Synchronous Task Assistant ​
@@ -7,7 +7,7 @@ Kagenti supports deploying and orchestrating multiple categories of AI‑driven 
 4. Continuous Monitoring & Automated Response Service ​
 5. Event‑Driven Automation Workflow​
 
-Kagenti’s system and security architecture is designed to accommodate the requirements and constraints of each use‑case type.
+Rossoctl’s system and security architecture is designed to accommodate the requirements and constraints of each use‑case type.
 
 For platform-wide scenarios organized by persona (deployment, governance,
 observability, identity, developer experience, etc.), see

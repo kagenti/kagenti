@@ -1,6 +1,6 @@
-# Kagenti OpenShell Fork: Architecture, Patches, and Upgrade Path
+# Rossoctl OpenShell Fork: Architecture, Patches, and Upgrade Path
 
-*Comprehensive analysis of how Kagenti maintains and extends the
+*Comprehensive analysis of how Rossoctl maintains and extends the
 NVIDIA/OpenShell fork, what custom patches exist, and the plan for
 syncing with upstream v0.0.49+.*
 
@@ -8,7 +8,7 @@ syncing with upstream v0.0.49+.*
 
 ## Fork Architecture
 
-Kagenti maintains three repositories forked from the OpenShell ecosystem:
+Rossoctl maintains three repositories forked from the OpenShell ecosystem:
 
 ```mermaid
 flowchart TB
@@ -16,10 +16,10 @@ flowchart TB
         NOS["NVIDIA/OpenShell\n(gateway + supervisor + K8s driver)\nv0.0.49 (May 2026)"]
     end
 
-    subgraph KAGENTI["Kagenti Fork"]
-        KOS["kagenti/openshell\n(gateway + supervisor)\nmvp-v2 branch (v0.0.49+)"]
-        KDR["kagenti/openshell-driver-openshift\n(Go compute driver)\nmvp branch"]
-        KCR["kagenti/openshell-credentials-keycloak\n(credentials driver)\nmain branch"]
+    subgraph ROSSOCTL["Rossoctl Fork"]
+        KOS["rossoctl/openshell\n(gateway + supervisor)\nmvp-v2 branch (v0.0.49+)"]
+        KDR["rossoctl/openshell-driver-openshift\n(Go compute driver)\nmvp branch"]
+        KCR["rossoctl/openshell-credentials-keycloak\n(credentials driver)\nmain branch"]
     end
 
     NOS -->|"Sync Fork"| KOS
@@ -27,7 +27,7 @@ flowchart TB
     KOS -->|"Unix socket"| KCR
 
     style UPSTREAM fill:#3d6b8e,color:#fff,stroke:#666,stroke-width:2px
-    style KAGENTI fill:#4a7c59,color:#fff,stroke:#666,stroke-width:2px
+    style ROSSOCTL fill:#4a7c59,color:#fff,stroke:#666,stroke-width:2px
 
     linkStyle default stroke:#444,stroke-width:3px
 ```
@@ -36,14 +36,14 @@ flowchart TB
 
 | Repo | Main Branch | Build Branch | Previous Build Branch | Status |
 |------|-------------|-------------|----------------------|--------|
-| kagenti/openshell | `main` (synced with NVIDIA) | **`mvp-v2`** (17 commits ahead, v0.0.49+) | `mvp` (v0.0.36-kagenti.8) | Active |
-| kagenti/openshell-driver-openshift | `main` | `mvp` | — | Needs compat testing with mvp-v2 |
-| kagenti/openshell-credentials-keycloak | `main` | `main` | — | Compatible |
+| rossoctl/openshell | `main` (synced with NVIDIA) | **`mvp-v2`** (17 commits ahead, v0.0.49+) | `mvp` (v0.0.36-rossoctl.8) | Active |
+| rossoctl/openshell-driver-openshift | `main` | `mvp` | — | Needs compat testing with mvp-v2 |
+| rossoctl/openshell-credentials-keycloak | `main` | `main` | — | Compatible |
 
 ### How Builds Work
 
-1. **Sync Fork**: GitHub "Sync Fork" button syncs `kagenti/openshell:main` with `NVIDIA/OpenShell:main`
-2. **Create mvp-v2**: Branch from synced `main`, cherry-pick kagenti patches
+1. **Sync Fork**: GitHub "Sync Fork" button syncs `rossoctl/openshell:main` with `NVIDIA/OpenShell:main`
+2. **Create mvp-v2**: Branch from synced `main`, cherry-pick rossoctl patches
 3. **Fix compilation**: Resolve Rust conflicts, add missing match arms, fix clippy
 4. **CI publishes**: Publish workflow on `mvp-v2` push builds gateway + supervisor images
 5. **Tag format**: `mvp-v2-<sha7>` (e.g., `mvp-v2-3a1bbea`)
@@ -61,10 +61,10 @@ must use the new args format.
 
 | Component | Image | Tag | Source |
 |-----------|-------|-----|--------|
-| Gateway | `ghcr.io/kagenti/openshell/gateway` | `v0.0.56-rc.1` | v0.0.56 tag (upstream v0.0.56+) |
-| Supervisor | `ghcr.io/kagenti/openshell/supervisor` | `v0.0.56-rc.1` | v0.0.56 tag (upstream v0.0.56+) |
-| Compute Driver | `ghcr.io/kagenti/openshell-driver-openshift/compute-driver` | `v0.1.0-rc.6` | v0.1.0-rc.6 tag |
-| Credentials Driver | `ghcr.io/kagenti/openshell-credentials-keycloak/credentials-driver` | `main-d7d8306` | main branch |
+| Gateway | `ghcr.io/rossoctl/openshell/gateway` | `v0.0.56-rc.1` | v0.0.56 tag (upstream v0.0.56+) |
+| Supervisor | `ghcr.io/rossoctl/openshell/supervisor` | `v0.0.56-rc.1` | v0.0.56 tag (upstream v0.0.56+) |
+| Compute Driver | `ghcr.io/rossoctl/openshell-driver-openshift/compute-driver` | `v0.1.0-rc.6` | v0.1.0-rc.6 tag |
+| Credentials Driver | `ghcr.io/rossoctl/openshell-credentials-keycloak/credentials-driver` | `main-d7d8306` | main branch |
 
 > **Update (2026-06-10)**: Gateway and supervisor upgraded to `v0.0.56-rc.1`
 > (from `mvp-v2-3a1bbea`). Compute driver upgraded to `v0.1.0-rc.6` with
@@ -79,7 +79,7 @@ must use the new args format.
 
 The `mvp-v2` branch (created by pdettori, June 3 2026) carries 17 commits
 on top of synced upstream `main` (v0.0.49+). These are the rebased and
-fixed kagenti patches:
+fixed rossoctl patches:
 
 ### Gateway/Core Patches (mvp-v2)
 
@@ -103,7 +103,7 @@ fixed kagenti patches:
 
 ### What Changed from mvp to mvp-v2
 
-The old `mvp` branch (v0.0.36-kagenti.8) had patches for:
+The old `mvp` branch (v0.0.36-rossoctl.8) had patches for:
 - `--compute-driver-socket` flag — **still needed**, now in mvp-v2
 - `--credentials-driver-socket` flag — **still needed**, now in mvp-v2
 - SSH `/tmp` permissions fix — **check if upstream v0.0.49 includes it**
@@ -116,12 +116,12 @@ The old `mvp` branch (v0.0.36-kagenti.8) had patches for:
 |----|-------|---------------|
 | #1 | Namespace flags + tenant labels | **Yes** — multi-tenancy, not in upstream K8s driver |
 | #2 | Scoped RBAC (namespace Role, not cluster-admin) | **Yes** — security, not in upstream |
-| #3 | mTLS + inference routing | **Yes** — Kagenti-specific wiring |
+| #3 | mTLS + inference routing | **Yes** — Rossoctl-specific wiring |
 | #4 | Sandbox image pull policy configuration | **Yes** — Kind/HyperShift compatibility |
 
 ### Credentials Driver (openshell-credentials-keycloak)
 
-Entirely Kagenti-specific — exchanges OIDC tokens via Keycloak for sandbox
+Entirely Rossoctl-specific — exchanges OIDC tokens via Keycloak for sandbox
 authentication. No upstream equivalent exists.
 
 ---
@@ -215,13 +215,13 @@ the gateway RPC instead of kubectl apply.
 The colleague's question: "do we still need openshell-driver-openshift now
 that the kubernetes driver is in openshell upstream?"
 
-| Feature | Upstream K8s Driver | kagenti/openshell-driver-openshift |
+| Feature | Upstream K8s Driver | rossoctl/openshell-driver-openshift |
 |---------|--------------------|------------------------------------|
 | Language | Rust (in-process with gateway) | Go (out-of-process via Unix socket) |
 | CRD | `agents.x-k8s.io/v1alpha1` Sandbox | Same |
 | Multi-tenancy | Single namespace | Per-tenant namespace isolation |
 | RBAC | Cluster-level | Namespace-scoped Roles |
-| Tenant labels | None | `openshell.ai/tenant`, `kagenti.io/team` |
+| Tenant labels | None | `openshell.ai/tenant`, `rossoctl.io/team` |
 | PVC persistence | Workspace PVC per sandbox | Same |
 | GPU support | Yes (preflighting) | Not tested |
 | Image pull policy | Default | Configurable (IfNotPresent for Kind) |
@@ -241,7 +241,7 @@ created by pdettori on June 3, 2026.
 
 ```mermaid
 flowchart LR
-    MVP["mvp\n(v0.0.36-kagenti.8)\narchived"] -->|"upgrade"| MVPV2["mvp-v2\n(v0.0.49+ upstream)\nACTIVE"]
+    MVP["mvp\n(v0.0.36-rossoctl.8)\narchived"] -->|"upgrade"| MVPV2["mvp-v2\n(v0.0.49+ upstream)\nACTIVE"]
     NVIDIA["NVIDIA v0.0.49"] -->|"sync + rebase"| MVPV2
 
     style MVP fill:#555,color:#fff,stroke:#666,stroke-width:2px
@@ -255,7 +255,7 @@ flowchart LR
 
 1. Synced `main` with NVIDIA upstream via GitHub "Sync Fork"
 2. Created `mvp-v2` from synced `main`
-3. Rebased kagenti patches (credentials driver, External driver, OIDC)
+3. Rebased rossoctl patches (credentials driver, External driver, OIDC)
 4. Fixed Rust compilation: Debug impl, match arms, clippy lints, cfg gates
 5. Updated CI workflows to trigger on `mvp-v2` branch
 6. Built and published gateway + supervisor images to GHCR
@@ -276,28 +276,28 @@ flowchart LR
 If mvp-v2 causes issues:
 ```yaml
 # charts/openshell/values.yaml — revert to old tags:
-gateway.tag: v0.0.36-kagenti.8
-supervisorImage.tag: v0.0.36-kagenti.8
+gateway.tag: v0.0.36-rossoctl.8
+supervisorImage.tag: v0.0.36-rossoctl.8
 # statefulset.yaml — revert args:
 args: ["--sandbox-namespace", "team1"]
 ```
 
 ### Step-by-Step Procedure
 
-**Step 1: Sync kagenti/openshell main with NVIDIA upstream**
-- Use GitHub "Sync Fork" button on kagenti/openshell
+**Step 1: Sync rossoctl/openshell main with NVIDIA upstream**
+- Use GitHub "Sync Fork" button on rossoctl/openshell
 - Branch protection prevents API sync — must use GitHub UI
 - This updates `main` to NVIDIA v0.0.49+
 - `mvp` is NOT affected
 
 **Step 2: Create new branch from synced main**
 ```bash
-cd /tmp && git clone git@github.com:kagenti/openshell.git openshell-upgrade
+cd /tmp && git clone git@github.com:rossoctl/openshell.git openshell-upgrade
 cd openshell-upgrade
 git checkout -b mvp-2026-05-29 origin/main
 ```
 
-**Step 3: Cherry-pick kagenti patches (9 essential patches)**
+**Step 3: Cherry-pick rossoctl patches (9 essential patches)**
 
 All patches verified as still needed (no upstream equivalent in v0.0.49):
 
@@ -336,17 +336,17 @@ git push origin mvp-2026-05-29
 ```
 
 **Step 5: Build test images from new branch**
-- Tag: `v0.0.49-kagenti.1-rc1`
+- Tag: `v0.0.49-rossoctl.1-rc1`
 - Build gateway + supervisor images
 - Do NOT push to `:latest` tag
 
 **Step 6: Test on Kind**
 ```bash
-# Update kagenti Helm chart to use new images
-# In a worktree or branch of kagenti/kagenti:
+# Update rossoctl Helm chart to use new images
+# In a worktree or branch of rossoctl/rossoctl:
 # charts/openshell/values.yaml:
-#   gateway.tag: v0.0.49-kagenti.1-rc1
-#   supervisorImage.tag: v0.0.49-kagenti.1-rc1
+#   gateway.tag: v0.0.49-rossoctl.1-rc1
+#   supervisorImage.tag: v0.0.49-rossoctl.1-rc1
 ```
 
 Run full test suite:
@@ -395,7 +395,7 @@ without modification.
 If the upgrade fails:
 1. `mvp` branch was never touched (until Step 8)
 2. Archive branch `mvp-v0.0.36-archive` preserves the exact state
-3. Helm chart rollback: change image tags back to `v0.0.36-kagenti.8`
+3. Helm chart rollback: change image tags back to `v0.0.36-rossoctl.8`
 4. Driver repos: same rollback pattern
 
 ### Timeline
@@ -405,8 +405,8 @@ If the upgrade fails:
 | **Now** | Create `mvp-2026-05-29` branches, cherry-pick patches |
 | **Now** | Build RC images, test on Kind |
 | **After v0.6.0** | Create PR from `mvp-2026-05-29` → `mvp` |
-| **After PR review** | Merge, tag `v0.0.49-kagenti.1`, push images |
-| **After CI green** | Update kagenti Helm chart to new tags |
+| **After PR review** | Merge, tag `v0.0.49-rossoctl.1`, push images |
+| **After CI green** | Update rossoctl Helm chart to new tags |
 
 ---
 
@@ -427,7 +427,7 @@ RUN pip install --no-cache-dir \
     "hermes-agent[acp] @ https://github.com/NousResearch/hermes-agent/archive/refs/tags/v2026.5.29.tar.gz"
 ```
 
-This exposes hermes as an ACP-compatible agent that the Kagenti backend can
+This exposes hermes as an ACP-compatible agent that the Rossoctl backend can
 communicate with via the ExecSandbox gRPC path or direct ACP WebSocket.
 
 ### LiteLLM Integration
@@ -438,10 +438,10 @@ The correct config for v0.15.1 uses `custom_providers`:
 ```yaml
 model:
   default: claude-sonnet-4-20250514  # MUST use "default" not "name"
-  provider: kagenti
+  provider: rossoctl
 
 custom_providers:
-  - name: kagenti
+  - name: rossoctl
     base_url: http://litellm-model-proxy.team1.svc:4000/v1
     api_key: <litellm-virtual-key>
     models:
@@ -480,5 +480,5 @@ credentials never leave the LiteLLM pod.
 
 ---
 
-*This document tracks the state of Kagenti's OpenShell fork as of May 2026.
+*This document tracks the state of Rossoctl's OpenShell fork as of May 2026.
 Update after each fork sync or patch evaluation.*

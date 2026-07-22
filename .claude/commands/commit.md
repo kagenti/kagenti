@@ -1,4 +1,4 @@
-# Commit and PR Convention for Kagenti Repository
+# Commit and PR Convention for Rossoctl Repository
 
 When creating commits or pull requests for this repository, follow these conventions:
 
@@ -77,7 +77,7 @@ Signed-off-by: Paolo Dettori <dettori@us.ibm.com>
 ```
 🌱 Add E2E testing infrastructure and deployment health tests
 
-Implements initial end-to-end testing framework for Kagenti platform
+Implements initial end-to-end testing framework for Rossoctl platform
 deployment validation (addresses #309).
 
 Test Infrastructure:
@@ -95,11 +95,11 @@ Co-authored-by: Claude <noreply@anthropic.com>
 ## Summary
 
 This PR refactors the mcp-gateway deployment from a subchart dependency
-of the kagenti chart to a standalone chart installed separately via Helm.
+of the rossoctl chart to a standalone chart installed separately via Helm.
 
 Key changes:
 
-- Removed mcp-gateway as a subchart dependency from the kagenti Helm chart
+- Removed mcp-gateway as a subchart dependency from the rossoctl Helm chart
 - Added installer step to deploy mcp-gateway as a separate Helm release
 - Updated istio version from 1.26.0 to 1.28.0 in default values
 
@@ -156,17 +156,17 @@ The following CI checks will run automatically on PRs:
 1. **CI Workflow** (`ci.yaml`) - Runs on all PRs:
    - Python lint with flake8
    - Pre-commit hooks
-   - Pytest for kagenti/ui
+   - Pytest for rossoctl/ui
 
 2. **PR Kind Deployment** (`pr-kind-deployment.yaml`) - Runs on PRs affecting:
-   - `kagenti/**`
+   - `rossoctl/**`
    - `deployments/ui/**`
    - `.github/**`
    - `charts/**`
 
    This workflow:
    - Creates Kind cluster
-   - Builds and deploys Kagenti platform
+   - Builds and deploys Rossoctl platform
    - Runs deployment health checks
    - Runs E2E tests
    - Uploads test results
@@ -178,13 +178,13 @@ The following CI checks will run automatically on PRs:
 uv run pre-commit run --all-files
 
 # Run flake8 syntax check (via uv)
-uv run flake8 kagenti/tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+uv run flake8 rossoctl/tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
 
 # Run UI tests
-cd kagenti/ui && uv run pytest
+cd rossoctl/ui && uv run pytest
 
-# Run E2E tests (requires deployed Kagenti platform)
-cd kagenti
+# Run E2E tests (requires deployed Rossoctl platform)
+cd rossoctl
 uv pip install -r tests/requirements.txt
 uv run pytest tests/e2e/test_deployment_health.py -v
 ```

@@ -1,7 +1,7 @@
 #!/bin/bash
 # generate-diagrams.sh - Batch generate all Mermaid diagrams
 
-echo "🎨 Generating Kagenti Identity & Authentication Flow Diagrams..."
+echo "🎨 Generating Rossoctl Identity & Authentication Flow Diagrams..."
 echo "=================================================="
 
 # Check if mermaid-cli is installed

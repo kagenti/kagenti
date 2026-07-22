@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Build dependency images from custom refs.
 #
-# Reads KAGENTI_DEP_BUILDS env var (JSON array) and builds each dependency.
-# Called from 70-deploy-kagenti.sh between platform install and agent deploy.
+# Reads ROSSOCTL_DEP_BUILDS env var (JSON array) and builds each dependency.
+# Called from 70-deploy-rossoctl.sh between platform install and agent deploy.
 #
-# Format: KAGENTI_DEP_BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"fix/branch"}]'
+# Format: ROSSOCTL_DEP_BUILDS='[{"repo":"rossoctl/cortex","ref":"fix/branch"}]'
 #
 # Supported dependencies (add new ones to the registry below):
-#   kagenti/kagenti-extensions  — webhook + AuthBridge images
-#   kagenti/kagenti-operator    — operator image
+#   rossoctl/cortex  — webhook + AuthBridge images
+#   rossoctl/operator    — operator image
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,9 +21,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # No hardcoded defaults — chart deps are up-to-date (webhook v0.4.0-alpha.9).
 # Use /run-e2e --build org/repo=ref to override ad-hoc.
 
-DEP_BUILDS="${KAGENTI_DEP_BUILDS:-}"
+DEP_BUILDS="${ROSSOCTL_DEP_BUILDS:-}"
 if [ -z "$DEP_BUILDS" ] || [ "$DEP_BUILDS" = "[]" ]; then
-    log_info "No dependency builds requested (KAGENTI_DEP_BUILDS empty)"
+    log_info "No dependency builds requested (ROSSOCTL_DEP_BUILDS empty)"
     exit 0
 fi
 
@@ -38,11 +38,11 @@ build_dep() {
     local ref="$2"
 
     case "$repo" in
-        kagenti/kagenti-extensions)
-            # Build the proxy-init image from kagenti-extensions.
+        rossoctl/cortex)
+            # Build the proxy-init image from cortex.
             # (The sidecar-injection webhook formerly built here moved to
-            # kagenti/kagenti-operator — see that case below. The only
-            # image still built from kagenti-extensions is proxy-init.)
+            # rossoctl/operator — see that case below. The only
+            # image still built from cortex is proxy-init.)
             # DEP_SKIP_PATCH=true because proxy-init is an init container
             # image, not a deployment.
             log_info "Building proxy-init from ${repo}@${ref}"
@@ -50,19 +50,19 @@ build_dep() {
             DEP_REF="$ref" \
             DEP_CONTEXT="AuthBridge/AuthProxy" \
             DEP_IMAGE_NAME="proxy-init" \
-            DEP_DEPLOY_NS="kagenti-webhook-system" \
+            DEP_DEPLOY_NS="rossoctl-webhook-system" \
             DEP_DOCKERFILE="Dockerfile.init" \
             DEP_SKIP_PATCH="true" \
             bash "$SCRIPT_DIR/30-build-dep-image.sh"
             ;;
-        kagenti/kagenti-operator)
-            log_info "Building kagenti-operator from ${repo}@${ref}"
+        rossoctl/operator)
+            log_info "Building rossoctl-operator from ${repo}@${ref}"
             DEP_REPO="$repo" \
             DEP_REF="$ref" \
             DEP_CONTEXT="." \
-            DEP_IMAGE_NAME="kagenti-operator" \
-            DEP_DEPLOY_NS="kagenti-system" \
-            DEP_HELM_SET="kagenti-operator-chart.controllerManager.container.image" \
+            DEP_IMAGE_NAME="rossoctl-operator" \
+            DEP_DEPLOY_NS="rossoctl-system" \
+            DEP_HELM_SET="operator-chart.controllerManager.container.image" \
             bash "$SCRIPT_DIR/30-build-dep-image.sh"
             ;;
         *)
@@ -89,18 +89,18 @@ done
 # Without this, the webhook would reference GHCR images instead of our builds.
 if [ "$IS_OPENSHIFT" = "true" ]; then
     INTERNAL_REGISTRY="image-registry.openshift-image-registry.svc:5000"
-    WH_NS="kagenti-webhook-system"
+    WH_NS="rossoctl-webhook-system"
     CM_NAME=$(kubectl get configmap -n "$WH_NS" -l app.kubernetes.io/component=platform-defaults -o name 2>/dev/null | head -1)
     if [ -n "$CM_NAME" ]; then
         # Override individual sidecar images via env vars (default: only proxy-init from local build)
-        # Set KAGENTI_PROXY_INIT_IMAGE, KAGENTI_ENVOY_PROXY_IMAGE, etc. to override
+        # Set ROSSOCTL_PROXY_INIT_IMAGE, ROSSOCTL_ENVOY_PROXY_IMAGE, etc. to override
         # TODO: Build all sidecar images from source (envoy-with-processor, client-registration,
         # spiffe-helper) and default their overrides to the local builds. Currently only
         # proxy-init is built; other images use GHCR versions from the chart.
-        PROXY_INIT_IMAGE="${KAGENTI_PROXY_INIT_IMAGE:-${INTERNAL_REGISTRY}/${WH_NS}/proxy-init:latest}"
-        ENVOY_PROXY_IMAGE="${KAGENTI_ENVOY_PROXY_IMAGE:-}"
-        CLIENT_REG_IMAGE="${KAGENTI_CLIENT_REG_IMAGE:-}"
-        SPIFFE_HELPER_IMAGE="${KAGENTI_SPIFFE_HELPER_IMAGE:-}"
+        PROXY_INIT_IMAGE="${ROSSOCTL_PROXY_INIT_IMAGE:-${INTERNAL_REGISTRY}/${WH_NS}/proxy-init:latest}"
+        ENVOY_PROXY_IMAGE="${ROSSOCTL_ENVOY_PROXY_IMAGE:-}"
+        CLIENT_REG_IMAGE="${ROSSOCTL_CLIENT_REG_IMAGE:-}"
+        SPIFFE_HELPER_IMAGE="${ROSSOCTL_SPIFFE_HELPER_IMAGE:-}"
 
         log_info "Patching webhook ConfigMap with sidecar image overrides..."
         log_info "  proxyInit: ${PROXY_INIT_IMAGE}"
@@ -133,7 +133,7 @@ print(json.dumps(cm))
         # The webhook injects sidecar images (proxy-init, envoy) from the webhook
         # namespace. Without cross-namespace pull access, pods get ImagePullBackOff.
         log_info "Granting agent namespaces pull access to ${WH_NS} images..."
-        for NS in $(kubectl get namespaces -l kagenti-enabled=true -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+        for NS in $(kubectl get namespaces -l rossoctl-enabled=true -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
             # Allow the default SA in each agent namespace to pull from webhook-system
             oc policy add-role-to-user system:image-puller "system:serviceaccount:${NS}:default" \
                 -n "$WH_NS" 2>/dev/null || true

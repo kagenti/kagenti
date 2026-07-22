@@ -1,12 +1,12 @@
-# Teleport: Local Claude Code → Kagenti Sandbox
+# Teleport: Local Claude Code → Rossoctl Sandbox
 
 Delegate tasks to a remote Claude Code or Hermes agent running in an
-isolated Kagenti OpenShell sandbox on Kind or HyperShift. The agent has
+isolated Rossoctl OpenShell sandbox on Kind or HyperShift. The agent has
 LLM access via LiteLLM (MaaS or Vertex AI) but cannot see real API keys.
 
 ## Prerequisites
 
-- Kagenti cluster with OpenShell gateway (`kubectl get pods -n team1 | grep openshell`)
+- Rossoctl cluster with OpenShell gateway (`kubectl get pods -n team1 | grep openshell`)
 - Sandbox CRD installed (`kubectl get crd sandboxes.agents.x-k8s.io`)
 - LiteLLM proxy running (`kubectl get pods -n team1 | grep litellm`)
 

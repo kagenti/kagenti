@@ -2,7 +2,7 @@
 #
 # Run Full Kind Test
 #
-# Creates a Kind cluster, deploys Kagenti, deploys test agents, and runs E2E tests.
+# Creates a Kind cluster, deploys Rossoctl, deploys test agents, and runs E2E tests.
 # Supports both whitelist (--include-*) and blacklist (--skip-*) modes.
 #
 # USAGE:
@@ -15,25 +15,25 @@
 # OPTIONS:
 #   Include flags (whitelist mode - only run specified phases):
 #     --include-cluster-create     Include Kind cluster creation phase
-#     --include-kagenti-install    Include Kagenti platform installation phase
+#     --include-rossoctl-install    Include Rossoctl platform installation phase
 #     --include-agents             Include building/deploying test agents phase
 #     --include-test               Include E2E test phase
-#     --include-kagenti-uninstall  Include Kagenti platform uninstall phase
+#     --include-rossoctl-uninstall  Include Rossoctl platform uninstall phase
 #     --include-cluster-destroy    Include Kind cluster destruction phase
 #
 #   Skip flags (blacklist mode - run all except specified):
 #     --skip-cluster-create        Skip cluster creation (reuse existing)
-#     --skip-kagenti-install       Skip Kagenti platform installation
+#     --skip-rossoctl-install       Skip Rossoctl platform installation
 #     --skip-agents                Skip building/deploying test agents
 #     --skip-test                  Skip running E2E tests
-#     --skip-kagenti-uninstall     Skip Kagenti uninstall (default: skipped)
+#     --skip-rossoctl-uninstall     Skip Rossoctl uninstall (default: skipped)
 #     --skip-cluster-destroy       Skip cluster destruction (keep for debugging)
 #     --skip-mlflow                Skip MLflow deployment (saves ~2 GB memory)
 #     --skip-kuadrant              Skip Kuadrant deployment (saves ~1 GB memory)
 #
 #   Other options:
-#     --clean-kagenti    Uninstall Kagenti before installing (fresh install)
-#     --env ENV          Environment for Kagenti installer (default: dev)
+#     --clean-rossoctl    Uninstall Rossoctl before installing (fresh install)
+#     --env ENV          Environment for Rossoctl installer (default: dev)
 #
 # EXAMPLES:
 #   # Full run (default - everything)
@@ -45,8 +45,8 @@
 #   # Iterate on existing cluster
 #   ./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-create --skip-cluster-destroy
 #
-#   # Fresh kagenti on existing cluster
-#   ./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-create --clean-kagenti --skip-cluster-destroy
+#   # Fresh rossoctl on existing cluster
+#   ./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-create --clean-rossoctl --skip-cluster-destroy
 #
 #   # Lightweight install (4 vCPU / 12-16 GB VM)
 #   ./.github/scripts/local-setup/kind-full-test.sh --skip-mlflow --skip-kuadrant --skip-cluster-destroy
@@ -83,14 +83,14 @@ SKIP_CREATE=false
 SKIP_INSTALL=false
 SKIP_AGENTS=false
 SKIP_TEST=false
-SKIP_KAGENTI_UNINSTALL=false
+SKIP_ROSSOCTL_UNINSTALL=false
 SKIP_DESTROY=false
 SKIP_MLFLOW=false
 SKIP_KUADRANT=false
-INCLUDE_KAGENTI_UNINSTALL=false
-CLEAN_KAGENTI=false
-KAGENTI_ENV="${KAGENTI_ENV:-dev}"
-CLUSTER_NAME="${CLUSTER_NAME:-kagenti}"
+INCLUDE_ROSSOCTL_UNINSTALL=false
+CLEAN_ROSSOCTL=false
+ROSSOCTL_ENV="${ROSSOCTL_ENV:-dev}"
+CLUSTER_NAME="${CLUSTER_NAME:-rossoctl}"
 WHITELIST_MODE=false
 ENABLE_OPERATOR_SPIFFE_AUTH="${ENABLE_OPERATOR_SPIFFE_AUTH:-false}"
 
@@ -102,7 +102,7 @@ while [[ $# -gt 0 ]]; do
             WHITELIST_MODE=true
             shift
             ;;
-        --include-kagenti-install)
+        --include-rossoctl-install)
             INCLUDE_INSTALL=true
             WHITELIST_MODE=true
             shift
@@ -117,8 +117,8 @@ while [[ $# -gt 0 ]]; do
             WHITELIST_MODE=true
             shift
             ;;
-        --include-kagenti-uninstall)
-            INCLUDE_KAGENTI_UNINSTALL=true
+        --include-rossoctl-uninstall)
+            INCLUDE_ROSSOCTL_UNINSTALL=true
             WHITELIST_MODE=true
             shift
             ;;
@@ -132,7 +132,7 @@ while [[ $# -gt 0 ]]; do
             SKIP_CREATE=true
             shift
             ;;
-        --skip-kagenti-install)
+        --skip-rossoctl-install)
             SKIP_INSTALL=true
             shift
             ;;
@@ -144,8 +144,8 @@ while [[ $# -gt 0 ]]; do
             SKIP_TEST=true
             shift
             ;;
-        --skip-kagenti-uninstall)
-            SKIP_KAGENTI_UNINSTALL=true
+        --skip-rossoctl-uninstall)
+            SKIP_ROSSOCTL_UNINSTALL=true
             shift
             ;;
         --skip-cluster-destroy)
@@ -160,12 +160,12 @@ while [[ $# -gt 0 ]]; do
             SKIP_KUADRANT=true
             shift
             ;;
-        --clean-kagenti)
-            CLEAN_KAGENTI=true
+        --clean-rossoctl)
+            CLEAN_ROSSOCTL=true
             shift
             ;;
         --env)
-            KAGENTI_ENV="$2"
+            ROSSOCTL_ENV="$2"
             shift 2
             ;;
         --cluster-name)
@@ -188,22 +188,22 @@ if [ "$WHITELIST_MODE" = "true" ]; then
     RUN_INSTALL=$INCLUDE_INSTALL
     RUN_AGENTS=$INCLUDE_AGENTS
     RUN_TEST=$INCLUDE_TEST
-    RUN_KAGENTI_UNINSTALL=$INCLUDE_KAGENTI_UNINSTALL
+    RUN_ROSSOCTL_UNINSTALL=$INCLUDE_ROSSOCTL_UNINSTALL
     RUN_DESTROY=$INCLUDE_DESTROY
 else
     # Blacklist mode - default all to true, then apply skips
-    # Note: kagenti-uninstall defaults to false in blacklist mode (opt-in)
+    # Note: rossoctl-uninstall defaults to false in blacklist mode (opt-in)
     RUN_CREATE=true
     RUN_INSTALL=true
     RUN_AGENTS=true
     RUN_TEST=true
-    RUN_KAGENTI_UNINSTALL=false
+    RUN_ROSSOCTL_UNINSTALL=false
     RUN_DESTROY=true
     [ "$SKIP_CREATE" = "true" ] && RUN_CREATE=false
     [ "$SKIP_INSTALL" = "true" ] && RUN_INSTALL=false
     [ "$SKIP_AGENTS" = "true" ] && RUN_AGENTS=false
     [ "$SKIP_TEST" = "true" ] && RUN_TEST=false
-    [ "$SKIP_KAGENTI_UNINSTALL" = "true" ] && RUN_KAGENTI_UNINSTALL=false
+    [ "$SKIP_ROSSOCTL_UNINSTALL" = "true" ] && RUN_ROSSOCTL_UNINSTALL=false
     [ "$SKIP_DESTROY" = "true" ] && RUN_DESTROY=false
 fi
 
@@ -222,16 +222,16 @@ cd "$REPO_ROOT"
 echo ""
 echo "Configuration:"
 echo "  Cluster Name:   $CLUSTER_NAME"
-echo "  Environment:    $KAGENTI_ENV"
+echo "  Environment:    $ROSSOCTL_ENV"
 echo "  Mode:           $([ "$WHITELIST_MODE" = "true" ] && echo "Whitelist (explicit)" || echo "Blacklist (full run)")"
 echo "  Phases:"
 echo "    cluster-create:     $RUN_CREATE"
-echo "    kagenti-install:    $RUN_INSTALL"
+echo "    rossoctl-install:    $RUN_INSTALL"
 echo "    agents:             $RUN_AGENTS"
 echo "    test:               $RUN_TEST"
-echo "    kagenti-uninstall:  $RUN_KAGENTI_UNINSTALL"
+echo "    rossoctl-uninstall:  $RUN_ROSSOCTL_UNINSTALL"
 echo "    cluster-destroy:    $RUN_DESTROY"
-echo "  Clean Kagenti:  $CLEAN_KAGENTI"
+echo "  Clean Rossoctl:  $CLEAN_ROSSOCTL"
 echo "  Operator SPIFFE Auth: $ENABLE_OPERATOR_SPIFFE_AUTH"
 echo ""
 
@@ -249,26 +249,26 @@ else
 fi
 
 # ============================================================================
-# PHASE 2: Install Kagenti Platform
+# PHASE 2: Install Rossoctl Platform
 # ============================================================================
 
 if [ "$RUN_INSTALL" = "true" ]; then
-    log_phase "PHASE 2: Install Kagenti Platform"
+    log_phase "PHASE 2: Install Rossoctl Platform"
 
-    if [ "$CLEAN_KAGENTI" = "true" ]; then
-        log_step "Uninstalling Kagenti (--clean-kagenti)..."
-        ./scripts/kind/cleanup-kagenti.sh || true
+    if [ "$CLEAN_ROSSOCTL" = "true" ]; then
+        log_step "Uninstalling Rossoctl (--clean-rossoctl)..."
+        ./scripts/kind/cleanup-rossoctl.sh || true
     fi
 
     log_step "Creating secrets..."
     ./.github/scripts/common/20-create-secrets.sh
 
-    log_step "Running Kagenti installer..."
+    log_step "Running Rossoctl installer..."
     SETUP_ARGS=(--with-all --skip-cluster --build-images --cluster-name "$CLUSTER_NAME")
     [ "$SKIP_MLFLOW" = "true" ] && SETUP_ARGS+=(--skip-mlflow)
     [ "$SKIP_KUADRANT" = "true" ] && SETUP_ARGS+=(--skip-kuadrant)
     [ "$ENABLE_OPERATOR_SPIFFE_AUTH" = "true" ] && SETUP_ARGS+=(--enable-operator-spiffe-auth)
-    ./scripts/kind/setup-kagenti.sh "${SETUP_ARGS[@]}"
+    ./scripts/kind/setup-rossoctl.sh "${SETUP_ARGS[@]}"
 
     log_step "Waiting for platform to be ready..."
     ./.github/scripts/common/40-wait-platform-ready.sh
@@ -283,10 +283,10 @@ if [ "$RUN_INSTALL" = "true" ]; then
     ./.github/scripts/common/70-configure-dockerhost.sh
 
     log_step "Waiting for CRDs..."
-    ./.github/scripts/kagenti-operator/41-wait-crds.sh
+    ./.github/scripts/operator/41-wait-crds.sh
 
 else
-    log_phase "PHASE 2: Skipping Kagenti Installation"
+    log_phase "PHASE 2: Skipping Rossoctl Installation"
 fi
 
 # ============================================================================
@@ -294,13 +294,13 @@ fi
 # The packaged chart deps may reference :latest images that are incompatible
 # with the old chart binaries. Build from source to match.
 # ============================================================================
-if [ -z "${KAGENTI_DEP_BUILDS:-}" ] || [ "${KAGENTI_DEP_BUILDS:-}" = "[]" ]; then
-    # Default: build proxy-init from kagenti-extensions main so the packaged
+if [ -z "${ROSSOCTL_DEP_BUILDS:-}" ] || [ "${ROSSOCTL_DEP_BUILDS:-}" = "[]" ]; then
+    # Default: build proxy-init from cortex main so the packaged
     # chart deps pick up the latest init-container fixes even when the chart
     # is pinned to an older release.
-    export KAGENTI_DEP_BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"main"}]'
+    export ROSSOCTL_DEP_BUILDS='[{"repo":"rossoctl/cortex","ref":"main"}]'
 fi
-if [ "${KAGENTI_DEP_BUILDS:-}" != "[]" ] && [ "$RUN_INSTALL" = "true" ]; then
+if [ "${ROSSOCTL_DEP_BUILDS:-}" != "[]" ] && [ "$RUN_INSTALL" = "true" ]; then
     DEP_BUILD_SCRIPT="./.github/scripts/common/31-build-deps-from-refs.sh"
     if [ -f "$DEP_BUILD_SCRIPT" ]; then
         log_step "Building dependency overrides from source..."
@@ -316,13 +316,13 @@ if [ "$RUN_AGENTS" = "true" ]; then
     log_phase "PHASE 3: Deploy Test Agents"
 
     log_step "Building weather-tool..."
-    ./.github/scripts/kagenti-operator/71-build-weather-tool.sh
+    ./.github/scripts/operator/71-build-weather-tool.sh
 
     log_step "Deploying weather-tool..."
-    ./.github/scripts/kagenti-operator/72-deploy-weather-tool.sh
+    ./.github/scripts/operator/72-deploy-weather-tool.sh
 
     log_step "Deploying weather-agent..."
-    ./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+    ./.github/scripts/operator/74-deploy-weather-agent.sh
 else
     log_phase "PHASE 3: Skipping Agent Deployment"
 fi
@@ -347,27 +347,27 @@ if [ "$RUN_TEST" = "true" ]; then
     ./.github/scripts/common/87-setup-test-credentials.sh
 
     # Set config file based on environment
-    export KAGENTI_CONFIG_FILE="${KAGENTI_CONFIG_FILE:-deployments/envs/${KAGENTI_ENV}_values.yaml}"
-    log_step "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
+    export ROSSOCTL_CONFIG_FILE="${ROSSOCTL_CONFIG_FILE:-deployments/envs/${ROSSOCTL_ENV}_values.yaml}"
+    log_step "ROSSOCTL_CONFIG_FILE: $ROSSOCTL_CONFIG_FILE"
 
     log_step "Running E2E tests..."
-    ./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
+    ./.github/scripts/operator/90-run-e2e-tests.sh
 else
     log_phase "PHASE 4: Skipping E2E Tests"
 fi
 
 # ============================================================================
-# PHASE 5: Kagenti Uninstall (optional)
+# PHASE 5: Rossoctl Uninstall (optional)
 # ============================================================================
 
-if [ "$RUN_KAGENTI_UNINSTALL" = "true" ]; then
-    log_phase "PHASE 5: Uninstall Kagenti Platform"
-    log_step "Running cleanup-kagenti.sh..."
-    ./scripts/kind/cleanup-kagenti.sh --cluster-name "$CLUSTER_NAME" || {
-        log_error "Kagenti uninstall failed (non-fatal)"
+if [ "$RUN_ROSSOCTL_UNINSTALL" = "true" ]; then
+    log_phase "PHASE 5: Uninstall Rossoctl Platform"
+    log_step "Running cleanup-rossoctl.sh..."
+    ./scripts/kind/cleanup-rossoctl.sh --cluster-name "$CLUSTER_NAME" || {
+        log_error "Rossoctl uninstall failed (non-fatal)"
     }
 else
-    log_phase "PHASE 5: Skipping Kagenti Uninstall"
+    log_phase "PHASE 5: Skipping Rossoctl Uninstall"
 fi
 
 # ============================================================================

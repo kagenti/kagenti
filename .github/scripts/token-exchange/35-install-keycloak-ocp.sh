@@ -9,7 +9,7 @@
 #   bash 35-install-keycloak-ocp.sh community
 #   bash 35-install-keycloak-ocp.sh rhbk
 #
-# This script is only needed on OCP. On Kind, Keycloak is installed by setup-kagenti.sh.
+# This script is only needed on OCP. On Kind, Keycloak is installed by setup-rossoctl.sh.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 

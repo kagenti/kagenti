@@ -29,7 +29,7 @@ flowchart TD
 # Orchestrate: CI
 
 Add comprehensive CI workflows to a target repository. This is Phase 4 and
-produces PR #3. Encodes the kagenti/kagenti gold standard: lint, test, build,
+produces PR #3. Encodes the rossoctl/rossoctl gold standard: lint, test, build,
 security scanning, dependency management, and supply chain hardening.
 
 ## When to Use
@@ -39,8 +39,8 @@ security scanning, dependency management, and supply chain hardening.
 
 ## Prerequisites
 
-- Plan exists at `/tmp/kagenti/orchestrate/<target>/plan.md`
-- Scan report at `/tmp/kagenti/orchestrate/<target>/scan-report.md`
+- Plan exists at `/tmp/rossoctl/orchestrate/<target>/plan.md`
+- Scan report at `/tmp/rossoctl/orchestrate/<target>/scan-report.md`
 - Target repo in `.repos/<target>/`
 
 ## Read Scan Report First
@@ -283,7 +283,7 @@ Use `docker/build-push-action` with:
 
 **Include when:** Repo is actively maintained (has recent commits).
 
-Use the kagenti org reusable workflow:
+Use the rossoctl org reusable workflow:
 
 ```yaml
 name: Close Stale Issues and PRs
@@ -294,7 +294,7 @@ on:
 
 jobs:
   stale:
-    uses: kagenti/.github/.github/workflows/stale.yaml@main
+    uses: rossoctl/.github/.github/workflows/stale.yaml@main
 ```
 
 ### 2.3 PR Title Verification
@@ -341,7 +341,7 @@ Pair with comment-triggered E2E:
 ## Action Version Reference
 
 When generating workflows, use the latest SHA-pinned versions. Look up current
-SHAs from the kagenti/kagenti main repo's workflows as the reference. All
+SHAs from the rossoctl/rossoctl main repo's workflows as the reference. All
 actions MUST be SHA-pinned with a version comment:
 
 ```yaml
@@ -399,7 +399,7 @@ gh pr create --repo org/repo --title "Add comprehensive CI workflows" --body "Ph
 
 ## Update Phase Status
 
-Set ci to `complete` in `/tmp/kagenti/orchestrate/<target>/phase-status.md`.
+Set ci to `complete` in `/tmp/rossoctl/orchestrate/<target>/phase-status.md`.
 
 ## Related Skills
 

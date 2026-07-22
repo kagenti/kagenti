@@ -9,15 +9,15 @@ metadata:
   namespace: team1
   labels:
     app.kubernetes.io/name: postgres-sessions
-    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/part-of: rossoctl
     app.kubernetes.io/component: session-store
 type: Opaque
 stringData:
   host: postgres-sessions.team1
   port: "5432"
   database: sessions
-  username: kagenti
-  password: kagenti-sessions-dev
+  username: rossoctl
+  password: rossoctl-sessions-dev
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -26,7 +26,7 @@ metadata:
   namespace: team1
   labels:
     app.kubernetes.io/name: postgres-sessions
-    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/part-of: rossoctl
     app.kubernetes.io/component: session-store
 spec:
   serviceName: postgres-sessions
@@ -38,7 +38,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: postgres-sessions
-        app.kubernetes.io/part-of: kagenti
+        app.kubernetes.io/part-of: rossoctl
         app.kubernetes.io/component: session-store
     spec:
       securityContext:
@@ -65,7 +65,7 @@ spec:
         - name: POSTGRESQL_DATABASE
           value: sessions
         - name: POSTGRESQL_USER
-          value: kagenti
+          value: rossoctl
         - name: POSTGRESQL_PASSWORD
           valueFrom:
             secretKeyRef:
@@ -107,7 +107,7 @@ metadata:
   namespace: team1
   labels:
     app.kubernetes.io/name: postgres-sessions
-    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/part-of: rossoctl
     app.kubernetes.io/component: session-store
 spec:
   selector:
