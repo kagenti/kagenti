@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # OpenShell Claude Code Sandbox
 
 > Back to [agent catalog](README.md) | [main doc](../openshell-integration.md)

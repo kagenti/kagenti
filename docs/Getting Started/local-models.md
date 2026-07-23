@@ -1,3 +1,7 @@
+---
+description: Install Ollama for testing with local LLMs.
+---
+
 # Using Local Models with Rossoctl
 
 Rossoctl supports any OpenAI-compatible model backend. This guide covers using [Ollama](https://ollama.com/) to run LLM models locally, eliminating the need for an external API key.

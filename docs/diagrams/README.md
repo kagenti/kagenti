@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Rossoctl Identity & Authentication Flow Diagrams
 
 This directory contains Mermaid sequence diagrams that illustrate the authentication and authorization flows in Rossoctl's zero-trust identity architecture.

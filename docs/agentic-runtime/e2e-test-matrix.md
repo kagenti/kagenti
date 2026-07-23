@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # OpenShell E2E Test Matrix
 
 > Back to [main doc](openshell-integration.md) | Tests: `rossoctl/tests/e2e/openshell/`

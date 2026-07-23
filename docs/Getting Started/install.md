@@ -1,3 +1,7 @@
+---
+description: Full Rossoctl installation guide.
+---
+
 # Rossoctl Installation Guide
 
 This guide covers installation on both local Kind clusters and OpenShift environments.
@@ -193,7 +197,7 @@ shortens overall startup time on slow links by reusing the host's image cache.
 > daemon cache sidesteps the limit entirely.
 
 The list of images lives in
-[`scripts/kind/preload-images.txt`](../scripts/kind/preload-images.txt) — one
+[`scripts/kind/preload-images.txt`](https://github.com/rossoctl/rossoctl/blob/main/scripts/kind/preload-images.txt) — one
 image per line, comments with `#`. The file is intentionally focused on
 `docker.io/*` images; `ghcr.io` and `quay.io` are not rate-limited and pull
 fine on demand.
@@ -422,7 +426,7 @@ Rossoctl supports two modes for how the operator and agent workloads authenticat
 - **Client secrets (default)** — the operator uses admin credentials to register agent OAuth clients; agents authenticate with provisioned client secrets. No extra infrastructure required.
 - **SPIFFE authentication (recommended)** — the operator and agents authenticate using their SPIFFE identities (JWT-SVIDs). Requires SPIRE. Eliminates all provisioned credentials.
 
-Both modes are configured automatically during install. See the **[Authentication Guide](./authentication.md)** for full setup, configuration, and how each mode works.
+Both modes are configured automatically during install. See the **[Authentication Guide](../Concepts/identity-guide.md)** for full setup, configuration, and how each mode works.
 
 ---
 
@@ -498,5 +502,5 @@ oc get clusterversion
 
 </details>
 
-For more troubleshooting tips, see [Troubleshooting Guide](./troubleshooting.md).
+For more troubleshooting tips, see [Troubleshooting Guide](./Users Guides/troubleshooting.md).
 

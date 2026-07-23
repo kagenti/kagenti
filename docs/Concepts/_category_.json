@@ -1,0 +1,9 @@
+{
+  "label": "Concepts",
+  "position": 3,
+  "description": "Understand Rossoctl's platform and security model.",
+  "link": {
+    "type": "generated-index",
+    "description": "Understand Rossoctl's platform and security model."
+  }
+}

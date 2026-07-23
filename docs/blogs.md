@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Rossoctl Blog Posts
 
 We regularly publish articles at the intersection of cloud-native architecture, AI agents, and platform security.

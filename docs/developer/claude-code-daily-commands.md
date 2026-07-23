@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Claude Code Daily Commands
 
 Quick reference for the skills and commands you'll use regularly when working on

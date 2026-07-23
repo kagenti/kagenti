@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # HyperShift Development Guide
 
 This guide covers Rossoctl development using HyperShift to create OpenShift clusters on AWS.

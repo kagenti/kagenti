@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Rossoctl Documentation
 
 This directory contains the official Rossoctl project documentation. 
@@ -11,7 +15,7 @@ If you are new to Rossoctl, we recommend the following flow to get started with 
 
 Rossoctl is built on existing open-source cloud-native technologies. 
 
-- [Architecture Overview](./tech-details.md) gives a high-level look at the existing technologies. 
+- [Architecture Overview](./Concepts/tech-details.md) gives a high-level look at the existing technologies. 
 
 ## Demos and Tutorials
 

@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # AuthBridge Security Model
 
 ## The Problem: Why Agents Cannot Hold Their Own Credentials

@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # AuthBridge Demos
 
 **What AuthBridge does:** AuthBridge is a sidecar proxy that runs alongside each agent.

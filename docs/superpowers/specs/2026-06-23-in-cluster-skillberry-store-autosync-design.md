@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Design: In-cluster skillberry-store with auto-enabled autosync
 
 **Date:** 2026-06-23

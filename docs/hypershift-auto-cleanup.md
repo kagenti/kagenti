@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # HyperShift Cluster Auto-Cleanup
 
 Automated cleanup of stale HyperShift clusters based on time-to-live (TTL) labels.

@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # OpenShell E2E Test Category Index
 
 > Back to [main doc](../openshell-integration.md) | [Test matrix](../e2e-test-matrix.md)

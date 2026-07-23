@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Releasing Rossoctl
 
 Practical guide for release managers. Covers the full lifecycle from alpha

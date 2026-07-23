@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Weather Agent Demo
 
 > **This demo has moved.** The Weather Agent demo is now maintained in

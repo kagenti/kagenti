@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Windows Development with WSL
 
 Rossoctl requires **WSL (Windows Subsystem for Linux)** for development on Windows. Native Windows development is not supported due to Linux-specific filesystem conventions (e.g., colons in skill folder names).

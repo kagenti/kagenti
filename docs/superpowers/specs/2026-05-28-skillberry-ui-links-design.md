@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Design: Skillberry UI Links for External Skills
 
 **Date:** 2026-05-28

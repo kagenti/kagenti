@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # OpenSSF Scorecard Remediation — Passover
 
 **Date:** 2026-05-08

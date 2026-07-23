@@ -1,0 +1,9 @@
+{
+  "label": "Overview",
+  "position": 1,
+  "description": "What is Rossoctl, and how to get started.",
+  "link": {
+    "type": "generated-index",
+    "description": "What is Rossoctl, and how to get started."
+  }
+}

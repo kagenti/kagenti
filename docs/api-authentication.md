@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # API Authentication
 
 This guide covers how to authenticate with the Rossoctl API using OAuth2 bearer tokens.

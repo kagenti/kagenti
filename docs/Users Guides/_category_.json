@@ -1,0 +1,8 @@
+{
+  "label": "User’s Guides",
+  "description": "How to create, deploy, and manage agentic workloads.",
+  "link": {
+    "type": "generated-index",
+    "description": "How to create, deploy, and manage agentic workloads."
+  }
+}

@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # ADR: Direct Sandbox Creation vs SandboxTemplate + SandboxClaim
 
 **Status:** Proposed

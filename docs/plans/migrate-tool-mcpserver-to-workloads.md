@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Migration Plan: MCPServer CRD to Standard Kubernetes Workloads
 
 **Status:** In Progress

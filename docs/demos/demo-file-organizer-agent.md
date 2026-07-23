@@ -1,4 +1,8 @@
-# File Organizer Agent Demo (with Cloud Storage Tool)
+---
+description: File Organizer (with Cloud Storage Tool)
+---
+
+# File Organizer Agent
 
 This document provides detailed steps for running the **File Organizer Agent** proof-of-concept (PoC) demo.
 
@@ -12,12 +16,12 @@ Here's a breakdown of the sections:
 - In [**Import New Agent**](#import-new-agent), you'll build and deploy the [`file_organizer_agent`](https://github.com/rossoctl/examples/tree/main/a2a/file_organizer) agent.
 - In [**Import New Tool**](#import-new-tool), you'll build and deploy [`cloud_storage_tool`](https://github.com/rossoctl/examples/tree/main/mcp/cloud_storage_tool) tool.
 - In [**Validate the Deployment**](#validate-the-deployment), you'll verify that all components are running and operational.
-- In [**Chat with the Generic Agent**](#chat-with-the-generic-agent), you'll interact with the agent and confirm it correctly organizes files in the specified cloud storage bucket.
+- In [**Chat with the File Organizer Agent**](#chat-with-the-file-organizer-agent), you'll interact with the agent and confirm it correctly organizes files in the specified cloud storage bucket.
 
 > **Prerequisites:**
-> Ensure you've completed the Rossoctl platform setup as described in the [Installation Guide](../install.md).
+> Ensure you've completed the Rossoctl platform setup as described in the [Installation Guide](../Getting Started/install.md).
 
-You should also open the Agent Platform Demo Dashboard as instructed in the [Accessing the UI](../install.md#accessing-the-ui) section.
+You should also open the Agent Platform Demo Dashboard as instructed in the [Accessing the UI](../Getting Started/install.md#accessing-the-ui) section.
 
 ---
 
@@ -29,7 +33,7 @@ To deploy the File Organizer Agent:
 2. In the **Select Namespace to Deploy Agent** drop-down, choose the `<namespace>` where you'd like to deploy the agent. (These namespaces are defined in your `.env` file.)
 3. Under **Environment Variables**, configure LLM settings using one of these methods:
    - Click **Import .env File** and import `.env.openai` or `.env.ollama` from the agent examples repo, **or**
-   - Manually add env vars: `LLM_API_BASE`, `LLM_API_KEY`, and `LLM_MODEL` (see [Using Local Models](../local-models.md) for values)
+   - Manually add env vars: `LLM_API_BASE`, `LLM_API_KEY`, and `LLM_MODEL` (see [Using Local Models](../Getting Started/local-models.md) for values)
 4. Under **Environment Variables**, also add:
    - Click `Add Environment Variable`
    - Under `Name` put `BUCKET_URI` and under `Value` put the URI of your cloud storage bucket (e.g., `s3://my-bucket-name/` for AWS S3)
@@ -142,7 +146,7 @@ Once the deployment is complete, you can run the demo:
 
 8. You can tail the log files (as shown in the [Validate the Deployment section](#validate-the-deployment)) to observe the interaction between the agent and the tool in real time.
 
-If you encounter any errors, check the [Troubleshooting Guide](../troubleshooting.md).
+If you encounter any errors, check the [Troubleshooting Guide](../Users Guides/troubleshooting.md).
 
 ## Cleanup
 

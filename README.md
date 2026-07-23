@@ -162,7 +162,7 @@ To learn how to deploy agents and MCP tools, follow the **[Weather Agent Demo](h
 | **Import Your Own Agent** | [New Agent Guide](./docs/new-agent.md) |
 | **Import Your Own Tool** | [New Tool Guide](./docs/new-tool.md) |
 | **Skills Configuration & Usage** | [Skills Guide](./docs/skills.md) |
-| **Architecture Details** | [Technical Details](./docs/tech-details.md) |
+| **Architecture Details** | [Technical Details](./docs/Concepts/tech-details.md) |
 | **Identity, Security, and Auth Bridge** | [Identity and Auth Bridge](./docs/identity-guide.md) |
 | **Fine-Grained Zero-Trust Access Control** | [Access Control](./docs/access-control/README.md) |
 | **Developer Guide** | [Contributing](./docs/dev-guide.md) |

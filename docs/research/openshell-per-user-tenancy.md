@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Per-User Sandbox Ownership on a Shared OpenShell Gateway
 
 **Status:** Implemented (v0.0.56-rc.2)

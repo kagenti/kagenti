@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Rossoctl OpenShell Fork: Architecture, Patches, and Upgrade Path
 
 *Comprehensive analysis of how Rossoctl maintains and extends the

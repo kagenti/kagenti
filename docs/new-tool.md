@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Importing a New MCP Tool into the Platform
 
 ## Overview

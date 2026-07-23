@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Rossoctl Sandbox Guide (OpenShell)
 
 This guide covers installing and using the Rossoctl sandboxing feature powered by

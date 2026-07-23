@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Agent Integration Catalog
 
 > Back to [main doc](../openshell-integration.md)

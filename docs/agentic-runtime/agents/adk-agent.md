@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # ADK Agent (Google Agent Development Kit)
 
 > Back to [agent catalog](README.md) | [main doc](../openshell-integration.md)

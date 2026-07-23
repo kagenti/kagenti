@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # MCP Gateway instructions
 
 [MCP Gateway](https://github.com/rossoctl/mcp-gateway) components are installed as part of the Rossoctl installation process

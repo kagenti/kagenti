@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Multi-Turn Conversation
 
 > **Test file:** `rossoctl/tests/e2e/openshell/test_05_multiturn_conversation.py`

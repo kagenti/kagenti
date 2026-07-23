@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # OpenShell Integration with Rossoctl
 
 > **Status:** PoC validated ([PR #1300](https://github.com/rossoctl/rossoctl/pull/1300)) — MVP in progress ([epic #1363](https://github.com/rossoctl/rossoctl/issues/1363))

@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Rossoctl Use Cases 
 Rossoctl supports deploying and orchestrating multiple categories of AI‑driven use cases. Each category reflects a distinct operational model and security posture, and Rossoctl’s system design aims to support all of them.
 

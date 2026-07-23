@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Conversation Resume
 
 > **Test file:** `rossoctl/tests/e2e/openshell/test_06_conversation_resume.py`

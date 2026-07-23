@@ -1,3 +1,7 @@
+---
+description: What can go wrong?
+---
+
 # Troubleshooting
 
 ## Issues during Rossoctl installation

@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Credential Security
 
 > **Test file:** `rossoctl/tests/e2e/openshell/test_T1_6_credential_security.py`

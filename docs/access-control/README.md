@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # rossoctl: Access Control Architecture
 
 This directory contains the architectural blueprints, technical specifications, and implementation guidelines that govern rossoctl's zero-trust fine grain authorization. It discusses the challenges in authorizing multi-agent execution graphs where each agent may act as a confused deputy or be otherwise malicious and how rossoctl addresses such challenges.

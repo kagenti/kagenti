@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Teleport: Remote Claude Code Execution in OpenShell Sandboxes
 
 Teleport packages your local Claude Code context (CLAUDE.md, skills, settings)

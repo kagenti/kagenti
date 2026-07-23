@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Sandbox Lifecycle
 
 > **Test file:** `rossoctl/tests/e2e/openshell/test_04_sandbox_lifecycle.py`

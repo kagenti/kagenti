@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Release Management SOP
 
 Standard Operating Procedure for releasing Rossoctl, aligned with CNCF project

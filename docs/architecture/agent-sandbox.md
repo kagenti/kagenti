@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Agent Sandbox
 
 > Skills-Driven Coding Agents in Kubernetes Isolation

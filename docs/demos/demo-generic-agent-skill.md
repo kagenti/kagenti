@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Generic Agent + Summarizer Skill Demo in the Rossoctl UI
 
 This guide explains how to use the Rossoctl UI to:

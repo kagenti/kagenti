@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Developing a Rossoctl Application
 
 This guide explains how to build applications that integrate with the Rossoctl platform, using the [app-demo example](../rossoctl/examples/app-demo/) as a reference implementation.
@@ -207,4 +211,4 @@ For a complete implementation with streaming support, error handling, and authen
 - **Explore the app-demo:** [`rossoctl/examples/app-demo/`](../rossoctl/examples/app-demo/)
 - **Learn about authentication:** [Identity Guide](./identity-guide.md)
 - **Deploy your first agent:** [New Agent Guide](./new-agent.md)
-- **Understand the platform:** [Technical Details](./tech-details.md)
+- **Understand the platform:** [Technical Details](./Concepts/tech-details.md)
