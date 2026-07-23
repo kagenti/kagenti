@@ -90,13 +90,18 @@ def test_statefulset_core_shape():
 
 
 def test_statefulset_labels_and_markers():
-    labels = _sts()["metadata"]["labels"]
+    m = _sts()
+    labels = m["metadata"]["labels"]
     assert labels["protocol.rossoctl.io/mcp"] == ""
-    assert labels["rossoctl.io/type"] == "tool"
     assert labels["rossoctl.io/simulated"] == "true"
     assert labels["rossoctl.io/workload-type"] == "statefulset"
     assert labels["rossoctl.io/inject"] == "disabled"
-    assert _sts()["metadata"]["annotations"]["rossoctl.io/autoscaling"] == "disabled"
+    assert m["metadata"]["annotations"]["rossoctl.io/autoscaling"] == "disabled"
+    # rossoctl.io/type must NOT be set on the workload by the backend — the
+    # agent-label-protection VAP reserves that label for the operator, which
+    # stamps it via the AgentRuntime CR. Guard both metadata and pod template.
+    assert "rossoctl.io/type" not in labels
+    assert "rossoctl.io/type" not in m["spec"]["template"]["metadata"]["labels"]
 
 
 def test_statefulset_pvc_mounted_at_skills_dir():
@@ -156,6 +161,32 @@ def test_service_shape_and_labels():
     assert labels["protocol.rossoctl.io/mcp"] == ""
     assert labels["rossoctl.io/simulated"] == "true"
     assert labels["rossoctl.io/type"] == "tool"
+
+
+from app.services.simulation_manifests import build_simulation_agentruntime
+
+
+def test_agentruntime_adopts_statefulset_as_tool():
+    m = build_simulation_agentruntime("petstore", "team1")
+    assert m["kind"] == "AgentRuntime"
+    assert m["apiVersion"].endswith("/v1alpha1")
+    assert m["metadata"]["name"] == "petstore"
+    assert m["metadata"]["namespace"] == "team1"
+    assert m["metadata"]["labels"]["rossoctl.io/simulated"] == "true"
+    # Required CRD fields: type + targetRef pointing at the bare StatefulSet.
+    assert m["spec"]["type"] == "tool"
+    assert m["spec"]["targetRef"] == {
+        "apiVersion": "apps/v1",
+        "kind": "StatefulSet",
+        "name": "petstore",
+    }
+    # authBridgeMode only present when requested.
+    assert "authBridgeMode" not in m["spec"]
+
+
+def test_agentruntime_includes_authbridge_mode_when_set():
+    m = build_simulation_agentruntime("petstore", "team1", auth_bridge_mode="lite")
+    assert m["spec"]["authBridgeMode"] == "lite"
 
 
 import pytest

@@ -10,6 +10,18 @@ import pytest
 from app.routers import simulation as sim
 
 
+@pytest.fixture(autouse=True)
+def _skip_provision_wait():
+    """These tests exercise the spec-POST loop; stub out the operator-adoption
+    wait (_wait_for_runtime_configured) so it resolves immediately. The wait
+    itself is covered by TestWaitForRuntimeConfigured below."""
+    with patch(
+        "app.routers.simulation._wait_for_runtime_configured",
+        new=AsyncMock(return_value=True),
+    ):
+        yield
+
+
 @pytest.mark.asyncio
 async def test_trigger_posts_once_on_202():
     post = AsyncMock(return_value=202)
