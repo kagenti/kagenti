@@ -1,0 +1,9 @@
+{
+  "label": "Security & Identity",
+  "position": 5,
+  "link": {
+    "type": "generated-index",
+    "title": "Security & Identity",
+    "description": "Zero-trust identity, authentication, delegation, policy, and audit — the guarantees that let autonomous agents run on your infrastructure."
+  }
+}

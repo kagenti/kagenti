@@ -1,0 +1,44 @@
+# Notify the website (kagenti/.github) to rebuild when published docs change.
+#
+# The website syncs its Docs section from this repo's `docs-temp/` folder and its
+# Contributing page from `CONTRIBUTING.md`. On every push to main that touches
+# either, this fires a `repository_dispatch` event (type: docs-temp-updated) at
+# kagenti/.github, whose deploy workflow listens for it, re-pulls the content,
+# rebuilds, and redeploys to GitHub Pages. See the website's scripts/sync-docs.sh.
+#
+# Requires an org/maintainer-provisioned secret SITE_DISPATCH_TOKEN: a token
+# with permission to POST dispatches to kagenti/.github (fine-grained PAT with
+# "Contents: read & write" on kagenti/.github, or a classic PAT with `repo`).
+name: Notify website of docs changes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs-temp/**"
+      - "CONTRIBUTING.md"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send repository_dispatch to kagenti/.github
+        env:
+          TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "${TOKEN:-}" ]; then
+            echo "::error::SITE_DISPATCH_TOKEN is not set; cannot notify the website repo."
+            exit 1
+          fi
+          curl --fail --silent --show-error -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/kagenti/.github/dispatches \
+            -d '{"event_type":"docs-temp-updated"}'
+          echo "Dispatched docs-temp-updated to kagenti/.github"

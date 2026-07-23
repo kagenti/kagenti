@@ -1,0 +1,9 @@
+{
+  "label": "Reference",
+  "position": 9,
+  "link": {
+    "type": "generated-index",
+    "title": "Reference",
+    "description": "Look it up — the rossoctl CLI, custom resources, configuration values, and feature flags."
+  }
+}
