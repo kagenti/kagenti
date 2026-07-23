@@ -56,6 +56,11 @@ Smaller pull requests are typically easier to review and merge than larger ones.
 
 See the [making PR](./docs/dev-guide.md#making-a-pr) document for detailed instructions.
 
+Before a feature is accepted into a release it must meet the project's
+[Feature Acceptance Standard](./FEATURE_ACCEPTANCE.md), a tiered bar covering code
+quality, documentation, demonstrated value, and environment portability. The pull
+request template walks you through the applicable checklist.
+
 ## Releasing
 
 Maintainers: see the [Releasing Guide](./docs/releasing.md) for how to create
