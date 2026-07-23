@@ -17,6 +17,8 @@ from pydantic import BaseModel, field_validator
 from app.core.constants import (
     APP_KUBERNETES_IO_MANAGED_BY,
     APP_KUBERNETES_IO_NAME,
+    CRD_GROUP,
+    CRD_VERSION,
     DEFAULT_ENV_VARS,
     DEFAULT_IN_CLUSTER_PORT,
     DEFAULT_RESOURCE_LIMITS,
@@ -197,13 +199,18 @@ def build_simulation_statefulset(
     service_name = f"{name}{TOOL_SERVICE_SUFFIX}"
     inject = "enabled" if auth_bridge_enabled else "disabled"
 
+    # NOTE: rossoctl.io/type is intentionally NOT set here. The
+    # agent-label-protection ValidatingAdmissionPolicy forbids any principal but
+    # the operator SA from setting it on a Deployment/StatefulSet. The workload is
+    # created bare and adopted by an AgentRuntime CR (build_simulation_agentruntime);
+    # the operator stamps rossoctl.io/type=tool onto the workload during
+    # reconciliation. This mirrors the regular-tool path.
     labels = {
         APP_KUBERNETES_IO_NAME: name,
         _MCP_PROTOCOL_LABEL: "",
         ROSSOCTL_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
         ROSSOCTL_FRAMEWORK_LABEL: framework,
         ROSSOCTL_WORKLOAD_TYPE_LABEL: WORKLOAD_TYPE_STATEFULSET,
-        ROSSOCTL_TYPE_LABEL: RESOURCE_TYPE_TOOL,
         ROSSOCTL_SIMULATED_LABEL: "true",
         APP_KUBERNETES_IO_MANAGED_BY: ROSSOCTL_UI_CREATOR_LABEL,
         ROSSOCTL_INJECT_LABEL: inject,
@@ -213,7 +220,6 @@ def build_simulation_statefulset(
         _MCP_PROTOCOL_LABEL: "",
         ROSSOCTL_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
         ROSSOCTL_FRAMEWORK_LABEL: framework,
-        ROSSOCTL_TYPE_LABEL: RESOURCE_TYPE_TOOL,
         ROSSOCTL_SIMULATED_LABEL: "true",
         ROSSOCTL_INJECT_LABEL: inject,
     }
@@ -336,6 +342,51 @@ def build_simulation_service(
             "ports": [{"name": "http", "port": port, "targetPort": port, "protocol": "TCP"}],
         },
     }
+
+
+def build_simulation_agentruntime(
+    name: str,
+    namespace: str,
+    *,
+    auth_bridge_mode: Optional[str] = None,
+) -> dict:
+    """Build an AgentRuntime CR that adopts the simulated-tool StatefulSet.
+
+    The StatefulSet is created without the ``rossoctl.io/type`` label because the
+    agent-label-protection ValidatingAdmissionPolicy only lets the operator SA set
+    it. This CR references the workload via ``spec.targetRef``; the operator adopts
+    the StatefulSet and stamps ``rossoctl.io/type=tool`` (plus its config-hash /
+    mtls annotations) as the exempt controller-manager SA — the same mechanism the
+    regular-tool path uses (``app.routers.tools._ensure_tool_agentruntime``).
+
+    Kept here rather than imported from app.routers.tools so this module stays
+    standalone (see module docstring). The CR shape is CRD-stable (required fields
+    are only ``type`` and ``targetRef``).
+    """
+    manifest: Dict[str, Any] = {
+        "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
+        "kind": "AgentRuntime",
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "labels": {
+                APP_KUBERNETES_IO_NAME: name,
+                APP_KUBERNETES_IO_MANAGED_BY: ROSSOCTL_UI_CREATOR_LABEL,
+                ROSSOCTL_SIMULATED_LABEL: "true",
+            },
+        },
+        "spec": {
+            "type": RESOURCE_TYPE_TOOL,
+            "targetRef": {
+                "apiVersion": "apps/v1",
+                "kind": "StatefulSet",
+                "name": name,
+            },
+        },
+    }
+    if auth_bridge_mode:
+        manifest["spec"]["authBridgeMode"] = auth_bridge_mode
+    return manifest
 
 
 def validate_openapi_spec(text: str) -> dict:

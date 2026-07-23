@@ -158,11 +158,15 @@ def test_delete_removes_statefulset_service_and_pvcs():
     body = r.json()
     assert body["success"] is True
     assert "StatefulSet/petstore" in body["deletedResources"]
+    assert "AgentRuntime/petstore" in body["deletedResources"]
     assert "Service/petstore-mcp" in body["deletedResources"]
     assert "PersistentVolumeClaim/data-petstore-0" in body["deletedResources"]
     kube.delete_statefulset.assert_called_once_with("team1", "petstore")
     kube.delete_service.assert_called_once_with("team1", "petstore-mcp")
     kube.delete_persistent_volume_claim.assert_called_once_with("team1", "data-petstore-0")
+    # AgentRuntime CR removed (adopted-workload teardown).
+    args = kube.delete_custom_resource.call_args.args
+    assert args[2] == "team1" and args[4] == "petstore"
 
 
 def test_delete_is_idempotent_on_missing_service_and_pvc():
@@ -208,6 +212,7 @@ def test_delete_removes_multiple_pvcs_in_order():
 def test_delete_all_404_still_returns_200():
     kube = _kube(pvcs=["data-petstore-0"])
     kube.delete_statefulset.side_effect = ApiException(status=404)
+    kube.delete_custom_resource.side_effect = ApiException(status=404)
     kube.delete_service.side_effect = ApiException(status=404)
     kube.delete_persistent_volume_claim.side_effect = ApiException(status=404)
     r = _delete(_client(kube))

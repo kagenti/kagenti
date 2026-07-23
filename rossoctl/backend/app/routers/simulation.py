@@ -28,7 +28,10 @@ from pydantic import BaseModel, field_validator
 from app.core.auth import ROLE_OPERATOR, ROLE_VIEWER, require_roles
 from app.core.config import settings
 from app.core.constants import (
+    AGENTRUNTIMES_PLURAL,
     APP_KUBERNETES_IO_NAME,
+    CRD_GROUP,
+    CRD_VERSION,
     DEFAULT_IN_CLUSTER_PORT,
     ROSSOCTL_SIMULATED_LABEL,
     TOOL_SERVICE_SUFFIX,
@@ -45,6 +48,7 @@ from app.services.simulation_harness_client import (
 from app.services.simulation_manifests import (
     MAX_SIMULATION_NAME_LEN,
     EnvVar,
+    build_simulation_agentruntime,
     build_simulation_env_vars,
     build_simulation_service,
     build_simulation_statefulset,
@@ -87,21 +91,75 @@ def _harness_base_url(name: str, namespace: str, port: int) -> str:
     return f"http://{name}{TOOL_SERVICE_SUFFIX}.{namespace}.svc.cluster.local:{port}"
 
 
-async def _run_generation_trigger(namespace: str, name: str, spec: dict, port: int) -> None:
-    """Wait for the harness pod to accept connections, then POST the spec once.
+async def _wait_for_runtime_configured(namespace: str, name: str) -> bool:
+    """Poll the tool's AgentRuntime until the operator reports it Configured.
 
-    The harness generates in the background after a 202; this task's only job is
-    to deliver the spec, retrying while the pod is still starting (connection
-    failures) or briefly warming up (5xx). A 202/409 is terminal success; any
-    other 4xx is a terminal rejection. Bounded by ``simulation_generation_timeout``
-    so it never loops forever; a give-up is later surfaced by the status
-    endpoint's watchdog as Failed/generation_stalled.
+    Adopting the workload rolls the pod once — the operator writes a config-hash
+    annotation onto the pod template that the backend cannot precompute, so the
+    first reconcile always mutates the StatefulSet and recreates the pod. Posting
+    the spec before that would target a pod about to be replaced, losing the
+    generation. We wait until the AgentRuntime's Ready condition is True and at
+    least one pod is on the configured revision (``status.configuredPods >= 1``),
+    bounded by ``simulation_provision_timeout``.
+
+    Best-effort: transient read errors (CR not created yet, API blips) are retried;
+    returns False on timeout so the caller can proceed anyway rather than hang.
+    """
+    kube = get_kubernetes_service()
+    deadline = time.monotonic() + settings.simulation_provision_timeout
+    interval = settings.simulation_trigger_poll_interval
+    while True:
+        try:
+            cr = kube.get_custom_resource(
+                group=CRD_GROUP,
+                version=CRD_VERSION,
+                namespace=namespace,
+                plural=AGENTRUNTIMES_PLURAL,
+                name=name,
+            )
+            status = (cr or {}).get("status") or {}
+            conditions = status.get("conditions") or []
+            ready = any(c.get("type") == "Ready" and c.get("status") == "True" for c in conditions)
+            if ready and (status.get("configuredPods") or 0) >= 1:
+                return True
+        except ApiException as e:
+            # The AgentRuntime is gone (tool deleted mid-provisioning, or never
+            # created) — nothing left to wait for. Give up now rather than retry
+            # a 404 for the whole timeout.
+            if e.status == 404:
+                return False
+            # Other API errors are transient — retry until the deadline.
+        except Exception:
+            pass  # transient — retry until the deadline
+        if time.monotonic() >= deadline:
+            return False
+        await asyncio.sleep(interval)
+
+
+async def _run_generation_trigger(namespace: str, name: str, spec: dict, port: int) -> None:
+    """Wait for the workload to be operator-configured, then POST the spec once.
+
+    First defers to ``_wait_for_runtime_configured`` so the one-time pod roll from
+    AgentRuntime adoption completes before we post (otherwise the spec could land
+    on a pod about to be recreated). The harness then generates in the background
+    after a 202; this task's only job is to deliver the spec, retrying while the
+    pod is still starting (connection failures) or briefly warming up (5xx). A
+    202/409 is terminal success; any other 4xx is a terminal rejection. Bounded by
+    ``simulation_generation_timeout`` so it never loops forever; a give-up is later
+    surfaced by the status endpoint's watchdog as Failed/generation_stalled.
 
     Runs fire-and-forget via ``asyncio.create_task``, so it must never let an
     exception escape (an unretrieved task exception would only surface as log
     noise); any unexpected error is logged and ends the task.
     """
     base_url = _harness_base_url(name, namespace, port)
+    # Wait out the operator's adopt-and-roll before delivering the spec.
+    if not await _wait_for_runtime_configured(namespace, name):
+        logger.warning(
+            "AgentRuntime for '%s' not Configured within provision timeout; "
+            "posting spec best-effort",
+            sanitize_log(name),
+        )
     deadline = time.monotonic() + settings.simulation_generation_timeout
     interval = settings.simulation_trigger_poll_interval
     try:
@@ -405,10 +463,24 @@ async def create_simulated_tool(
         image_pull_policy=settings.simulation_image_pull_policy,
     )
     service = build_simulation_service(name, request.namespace, port=port)
+    agentruntime = build_simulation_agentruntime(
+        name, request.namespace, auth_bridge_mode=request.authBridgeMode
+    )
 
     try:
         kube.create_statefulset(request.namespace, statefulset)
         kube.create_service(request.namespace, service)
+        # Adopt the bare workload via an AgentRuntime CR so the operator (the only
+        # SA the agent-label-protection VAP exempts) stamps rossoctl.io/type=tool.
+        # The first reconcile rolls the pod once; generation is deferred until the
+        # workload is Configured (see _run_generation_trigger).
+        kube.create_custom_resource(
+            group=CRD_GROUP,
+            version=CRD_VERSION,
+            namespace=request.namespace,
+            plural=AGENTRUNTIMES_PLURAL,
+            body=agentruntime,
+        )
     except ApiException as e:
         if e.status == 409:
             raise HTTPException(
@@ -650,7 +722,17 @@ async def delete_simulated_tool(
                     sanitize_log(str(e)),
                 )
 
+    # Delete the workload first, then its AgentRuntime CR. Deleting the CR while
+    # the StatefulSet still exists would make the operator's finalizer strip the
+    # rossoctl.io/type label back off — a pointless teardown roll. With the target
+    # already gone, the finalizer no-ops.
     _try(lambda: kube.delete_statefulset(namespace, name), f"StatefulSet/{name}")
+    _try(
+        lambda: kube.delete_custom_resource(
+            CRD_GROUP, CRD_VERSION, namespace, AGENTRUNTIMES_PLURAL, name
+        ),
+        f"AgentRuntime/{name}",
+    )
     service_name = f"{name}{TOOL_SERVICE_SUFFIX}"
     _try(lambda: kube.delete_service(namespace, service_name), f"Service/{service_name}")
     for pvc in pvc_names:
@@ -658,6 +740,11 @@ async def delete_simulated_tool(
             lambda pvc=pvc: kube.delete_persistent_volume_claim(namespace, pvc),
             f"PersistentVolumeClaim/{pvc}",
         )
+    # NOTE: the create path provisions a per-tool ServiceAccount
+    # (ensure_service_account), but the backend SA has create-but-not-delete RBAC
+    # on serviceaccounts in agent namespaces, so we do not delete it here. Cleaning
+    # it up needs either an ownerReference (GC on StatefulSet delete) or a scoped
+    # RBAC grant — tracked separately as it is orthogonal to operator adoption.
 
     logger.info(
         "Deleted simulated tool '%s' in '%s' (%d resources)",

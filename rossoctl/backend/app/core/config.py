@@ -102,6 +102,11 @@ class Settings(BaseSettings):
     simulation_harness_request_timeout: float = 10.0
     # Seconds between trigger-task POST attempts while the harness is still starting.
     simulation_trigger_poll_interval: int = 5
+    # Max seconds to wait for the operator to adopt the workload (AgentRuntime
+    # targetRef) and roll the pod onto the configured revision before the trigger
+    # task posts the spec. Bounds the "provisioning" wait so a stuck operator does
+    # not hang generation forever; on timeout the trigger proceeds best-effort.
+    simulation_provision_timeout: int = 180
     # Auto-inject MCP_URL / LLM env vars on agent import (TUI parity; weather demo defaults)
     rossoctl_feature_flag_agent_import_defaults: bool = False
     skill_autosync_interval: int = (
