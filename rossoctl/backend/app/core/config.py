@@ -104,6 +104,18 @@ class Settings(BaseSettings):
     simulation_trigger_poll_interval: int = 5
     # Auto-inject MCP_URL / LLM env vars on agent import (TUI parity; weather demo defaults)
     rossoctl_feature_flag_agent_import_defaults: bool = False
+    # Skill "dreaming": feed an agent's new trajectories to a RunSpace optimization
+    # run (via the store's ask-runspace plugin) to improve the skills it used.
+    rossoctl_feature_flag_dreaming: bool = False
+    # Max number of new-trajectory spans fed into a single dream run (size cap).
+    dreaming_max_events: int = 200
+    # Phoenix base URL dreaming reads trajectories from. Empty → in-cluster
+    # phoenix service (http://phoenix.rossoctl-system.svc.cluster.local:6006).
+    dreaming_phoenix_url: str = ""
+    # Phoenix project holding the agent's spans. Empty → use the agent name (ideal
+    # when traces are routed per-agent); set to a shared project (e.g. "default")
+    # when all agents export to one project.
+    dreaming_phoenix_project: str = ""
     skill_autosync_interval: int = (
         30  # seconds between registry sync checks (env: SKILL_AUTOSYNC_INTERVAL)
     )

@@ -35,6 +35,7 @@ class FeatureFlagsResponse(BaseModel):
     agentSandbox: bool = Field(description="agent-sandbox (k8s-sigs) as a workload type")
     skills: bool = Field(description="Skill management system (CRUD + catalog UI)")
     externalSkills: bool = Field(description="External skill registry references")
+    dreaming: bool = Field(description="Skill dreaming (trajectory-driven skill optimization)")
     authbridgeAPI: bool = Field(description="AuthBridge statistics (API and UI)")
     admin: bool = Field(description="Platform Status card and /platform-status endpoint")
     agentImportDefaults: bool = Field(
@@ -90,6 +91,7 @@ async def get_feature_flags(
         agentSandbox=settings.rossoctl_feature_flag_agent_sandbox,
         skills=settings.rossoctl_feature_flag_skills,
         externalSkills=settings.rossoctl_feature_flag_external_skills,
+        dreaming=settings.rossoctl_feature_flag_dreaming,
         authbridgeAPI=settings.rossoctl_feature_flag_authbridge_api,
         admin=settings.rossoctl_feature_flag_admin,
         agentImportDefaults=settings.rossoctl_feature_flag_agent_import_defaults,

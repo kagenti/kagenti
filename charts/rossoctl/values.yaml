@@ -27,6 +27,10 @@ featureFlags:
   skills: false
   # External skill registry references (skillberry-store, etc.)
   externalSkills: false
+  # Skill "dreaming": feed an agent's new trajectories to a RunSpace optimization
+  # run (via the store's ask-runspace plugin) to improve the skills it used.
+  # Requires the skillberry-store installed with the ask-runspace plugin.
+  dreaming: false
   # Enables AuthBridge tab on Agent details page
   # Show this UI by default (we'll remove gate after a version where it can be disabled with a flag)
   authbridgeAPI: true

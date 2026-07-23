@@ -19,6 +19,8 @@ export interface FeatureFlags {
   admin: boolean;
   /** External skill registry references */
   externalSkills: boolean;
+  /** Skill dreaming (trajectory-driven skill optimization) */
+  dreaming: boolean;
   /** Trace-analysis Observability card */
   traceAnalysis: boolean;
   /** Simulated MCP tools generated from an OpenAPI spec */
@@ -35,6 +37,7 @@ const DEFAULT_FLAGS: FeatureFlags = {
   authbridgeAPI: false,
   admin: false,
   externalSkills: false,
+  dreaming: false,
   traceAnalysis: false,
   simulatedTools: false,
 };
@@ -60,6 +63,7 @@ export function useFeatureFlags(): FeatureFlags {
           authbridgeAPI: data.authbridgeAPI === true,
           admin: data.admin === true,
           externalSkills: data.externalSkills === true,
+          dreaming: data.dreaming === true,
           traceAnalysis: data.traceAnalysis === true,
           simulatedTools: data.simulatedTools === true,
           };
