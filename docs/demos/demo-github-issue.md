@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # GitHub Issue Demo
 
 > **This demo has moved.** The GitHub Issue Agent demo is now maintained in

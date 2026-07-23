@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Pending Questions and Investigation Paths
 
 > Back to [main doc](openshell-integration.md) |

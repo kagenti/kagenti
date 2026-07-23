@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Migration Plan: Agent CRD to Standard Kubernetes Workloads
 
 **Status:** ✅ Completed

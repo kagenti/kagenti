@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Platform Health
 
 > **Test file:** `rossoctl/tests/e2e/openshell/test_01_platform_health.py`

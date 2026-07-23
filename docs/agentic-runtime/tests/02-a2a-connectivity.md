@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # A2A Connectivity
 
 > **Test file:** `rossoctl/tests/e2e/openshell/test_02_a2a_connectivity.py`

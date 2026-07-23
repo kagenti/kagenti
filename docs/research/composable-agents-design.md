@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Composable Agents: Kubernetes-Native Dynamic Agent Architecture
 
 *On-demand assembly of task-specific agents from verified components —

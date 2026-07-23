@@ -1,3 +1,7 @@
+---
+description: SPIFFE, Oauth2, and Keycloak
+---
+
 # Authentication Guide
 
 Rossoctl supports two modes for how the operator and agent/tool workloads authenticate to Keycloak:

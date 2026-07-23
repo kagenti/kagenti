@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Skill Retrospective Plan - 2026-04-14
 
 ## Session Context

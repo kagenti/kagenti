@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Agent-Sandbox as Fourth Workload Type — Design Spec
 
 **Epic:** [#1155](https://github.com/rossoctl/rossoctl/issues/1155)

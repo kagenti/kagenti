@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Istio Shared Trust Implementation Plan
 
 > **[Historical — Ansible installer removed]** This plan contains references to the Ansible installer

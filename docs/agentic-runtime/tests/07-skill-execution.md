@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Skill Execution
 
 > **Test file:** `rossoctl/tests/e2e/openshell/test_07_skill_execution.py`

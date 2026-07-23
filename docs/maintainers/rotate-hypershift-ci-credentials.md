@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Rotating HyperShift CI Credentials
 
 This guide explains how to rotate HyperShift CI credentials when migrating to a new management cluster or when credentials need to be refreshed.

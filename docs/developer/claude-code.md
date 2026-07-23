@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Claude Code Development Guide
 
 This guide covers using Claude Code skills for Rossoctl development workflows, prerequisites, and productivity tips for safe and effective AI-assisted development.

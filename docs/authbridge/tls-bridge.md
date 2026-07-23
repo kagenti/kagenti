@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # AuthBridge TLS Bridge
 
 The **TLS bridge** lets AuthBridge decrypt an agent's *outbound* HTTPS so the

@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Session Metadata Analytics - Design Document
 
 **Date:** 2026-02-15

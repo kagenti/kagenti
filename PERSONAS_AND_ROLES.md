@@ -1,3 +1,5 @@
+**DEPRECATED; the version in [docs/Users Guides](docs/Users Guides/PERSONAS_AND_ROLES.md) will replace this file**
+
 # Rossoctl Project Personas and Roles Documentation
 
 This document outlines the core personas that the Rossoctl platform serves across its repository ecosystem.

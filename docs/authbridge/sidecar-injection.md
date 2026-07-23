@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # AuthBridge Sidecar Injection
 
 This page explains what containers to expect in an agent pod, which labels

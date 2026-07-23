@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # OpenShell MVP: Gateway-per-Tenant on Kind + OpenShift
 
 **Date:** 2026-04-24

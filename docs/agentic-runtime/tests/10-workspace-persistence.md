@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Workspace Persistence
 
 > **Test file:** `rossoctl/tests/e2e/openshell/test_10_workspace_persistence.py`

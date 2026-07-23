@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Conversation Lifecycle and Human-in-the-Loop
 
 > Back to [main doc](openshell-integration.md)

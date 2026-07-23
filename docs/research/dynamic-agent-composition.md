@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Kubernetes-Native Architecture for Dynamic Agent Composition
 
 *Extending Rossoctl with on-demand, task-specific agent assembly from

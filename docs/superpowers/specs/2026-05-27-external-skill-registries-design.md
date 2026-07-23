@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # External Skill Registries — Design Spec
 
 **Date:** 2026-05-27  

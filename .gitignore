@@ -165,6 +165,7 @@ cython_debug/
 **/.DS_Store
 
 .vscode
+.bob
 
 .secrets.yaml
 .secret_values.yaml

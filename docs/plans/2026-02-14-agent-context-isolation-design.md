@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Agent Context Isolation with Sandboxed Shell Execution
 
 ## Problem Statement

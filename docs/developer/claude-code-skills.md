@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Claude Code Skills Development
 
 Guide for developing, maintaining, and improving Claude Code skills in the Rossoctl repository.

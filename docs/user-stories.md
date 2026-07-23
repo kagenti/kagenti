@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Use Cases
 
 Scenarios that define the Rossoctl vision across verticals. Each maps to a

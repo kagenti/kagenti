@@ -1,4 +1,8 @@
-# Generic Agent Demo (with Movie Tool and Flight Tool)
+---
+description: Agent with Movie Tool and Flight Tool.
+---
+
+# Generic Agent
 
 This document provides detailed steps for running the **Generic Agent** proof-of-concept (PoC) demo.
 
@@ -17,9 +21,9 @@ Here's a breakdown of the sections:
 - In [**Chat with the Generic Agent**](#chat-with-the-generic-agent), you'll interact with the agent and confirm it responds correctly using movie and flight data.
 
 > **Prerequisites:**
-> Ensure you've completed the Rossoctl platform setup as described in the [Installation Guide](../install.md).
+> Ensure you've completed the Rossoctl platform setup as described in the [Installation Guide](../Getting Started/install.md).
 
-You should also open the Agent Platform Demo Dashboard as instructed in the [Accessing the UI](../install.md#accessing-the-ui) section.
+You should also open the Agent Platform Demo Dashboard as instructed in the [Accessing the UI](../Getting Started/install.md#accessing-the-ui) section.
 
 ---
 
@@ -31,7 +35,7 @@ To deploy the Generic Agent:
 2. In the **Select Namespace to Deploy Agent** drop-down, choose the `<namespace>` where you'd like to deploy the agent. (These namespaces are defined in your `.env` file.)
 3. Under **Environment Variables**, configure LLM settings using one of these methods:
    - Click **Import .env File** and import `.env.openai` or `.env.ollama` from the agent examples repo, **or**
-   - Manually add env vars: `LLM_API_BASE`, `LLM_API_KEY`, and `LLM_MODEL` (see [Using Local Models](../local-models.md) for values)
+   - Manually add env vars: `LLM_API_BASE`, `LLM_API_KEY`, and `LLM_MODEL` (see [Using Local Models](../Getting Started/local-models.md) for values)
 4. Under **Environment Variables**, also add the following:
    - Click `Add Environment Variable`
    - Under `Name` put `MCP_URLS` and under `Value` put `http://movie-tool:8000/mcp, http://flight-tool:8000/mcp`
@@ -177,7 +181,7 @@ Once the deployment is complete, you can run the demo:
 
 6. You can tail the log files (as shown in the [Validate the Deployment section](#validate-the-deployment)) to observe the interaction between the agent and the tool in real time.
 
-If you encounter any errors, check the [Troubleshooting Guide](../troubleshooting.md).
+If you encounter any errors, check the [Troubleshooting Guide](../Getting Started/troubleshooting.md).
 
 ## Cleanup
 

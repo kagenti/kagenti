@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Kind Development Guide
 
 This guide covers local Rossoctl development using Kind (Kubernetes in Docker).

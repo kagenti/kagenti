@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Orchestrate:CI Expansion Design
 
 **Date:** 2026-02-24

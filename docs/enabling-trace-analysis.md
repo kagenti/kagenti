@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Enabling the Trace Analysis Feature
 
 The `trace_analysis` feature adds a **Trace Analysis** card to the Observability

@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Kiali Service Mesh Observability
 
 Kiali provides real-time visualization and validation of the Istio service mesh in Rossoctl. It is used both as a developer dashboard and as an automated E2E validation tool in CI.

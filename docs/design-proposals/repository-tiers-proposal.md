@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Rossoctl Repository Tiers — Proposal
 
 **Status:** Draft for review

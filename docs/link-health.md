@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Link Health Report
 
 > Last scan: 2026-07-20 07:11 ET | Scan ID: 2026-07-20-001

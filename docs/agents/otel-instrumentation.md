@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Agent OpenTelemetry Instrumentation Guide
 
 This document describes how to properly instrument AI agents with OpenTelemetry following the GenAI semantic conventions, with specific guidance for MLflow and Phoenix compatibility.

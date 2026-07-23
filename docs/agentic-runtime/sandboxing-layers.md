@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # OpenShell Sandboxing Layers
 
 > Back to [main doc](openshell-integration.md)

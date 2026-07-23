@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Generic Agent + Summarizer Skill via Skillberry Store
 
 This guide explains how to use Rossoctl's external skill registry support to:

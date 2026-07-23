@@ -1,3 +1,7 @@
+---
+description: Communicate with an MCP Slack tool.
+---
+
 # Authorized Slack Research Agent Demo
 
 ## NOTE: This demo is currently under ACTIVE development
@@ -21,12 +25,12 @@ Here's a breakdown of the sections:
 - In [**Chat with the Agent**](#chat-with-the-agent), you'll interact with the agent and confirm it responds correctly using real-time Slack data.
 
 > **Prerequisites:**
-> Ensure you've completed the Rossoctl platform setup as described in the [Installation Guide](../install.md).
+> Ensure you've completed the Rossoctl platform setup as described in the [Installation Guide](../Getting Started/install.md).
 >
 > This demo uses `SLACK_BOT_TOKEN` and `ADMIN_SLACK_BOT_TOKEN` env. variables. See the section
 [Slack Tokens](#slack-tokens) below for more details.
 
-You should also open the Agent Platform Demo Dashboard as instructed in the [Accessing the UI](../install.md#accessing-the-ui) section.
+You should also open the Agent Platform Demo Dashboard as instructed in the [Accessing the UI](../Getting Started/install.md#accessing-the-ui) section.
 
 #### Slack Tokens
 
@@ -75,7 +79,7 @@ The agent will work with a variety of OpenAI models. The following have been tes
 - gpt-4o
 - gpt-4o-mini
 
-To log in and import agents you can use the [default credentials](../install.md#default-credentials). Log in to the Rossoctl UI.
+To log in and import agents you can use the [default credentials](../Getting Started/install.md#default-credentials). Log in to the Rossoctl UI.
 
 ### To deploy the Slack Research Agent
 
@@ -86,7 +90,7 @@ To log in and import agents you can use the [default credentials](../install.md#
    - **LLM settings**: Import `.env.openai` or `.env.ollama`, or manually set `LLM_API_BASE`, `LLM_API_KEY`, and `LLM_MODEL`
    - **MCP Slack URL**: `MCP_URL` = `http://mcp-slack-tool-proxy:8000/mcp`
    - **Researcher config**: `EXTRA_HEADERS` = `{}`, `MODEL_TEMPERATURE` = `0`, `MAX_PLAN_STEPS` = `6`, `SERVICE_PORT` = `8000`, `LOG_LEVEL` = `INFO`
-   - **Auth config**: `CLIENT_SECRET` (from `rossoctl-keycloak-client-secret` secret), `ISSUER`, `JWKS_URI`, `AUDIENCE` — see the [auth demo README](../../rossoctl/auth/auth_demo/README.md) for values
+   - **Auth config**: `CLIENT_SECRET` (from `rossoctl-keycloak-client-secret` secret), `ISSUER`, `JWKS_URI`, `AUDIENCE` — see the [auth demo README](../Users Guides/authentication.md) for values
 
 4. Depending on the LLM provider you need to do the following:
 
@@ -118,7 +122,7 @@ To log in and import agents you can use the [default credentials](../install.md#
 
 ## Import New Tool
 
-To import tools you can use the [default credentials](../install.md#default-credentials)
+To import tools you can use the [default credentials](../Getting Started/install.md#default-credentials)
 
 To deploy the Slack Tool using Shipwright:
 
@@ -173,7 +177,7 @@ Now run the configuration script:
 python set_up_slack_demo.py
 ```
 
-For more information about the configuration script check the [detailed README.md](../../rossoctl/demo-setup/keycloak-config/slack/README.md) file.
+For more information about the configuration script check the [detailed README.md](https://github.com/rossoctl/rossoctl/blob/main/rossoctl/demo-setup/keycloak-config/slack/README.md) file.
 
 ### Enable Token exchange for the agent
 
@@ -266,7 +270,7 @@ Try each userid for the following interactions with the Slack agent:
 1. You can tail the log files (as shown in the [Validate the Deployment section](#validate-the-deployment)) to observe the interaction between the agent and the tool in real time.
 1. To demonstrate finer-grained access, another query to try is `What's going on in the general slack channel?`. This query should result in more detail for the `slack-full-access-user` but should result in less detail for the `slack-partial-access-user`.
 
-If you encounter any errors, check the [Troubleshooting Guide](../troubleshooting.md).
+If you encounter any errors, check the [Troubleshooting Guide](../Users Guides/troubleshooting.md).
 
 ## Cleanup
 

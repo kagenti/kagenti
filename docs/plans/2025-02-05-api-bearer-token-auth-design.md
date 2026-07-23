@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # API Bearer Token Authentication Design
 
 **Date:** 2025-02-05

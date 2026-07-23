@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Developer Guides
 
 This directory contains comprehensive development guides for working with Rossoctl on different environments.

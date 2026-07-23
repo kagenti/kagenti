@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Shipwright Build Refactoring Plan
 
 ## Overview

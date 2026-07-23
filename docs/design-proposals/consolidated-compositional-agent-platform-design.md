@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Rossoctl Implementation Design: Consolidated Compositional Agent Platform Architecture
 
 **Authors**: Rossoctl Team

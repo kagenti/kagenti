@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Rossoctl Components
 
 This document provides detailed information about each component of the Rossoctl platform.
@@ -34,7 +38,7 @@ Despite the extensive variety of frameworks available for developing agent-based
 
 Rossoctl addresses this gap by enhancing existing agent frameworks with production-ready infrastructure.
 
-For a detailed architecture diagram showing component interactions and data flow, see [Technical Details](./tech-details.md).
+For a detailed architecture diagram showing component interactions and data flow, see [Technical Details](./Concepts/tech-details.md).
 
 ---
 
@@ -695,7 +699,7 @@ POST /mcp    # MCP JSON-RPC messages
 
 - [Installation Guide](./install.md)
 - [Demo Documentation](./demos/README.md)
-- [Technical Details](./tech-details.md)
+- [Technical Details](./Concepts/tech-details.md)
 - [Identity, Security, and Auth Bridge](./identity-guide.md)
 - [MCP Gateway Instructions](./gateway.md)
 - [New Agent Guide](./new-agent.md)

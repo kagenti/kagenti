@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Agent-Sandbox Upstream Issues — Operator Integration Findings
 
 **Epic:** [#1155](https://github.com/rossoctl/rossoctl/issues/1155)

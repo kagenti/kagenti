@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Supervisor Enforcement
 
 > **Test file:** `rossoctl/tests/e2e/openshell/test_08_supervisor_enforcement.py`

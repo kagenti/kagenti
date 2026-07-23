@@ -1,4 +1,8 @@
-# Rossoctl Identity, Authentication, & Authorization Guide
+---
+description: Introduction to Zero-Trust.
+---
+
+# Identity, Authentication, & Authorization
 
 This comprehensive guide covers all aspects of identity, authentication, and authorization in the Rossoctl platform. Rossoctl implements a **Zero-Trust Architecture** that combines SPIFFE/SPIRE workload identity, OAuth2 token exchange, and Keycloak identity management to provide secure, scalable, and dynamic authentication for cloud-native AI agents.
 
@@ -10,11 +14,11 @@ In practice, the Authorization Pattern within the Agentic Platform enables:
 
 ## 📚 Related Documentation
 
-- **[Rossoctl Identity Overview](./2025-10.Rossoctl-Identity.pdf)** - High-level architectural concepts
+- **[Rossoctl Identity Overview](../2025-10.Rossoctl-Identity.pdf)** - High-level architectural concepts
 - **[AuthBridge Component](https://github.com/rossoctl/cortex/tree/main/authbridge)** - Complete end-to-end installation and demo with SPIFFE, Client Registration, and AuthProxy
-- **[Token Exchange Deep Dive](../rossoctl/examples/identity/token_exchange.md)** - Detailed OAuth2 token exchange flows
-- **[Client Registration Examples](../rossoctl/examples/identity/keycloak_token_exchange/README.md)** - Practical integration examples
-- **[Personas and Roles](../PERSONAS_AND_ROLES.md#23-security-and-identity-specialist)** - Security and identity specialist persona
+- **[Token Exchange Deep Dive](https://github.com/rossoctl/rossoctl/blob/main/rossoctl/examples/identity/token_exchange.md)** - Detailed OAuth2 token exchange flows
+- **[Client Registration Examples](https://github.com/rossoctl/rossoctl/blob/main/rossoctl/examples/identity/keycloak_token_exchange/README.md)** - Practical integration examples
+- **[Personas and Roles](../Users Guides/PERSONAS_AND_ROLES.md#23-security-and-identity-specialist)** - Security and identity specialist persona
 
 ---
 
@@ -227,11 +231,11 @@ Rossoctl implements OAuth2 Token Exchange to enable secure token delegation acro
 
 #### Stage 1: User Authentication
 
-![User Authentication Flow](./diagrams/images/png/01-user-authentication-flow.png)
+![User Authentication Flow](../diagrams/images/png/01-user-authentication-flow.png)
 
 *Figure 1: User Authentication Flow - Shows how users authenticate with Rossoctl UI through Keycloak OIDC flow*
 
-[View Mermaid Source Code](./diagrams/01-user-authentication-flow.mmd)
+[View Mermaid Source Code](../diagrams/01-user-authentication-flow.mmd)
 
 **HTTP Request:**
 
@@ -269,11 +273,11 @@ This approach provides better security isolation by restricting Keycloak admin c
 
 #### Stage 3: Agent Token Exchange
 
-![Agent Token Exchange Flow](./diagrams/images/png/04-agent-token-exchange-flow.png)
+![Agent Token Exchange Flow](../diagrams/images/png/04-agent-token-exchange-flow.png)
 
 *Figure 4: Agent Token Exchange Flow - Demonstrates OAuth2 token exchange between agents and Keycloak using SPIFFE identity*
 
-[View Mermaid Source Code](./diagrams/04-agent-token-exchange-flow.mmd)
+[View Mermaid Source Code](../diagrams/04-agent-token-exchange-flow.mmd)
 
 **Token Exchange Request:**
 
@@ -301,11 +305,11 @@ grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 
 #### Stage 4: Internal Tool Access with Delegated Token
 
-![Internal Tool Access with Delegated Token Flow](./diagrams/images/png/05-tool-access-delegated-token-flow.png)
+![Internal Tool Access with Delegated Token Flow](../diagrams/images/png/05-tool-access-delegated-token-flow.png)
 
 *Figure 4: Internal Tool Access Flow - Shows how agents call internal tools using delegated tokens with proper permission validation*
 
-[View Mermaid Source Code](./diagrams/05-tool-access-delegated-token-flow.mmd)
+[View Mermaid Source Code](../diagrams/05-tool-access-delegated-token-flow.mmd)
 
 ### JWT Token Structure
 
@@ -345,11 +349,11 @@ The **MCP Gateway** acts as an authentication proxy for all Model Context Protoc
 
 #### Stage 5: Gateway Authentication Flow
 
-![MCP Gateway Authentication Flow](./diagrams/images/png/06-mcp-gateway-authentication-flow.png)
+![MCP Gateway Authentication Flow](../diagrams/images/png/06-mcp-gateway-authentication-flow.png)
 
 *Figure 5: MCP Gateway Authentication Flow - Illustrates authentication flow through the MCP Gateway proxy for Model Context Protocol communications*
 
-[View Mermaid Source Code](./diagrams/06-mcp-gateway-authentication-flow.mmd)
+[View Mermaid Source Code](../diagrams/06-mcp-gateway-authentication-flow.mmd)
 
 #### MCP Authentication Headers
 
@@ -429,11 +433,11 @@ def validate_request(request):
 
 #### Stage 6: External API Access with Delegated Token and Vault
 
-![External API Access with Delegated Token and Vault Flow](./diagrams/images/png/07-tool-with-external-api-flow.png)
+![External API Access with Delegated Token and Vault Flow](../diagrams/images/png/07-tool-with-external-api-flow.png)
 
 *Figure 6: External API Access with Vault Flow - Shows how agents call internal tools using delegated tokens with proper permission validation and the Vault exchanges this token for external API key for accessing external APIs*
 
-[View Mermaid Source Code](./diagrams/07-tool-with-external-api-flow.mmd)
+[View Mermaid Source Code](../diagrams/07-tool-with-external-api-flow.mmd)
 
 ### JWT Token Structure
 

@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # HITL Policy
 
 > **Test file:** `rossoctl/tests/e2e/openshell/test_09_hitl_policy.py`

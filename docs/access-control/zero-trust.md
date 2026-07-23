@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Centralizing Zero-Trust Access Decisions in rossoctl
 
 ## 1. Executive Summary

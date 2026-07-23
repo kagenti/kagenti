@@ -1,3 +1,7 @@
+---
+draft: true       # excluded from https://www.rossoctl.dev/
+---
+
 # Istio Multi-Mesh Shared Trust via cert-manager
 
 > **[Historical — Ansible installer removed]** This design doc references the Ansible installer
