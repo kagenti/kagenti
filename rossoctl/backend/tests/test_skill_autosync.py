@@ -11,27 +11,40 @@ from app.services.skill_autosync import (
     _get_namespace_tags,
     _apply_diff,
     _get_autosync_config,
+    _skill_signature,
     sync_skills_once,
 )
 from app.core.constants import (
     SKILL_REGISTRY_SKILL_NAME_ANNOTATION,
     SKILL_REGISTRY_SKILL_VERSION_ANNOTATION,
+    SKILL_REGISTRY_SKILL_HASH_ANNOTATION,
     SKILL_AUTOSYNC_LABEL,
     SKILL_TYPE_LABEL,
     SKILL_TYPE_VALUE,
 )
 
 
-def _make_registry_skill(name, version="1.0", tags=None):
-    return {"name": name, "version": version, "description": f"Desc {name}", "tags": tags or []}
+def _make_registry_skill(name, version="1.0", tags=None, description=None):
+    return {
+        "name": name,
+        "version": version,
+        "description": description if description is not None else f"Desc {name}",
+        "tags": tags or [],
+    }
 
 
-def _make_local_cm(resource_name, reg_skill_name, version="1.0"):
+def _make_local_cm(resource_name, reg_skill_name, version="1.0", synced_skill=None):
+    """A local synced CM. Its content hash matches *synced_skill* (defaults to the
+    canonical registry skill of the same name/version), so an unchanged registry
+    skill is a no-op."""
+    if synced_skill is None:
+        synced_skill = _make_registry_skill(reg_skill_name, version=version)
     cm = MagicMock()
     cm.metadata.name = resource_name
     cm.metadata.annotations = {
         SKILL_REGISTRY_SKILL_NAME_ANNOTATION: reg_skill_name,
         SKILL_REGISTRY_SKILL_VERSION_ANNOTATION: version,
+        SKILL_REGISTRY_SKILL_HASH_ANNOTATION: _skill_signature(synced_skill),
     }
     cm.metadata.labels = {SKILL_TYPE_LABEL: SKILL_TYPE_VALUE, SKILL_AUTOSYNC_LABEL: "true"}
     return cm
@@ -129,6 +142,23 @@ class TestApplyDiff:
         kube.core_api.create_namespaced_config_map.assert_not_called()
         kube.core_api.delete_namespaced_config_map.assert_not_called()
         kube.core_api.patch_namespaced_config_map.assert_not_called()
+
+    def test_patches_when_content_changed_same_version(self):
+        # Content changed (new description) but version still "latest"/"1.0":
+        # hash-based detection must still re-sync and refresh the description.
+        kube = MagicMock()
+        old = _make_registry_skill("my-skill", version="1.0", description="old")
+        new = _make_registry_skill("my-skill", version="1.0", description="new and improved")
+        target = [new]
+        local = [_make_local_cm("my-skill", "my-skill", version="1.0", synced_skill=old)]
+        _apply_diff(kube, "team1", target, local, "http://reg", "skillberry")
+        kube.core_api.patch_namespaced_config_map.assert_called_once()
+        annos = kube.core_api.patch_namespaced_config_map.call_args[1]["body"]["metadata"][
+            "annotations"
+        ]
+        from app.core.constants import SKILL_DESCRIPTION_ANNOTATION
+
+        assert annos[SKILL_DESCRIPTION_ANNOTATION] == "new and improved"
 
 
 class TestGetAutosyncConfig:
