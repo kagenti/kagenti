@@ -10,7 +10,8 @@
 # Optional:        --with-istio (ambient mesh), --with-spire, --with-backend,
 #                  --with-ui, --with-mcp-gateway, --with-kuadrant, --with-otel,
 #                  --with-mlflow, --with-builds, --with-kiali,
-#                  --with-agent-sandbox, --with-skills, --with-all
+#                  --with-agent-sandbox, --with-skills, --with-simulated-tools,
+#                  --with-all
 #
 # Idempotent: safe to re-run. Uses helm upgrade --install and kubectl apply.
 # Re-running with additional --with-* flags adds components incrementally.
@@ -49,6 +50,7 @@ WITH_KIALI=false
 WITH_KUADRANT=false
 WITH_AGENT_SANDBOX=false
 WITH_SKILLS=false
+WITH_SIMULATED_TOOLS=false
 SKILL_REGISTRY_ALLOWED_HOSTS=""
 WITH_ALL=false
 SKIP_CLUSTER=false
@@ -217,6 +219,7 @@ while [[ $# -gt 0 ]]; do
     --with-kiali)       WITH_KIALI=true; shift ;;
     --with-agent-sandbox) WITH_AGENT_SANDBOX=true; shift ;;
     --with-skills)      WITH_SKILLS=true; shift ;;
+    --with-simulated-tools) WITH_SIMULATED_TOOLS=true; shift ;;
     --skill-registry-allowed-hosts) SKILL_REGISTRY_ALLOWED_HOSTS="$2"; shift 2 ;;
     --with-all)         WITH_ALL=true; shift ;;
     --skip-cluster)     SKIP_CLUSTER=true; shift ;;
@@ -256,6 +259,10 @@ while [[ $# -gt 0 ]]; do
       echo "                      autosync against it; auto-enables --with-backend and --with-ui)."
       echo "                      Override the store image with the SKILLBERRY_STORE_IMAGE /"
       echo "                      SKILLBERRY_STORE_TAG env vars (default tag 0.2.0)."
+      echo "  --with-simulated-tools"
+      echo "                      Enable simulated MCP tools generated from OpenAPI"
+      echo "                      specs (enables featureFlags.simulatedTools;"
+      echo "                      auto-enables --with-backend and --with-ui)."
       echo "  --skill-registry-allowed-hosts HOSTS"
       echo "                      Comma-separated hosts/IPs/CIDRs allowed past the registry-URL"
       echo "                      SSRF block (e.g. \"192.168.50.16\" or \"192.168.0.0/16\")."
@@ -319,6 +326,11 @@ fi
 if $WITH_SKILLS && ! $WITH_UI; then
   WITH_UI=true
 fi
+# Simulated tools surface in the UI and set a feature-flag env var on the backend,
+# so it is useless without both. Resolve before the UI→backend rule so it cascades.
+if $WITH_SIMULATED_TOOLS && ! $WITH_UI; then
+  WITH_UI=true
+fi
 # UI requires backend API
 if $WITH_UI && ! $WITH_BACKEND; then
   WITH_BACKEND=true
@@ -367,6 +379,7 @@ echo "    Builds:        $WITH_BUILDS"
 echo "    Kiali:         $WITH_KIALI"
 echo "    Agent Sandbox: $WITH_AGENT_SANDBOX"
 echo "    Skills:        $WITH_SKILLS"
+echo "    Simulated Tools: $WITH_SIMULATED_TOOLS"
 echo "    Skill reg allow: ${SKILL_REGISTRY_ALLOWED_HOSTS:-<none>}"
 echo "    Skip cluster:  $SKIP_CLUSTER"
 echo "    Build images:  $BUILD_IMAGES"
@@ -1236,6 +1249,7 @@ ROSSOCTL_FLAGS=(
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
   --set "featureFlags.skills=${WITH_SKILLS}"
   --set "featureFlags.externalSkills=${WITH_SKILLS}"
+  --set "featureFlags.simulatedTools=${WITH_SIMULATED_TOOLS}"
   --set "components.skillberryStore.enabled=${WITH_SKILLS}"
   --set "components.mlflow.enabled=${WITH_MLFLOW}"
   --set "ui.auth.enabled=$($WITH_SPIRE && echo true || echo false)"
