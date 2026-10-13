@@ -25,7 +25,9 @@ Your agent reports a TLS error, or a certificate error, when it calls the model.
 the agent does not trust the certificate of RossoCortex.
 
 Cortex writes its certificate authority to `~/.cortex/ca/ca.crt`. The `--claude-code` install
-configures Claude Code for you. For another agent, you set the certificate variable yourself. See
+configures Claude Code for you. For another agent, `agentop exec` sets the certificate variables.
+IBM Bob is different: it trusts the CA through the System keychain, and `agentop configure bob
+enable` prints the `sudo` command that adds it, which you run yourself. See
 [Other agents](../get-started/laptop.md#other-agents).
 
 To confirm the certificate, read it:
@@ -34,7 +36,23 @@ To confirm the certificate, read it:
 openssl x509 -in ~/.cortex/ca/ca.crt -noout -subject -dates
 ```
 
-If the file is absent, the install did not complete. Run the install again.
+If the file is absent, the proxy has not started since the CA files were removed. The proxy writes
+the CA when it starts:
+
+```bash
+agentop service restart
+```
+
+<!-- VERIFY: verified against v0.8.1 and main — the proxy calls tlsbridge.EnsureFileSource on boot
+     (cmd/cortex/main.go), which mints a new CA if any of tls.crt, tls.key or ca.crt is missing
+     (core/tlsbridge/ca.go:221-231). No setup or install step writes the CA; install.sh and
+     `agentop service status` do read it. -->
+<!-- VERIFY v0.9.0: agentop setup (cortex#1245) is not in v0.8.1; it does not touch the CA either,
+     so a restart remains what regenerates it. -->
+
+This makes a new CA, so restart your agent afterwards. If you trusted the old CA in a keychain, for
+Bob or for a Go program, run that command again for the new one. If `agentop service status`
+reports no service, run `agentop service install`.
 
 If the file is present and your agent still rejects it, check whether a *second* Cortex install is
 answering on the port. Every install generates a CA with the same subject, so the certificate you
@@ -86,12 +104,16 @@ the service, read
 
 ### Two installs on one machine fight over the ports
 
-<!-- VERIFY: the port set comes from the --local preset in cmd/cortex/local.go, and the
-     30-second restart ceiling from superviseMaxDelay in cmd/cortex/supervise.go. Confirmed
-     against v0.8.1: a second install repeated the bind failure with restart_in growing 2s, 4s,
-     8s, 16s and then holding at 30s. `cortex --local` binds four of the five ports and skips the
-     transparent listener; `cortex --config <file>`, which is how the service runs, binds all
-     five and logs "transparent proxy listening addr=127.0.0.1:47603". -->
+<!-- VERIFY: verified against v0.8.1 and main. All five ports come from the --local preset in
+     cmd/cortex/local.go (47600 forward proxy, 47601 session API, 47602 statistics, 47603
+     transparent listener, 47604 health); both that path and superviseMaxDelay moved in the
+     authbridge-proxy → cortex rename. Confirmed against v0.8.1: a second install repeated the
+     bind failure with restart_in growing 2s, 4s, 8s, 16s and then holding at 30s. `cortex
+     --local` binds four of the five ports and skips the transparent listener; `cortex --config
+     <file>`, which is how the service runs, binds all five and logs "transparent proxy listening
+     addr=127.0.0.1:47603". The 30-second ceiling is the macOS supervisor's (superviseMaxDelay in
+     cmd/cortex/supervise.go); the systemd unit runs without --supervise and instead retries every
+     10s, giving up after 5 starts in 300s (cmd_service_platform.go:92-93,142-149). -->
 
 **The ports are fixed, so two installs cannot coexist.** The `--local` preset pins every listener to
 a literal port, not to a free one, so the second install to start never binds. This is the condition
@@ -102,7 +124,8 @@ second checkout, a container that mounts your home directory — as well as the 
 
 **How it reads.** Two symptoms that look unrelated, from one cause:
 
-- The service log repeats a bind failure and a restart, every 30 seconds, forever:
+- The service log, `~/.cortex/proxy.log`, repeats a bind failure and a restart. On macOS this
+  repeats every 30 seconds and does not stop:
 
   ```
   level=ERROR msg="forward-proxy listen: listen tcp 127.0.0.1:47600: bind: address already in use"
@@ -111,7 +134,9 @@ second checkout, a container that mounts your home directory — as well as the 
 
   `restart_in` stays at `30s` rather than growing, because that is the backoff ceiling. The
   supervisor does not give up and does not say why it cannot win the port, so the loop looks like a
-  crash rather than a conflict.
+  crash rather than a conflict. On Linux the systemd unit runs without the supervisor. Its
+  `proxy.log` holds only the bind failure. `journalctl --user -u cortex` shows the restarts: every
+  10 seconds, giving up after 5 starts in 300 seconds, then the unit enters a failed state.
 
 - Your agent reports a self-signed certificate, naming a corporate proxy or a private CA:
 
@@ -127,12 +152,16 @@ second checkout, a container that mounts your home directory — as well as the 
 **Confirm it.** List every proxy process:
 
 ```bash
-ps auxww | grep cortex | grep -v grep
+ps auxww | grep -E '/(cortex|authbridge-proxy) --' | grep -v grep
 ```
 
-Read the `--config` path, or the binary path, on each line: those are your installs. One supervisor
-plus one child on the same path is healthy. A supervisor whose child keeps changing PID is the
-starved one.
+The proxy binary is `cortex`. In v0.7.0 and earlier it is `authbridge-proxy`. This section is about
+a machine with both generations, so match either name.
+
+Read the `--config` path, or the binary path, on each line: those are your installs. On macOS, one
+supervisor plus one child on the same path is healthy, and a supervisor whose child keeps changing
+PID is the starved one. On Linux, `ps` shows one `cortex` for each running install. The install
+that lost has stopped, and `systemctl --user status cortex` shows its unit as failed.
 
 :::caution[Do not read the PIDs as a timeline]
 macOS recycles process IDs, so a five-digit PID is often *older* than a four-digit one. A supervisor
@@ -158,22 +187,34 @@ HTTPS_PROXY=http://localhost:47600 \
   NODE_EXTRA_CA_CERTS=$HOME/.cortex/ca/ca.crt claude -p "say hi"
 ```
 
-Or keep the other one. Stop the service that holds the port, stop every stray supervisor by PID, and
-start the install you want:
+Or keep the other one. Stop the service, stop any stray proxy by PID, and start the install you
+want:
 
 ```bash
-agentop service stop        # from the install that currently holds the port
-kill <pid> <pid>            # each stray supervisor from the ps output above
+agentop service stop        # HOME set to the install that holds the port; abctl service stop on v0.7.0
+kill <pid> <pid>            # each stray proxy from the ps output; on macOS, its supervisor
 agentop service install     # from the install you are keeping
 ```
+
+There is one service label per user, so `agentop service stop` stops whichever install holds it —
+which need not be the one that holds the port. The `kill` and the `install` that follow still
+converge on one install.
 
 Re-run the two `openssl` commands afterwards: one install, one CA, one fingerprint your agent
 trusts.
 
-:::note[`SSL_CERT_FILE` does nothing on macOS]
-Go reads the system keychain on macOS and ignores `SSL_CERT_FILE`, so setting it changes nothing for
-a Go program there. It is correct on Linux and in CI. On macOS, use `NODE_EXTRA_CA_CERTS` for Node
-programs such as Claude Code, and add the CA to the keychain for anything else.
+:::note[Go programs on macOS ignore `SSL_CERT_FILE`]
+On macOS, a Go program such as `gh` or `go` reads only the keychain, so setting `SSL_CERT_FILE`
+changes nothing for it. On Linux and in CI the variable works when it names the bundle,
+`~/.cortex/ca/bundle.crt`. Usually you do not need to do anything: Cortex does not decrypt GitHub,
+the Go module proxy or the package registries. If a Go program reports `x509: certificate signed by
+unknown authority`, trust the CA in your login keychain:
+
+```bash
+security add-trusted-cert -k ~/Library/Keychains/login.keychain-db -p ssl ~/.cortex/ca/ca.crt
+```
+
+git, curl and Python read their variables on macOS too.
 :::
 
 ### You must stop the service to run Cortex yourself
@@ -291,31 +332,30 @@ Read the status first:
 agentop service status
 ```
 
-On macOS, the service runs under `launchd`. On Linux, it runs under `systemd`. To read the service
-log:
+On macOS, the service runs under `launchd`. On Linux, it runs under `systemd`. The service writes
+its own output to `~/.cortex/proxy.log`:
 
 ```bash
-# macOS
-log show --predicate 'process == "cortex"' --last 10m
-
-# Linux
-journalctl --user -u cortex --since "10 minutes ago"
+tail -n 50 ~/.cortex/proxy.log
 ```
 
-A service that starts and then stops usually has a port conflict, or a certificate that it cannot
-write. The log gives the cause.
+On Linux, systemd's own lines about the service — the restarts, and a unit that gave up — are in
+`journalctl --user -u cortex`. A service that starts and then stops usually has a port conflict,
+or a certificate that it cannot write. The log gives the cause.
 
 ### Another program stopped working
 
-If `git`, `gh`, `ssh` or `curl` stops working after you install Cortex, the cause is a proxy or a
-certificate variable in your environment that sends other programs through Cortex.
+If `git`, `gh` or `curl` stops working after you install Cortex, the cause is a proxy or a
+certificate variable in your environment. The most likely one **replaces** a trust store —
+`SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` or `GIT_SSL_CAINFO` — and points at
+`~/.cortex/ca/ca.crt`. That file holds only the Cortex CA, so every other host fails to verify.
+Those variables need `~/.cortex/ca/bundle.crt`, which holds the Cortex CA and the platform roots.
 
 Cortex configures only your agent. It does not set a global proxy. Examine your shell profile and
-your environment for a `HTTP_PROXY`, `HTTPS_PROXY` or `NODE_EXTRA_CA_CERTS` value that you did not
-intend:
+your environment for a proxy or certificate variable that you did not intend:
 
 ```bash
-env | grep -iE "PROXY|CA_CERT|CA_BUNDLE|SSL_CERT"
+env | grep -iE "PROXY|CA_CERT|CA_BUNDLE|SSL_CERT|SSL_CAINFO"
 ```
 
 Remove the value that is not correct, and open a new terminal. See the tool-compatibility work in
@@ -329,8 +369,9 @@ The agent runs, but `agentop observe` shows no events. Check each cause in order
    [Confirm that the service is stopped](#confirm-that-the-service-is-stopped) first: the `healthy`
    line probes the port, so another install answers it.
 2. **The agent does not use the proxy.** For an agent that is not Claude Code, confirm that you set
-   the proxy variable and the certificate variable. See
-   [Other agents](../get-started/laptop.md#other-agents).
+   the proxy variable and the certificate variables. `agentop exec` sets both. For IBM Bob,
+   `agentop configure bob enable` sets the proxy, and the CA needs the `sudo` command that it
+   prints. See [Other agents](../get-started/laptop.md#other-agents).
 3. **A second install holds the ports.** Your agent then reaches the install that won the port,
    while you watch the other one. Read
    [Two installs on one machine fight over the ports](#two-installs-on-one-machine-fight-over-the-ports).
@@ -393,8 +434,7 @@ session identifier. Cortex excludes both from the gauge.
 
 ### Where the logs are, and what to attach to a bug report
 
-The service log is in the location that the service status reports. To attach a useful report to an
-issue, include:
+The service log is `~/.cortex/proxy.log`. To attach a useful report to an issue, include:
 
 - The output of `agentop --version`.
 - The output of `agentop service status`.

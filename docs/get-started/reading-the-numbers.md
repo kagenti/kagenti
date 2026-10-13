@@ -26,8 +26,17 @@ When you stop the service, the data goes with it. See [Manage the service](lapto
 
 
 <!-- VERIFY: the token, cost and pruning figures below are verified against v0.8.1 (#950, #952).
-     The latency section still describes time-to-first-token and percentiles, which v0.8.1 does
-     not implement — it reports a mean per bucket. That part is pending #951; see cortex#963. -->
+     The latency section describes v0.8.1: mean ± 1σ caps from LatMeanMs / LatStdDevMs
+     (cmd/agentop/tui/usage_whiskers.go). Time to first token, p50, p95 and a maximum are #951;
+     p99 and the maximum are #1026. Both are flagged in the section. -->
+<!-- VERIFY: column headings are v0.8.1's — the context column is CONTEXT(1M), and the money
+     columns return at 97. cortex#1246 shortens the heading to CTX(1M) and moves the threshold to
+     93, but it is in no release yet. -->
+<!-- VERIFY v0.9.0: once the release carrying cortex#1246 is out, change CONTEXT(1M) to CTX(1M) in
+     the mock, the column list and "Read the context gauge", change "a terminal of 97 columns or
+     more" to 93 here, "narrower than 97 columns" and "In the `CONTEXT` column" in
+     operate/troubleshooting.md, and repaste the mock's gauges at the narrower 7-column width. -->
+
 
 ## What the numbers tell you
 
@@ -73,7 +82,7 @@ a key, and they return to the view that you opened them from.
 | `/` | Filter the events |
 | `$` | Open the spend breakdown |
 | `u` | Open the usage charts |
-| `c` | Open the column picker, in the Events view |
+| `c` | Open the column picker, in the Events view. Inside the picker, `s` sorts by the column under the cursor |
 | `p` | Pause and resume the stream |
 | `y` | Write the event to a file in `~/.cortex/agentop-events/` |
 | `g` `G` | Move to the top or the bottom |
@@ -305,18 +314,38 @@ events table to that file.
 
 ## Read the latency
 
-Cortex records the response time of each model call: the time from the request to the last part of
-the reply. It depends on the length of the reply, so a long answer is a slow one.
+Cortex records the response time of each response that carries one: the time from the request to the
+last part of the reply. It depends on the length of the reply, so a long answer is a slow one. This
+is every non-tunnel response, not model calls alone. Fast non-model requests pull the mean down and
+widen the spread.
 
-The usage charts group these calls into buckets over the window you choose, and report the **mean**
-response time for each bucket, with whiskers for the fastest and the slowest call in it. Read the
-mean for the typical call and the upper whisker for the worst one. A window with no measured call
-shows no value rather than a zero.
+The usage charts group these responses into buckets over the window you choose. For each bucket the
+chart draws the **mean** as a crossbar (`┼`), with caps (`┬` and `┴`) at one standard deviation
+either side of it, taken over the individual calls in that bucket. A bucket with no measured call
+draws no mark, and its value reads `0`; the legend reads `0 = no measured responses`. A window with
+no measured call says `no latency samples in this window`.
+
+Read the mean for the average call, and the spread between the caps for how consistent the calls
+were: wide caps mean the bucket mixed fast and slow calls. A crossbar with no caps is one call, or
+calls too alike to separate at the chart's scale. The lower cap stops at zero, because a response
+time cannot be negative. A lower cap on the bottom row means that the mean minus one standard
+deviation falls in the bottom tenth of the chart. It does not mean that a call answered instantly.
+
+:::warning The upper cap is not the slowest call
+The caps are mean ± 1σ, a measure of spread, and not the fastest and the slowest call. The usage
+charts keep no maximum, so **the slowest call in a window can sit above the top of the chart, and
+the chart does not show it.** Do not read the upper cap as a worst case. To find the slowest call,
+open the session and sort the events by `DURATION`: press `c` to open the column picker, move to
+`DURATION`, and press `s` to sort by it, descending first. Opened from the Sessions view, the
+chart covers every session, so the slow call may belong to a session other than the one you are
+reading. Tracked in [cortex#1026](https://github.com/rossoctl/cortex/issues/1026).
+:::
 
 :::note Planned
-Time to first token — the time until the first word of the reply appears — and percentiles (p50,
-p95, p99) are not in this release. Response time and its whiskers are what Cortex reports today.
-Tracked in [cortex#951](https://github.com/rossoctl/cortex/issues/951).
+Three figures are not in this release: time to first token (the time until the first word of the
+reply appears), percentiles (p50, p95, p99) and a maximum. Cortex reports the mean response time
+with its ±1σ caps. Tracked in [cortex#951](https://github.com/rossoctl/cortex/issues/951) and
+[cortex#1026](https://github.com/rossoctl/cortex/issues/1026).
 :::
 
 ## Read the pruning savings
@@ -341,7 +370,10 @@ These are representative figures for the data that Cortex captures. They show th
 session. Replace them with a session that you capture before you rely on the exact values.
 :::
 
-<!-- VERIFY: the field set matches v0.8.1. The values are an illustration, not a capture. -->
+<!-- VERIFY: the field set matches v0.8.1, except the mean response time, which no session field
+     carries: it is the usage pane's LATENCY footer, request-weighted, at most the last 6 h, and
+     scoped to this session when the pane is opened from the session's events. The values are an
+     illustration, not a capture. -->
 
 One session of a coding agent, with tool pruning enabled:
 
@@ -355,8 +387,7 @@ One session of a coding agent, with tool pruning enabled:
 | Output tokens | 8,900 |
 | Reasoning tokens | 3,100 |
 | Cost | 2.14 USD |
-| Mean response time | 11 s |
-| Slowest call | 24 s |
+| Mean response time | 11 s (the `LATENCY` figure under the usage charts, opened from this session) |
 | Tokens pruned | 41,000 |
 | Cost saved by pruning | 0.12 USD |
 
@@ -367,8 +398,12 @@ How to read it:
   Without the cache, the input cost is many times higher.
 - **The cache-write count is a one-time cost.** The 61,200 cache-write tokens are the first turn that
   stored the context. Later turns read it, and do not write it again.
-- **The slow tail is visible.** The typical call answers in 11 s, but the slowest takes 24 s. If the
-  agent felt slow, that upper whisker is the reason, not the mean.
+- **The mean hides the slow calls.** On average a call answers in 11 s, but a mean says nothing
+  about the slowest one. To find it, open the session and sort its events by `DURATION`: press `c`
+  for the column picker, move to `DURATION`, and press `s`. The sort covers the newest 2000 events;
+  the footer offers `o` to load the older ones. The usage chart cannot show the slowest call: its
+  caps are ±1σ, and it keeps no maximum
+  ([cortex#1026](https://github.com/rossoctl/cortex/issues/1026)).
 - **Pruning earns a small amount here.** It saved 0.12 USD, because it removed 41,000 tokens of unused
   tool definitions across the session. On an agent with many tools, this figure is larger.
 

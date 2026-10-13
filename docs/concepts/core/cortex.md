@@ -48,6 +48,12 @@ RossoCortex does not collect the traffic, and it does not send it to Rossoctl or
 There is no telemetry. The data is for you to read and to inspect. When you stop the service, the data
 goes with it.
 
+That holds for how we count installs, too. We read the download counts that GitHub already publishes
+for each release, and we subtract the ones our own release tests account for. Nothing is collected
+from your machine, and the program never calls home to be counted. The figures, and what they do and
+do not support, are at
+[Install stats](https://rossoctl.github.io/cortex/install-stats/).
+
 ## Install it
 
 You can run RossoCortex on macOS or Linux and watch your agent's traffic in about 5 minutes. You do
