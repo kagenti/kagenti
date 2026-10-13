@@ -1,0 +1,176 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1016 910" font-family="Helvetica, Arial, sans-serif" role="img" aria-label="AIAC architecture: at translation time the Keycloak SPI listener publishes to the NATS event broker, the AIAC Agent in the Agent Pod reads the policy ConfigMap and the IdP Configuration Service, calls a model, and the Policy Computation Engine writes the Policy Model Store and the PDP Policy Writer, which renders Rego into an AuthorizationPolicy custom resource on the Kubernetes API; bundle-service turns that into a bundle, and at request time the opa plugin of an agent or tool pod asks OPA, which answers from the bundle with no model call.">
+  <title>AI-based access control architecture</title>
+  <desc>Two phases, separated in time.
+
+Translation time, which runs when an agent or a tool is onboarded, and when a user or an agent gets or loses a role. At the top left, the Identity Provider (Keycloak) Pod holds the Keycloak SPI listener and the Keycloak Admin API, which serves users, roles and clients. The SPI listener publishes on each change to the Event Broker Pod, which runs NATS JetStream. Below it, the aiac-policy ConfigMap holds the policy at /etc/aiac/policy.md, read whole on each translation. The broker sends the event, and the ConfigMap gives the policy, to the AIAC Agent in the Agent Pod. The Agent Pod holds two components: the AIAC Agent, which reads the whole policy file, reads roles and scopes, has a model propose the rules and audits them (a conflict returns 422 and changes nothing), and the Policy Computation Engine, which merges the rules into the model. The AIAC Agent calls an OpenAI-compatible LLM endpoint, shown below it, to propose and audit; that is the only model call. The engine writes merged state to the Policy Model Store Pod below it.
+
+Above the Agent Pod sits the Rossoctl Interface Pod, holding the IdP Configuration Service on port 7071 (roles, scopes, clients) and the PDP Policy Writer for OPA on port 7072, which renders the Rego. The AIAC Agent reads from the IdP Configuration Service, which calls the Keycloak Admin API over admin REST. The Policy Computation Engine applies policy through the PDP Policy Writer, which writes the AuthorizationPolicy custom resource on the Kubernetes API, shown on the right outside the translation box. bundle-service, below the Kubernetes API, reads the Rego from that resource and composes one bundle per pod.
+
+Request time, which runs on each call and involves no model. A caller reaches the opa plugin in the AuthBridge gate of an agent pod or a tool pod, which runs one chain inbound and one chain outbound. Each agent and each tool has its own gate; under target side, the inbound gate of a tool checks each call to that tool. The plugin asks OPA; OPA evaluates the Rego bundle it polled from bundle-service and answers allow, or 403 policy.forbidden. On allow the call reaches the agent or tool container.</desc>
+
+  <!-- Palette (shades of red)
+       container border #7f1d1d   container fill #fff5f5   pod border #b91c1c (dashed)
+       box fill    #fee2e2   box border #ef4444   agent and plugin fill #991b1b (dark)
+       LLM and OPA fill #fca5a5   border #b91c1c
+       arrows      #b91c1c   accent text #7f1d1d
+       Layout source: aiac/docs/presentations/aiac-architecture.drawio -->
+
+  <defs>
+    <marker id="redArrow" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#b91c1c"/>
+    </marker>
+  </defs>
+
+  <!-- ══════════ Translation time ══════════ -->
+  <text x="323" y="34" text-anchor="middle" fill="#7f1d1d" font-size="14" font-weight="bold">Translation time — on each onboarding, and on each change of who holds a role</text>
+  <rect x="16" y="44" width="614" height="560" rx="14" fill="#fff5f5" stroke="#7f1d1d" stroke-width="2.5"/>
+
+  <!-- Identity Provider (Keycloak) Pod -->
+  <rect x="30" y="48" width="384" height="96" rx="8" fill="none" stroke="#b91c1c" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="222" y="64" text-anchor="middle" fill="#991b1b" font-size="10" font-weight="bold">Identity Provider (Keycloak) Pod</text>
+
+  <rect x="36" y="74" width="160" height="54" rx="8" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="116" y="97" text-anchor="middle" fill="#7f1d1d" font-size="11" font-weight="bold">Keycloak SPI listener</text>
+  <text x="116" y="114" text-anchor="middle" fill="#7f1d1d" font-size="9">publishes on change</text>
+
+  <rect x="220" y="74" width="176" height="54" rx="8" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="308" y="97" text-anchor="middle" fill="#7f1d1d" font-size="11" font-weight="bold">Keycloak Admin API</text>
+  <text x="308" y="114" text-anchor="middle" fill="#7f1d1d" font-size="9">users · roles · clients</text>
+
+  <!-- Event Broker Pod -->
+  <rect x="36" y="246" width="160" height="96" rx="8" fill="#ffffff" stroke="#b91c1c" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="116" y="264" text-anchor="middle" fill="#991b1b" font-size="10" font-weight="bold">Event Broker Pod</text>
+  <rect x="50" y="276" width="132" height="52" rx="7" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="116" y="306" text-anchor="middle" fill="#7f1d1d" font-size="11" font-weight="bold">NATS JetStream</text>
+
+  <!-- aiac-policy ConfigMap -->
+  <rect x="36" y="372" width="160" height="84" rx="8" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="116" y="392" text-anchor="middle" fill="#7f1d1d" font-size="10" font-weight="bold">aiac-policy</text>
+  <text x="116" y="405" text-anchor="middle" fill="#7f1d1d" font-size="10" font-weight="bold">ConfigMap</text>
+  <text x="116" y="422" text-anchor="middle" fill="#7f1d1d" font-size="9">/etc/aiac/policy.md</text>
+  <text x="116" y="438" text-anchor="middle" fill="#7f1d1d" font-size="8" font-style="italic">read whole, each time</text>
+
+  <!-- Rossoctl Interface Pod -->
+  <rect x="220" y="152" width="400" height="120" rx="10" fill="#ffffff" stroke="#b91c1c" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="420" y="170" text-anchor="middle" fill="#991b1b" font-size="11" font-weight="bold">Rossoctl Interface Pod</text>
+
+  <rect x="234" y="188" width="170" height="70" rx="7" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="319" y="210" text-anchor="middle" fill="#7f1d1d" font-size="10" font-weight="bold">IdP Configuration</text>
+  <text x="319" y="223" text-anchor="middle" fill="#7f1d1d" font-size="10" font-weight="bold">Service :7071</text>
+  <text x="319" y="242" text-anchor="middle" fill="#7f1d1d" font-size="8">roles · scopes · clients</text>
+
+  <rect x="436" y="188" width="170" height="70" rx="7" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="521" y="210" text-anchor="middle" fill="#7f1d1d" font-size="10" font-weight="bold">PDP Policy Writer</text>
+  <text x="521" y="223" text-anchor="middle" fill="#7f1d1d" font-size="10" font-weight="bold">(OPA) :7072</text>
+  <text x="521" y="242" text-anchor="middle" fill="#7f1d1d" font-size="8">renders the Rego</text>
+
+  <!-- Agent Pod -->
+  <rect x="220" y="302" width="400" height="186" rx="10" fill="#ffffff" stroke="#b91c1c" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="420" y="320" text-anchor="middle" fill="#991b1b" font-size="11" font-weight="bold">Agent Pod</text>
+
+  <rect x="234" y="338" width="170" height="132" rx="7" fill="#991b1b"/>
+  <text x="319" y="362" text-anchor="middle" fill="#ffffff" font-size="12" font-weight="bold">AIAC Agent</text>
+  <g fill="#ffe4e6" font-size="9">
+    <text x="250" y="386">Whole policy file</text>
+    <text x="250" y="402">roles + scopes</text>
+    <text x="250" y="418">model proposes</text>
+    <text x="250" y="434">Audits</text>
+    <text x="250" y="454" font-style="italic">conflict → 422, nothing changes</text>
+  </g>
+
+  <rect x="436" y="338" width="170" height="132" rx="7" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="521" y="394" text-anchor="middle" fill="#7f1d1d" font-size="10" font-weight="bold">Policy Computation Engine</text>
+  <text x="521" y="414" text-anchor="middle" fill="#7f1d1d" font-size="9">merges the rules into the model</text>
+
+  <!-- LLM endpoint -->
+  <rect x="234" y="516" width="170" height="76" rx="10" fill="#fca5a5" stroke="#b91c1c" stroke-width="2"/>
+  <text x="319" y="542" text-anchor="middle" fill="#7f1d1d" font-size="12" font-weight="bold">LLM endpoint</text>
+  <text x="319" y="560" text-anchor="middle" fill="#7f1d1d" font-size="9">OpenAI-compatible</text>
+  <text x="319" y="576" text-anchor="middle" fill="#7f1d1d" font-size="9" font-style="italic">propose · audit</text>
+
+  <!-- Policy Model Store Pod -->
+  <rect x="436" y="516" width="170" height="80" rx="8" fill="#ffffff" stroke="#b91c1c" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="521" y="533" text-anchor="middle" fill="#991b1b" font-size="10" font-weight="bold">Policy Model Store Pod</text>
+  <rect x="448" y="542" width="146" height="46" rx="7" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="521" y="562" text-anchor="middle" fill="#7f1d1d" font-size="10" font-weight="bold">Policy Model Store</text>
+  <text x="521" y="577" text-anchor="middle" fill="#7f1d1d" font-size="8">policy db</text>
+
+  <!-- Kubernetes API and bundle-service (platform, outside the translation box) -->
+  <rect x="700" y="58" width="208" height="54" rx="8" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="804" y="81" text-anchor="middle" fill="#7f1d1d" font-size="11" font-weight="bold">Kubernetes API</text>
+  <text x="804" y="98" text-anchor="middle" fill="#7f1d1d" font-size="9">AuthorizationPolicy CR</text>
+
+  <rect x="700" y="302" width="208" height="80" rx="8" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="804" y="334" text-anchor="middle" fill="#7f1d1d" font-size="12" font-weight="bold">bundle-service</text>
+  <text x="804" y="354" text-anchor="middle" fill="#7f1d1d" font-size="9">composes one bundle per pod</text>
+
+  <!-- Translation-time arrows -->
+  <!-- SPI listener → broker -->
+  <line x1="116" y1="128" x2="116" y2="242" stroke="#b91c1c" stroke-width="2" marker-end="url(#redArrow)"/>
+  <!-- broker → AIAC Agent: event -->
+  <polyline points="182,302 208,302 208,371 230,371" fill="none" stroke="#b91c1c" stroke-width="2" marker-end="url(#redArrow)"/>
+  <text x="203" y="360" text-anchor="end" fill="#7f1d1d" font-size="9">event</text>
+  <!-- ConfigMap → AIAC Agent: policy -->
+  <line x1="196" y1="416" x2="230" y2="416" stroke="#b91c1c" stroke-width="2" marker-end="url(#redArrow)"/>
+  <text x="210" y="406" text-anchor="middle" fill="#7f1d1d" font-size="9">policy</text>
+  <!-- AIAC Agent → IdP Configuration: reads -->
+  <line x1="319" y1="338" x2="319" y2="262" stroke="#b91c1c" stroke-width="2" marker-end="url(#redArrow)"/>
+  <text x="327" y="290" fill="#7f1d1d" font-size="9">reads</text>
+  <!-- PCE → PDP Policy Writer: applies -->
+  <line x1="521" y1="338" x2="521" y2="262" stroke="#b91c1c" stroke-width="2" marker-end="url(#redArrow)"/>
+  <text x="529" y="290" fill="#7f1d1d" font-size="9">applies</text>
+  <!-- IdP Configuration → Keycloak Admin API: admin REST -->
+  <polyline points="319,188 319,140 308,140 308,132" fill="none" stroke="#b91c1c" stroke-width="2" marker-end="url(#redArrow)"/>
+  <text x="313" y="182" text-anchor="end" fill="#7f1d1d" font-size="9">admin REST</text>
+  <!-- PDP Policy Writer → Kubernetes API: writes the CR -->
+  <polyline points="521,188 521,85 696,85" fill="none" stroke="#b91c1c" stroke-width="2" marker-end="url(#redArrow)"/>
+  <text x="664" y="79" text-anchor="middle" fill="#7f1d1d" font-size="9">writes the CR</text>
+  <!-- Kubernetes API → bundle-service: reads the Rego -->
+  <line x1="804" y1="112" x2="804" y2="298" stroke="#b91c1c" stroke-width="2" marker-end="url(#redArrow)"/>
+  <text x="812" y="222" fill="#7f1d1d" font-size="9">reads the Rego</text>
+  <!-- AIAC Agent ⇄ LLM -->
+  <line x1="302" y1="470" x2="302" y2="512" stroke="#b91c1c" stroke-width="2" marker-end="url(#redArrow)"/>
+  <line x1="336" y1="516" x2="336" y2="474" stroke="#b91c1c" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#redArrow)"/>
+  <!-- PCE → Policy Model Store -->
+  <line x1="521" y1="470" x2="521" y2="512" stroke="#b91c1c" stroke-width="2" marker-end="url(#redArrow)"/>
+
+  <!-- ══════════ Request time ══════════ -->
+  <text x="508" y="660" text-anchor="middle" fill="#7f1d1d" font-size="14" font-weight="bold">Request time — on each call. No model runs here.</text>
+  <rect x="16" y="670" width="984" height="224" rx="14" fill="#fff5f5" stroke="#7f1d1d" stroke-width="2.5"/>
+
+  <!-- bundle-service → OPA: polls the bundle -->
+  <line x1="804" y1="382" x2="804" y2="746" stroke="#b91c1c" stroke-width="2" marker-end="url(#redArrow)"/>
+  <text x="812" y="620" fill="#7f1d1d" font-size="9">polls the bundle</text>
+
+  <rect x="36" y="750" width="136" height="64" rx="8" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="104" y="778" text-anchor="middle" fill="#7f1d1d" font-size="13" font-weight="bold">caller</text>
+  <text x="104" y="797" text-anchor="middle" fill="#7f1d1d" font-size="10">(user or agent)</text>
+
+  <rect x="196" y="684" width="330" height="190" rx="10" fill="#ffffff" stroke="#b91c1c" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="361" y="707" text-anchor="middle" fill="#991b1b" font-size="13" font-weight="bold">agent or tool pod — AuthBridge gate</text>
+
+  <rect x="220" y="724" width="282" height="64" rx="7" fill="#991b1b"/>
+  <text x="361" y="750" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="bold">opa plugin</text>
+  <text x="361" y="770" text-anchor="middle" fill="#ffe4e6" font-size="10">inbound chain + outbound chain</text>
+
+  <rect x="220" y="808" width="282" height="52" rx="7" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="361" y="839" text-anchor="middle" fill="#7f1d1d" font-size="12" font-weight="bold">agent or tool container (your code)</text>
+
+  <rect x="664" y="750" width="280" height="92" rx="10" fill="#fca5a5" stroke="#b91c1c" stroke-width="2"/>
+  <text x="804" y="780" text-anchor="middle" fill="#7f1d1d" font-size="15" font-weight="bold">OPA</text>
+  <text x="804" y="802" text-anchor="middle" fill="#7f1d1d" font-size="11">evaluates the Rego bundle</text>
+  <text x="804" y="822" text-anchor="middle" fill="#7f1d1d" font-size="10" font-style="italic">allow, or 403 policy.forbidden</text>
+
+  <!-- caller → opa plugin: call -->
+  <line x1="172" y1="770" x2="216" y2="770" stroke="#b91c1c" stroke-width="2" marker-end="url(#redArrow)"/>
+  <text x="184" y="763" text-anchor="middle" fill="#7f1d1d" font-size="9.5">call</text>
+  <!-- opa plugin → container: allow -->
+  <line x1="361" y1="788" x2="361" y2="804" stroke="#b91c1c" stroke-width="2" marker-end="url(#redArrow)"/>
+  <text x="369" y="803" fill="#7f1d1d" font-size="9.5">allow</text>
+  <!-- opa plugin → OPA: ask -->
+  <polyline points="502,740 583,740 583,778 660,778" fill="none" stroke="#b91c1c" stroke-width="2" marker-end="url(#redArrow)"/>
+  <text x="545" y="733" text-anchor="middle" fill="#7f1d1d" font-size="9.5">ask</text>
+  <!-- OPA → opa plugin: answer -->
+  <polyline points="664,814 560,814 560,772 506,772" fill="none" stroke="#b91c1c" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#redArrow)"/>
+  <text x="612" y="808" text-anchor="middle" fill="#7f1d1d" font-size="9.5">answer</text>
+</svg>

@@ -7,12 +7,13 @@ sidebar_position: 9
 
 An access control policy in agentic systems states who may call what. You write that policy in plain language, for a person to read. A running agentic system needs that policy translated as rules that a machine evaluates on each call.
 AI-based access control (AIAC) performs the translation. It generates the Rego rules that OPA evaluates,
-and it repeats the work each time an agent or tool is onboarded (or removed), a role or the policy changes.
+and it repeats the work each time an agent or a tool is onboarded.
 
 :::warning Alpha
 This feature is an experiment. It lives in the separate repository
-[rossoctl/aiac](https://github.com/rossoctl/aiac), and no Rossoctl installation contains it. The
-behaviour, the interface and the set of deployed components will change. Evaluate it on a test cluster.
+[rossoctl/aiac](https://github.com/rossoctl/aiac), and no Rossoctl installation contains it. It is off
+by default. The behaviour, the interface and the set of deployed components will change. Evaluate it on
+a test cluster.
 :::
 
 ## The problem that it solves
@@ -20,10 +21,10 @@ behaviour, the interface and the set of deployed components will change. Evaluat
 An agentic system does not make one call. Follow one request from a user:
 
 1. A user invokes an agent.
-3. The agent invokes a tool.
-2. The agent invokes a second agent.
-3. The second agent invokes a tool.
-4. The second agent invokes a second tool.
+2. The agent invokes a tool.
+3. The agent invokes a second agent.
+4. The second agent invokes a tool.
+5. The second agent invokes a second tool.
 
 Each hop is a separate decision point to allow or to deny based on policy intent. Delegation makes
 each agent two of those points, not one: who may call the agent, and what the agent may do downstream
@@ -42,7 +43,6 @@ Four problems follow:
 - **Each path needs a decision in advance.** A gate answers in milliseconds. It cannot read a policy
   document at the moment of the call.
 
-
 ## How it operates
 
 AIAC separates three layers. Each layer has one component and one responsibility.
@@ -51,7 +51,7 @@ AIAC separates three layers. Each layer has one component and one responsibility
 | --- | --- | --- |
 | Policy management | AIAC agent | Translates the policy in plain language into OPA rules. |
 | Policy decision | OPA | Evaluates the rules. Decides what the caller may access. |
-| Policy enforcement | [AuthBridge](../../security/authbridge.md) | Intercepts the call. Sends an access request to OPA. Allows or Denies access |
+| Policy enforcement | [AuthBridge](../../security/authbridge.md) | Intercepts the call. Sends an access request to OPA. Allows or denies access. |
 
 ![AIAC translates the policy into Rego when something changes, and OPA evaluates that Rego on each call](../../images/aiac-architecture.svg)
 
@@ -70,25 +70,55 @@ When a rule denies the call, the plugin returns the status 403 with this body:
 {"error":"policy.forbidden","message":"policy denied","plugin":"opa"}
 ```
 
-Three events start a translation.
+### One rule set for each workload
+
+AIAC writes one `AuthorizationPolicy` custom resource for each workload that it manages. An agent gets
+one, and a tool gets one. Each resource holds two Rego packages: one for the inbound requests and one
+for the outbound requests.
+
+One setting, the enforcement side, selects which gate checks a call to a tool. The setting applies to
+every workload.
+
+| Enforcement side | Which gate checks a call to a tool | The resource of a tool |
+| --- | --- | --- |
+| Target side (default) | The inbound gate of the tool | Holds the check of each tool call |
+| Agent side | The outbound gate of the calling agent | Allows each call |
+
+Under both sides, the inbound gate of an agent checks who may call the agent. The other packages allow
+each call. AIAC still writes them, because AIAC changes the global policy of the bundle service: a pod
+without a resource gets a deny on each request.
+
+Under target side, a tool call must pass two checks. The role of the user must grant the tool. The roles
+of the calling agent must also reach the tool. A deny from either check stops the call.
+
+### What starts a translation
 
 | Event | What AIAC does |
 | --- | --- |
-| Keycloak (IdP) registers a client | Onboards the new agent/tool. Computes its rules, inbound and outbound. |
-| A role changes | Computes the rules for each agent/tool that the role reaches. |
-| An operator changes the policy file | Computes the difference against the rules that are current. |
+| Keycloak (IdP) registers a client for an agent or a tool | Onboards the agent or the tool. Computes its rules, inbound and outbound. |
+| A user or an agent gets or loses a realm role | Writes again each resource that uses the role, with the current holders. No model runs. |
+| An operator offboards a workload, with `POST /apply/offboard/{clientId}` | Deletes the rules and the resource of the workload. The global policy then denies its pod. |
 
-For each event, the agent performs these steps:
+For an onboarding, the agent performs these steps:
 
-1. It receives the event. Delivery is durable, so a restart of the agent loses no event.
-2. It reads the roles, the agents/tools ids and the scopes from Keycloak.
-3. It reads the policy file. It reads the whole policy, not the part that applies to the event.
-4. A model proposes the rules. A second pass of the model validates them against the policy.
-5. The computation engine merges the proposed rules into the policy model that the store holds.
-6. The policy writer renders the merged model as Rego into an `AuthorizationPolicy` custom resource, one
-   resource for each agent.
-7. `bundle-service` composes those resources into one bundle for each pod. The OPA plugin polls that
+1. It receives the event from the event broker. The broker stores each event and delivers it again
+   after a failure, so a restart of the agent loses no stored event.
+2. It runs the precondition checks. If the pod of the workload cannot enforce a resource, the onboarding
+   stops with the status 409, and nothing changes.
+3. It reads the roles, the agent and tool ids and the scopes from Keycloak, with the description of
+   each role. It also reads the capabilities of the agent or the tool.
+4. It reads the policy file. It reads the whole policy, not the part that applies to the event. A rule
+   of least privilege and a baseline policy go in front of your policy. The baseline only grants access,
+   and it never denies.
+5. A model proposes the rules. A second pass of the model audits them against the policy.
+6. The computation engine merges the proposed rules into the policy model that the store holds.
+7. The policy writer renders the merged model as Rego into the `AuthorizationPolicy` resources.
+8. `bundle-service` composes those resources into one bundle for each pod. The OPA plugin polls that
    bundle.
+
+If an onboarding fails, AIAC quarantines the workload. It removes the roles and the scopes that the
+onboarding created, and it disables the Keycloak client. It deletes the resource of the workload, so the
+global policy denies the pod. Only a successful onboarding removes the quarantine.
 
 AIAC reports a conflict. It never resolves one. A role and a scope that carry both a grant and a
 prohibition stop the request with the status 422 and a report of every conflict found. No rule changes.
@@ -97,36 +127,54 @@ a fault in the policy that a person must correct.
 
 ## Every decision happens before the call
 
-AIAC calls a model when the policy or the platform changes. No model runs when a call arrives. The agent
-reasons over each potential interaction on each potential execution path. It writes the result as Rego,
-as constraint rules that OPA evaluates later.
+AIAC calls a model when the platform changes. No model runs when a call arrives. The agent reasons
+over each potential interaction on each potential execution path. It writes the result as Rego, as
+constraint rules that OPA evaluates later.
 
 Two results follow. AIAC adds nothing to the response time of a request, because OPA evaluates a rule and
-calls no model. And you pay for a model on each change of policy, not on each call of an agent.
+calls no model. And you pay for a model on each onboarding, not on each call of an agent.
 
-Your policy is the ground truth for each rule. A second pass of the model validates each proposed rule
+Your policy is the ground truth for each rule. A second pass of the model audits each proposed rule
 against the policy file that the agent read.
 
 ## How to enable it
 
-You need a Kubernetes cluster with Keycloak, an AuthBridge installation whose OPA plugin is active, and
-an endpoint that is compatible with the OpenAI chat interface. AIAC calls that endpoint for each
-translation.
+You need these items:
+
+- A Kubernetes cluster with Keycloak and the Rossoctl operator.
+- The OPA plugin in both the inbound chain and the outbound chain of AuthBridge, for each agent and each
+  tool.
+- The bundle service, with the changed global policy of AIAC. That policy denies a pod that has no
+  resource. AIAC checks for it at each start, and it does not start without it.
+- An endpoint that is compatible with the OpenAI chat interface. AIAC calls that endpoint for each
+  translation.
+
+Apply the OPA plugin and the changed global policy before you install AIAC. The script
+`k8s/opa-kind-enable.sh` in the AIAC repository does both on a Kind cluster.
 
 AIAC deploys into its own namespace, `aiac-system`, from the manifests in its own repository. For the
 build of each image, the two Secrets, and the order to apply the manifests, follow the
-[AIAC installation guide](https://github.com/rossoctl/aiac/blob/main/k8s/aiac-deployment-guide.md). 
+[AIAC installation guide](https://github.com/rossoctl/aiac/blob/main/k8s/aiac-deployment-guide.md).
 
 Those manifests deploy four components: the interface pod, the event broker, the policy model store and
 the agent.
 
+The enforcement side is `target-side` by default. To use agent side, set `AIAC_ENFORCEMENT_SIDE` to
+`agent-side` in the `aiac-agent-config` ConfigMap before you deploy. You cannot change the side on a
+running installation. To change it, remove AIAC and deploy it again, then onboard each workload again.
 
 ## What it does not do
 
 - **It enforces nothing.** AuthBridge intercepts each call, and OPA decides it. AIAC writes the rules
   only.
-- **It does not manage a user.** AIAC manages roles and scopes. Each rule names a role, so OPA resolves
-  the entitlements of a user from the role of that user. AIAC drops an event about a user.
+- **It does not create users or assign roles.** Keycloak keeps the users and their roles. AIAC writes
+  the current holders of each role into the rules, and it writes them again when a holder changes. A
+  role that a user gets through a group does not count.
+- **It does not update the rules when your policy changes.** The routes to build the rules again from a
+  changed policy exist, but they compute no rule. To apply a changed policy, onboard each workload again.
+- **It does not update the rules when the definition of a role changes.** That handler computes no rule.
+- **It does not offboard a workload when Keycloak removes its client.** An operator must call the
+  offboard route.
 - **It does not resolve a conflict.** It reports each conflict and changes no rule.
 - **It does not record the reason for a rule.** A rule holds a role, a scope and an effect. AIAC stores
   no reference to the sentence of the policy that justifies it.
@@ -137,8 +185,10 @@ the agent.
 
 ## Try it
 
-The [AIAC demonstration](https://github.com/rossoctl/aiac/blob/main/demo/assets/INSTALL.md) deploys one
-agent and one tool, then drives the onboarding flow from end to end.
+The [AIAC onboarding demonstration](https://github.com/rossoctl/aiac/blob/main/demo/use-cases/onboarding/demo.md)
+deploys a GitHub agent and a GitHub tool, and gives AIAC a policy of two lines. The deployment of the two
+workloads starts the onboarding. No person runs an onboarding command. The demonstration then sends real
+requests through the OPA plugin, and shows which ones OPA allows and which ones it denies.
 
 ## Related pages
 
