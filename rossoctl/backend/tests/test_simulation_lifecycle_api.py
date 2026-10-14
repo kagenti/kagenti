@@ -91,10 +91,14 @@ def test_stop_patch_error_returns_502():
     assert r.status_code == 502
 
 
-def test_stop_invalid_name_returns_404_without_backend_calls():
+def test_stop_invalid_name_returns_422_without_backend_calls():
+    # namespace/name are constrained to an RFC-1123 label via FastAPI
+    # Path(pattern=..., max_length=...) (#2457), so a malformed name is now
+    # rejected with 422 before the handler (and its own defense-in-depth
+    # 404 check) ever runs.
     kube = _kube()
     r = _post(_client(kube), "stop", name="Bad_Name")
-    assert r.status_code == 404
+    assert r.status_code == 422
     kube.apps_api.read_namespaced_stateful_set.assert_not_called()
 
 

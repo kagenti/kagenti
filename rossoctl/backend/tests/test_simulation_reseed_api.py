@@ -148,11 +148,14 @@ def test_reseed_non_simulated_returns_404():
     put.assert_not_called()
 
 
-def test_reseed_invalid_name_returns_404_without_backend_calls():
+def test_reseed_invalid_name_returns_422_without_backend_calls():
+    # namespace/name are constrained to an RFC-1123 label via FastAPI
+    # Path(pattern=..., max_length=...) (#2457), so a malformed name is now
+    # rejected with 422 before the handler ever runs.
     kube = _kube()
     put = AsyncMock()
     with patch("app.routers.simulation.put_database", new=put):
         r = _put(_client(kube), _valid_body(), name="Bad_Name")
-    assert r.status_code == 404
+    assert r.status_code == 422
     kube.apps_api.read_namespaced_stateful_set.assert_not_called()
     put.assert_not_called()

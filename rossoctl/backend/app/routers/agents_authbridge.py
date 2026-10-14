@@ -15,13 +15,12 @@ main agents router by ``agents.py`` -- see the ordering note there.
 
 import json
 import logging
-import re
 from typing import List
 
 import httpx
 import kubernetes.client
 import yaml
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Path
 from kubernetes.client import ApiException
 
 from app.core.auth import ROLE_OPERATOR, require_roles
@@ -34,14 +33,12 @@ from app.core.constants import (
 )
 from app.routers.agents_models import OutboundRoute
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
-from app.utils.naming import K8S_NAME_PATTERN
+from app.utils.naming import K8S_NAME_MAX_LENGTH, K8S_NAME_PATTERN
 from app.utils.routes import detect_platform, sanitize_log
 
 logger = logging.getLogger(__name__)
 
 authbridge_router = APIRouter()
-
-_K8S_NAME_RE = re.compile(K8S_NAME_PATTERN)
 
 
 def _get_authbridge_runtime_yaml() -> str:
@@ -364,17 +361,14 @@ async def _fetch_authbridge_json(url: str) -> dict:
         return data
 
 
-_K8S_NAME_RE = re.compile(K8S_NAME_PATTERN)
-
-
 if settings.rossoctl_feature_flag_authbridge_api:
 
     @authbridge_router.get(
         "/{namespace}/{name}/identity-config", dependencies=[Depends(require_roles(ROLE_OPERATOR))]
     )
     async def get_agent_identity_config(
-        namespace: str,
-        name: str,
+        namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+        name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
         kube: KubernetesService = Depends(get_kubernetes_service),
     ) -> dict:
         """
@@ -413,19 +407,14 @@ if settings.rossoctl_feature_flag_authbridge_api:
         "/{namespace}/{name}/identity-config", dependencies=[Depends(require_roles(ROLE_OPERATOR))]
     )
     async def put_agent_identity_config(
-        namespace: str,
-        name: str,
+        namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+        name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
         new_authbridge_config_yaml: str = Body(media_type="text/plain"),
         kube: KubernetesService = Depends(get_kubernetes_service),
     ) -> dict:
         """
         Set the AuthBridge configuration for an Agent.
         """
-
-        if not _K8S_NAME_RE.fullmatch(namespace):
-            raise HTTPException(status_code=400, detail="Invalid namespace")
-        if not _K8S_NAME_RE.fullmatch(name):
-            raise HTTPException(status_code=400, detail="Invalid name")
 
         try:
             yaml.safe_load(new_authbridge_config_yaml)
@@ -444,8 +433,8 @@ if settings.rossoctl_feature_flag_authbridge_api:
         "/{namespace}/{name}/identity-status", dependencies=[Depends(require_roles(ROLE_OPERATOR))]
     )
     async def get_agent_identity_status(
-        namespace: str,
-        name: str,
+        namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+        name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
         kube: KubernetesService = Depends(get_kubernetes_service),
     ) -> dict:
         """

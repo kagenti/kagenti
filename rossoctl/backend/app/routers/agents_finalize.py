@@ -20,7 +20,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Path
 from kubernetes.client import ApiException
 
 from app.core.auth import ROLE_OPERATOR, require_roles
@@ -75,6 +75,7 @@ from app.routers.agents_skills import (
 )
 from app.services.agent_env_defaults import apply_agent_import_defaults
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
+from app.utils.naming import K8S_NAME_MAX_LENGTH, K8S_NAME_PATTERN
 from app.utils.routes import create_route_for_agent_or_tool, select_route_port
 
 logger = logging.getLogger(__name__)
@@ -88,9 +89,9 @@ finalize_router = APIRouter()
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
 async def finalize_shipwright_build(
-    namespace: str,
-    name: str,
-    request: FinalizeShipwrightBuildRequest,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    request: FinalizeShipwrightBuildRequest = Body(...),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> CreateAgentResponse:
     """

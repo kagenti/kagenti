@@ -14,7 +14,7 @@ reachable; its URL comes from the skill auto-sync ConfigMap.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Path
 from pydantic import BaseModel, Field
 
 from app.core.auth import require_roles, ROLE_OPERATOR, ROLE_VIEWER
@@ -22,6 +22,7 @@ from app.core.config import settings
 from app.core.constants import SKILL_AUTOSYNC_CONFIG_CM
 from app.services import dream_state, dreaming
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
+from app.utils.naming import K8S_NAME_MAX_LENGTH, K8S_NAME_PATTERN
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +90,8 @@ def _resolve_store_url(kube: KubernetesService) -> str:
 
 @router.get("/{namespace}/{agent}", response_model=DreamStatus)
 async def get_dream_status(
-    namespace: str,
-    agent: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    agent: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     _=Depends(require_roles(ROLE_VIEWER)),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ):
@@ -127,8 +128,8 @@ async def get_dream_status(
 
 @router.post("/{namespace}/{agent}", dependencies=[Depends(require_roles(ROLE_OPERATOR))])
 async def trigger_dream(
-    namespace: str,
-    agent: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    agent: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ):
     """Trigger a dream run: read NEW Phoenix trajectories → RunSpace optimization.
@@ -158,9 +159,9 @@ class DreamRunStatus(BaseModel):
 
 @router.get("/{namespace}/{agent}/runs/{run_id}", response_model=DreamRunStatus)
 async def get_dream_run(
-    namespace: str,
-    agent: str,
-    run_id: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    agent: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    run_id: str = Path(...),
     _=Depends(require_roles(ROLE_VIEWER)),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ):
@@ -189,9 +190,9 @@ async def get_dream_run(
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
 async def set_thresholds(
-    namespace: str,
-    agent: str,
-    req: ThresholdRequest,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    agent: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    req: ThresholdRequest = Body(...),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ):
     """Persist auto-trigger thresholds (stored for a future iteration)."""

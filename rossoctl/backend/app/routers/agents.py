@@ -26,7 +26,7 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from kubernetes.client import ApiException
 
 from app.core.auth import ROLE_OPERATOR, ROLE_VIEWER, require_roles
@@ -59,6 +59,7 @@ from app.models.shipwright import ShipwrightBuildConfig
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
 from app.services.shipwright import extract_buildrun_info, get_latest_buildrun
 from app.services.shipwright_builds import collect_rossoctl_shipwright_builds
+from app.utils.naming import K8S_NAME_MAX_LENGTH, K8S_NAME_PATTERN
 from app.utils.routes import route_exists, sanitize_log
 
 # --- Re-exports -------------------------------------------------------------
@@ -454,8 +455,8 @@ async def list_agents(
 
 @router.get("/{namespace}/{name}", dependencies=[Depends(require_roles(ROLE_VIEWER))])
 async def get_agent(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> Any:
     """Get detailed information about a specific agent.
@@ -572,8 +573,8 @@ async def get_agent(
 
 @router.get("/{namespace}/{name}/route-status", dependencies=[Depends(require_roles(ROLE_VIEWER))])
 async def get_agent_route_status(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> dict:
     """Check if an HTTPRoute or Route exists for the agent."""
@@ -587,8 +588,8 @@ async def get_agent_route_status(
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
 async def delete_agent(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> DeleteResponse:
     """Delete an agent and its associated resources from the cluster.

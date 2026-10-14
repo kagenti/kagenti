@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from typing import List, Literal, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Path
 from kubernetes.client import ApiException
 from pydantic import BaseModel, field_validator
 
@@ -58,6 +58,7 @@ from app.services.simulation_manifests import (
     validate_openapi_spec,
     validate_storage_size,
 )
+from app.utils.naming import K8S_NAME_MAX_LENGTH, K8S_NAME_PATTERN
 from app.utils.routes import sanitize_log
 
 logger = logging.getLogger(__name__)
@@ -517,8 +518,8 @@ async def create_simulated_tool(
     dependencies=[Depends(require_roles(ROLE_VIEWER))],
 )
 async def generation_status(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> GenerationStatusResponse:
     """Return the live, UI-pollable generation status of a simulated tool.
@@ -619,8 +620,8 @@ def _scale_simulated_tool(
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
 async def stop_simulated_tool(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> SimulationLifecycleResponse:
     """Scale a simulated tool's StatefulSet to 0 (bundle retained on the PVC)."""
@@ -633,8 +634,8 @@ async def stop_simulated_tool(
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
 async def start_simulated_tool(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> SimulationLifecycleResponse:
     """Scale a simulated tool's StatefulSet back to 1 (harness autostarts from bundle)."""
@@ -647,8 +648,8 @@ async def start_simulated_tool(
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
 async def reset_simulated_tool(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> SimulationResetResponse:
     """Reset a simulated tool's session (fresh session, same bundle; no teardown)."""
@@ -686,8 +687,8 @@ async def reset_simulated_tool(
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
 async def delete_simulated_tool(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> SimulationDeleteResponse:
     """Delete a simulated tool: StatefulSet + Service + PVC(s), no leaked resources."""
@@ -767,9 +768,9 @@ async def delete_simulated_tool(
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
 async def reseed_simulated_tool_database(
-    namespace: str,
-    name: str,
-    request: SimulationDatabaseRequest,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    request: SimulationDatabaseRequest = Body(...),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> SimulationDatabaseResponse:
     """Re-seed a simulated tool's database with a user-provided dataset.

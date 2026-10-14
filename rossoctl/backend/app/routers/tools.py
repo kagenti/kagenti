@@ -14,7 +14,7 @@ from contextlib import AsyncExitStack
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
 from kubernetes.client import ApiException
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
@@ -86,6 +86,7 @@ from app.services.shipwright import (
     get_output_image_from_buildrun,
     resolve_clone_secret,
 )
+from app.utils.naming import K8S_NAME_MAX_LENGTH, K8S_NAME_PATTERN
 from app.utils.routes import (
     create_route_for_agent_or_tool,
     lookup_service_port,
@@ -863,8 +864,8 @@ async def list_tools(
 
 @router.get("/{namespace}/{name}", dependencies=[Depends(require_roles(ROLE_VIEWER))])
 async def get_tool(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> Any:
     """Get detailed information about a specific tool.
@@ -938,8 +939,8 @@ async def get_tool(
 
 @router.get("/{namespace}/{name}/route-status", dependencies=[Depends(require_roles(ROLE_VIEWER))])
 async def get_tool_route_status(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> dict:
     """Check if an HTTPRoute or Route exists for the tool."""
@@ -953,8 +954,8 @@ async def get_tool_route_status(
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
 async def delete_tool(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> DeleteResponse:
     """Delete a tool and associated resources from the cluster.
@@ -1899,8 +1900,8 @@ async def create_tool(
     dependencies=[Depends(require_roles(ROLE_VIEWER))],
 )
 async def get_tool_shipwright_build_info(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> ToolShipwrightBuildInfoResponse:
     """Get full Shipwright Build information including tool config and BuildRun status.
@@ -1992,8 +1993,8 @@ async def get_tool_shipwright_build_info(
     "/{namespace}/{name}/shipwright-buildrun", dependencies=[Depends(require_roles(ROLE_OPERATOR))]
 )
 async def create_tool_buildrun(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> dict:
     """Trigger a new BuildRun for an existing Shipwright Build.
@@ -2058,9 +2059,9 @@ async def create_tool_buildrun(
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
 async def finalize_tool_shipwright_build(
-    namespace: str,
-    name: str,
-    request: FinalizeToolBuildRequest,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    request: FinalizeToolBuildRequest = Body(...),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> CreateToolResponse:
     """Create Deployment/StatefulSet + Service after Shipwright build completes successfully.
@@ -2438,8 +2439,8 @@ async def _probe_mcp_reachability(mcp_endpoint: str, tool_url: str) -> None:
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
 async def connect_to_tool(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> MCPToolsResponse:
     """
@@ -2519,9 +2520,9 @@ async def connect_to_tool(
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
 async def invoke_tool(
-    namespace: str,
-    name: str,
-    request: MCPInvokeRequest,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    request: MCPInvokeRequest = Body(...),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> MCPInvokeResponse:
     """

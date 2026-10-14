@@ -11,14 +11,13 @@ the same Keycloak JWKS as the REST endpoints.
 
 import json
 import logging
-import re
 from uuid import uuid4
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from app.core.config import settings
 from app.services.acp_bridge import ACPBridge
-from app.utils.naming import K8S_NAME_PATTERN
+from app.utils.naming import K8S_NAME_MAX_LENGTH, K8S_NAME_RE
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/acp", tags=["acp"])
@@ -30,8 +29,6 @@ JSON_RPC_METHOD_NOT_FOUND = -32601
 JSON_RPC_INTERNAL_ERROR = -32603
 JSON_RPC_PARSE_ERROR = -32700
 
-_K8S_NAME = re.compile(K8S_NAME_PATTERN)
-
 
 @router.websocket("/ws/{namespace}/{agent_name}")
 async def acp_websocket(
@@ -40,11 +37,17 @@ async def acp_websocket(
     agent_name: str,
     token: str = Query(default=""),
 ):
+    # FastAPI's Path(pattern=...) validation does not produce a 422 on a
+    # WebSocket route (there's no HTTP response on the upgrade), so this
+    # runtime check -- using the canonical K8S_NAME_RE, same as the HTTP
+    # routers' Path(pattern=K8S_NAME_PATTERN) -- guards the log-injection
+    # sink below. It MUST run before any f-string/logging use of the raw
+    # namespace/agent_name (both here and via _dispatch/_bridge downstream).
     if (
-        not _K8S_NAME.match(namespace)
-        or not _K8S_NAME.match(agent_name)
-        or len(namespace) > 63
-        or len(agent_name) > 63
+        not K8S_NAME_RE.match(namespace)
+        or not K8S_NAME_RE.match(agent_name)
+        or len(namespace) > K8S_NAME_MAX_LENGTH
+        or len(agent_name) > K8S_NAME_MAX_LENGTH
     ):
         logger.warning(
             "ACP rejected invalid K8s name: ns_len=%d agent_len=%d", len(namespace), len(agent_name)

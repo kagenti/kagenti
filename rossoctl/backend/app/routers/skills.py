@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 import kubernetes.client as k8s_client
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from kubernetes.client.exceptions import ApiException
 from pydantic import BaseModel, Field, field_validator
 
@@ -45,7 +45,7 @@ from app.core.constants import (
     SKILL_AUTOSYNC_LABEL,
 )
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
-from app.utils.naming import sanitize_k8s_name
+from app.utils.naming import K8S_NAME_MAX_LENGTH, K8S_NAME_PATTERN, sanitize_k8s_name
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/skills", tags=["skills"])
@@ -485,8 +485,8 @@ async def list_skills(
     dependencies=[Depends(require_roles(ROLE_VIEWER))],
 )
 async def get_skill(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> SkillDetail:
     """Get detailed information about a specific skill, including SKILL.md content."""
@@ -662,8 +662,8 @@ async def create_external_skill(
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
 async def increment_usage(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> Skill:
     """Increment the usage count for a skill."""
@@ -684,9 +684,9 @@ async def increment_usage(
     dependencies=[Depends(require_roles(ROLE_VIEWER))],
 )
 async def get_skill_file(
-    namespace: str,
-    name: str,
-    file_path: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    file_path: str = Path(...),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> SkillFile:
     """Get a specific file from a skill."""
@@ -727,8 +727,8 @@ async def get_skill_file(
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
 async def delete_skill(
-    namespace: str,
-    name: str,
+    namespace: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
+    name: str = Path(..., pattern=K8S_NAME_PATTERN, max_length=K8S_NAME_MAX_LENGTH),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> dict:
     """Delete a skill (ConfigMap) from the cluster."""
