@@ -157,29 +157,26 @@ export const HomePage: React.FC = () => {
     queryFn: () => namespaceService.list(true),
   });
 
-  // Fetch agents from first namespace (for demo stats)
-  const defaultNamespace = namespaces[0] || 'team1';
+  // Stats aggregate across all enabled namespaces; the backend does this in
+  // one cluster-wide query per resource kind (allNamespaces=true).
   const { data: agents = [], isLoading: agentsLoading } = useQuery({
-    queryKey: ['agents', defaultNamespace],
-    queryFn: () => agentService.list(defaultNamespace),
-    enabled: namespaces.length > 0,
+    queryKey: ['agents', { allNamespaces: true }],
+    queryFn: () => agentService.listAll(),
   });
 
-  // Fetch tools from first namespace
   const { data: tools = [], isLoading: toolsLoading } = useQuery({
-    queryKey: ['tools', defaultNamespace],
-    queryFn: () => toolService.list(defaultNamespace),
-    enabled: namespaces.length > 0,
+    queryKey: ['tools', { allNamespaces: true }],
+    queryFn: () => toolService.listAll(),
   });
 
   // Get feature flags
   const features = useFeatureFlags();
 
-  // Fetch skills from first namespace (only if skills feature is enabled)
+  // Skills only if the skills feature is enabled
   const { data: skills = [], isLoading: skillsLoading } = useQuery({
-    queryKey: ['skills', defaultNamespace],
-    queryFn: () => skillService.list(defaultNamespace),
-    enabled: namespaces.length > 0 && features.skills,
+    queryKey: ['skills', { allNamespaces: true }],
+    queryFn: () => skillService.listAll(),
+    enabled: features.skills,
   });
 
   const readyAgents = agents.filter((a) => a.status === 'Ready').length;

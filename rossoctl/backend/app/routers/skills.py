@@ -420,32 +420,60 @@ def _patch_annotations(kube: KubernetesService, namespace: str, name: str, annot
     dependencies=[Depends(require_roles(ROLE_VIEWER))],
 )
 async def list_skills(
-    namespace: str = Query(..., description="Namespace to list skills from"),
+    namespace: str = Query(
+        default="",
+        description="Namespace to list skills from (required unless allNamespaces=true)",
+    ),
+    all_namespaces: bool = Query(
+        default=False,
+        alias="allNamespaces",
+        description="If true, list skills in all rossoctl-enabled namespaces (ignores namespace)",
+    ),
     q: Optional[str] = Query(
         None, description="Search query (keyword match over name, description, content)"
     ),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> SkillListResponse:
-    """List skills (ConfigMaps labeled as skills) in a namespace.
+    """List skills (ConfigMaps labeled as skills) in a namespace, or in every
+    rossoctl-enabled namespace when allNamespaces=true.
 
     If `q` is provided, skills are filtered by keyword match against
     the name, description, category, and SKILL.md content.
     """
+    label_selector = f"{SKILL_TYPE_LABEL}={SKILL_TYPE_VALUE}"
+    scope: Optional[set] = None
     try:
-        cms = kube.core_api.list_namespaced_config_map(
-            namespace=namespace,
-            label_selector=f"{SKILL_TYPE_LABEL}={SKILL_TYPE_VALUE}",
-        )
+        if all_namespaces:
+            scope = set(kube.list_enabled_namespaces())
+            if not scope:
+                return SkillListResponse(items=[])
+            cms = kube.core_api.list_config_map_for_all_namespaces(
+                label_selector=label_selector,
+            )
+        else:
+            if not namespace or not namespace.strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail="namespace query parameter is required (or use allNamespaces=true)",
+                )
+            cms = kube.core_api.list_namespaced_config_map(
+                namespace=namespace,
+                label_selector=label_selector,
+            )
     except ApiException as exc:
         logger.error(
             "Failed to list skills in %s: %s",
-            namespace.replace("\n", "\\n").replace("\r", "\\r"),
+            "all namespaces"
+            if all_namespaces
+            else namespace.replace("\n", "\\n").replace("\r", "\\r"),
             exc,
         )
         raise HTTPException(status_code=exc.status or 500, detail=str(exc))
 
     skills_with_content = []
     for cm in cms.items:
+        if scope is not None and (cm.metadata is None or cm.metadata.namespace not in scope):
+            continue
         data = cm.data or {}
 
         # Try to get SKILL.md - check both original and sanitized keys

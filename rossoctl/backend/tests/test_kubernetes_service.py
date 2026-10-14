@@ -909,3 +909,46 @@ class TestLogInjectionSanitization:
         assert "team1injected" in message
         assert "team1\ninjected" not in message
         assert not any(line == "injected" for line in message.splitlines())
+
+
+class TestListAllNamespaces:
+    """namespace=None lists across all namespaces with a single API call (#1272)."""
+
+    def test_list_deployments_none_uses_cluster_wide_api(self, kubernetes_service):
+        kubernetes_service._apps_api.list_deployment_for_all_namespaces.return_value = MagicMock(
+            items=[]
+        )
+
+        kubernetes_service.list_deployments(None, "rossoctl.io/type=agent")
+
+        kubernetes_service._apps_api.list_deployment_for_all_namespaces.assert_called_once_with(
+            label_selector="rossoctl.io/type=agent"
+        )
+        kubernetes_service._apps_api.list_namespaced_deployment.assert_not_called()
+
+    def test_list_statefulsets_none_uses_cluster_wide_api(self, kubernetes_service):
+        kubernetes_service._apps_api.list_stateful_set_for_all_namespaces.return_value = MagicMock(
+            items=[]
+        )
+
+        kubernetes_service.list_statefulsets(None)
+
+        kubernetes_service._apps_api.list_stateful_set_for_all_namespaces.assert_called_once()
+        kubernetes_service._apps_api.list_namespaced_stateful_set.assert_not_called()
+
+    def test_list_jobs_none_uses_cluster_wide_api(self, kubernetes_service):
+        kubernetes_service._batch_api.list_job_for_all_namespaces.return_value = MagicMock(items=[])
+
+        kubernetes_service.list_jobs(None)
+
+        kubernetes_service._batch_api.list_job_for_all_namespaces.assert_called_once()
+        kubernetes_service._batch_api.list_namespaced_job.assert_not_called()
+
+    def test_list_custom_resources_none_uses_cluster_wide_api(self, kubernetes_service):
+        kubernetes_service._custom_api = MagicMock()
+        kubernetes_service._custom_api.list_cluster_custom_object.return_value = {"items": []}
+
+        kubernetes_service.list_custom_resources("g", "v1", None, "things")
+
+        kubernetes_service._custom_api.list_cluster_custom_object.assert_called_once()
+        kubernetes_service._custom_api.list_namespaced_custom_object.assert_not_called()

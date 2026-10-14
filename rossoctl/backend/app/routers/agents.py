@@ -56,9 +56,16 @@ from app.models.responses import (
     ResourceLabels,
 )
 from app.models.shipwright import ShipwrightBuildConfig
-from app.services.kubernetes import KubernetesService, get_kubernetes_service
+from app.services.kubernetes import (
+    KubernetesService,
+    filter_to_namespaces,
+    get_kubernetes_service,
+)
 from app.services.shipwright import extract_buildrun_info, get_latest_buildrun
-from app.services.shipwright_builds import collect_rossoctl_shipwright_builds
+from app.services.shipwright_builds import (
+    collect_rossoctl_shipwright_builds,
+    collect_rossoctl_shipwright_builds_in_scope,
+)
 from app.utils.routes import route_exists, sanitize_log
 
 # --- Re-exports -------------------------------------------------------------
@@ -181,38 +188,59 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 )
 async def list_agents(
     namespace: str = Query(default="default", description="Kubernetes namespace"),
+    all_namespaces: bool = Query(
+        default=False,
+        alias="allNamespaces",
+        description="If true, list agents in all rossoctl-enabled namespaces (ignores namespace)",
+    ),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> AgentListResponse:
     """
-    List all agents in the specified namespace.
+    List all agents in the specified namespace, or in every rossoctl-enabled
+    namespace when allNamespaces=true.
 
     Returns agents deployed as Deployments, StatefulSets, Jobs, or Sandboxes with the
     rossoctl.io/type=agent label.
     During migration period, also includes legacy Agent CRDs that haven't been
     migrated yet (controlled by enable_legacy_agent_crd setting).
+
+    allNamespaces uses one cluster-wide list call per resource kind instead of
+    one call per namespace, then filters to enabled namespaces.
     """
     try:
         label_selector = f"{ROSSOCTL_TYPE_LABEL}={RESOURCE_TYPE_AGENT}"
 
+        # list_ns=None makes the kube helpers list across all namespaces;
+        # scope then restricts results to rossoctl-enabled namespaces.
+        scope: set[str] | None = None
+        list_ns: str | None = namespace
+        if all_namespaces:
+            scope = set(kube.list_enabled_namespaces())
+            if not scope:
+                return AgentListResponse(items=[])
+            list_ns = None
+
         agents = []
-        agent_names = set()
+        # Names are unique per namespace, so dedupe on (namespace, name).
+        agent_names: set[tuple[str, str]] = set()
 
         # Query Deployments with agent label
-        deployments = kube.list_deployments(
-            namespace=namespace,
-            label_selector=label_selector,
+        deployments = filter_to_namespaces(
+            kube.list_deployments(namespace=list_ns, label_selector=label_selector),
+            scope,
         )
 
         for deployment in deployments:
             metadata = deployment.get("metadata", {})
             name = metadata.get("name", "")
-            agent_names.add(name)
+            ns = metadata.get("namespace", namespace)
+            agent_names.add((ns, name))
             labels = metadata.get("labels", {})
 
             agents.append(
                 AgentSummary(
                     name=name,
-                    namespace=metadata.get("namespace", namespace),
+                    namespace=ns,
                     description=_get_deployment_description(deployment),
                     status=_is_deployment_ready(deployment),
                     labels=_extract_labels(labels),
@@ -224,28 +252,29 @@ async def list_agents(
             )
 
         # Query StatefulSets with agent label
-        statefulsets = kube.list_statefulsets(
-            namespace=namespace,
-            label_selector=label_selector,
+        statefulsets = filter_to_namespaces(
+            kube.list_statefulsets(namespace=list_ns, label_selector=label_selector),
+            scope,
         )
 
         for statefulset in statefulsets:
             metadata = statefulset.get("metadata", {})
             name = metadata.get("name", "")
-            if name in agent_names:
+            ns = metadata.get("namespace", namespace)
+            if (ns, name) in agent_names:
                 logger.warning(
                     f"Duplicate agent name '{name}' detected: StatefulSet skipped because "
-                    f"a Deployment with the same name already exists in namespace '{namespace}'. "
+                    f"a Deployment with the same name already exists in namespace '{ns}'. "
                     "This may indicate a configuration issue."
                 )
                 continue
-            agent_names.add(name)
+            agent_names.add((ns, name))
             labels = metadata.get("labels", {})
 
             agents.append(
                 AgentSummary(
                     name=name,
-                    namespace=metadata.get("namespace", namespace),
+                    namespace=ns,
                     description=_get_statefulset_description(statefulset),
                     status=_is_statefulset_ready(statefulset),
                     labels=_extract_labels(labels),
@@ -257,28 +286,29 @@ async def list_agents(
             )
 
         # Query Jobs with agent label
-        jobs = kube.list_jobs(
-            namespace=namespace,
-            label_selector=label_selector,
+        jobs = filter_to_namespaces(
+            kube.list_jobs(namespace=list_ns, label_selector=label_selector),
+            scope,
         )
 
         for job in jobs:
             metadata = job.get("metadata", {})
             name = metadata.get("name", "")
-            if name in agent_names:
+            ns = metadata.get("namespace", namespace)
+            if (ns, name) in agent_names:
                 logger.warning(
                     f"Duplicate agent name '{name}' detected: Job skipped because "
-                    f"a Deployment or StatefulSet with the same name already exists in namespace '{namespace}'. "
+                    f"a Deployment or StatefulSet with the same name already exists in namespace '{ns}'. "
                     "This may indicate a configuration issue."
                 )
                 continue
-            agent_names.add(name)
+            agent_names.add((ns, name))
             labels = metadata.get("labels", {})
 
             agents.append(
                 AgentSummary(
                     name=name,
-                    namespace=metadata.get("namespace", namespace),
+                    namespace=ns,
                     description=_get_job_description(job),
                     status=_get_job_status(job),
                     labels=_extract_labels(labels),
@@ -292,27 +322,28 @@ async def list_agents(
         # Query Sandboxes with agent label (feature-flagged)
         if settings.rossoctl_feature_flag_agent_sandbox:
             try:
-                sandboxes = kube.list_sandboxes(
-                    namespace=namespace,
-                    label_selector=label_selector,
+                sandboxes = filter_to_namespaces(
+                    kube.list_sandboxes(namespace=list_ns, label_selector=label_selector),
+                    scope,
                 )
                 for sandbox in sandboxes:
                     metadata = sandbox.get("metadata", {})
                     name = metadata.get("name", "")
-                    if name in agent_names:
+                    ns = metadata.get("namespace", namespace)
+                    if (ns, name) in agent_names:
                         logger.warning(
                             f"Duplicate agent name '{name}' detected: Sandbox skipped "
                             f"because a workload with the same name already exists in "
-                            f"namespace '{namespace}'. This may indicate a configuration issue."
+                            f"namespace '{ns}'. This may indicate a configuration issue."
                         )
                         continue
-                    agent_names.add(name)
+                    agent_names.add((ns, name))
                     labels = metadata.get("labels", {})
 
                     agents.append(
                         AgentSummary(
                             name=name,
-                            namespace=metadata.get("namespace", namespace),
+                            namespace=ns,
                             description=_get_sandbox_description(sandbox),
                             status=_is_sandbox_ready(sandbox),
                             labels=_extract_labels(labels),
@@ -334,17 +365,21 @@ async def list_agents(
         # Backward compatibility: Also list legacy Agent CRDs (during migration period)
         if settings.enable_legacy_agent_crd:
             try:
-                agent_crds = kube.list_custom_resources(
-                    group=CRD_GROUP,
-                    version=CRD_VERSION,
-                    namespace=namespace,
-                    plural=AGENTS_PLURAL,
+                agent_crds = filter_to_namespaces(
+                    kube.list_custom_resources(
+                        group=CRD_GROUP,
+                        version=CRD_VERSION,
+                        namespace=list_ns,
+                        plural=AGENTS_PLURAL,
+                    ),
+                    scope,
                 )
                 for agent_crd in agent_crds:
                     metadata = agent_crd.get("metadata", {})
                     name = metadata.get("name", "")
+                    ns = metadata.get("namespace", namespace)
                     # Skip if already listed via workload (already migrated)
-                    if name in agent_names:
+                    if (ns, name) in agent_names:
                         continue
 
                     labels = metadata.get("labels", {})
@@ -366,7 +401,7 @@ async def list_agents(
                     agents.append(
                         AgentSummary(
                             name=name,
-                            namespace=metadata.get("namespace", namespace),
+                            namespace=ns,
                             description=description,
                             status=agent_status,
                             labels=_extract_labels(labels),
@@ -388,13 +423,24 @@ async def list_agents(
         # invisible here while building or after a failure. Guarded so a
         # build-listing failure never breaks the core agent list.
         try:
-            builds = collect_rossoctl_shipwright_builds(
-                kube, [namespace], RESOURCE_TYPE_AGENT, logger
-            )
+            if scope is not None:
+                builds = collect_rossoctl_shipwright_builds_in_scope(
+                    kube,
+                    scope,
+                    RESOURCE_TYPE_AGENT,
+                    logger,
+                )
+            else:
+                builds = collect_rossoctl_shipwright_builds(
+                    kube,
+                    [namespace],
+                    RESOURCE_TYPE_AGENT,
+                    logger,
+                )
             for build in builds:
                 # Workload already exists (build Succeeded + finalized, or a
                 # name collision) -> already listed above; skip to avoid dupes.
-                if build.name in agent_names:
+                if (build.namespace, build.name) in agent_names:
                     continue
 
                 try:
@@ -437,7 +483,7 @@ async def list_agents(
                         createdAt=build.creationTimestamp,
                     )
                 )
-                agent_names.add(build.name)
+                agent_names.add((build.namespace, build.name))
         except ApiException:
             logger.warning("Failed to list Shipwright builds for agents", exc_info=True)
 

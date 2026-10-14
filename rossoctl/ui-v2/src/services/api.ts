@@ -179,6 +179,12 @@ export const agentService = {
     return response.items;
   },
 
+  /** List agents across all rossoctl-enabled namespaces in a single request. */
+  async listAll(): Promise<Agent[]> {
+    const response = await apiFetch<ApiListResponse<Agent>>('/agents?allNamespaces=true');
+    return response.items;
+  },
+
   async get(namespace: string, name: string): Promise<AgentDetail> {
     return apiFetch<AgentDetail>(
       `/agents/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`
@@ -488,6 +494,12 @@ export const toolService = {
     const response = await apiFetch<ApiListResponse<Tool>>(
       `/tools?namespace=${encodeURIComponent(namespace)}`
     );
+    return response.items;
+  },
+
+  /** List tools across all rossoctl-enabled namespaces in a single request. */
+  async listAll(): Promise<Tool[]> {
+    const response = await apiFetch<ApiListResponse<Tool>>('/tools?allNamespaces=true');
     return response.items;
   },
 
@@ -1265,6 +1277,12 @@ export const skillService = {
       params.append('q', query);
     }
     const response = await apiFetch<ApiListResponse<Skill>>(`/skills?${params.toString()}`);
+    return response.items;
+  },
+
+  /** List skills across all rossoctl-enabled namespaces in a single request. */
+  async listAll(): Promise<Skill[]> {
+    const response = await apiFetch<ApiListResponse<Skill>>('/skills?allNamespaces=true');
     return response.items;
   },
 

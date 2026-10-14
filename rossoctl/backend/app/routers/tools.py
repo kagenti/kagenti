@@ -71,10 +71,15 @@ from app.models.shipwright import (
     ResourceConfigFromBuild,
     ShipwrightBuildListResponse,
 )
-from app.services.kubernetes import KubernetesService, get_kubernetes_service
+from app.services.kubernetes import (
+    KubernetesService,
+    filter_to_namespaces,
+    get_kubernetes_service,
+)
 from app.services.shipwright_builds import (
     cleanup_existing_build,
     collect_rossoctl_shipwright_builds,
+    collect_rossoctl_shipwright_builds_in_scope,
 )
 from app.services.shipwright import (
     build_shipwright_build_manifest,
@@ -744,10 +749,16 @@ async def list_tool_shipwright_builds(
 @router.get("", response_model=ToolListResponse, dependencies=[Depends(require_roles(ROLE_VIEWER))])
 async def list_tools(
     namespace: str = Query(default="default", description="Kubernetes namespace"),
+    all_namespaces: bool = Query(
+        default=False,
+        alias="allNamespaces",
+        description="If true, list tools in all rossoctl-enabled namespaces (ignores namespace)",
+    ),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> ToolListResponse:
     """
-    List all MCP tools in the specified namespace.
+    List all MCP tools in the specified namespace, or in every rossoctl-enabled
+    namespace when allNamespaces=true.
 
     Returns tools that have the rossoctl.io/type=tool label.
     Queries both Deployments and StatefulSets.
@@ -755,22 +766,37 @@ async def list_tools(
     """
     try:
         label_selector = f"{ROSSOCTL_TYPE_LABEL}={RESOURCE_TYPE_TOOL}"
+
+        # list_ns=None makes the kube helpers list across all namespaces;
+        # scope then restricts results to rossoctl-enabled namespaces.
+        scope: Optional[set] = None
+        list_ns: Optional[str] = namespace
+        if all_namespaces:
+            scope = set(kube.list_enabled_namespaces())
+            if not scope:
+                return ToolListResponse(items=[])
+            list_ns = None
+
         tools = []
-        existing_names = set()  # Track names to avoid duplicates with legacy CRDs
+        # Track (namespace, name) to avoid duplicates with in-progress builds
+        existing_names: set = set()
 
         # Query Deployments with tool label
         try:
-            deployments = kube.list_deployments(namespace, label_selector)
+            deployments = filter_to_namespaces(
+                kube.list_deployments(list_ns, label_selector), scope
+            )
             for deploy in deployments:
                 metadata = deploy.get("metadata", {})
                 annotations = metadata.get("annotations", {})
                 name = metadata.get("name", "")
-                existing_names.add(name)
+                ns = metadata.get("namespace", namespace)
+                existing_names.add((ns, name))
 
                 tools.append(
                     ToolSummary(
                         name=name,
-                        namespace=metadata.get("namespace", namespace),
+                        namespace=ns,
                         description=annotations.get(ROSSOCTL_DESCRIPTION_ANNOTATION, ""),
                         status=_get_workload_status(deploy),
                         labels=_extract_labels(metadata.get("labels", {})),
@@ -786,17 +812,20 @@ async def list_tools(
 
         # Query StatefulSets with tool label
         try:
-            statefulsets = kube.list_statefulsets(namespace, label_selector)
+            statefulsets = filter_to_namespaces(
+                kube.list_statefulsets(list_ns, label_selector), scope
+            )
             for sts in statefulsets:
                 metadata = sts.get("metadata", {})
                 annotations = metadata.get("annotations", {})
                 name = metadata.get("name", "")
-                existing_names.add(name)
+                ns = metadata.get("namespace", namespace)
+                existing_names.add((ns, name))
 
                 tools.append(
                     ToolSummary(
                         name=name,
-                        namespace=metadata.get("namespace", namespace),
+                        namespace=ns,
                         description=annotations.get(ROSSOCTL_DESCRIPTION_ANNOTATION, ""),
                         status=_get_workload_status(sts),
                         labels=_extract_labels(metadata.get("labels", {})),
@@ -816,13 +845,24 @@ async def list_tools(
         # invisible here while building or after a failure. Guarded so a
         # build-listing failure never breaks the core tool list.
         try:
-            builds = collect_rossoctl_shipwright_builds(
-                kube, [namespace], RESOURCE_TYPE_TOOL, logger
-            )
+            if scope is not None:
+                builds = collect_rossoctl_shipwright_builds_in_scope(
+                    kube,
+                    scope,
+                    RESOURCE_TYPE_TOOL,
+                    logger,
+                )
+            else:
+                builds = collect_rossoctl_shipwright_builds(
+                    kube,
+                    [namespace],
+                    RESOURCE_TYPE_TOOL,
+                    logger,
+                )
             for build in builds:
                 # Workload already exists (build Succeeded + finalized, or a
                 # name collision) -> already listed above; skip to avoid dupes.
-                if build.name in existing_names:
+                if (build.namespace, build.name) in existing_names:
                     continue
 
                 # Succeeded builds either already have a workload (listed above)
@@ -846,7 +886,7 @@ async def list_tools(
                         createdAt=build.creationTimestamp,
                     )
                 )
-                existing_names.add(build.name)
+                existing_names.add((build.namespace, build.name))
         except ApiException:
             logger.warning("Failed to list Shipwright builds for tools", exc_info=True)
 

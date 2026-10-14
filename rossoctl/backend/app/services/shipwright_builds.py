@@ -6,7 +6,7 @@ Helpers for listing Shipwright Build CRs owned by Rossoctl (agents/tools).
 """
 
 import logging
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from kubernetes.client import ApiException
 
@@ -188,4 +188,64 @@ def collect_rossoctl_shipwright_builds(
             raise
         for b in builds:
             items.append(shipwright_build_crd_to_list_item(b, ns))
+    return sort_build_list_items(items)
+
+
+def collect_rossoctl_shipwright_builds_in_scope(
+    kube: KubernetesService,
+    scope: Set[str],
+    builds_for: str,
+    logger: Optional[logging.Logger] = None,
+) -> List[ShipwrightBuildListItem]:
+    """
+    List Shipwright Build CRs across the whole cluster in a single call, filtered by
+    rossoctl.io/type label and then to the given namespace scope.
+
+    Unlike ``collect_rossoctl_shipwright_builds``, this makes ONE cluster-wide
+    ``list_cluster_custom_object`` call instead of one ``list_namespaced_custom_object``
+    call per namespace, which is the appropriate shape for allNamespaces=true callers
+    that already resolved ``scope`` via ``list_enabled_namespaces()``.
+
+    Args:
+        kube: Kubernetes API service.
+        scope: Rossoctl-enabled namespaces to keep results from.
+        builds_for: ``RESOURCE_TYPE_AGENT``, ``RESOURCE_TYPE_TOOL``, or
+            ``SHIPWRIGHT_BUILDS_LIST_SCOPE_ALL``.
+        logger: Optional logger for permission-skip warnings.
+
+    Returns:
+        Sorted list of build summaries, restricted to ``scope``.
+
+    Raises:
+        ApiException: On unexpected API errors (403/404 are swallowed).
+    """
+    log = logger or logging.getLogger(__name__)
+    label_selector = label_selector_for_rossoctl_builds(builds_for)
+    items: List[ShipwrightBuildListItem] = []
+    try:
+        # Call CustomObjectsApi directly so user-derived namespace is not logged by
+        # KubernetesService.list_custom_resources (CodeQL py/log-injection).
+        response = kube.custom_api.list_cluster_custom_object(
+            group=SHIPWRIGHT_CRD_GROUP,
+            version=SHIPWRIGHT_CRD_VERSION,
+            plural=SHIPWRIGHT_BUILDS_PLURAL,
+            label_selector=label_selector,
+        )
+        builds = response.get("items", [])
+    except ApiException as e:
+        if e.status == 403:
+            # Log only a constant message: namespace / API reason are user- or cluster-derived
+            # and trigger CodeQL py/log-injection under security-extended (.github/workflows/security-scans.yaml).
+            log.warning(
+                "Skipping cluster-wide Shipwright build list: Kubernetes API returned Forbidden (403)"
+            )
+            return []
+        if e.status == 404:
+            return []
+        raise
+    for b in builds:
+        ns = (b.get("metadata", {}) or {}).get("namespace")
+        if ns not in scope:
+            continue
+        items.append(shipwright_build_crd_to_list_item(b, ns))
     return sort_build_list_items(items)

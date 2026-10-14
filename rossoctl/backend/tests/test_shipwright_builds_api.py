@@ -484,3 +484,95 @@ class TestCollectShipwrightBuildsLogging:
         assert "403" in msg
         assert "team" not in msg
         assert "forbidden" not in msg
+
+
+class TestCollectShipwrightBuildsInScope:
+    def test_filters_to_scope_and_maps_own_namespace(self):
+        from app.services.shipwright_builds import collect_rossoctl_shipwright_builds_in_scope
+
+        kube = MagicMock()
+        kube.custom_api.list_cluster_custom_object.return_value = {
+            "items": [
+                _sample_build("b1", "team1", "agent"),
+                _sample_build("b2", "team2", "agent"),
+                _sample_build("b3", "not-enabled", "agent"),
+            ]
+        }
+
+        result = collect_rossoctl_shipwright_builds_in_scope(
+            kube, {"team1", "team2"}, RESOURCE_TYPE_AGENT
+        )
+
+        assert [(b.namespace, b.name) for b in result] == [
+            ("team1", "b1"),
+            ("team2", "b2"),
+        ]
+        kube.custom_api.list_cluster_custom_object.assert_called_once()
+
+    def test_403_warning_is_constant_only(self):
+        from kubernetes.client import ApiException
+
+        from app.services.shipwright_builds import collect_rossoctl_shipwright_builds_in_scope
+
+        kube = MagicMock()
+        log_mock = MagicMock()
+        kube.custom_api.list_cluster_custom_object.side_effect = ApiException(
+            status=403, reason="forbidden\nfake-log-line"
+        )
+
+        result = collect_rossoctl_shipwright_builds_in_scope(
+            kube, {"team\n1"}, RESOURCE_TYPE_AGENT, log_mock
+        )
+
+        assert result == []
+        log_mock.warning.assert_called_once()
+        (msg,) = log_mock.warning.call_args[0]
+        assert "\n" not in msg
+        assert "403" in msg
+        assert "team" not in msg
+        assert "forbidden" not in msg
+
+    def test_404_returns_empty_list(self):
+        from kubernetes.client import ApiException
+
+        from app.services.shipwright_builds import collect_rossoctl_shipwright_builds_in_scope
+
+        kube = MagicMock()
+        kube.custom_api.list_cluster_custom_object.side_effect = ApiException(status=404)
+
+        result = collect_rossoctl_shipwright_builds_in_scope(kube, {"team1"}, RESOURCE_TYPE_AGENT)
+
+        assert result == []
+
+    def test_other_status_reraises(self):
+        from kubernetes.client import ApiException
+
+        from app.services.shipwright_builds import collect_rossoctl_shipwright_builds_in_scope
+
+        kube = MagicMock()
+        kube.custom_api.list_cluster_custom_object.side_effect = ApiException(status=500)
+
+        with pytest.raises(ApiException):
+            collect_rossoctl_shipwright_builds_in_scope(kube, {"team1"}, RESOURCE_TYPE_AGENT)
+
+    def test_result_is_sorted_by_namespace_and_name(self):
+        from app.services.shipwright_builds import collect_rossoctl_shipwright_builds_in_scope
+
+        kube = MagicMock()
+        kube.custom_api.list_cluster_custom_object.return_value = {
+            "items": [
+                _sample_build("b2", "team2", "agent"),
+                _sample_build("b1", "team1", "agent"),
+                _sample_build("a1", "team2", "agent"),
+            ]
+        }
+
+        result = collect_rossoctl_shipwright_builds_in_scope(
+            kube, {"team1", "team2"}, RESOURCE_TYPE_AGENT
+        )
+
+        assert [(b.namespace, b.name) for b in result] == [
+            ("team1", "b1"),
+            ("team2", "a1"),
+            ("team2", "b2"),
+        ]

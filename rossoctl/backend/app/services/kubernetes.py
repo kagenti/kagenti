@@ -9,7 +9,7 @@ Kubernetes service for API client management and common operations.
 import logging
 import os
 from functools import lru_cache
-from typing import List, Optional
+from typing import List, Optional, Set
 
 import kubernetes.client
 import kubernetes.config
@@ -34,6 +34,17 @@ def _sanitize(value: str) -> str:
     plus strips other control characters.
     """
     return value.replace("\n", "").replace("\r", "").replace("\x00", "")
+
+
+def filter_to_namespaces(items: List[dict], namespaces: Optional[Set[str]]) -> List[dict]:
+    """Keep only resources whose metadata.namespace is in ``namespaces``.
+
+    Used after a cluster-wide list (namespace=None) to restrict results to
+    rossoctl-enabled namespaces. ``None`` means no filtering.
+    """
+    if namespaces is None:
+        return items
+    return [i for i in items if (i.get("metadata") or {}).get("namespace") in namespaces]
 
 
 class KubernetesService:
@@ -153,13 +164,25 @@ class KubernetesService:
         self,
         group: str,
         version: str,
-        namespace: str,
+        namespace: Optional[str],
         plural: str,
         label_selector: Optional[str] = None,
     ) -> List[dict]:
-        """List custom resources in a namespace."""
-        namespace = _sanitize(namespace)
+        """List custom resources in a namespace (all namespaces if namespace is None)."""
         plural = _sanitize(plural)
+        if namespace is None:
+            try:
+                response = self.custom_api.list_cluster_custom_object(
+                    group=group,
+                    version=version,
+                    plural=plural,
+                    label_selector=label_selector,
+                )
+                return response.get("items", [])
+            except ApiException as e:
+                logger.error(f"Error listing {plural} in all namespaces: {e}")
+                raise
+        namespace = _sanitize(namespace)
         try:
             response = self.custom_api.list_namespaced_custom_object(
                 group=group,
@@ -458,8 +481,19 @@ class KubernetesService:
             logger.error(f"Error getting Deployment {name} in {namespace}: {e}")
             raise
 
-    def list_deployments(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
-        """List Deployments in a namespace with optional label selector."""
+    def list_deployments(
+        self, namespace: Optional[str], label_selector: Optional[str] = None
+    ) -> List[dict]:
+        """List Deployments in a namespace (all namespaces if None) with optional label selector."""
+        if namespace is None:
+            try:
+                result = self.apps_api.list_deployment_for_all_namespaces(
+                    label_selector=label_selector,
+                )
+                return [item.to_dict() for item in result.items]
+            except ApiException as e:
+                logger.error(f"Error listing Deployments in all namespaces: {e}")
+                raise
         namespace = _sanitize(namespace)
         try:
             result = self.apps_api.list_namespaced_deployment(
@@ -679,8 +713,19 @@ class KubernetesService:
             logger.error(f"Error getting StatefulSet {name} in {namespace}: {e}")
             raise
 
-    def list_statefulsets(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
-        """List StatefulSets in a namespace with optional label selector."""
+    def list_statefulsets(
+        self, namespace: Optional[str], label_selector: Optional[str] = None
+    ) -> List[dict]:
+        """List StatefulSets in a namespace (all namespaces if None) with optional label selector."""
+        if namespace is None:
+            try:
+                result = self.apps_api.list_stateful_set_for_all_namespaces(
+                    label_selector=label_selector,
+                )
+                return [item.to_dict() for item in result.items]
+            except ApiException as e:
+                logger.error(f"Error listing StatefulSets in all namespaces: {e}")
+                raise
         namespace = _sanitize(namespace)
         try:
             result = self.apps_api.list_namespaced_stateful_set(
@@ -791,8 +836,19 @@ class KubernetesService:
             logger.error(f"Error getting Job {name} in {namespace}: {e}")
             raise
 
-    def list_jobs(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
-        """List Jobs in a namespace with optional label selector."""
+    def list_jobs(
+        self, namespace: Optional[str], label_selector: Optional[str] = None
+    ) -> List[dict]:
+        """List Jobs in a namespace (all namespaces if None) with optional label selector."""
+        if namespace is None:
+            try:
+                result = self.batch_api.list_job_for_all_namespaces(
+                    label_selector=label_selector,
+                )
+                return [item.to_dict() for item in result.items]
+            except ApiException as e:
+                logger.error(f"Error listing Jobs in all namespaces: {e}")
+                raise
         namespace = _sanitize(namespace)
         try:
             result = self.batch_api.list_namespaced_job(
@@ -843,8 +899,10 @@ class KubernetesService:
             name,
         )
 
-    def list_sandboxes(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
-        """List Sandbox custom resources in a namespace."""
+    def list_sandboxes(
+        self, namespace: Optional[str], label_selector: Optional[str] = None
+    ) -> List[dict]:
+        """List Sandbox custom resources in a namespace (all namespaces if None)."""
         return self.list_custom_resources(
             AGENT_SANDBOX_CRD_GROUP,
             AGENT_SANDBOX_CRD_VERSION,
