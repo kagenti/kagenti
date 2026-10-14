@@ -17,7 +17,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from kubernetes.client import ApiException
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 from pydantic import BaseModel, field_validator
 
 from app.core.auth import ROLE_OPERATOR, ROLE_VIEWER, require_roles
@@ -2398,7 +2398,7 @@ def _get_tool_url(name: str, namespace: str, kube: KubernetesService) -> str:
 async def _probe_mcp_reachability(mcp_endpoint: str, tool_url: str) -> None:
     """Raise HTTPException(502/504) if the MCP server is unreachable.
 
-    The MCP SDK uses anyio task groups inside streamablehttp_client; on
+    The MCP SDK uses anyio task groups inside streamable_http_client; on
     Python 3.14, connection failures there surface as
     asyncio.CancelledError ("Cancelled via cancel scope") which escapes
     the existing httpx-based except clauses and yields HTTP 500 instead
@@ -2459,8 +2459,8 @@ async def connect_to_tool(
     try:
         async with exit_stack:
             # Connect using MCP streamable-http transport
-            streams_context = streamablehttp_client(url=mcp_endpoint, headers={})
-            read_stream, write_stream, _ = await streams_context.__aenter__()
+            streams_context = streamable_http_client(url=mcp_endpoint)
+            read_stream, write_stream = await streams_context.__aenter__()
 
             # Create and initialize MCP session
             session_context = ClientSession(read_stream, write_stream)
@@ -2539,8 +2539,8 @@ async def invoke_tool(
     try:
         async with exit_stack:
             # Connect using MCP streamable-http transport
-            streams_context = streamablehttp_client(url=mcp_endpoint, headers={})
-            read_stream, write_stream, _ = await streams_context.__aenter__()
+            streams_context = streamable_http_client(url=mcp_endpoint)
+            read_stream, write_stream = await streams_context.__aenter__()
 
             # Create and initialize MCP session
             session_context = ClientSession(read_stream, write_stream)
