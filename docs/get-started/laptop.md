@@ -35,8 +35,8 @@ The script asks for your permission before it changes the settings of Claude Cod
 RossoCortex as a background service. The service restarts after a failure and after you sign in again.
 
 :::note
-The address of the script is on the `main` branch, but the script then runs the copy from the most
-recent release, so the command does not run unreleased code. To pin or override that, use `--ref`:
+The script at this address runs the copy from the most recent release, so the command does not run
+unreleased code. To pin or override that, use `--ref`:
 `--ref=vX.Y.Z` selects a release and `--ref=main` installs the unreleased tip. See
 [Installing an unreleased build](https://github.com/rossoctl/cortex/blob/main/CONTRIBUTING.md#installing-an-unreleased-build).
 :::
