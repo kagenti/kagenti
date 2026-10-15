@@ -1,7 +1,6 @@
 ---
 title: AI-based access control
-sidebar_label: AI-based access control
-description: Applies organizational access control governance policy to each onboarded agent and tool.
+description: Applies organizational access control policy to a running agentic systems.
 sidebar_position: 9
 ---
 
@@ -18,7 +17,7 @@ a test cluster.
 
 ## The problem that it solves
 
-An agentic system does not make one call. Follow one request from a user:
+An agentic system makes many calls. Follow one request from a user:
 
 1. A user invokes an agent.
 2. The agent invokes a tool.
@@ -27,14 +26,14 @@ An agentic system does not make one call. Follow one request from a user:
 5. The second agent invokes a second tool.
 
 Each hop is a separate decision point to allow or to deny based on policy intent. Delegation makes
-each agent two of those points, not one: who may call the agent, and what the agent may do downstream
+each agent two of those points: who may call the agent, and what the agent may do downstream
 for that caller. See [Delegation](../core/identity.md#delegation).
 
 The number of possible execution paths grows past the point where a person can list them. Your policy document also changes. Nobody keeps the two in agreement by hand.
 
 Four problems follow:
 
-- **The two forms of the policy are far apart.** A person writes a sentence. A gate evaluates Rego.
+- **The natural language form of the policy is far apart from the translated access rules.** A person writes a sentence. A gate evaluates Rego.
   A person performs that translation today, for each role and for each hop.
 - **The rules fall behind the platform.** A new service or a new role arrives with no matching rule,
   because no mechanism applies one. The gap opens when you deploy the workload.
