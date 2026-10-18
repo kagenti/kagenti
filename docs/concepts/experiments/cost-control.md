@@ -20,7 +20,7 @@ so the risk is much lower.
 You cannot reduce a cost that you did not measure. On your computer, one command is sufficient:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rossoctl/cortex/main/scripts/install.sh \
+curl -fsSL https://www.rossoctl.dev/cortex/install.sh \
   | sh -s -- --claude-code
 ```
 
