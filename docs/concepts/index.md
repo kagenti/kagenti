@@ -48,7 +48,7 @@ repository as core or experimental.
 | Tool call validation | Alpha | Denies a tool call that has invented arguments. | [Tool call validation](experiments/tool-validation.md) |
 | Context compaction | Alpha | Makes tool output smaller before the model reads it. | [Context compaction](experiments/context-compaction.md) |
 | Cost control | Alpha | Removes unused tool definitions and limits spending. | [Cost control](experiments/cost-control.md) |
-| AI-based access control | Alpha | Applies organizational access control governance policy to each onboarded agent and tool. | [AI-based access control](experiments/aiac.md) |
+| AI-based access control | Alpha | Applies organizational access control policy to a running agentic system. | [AI-based access control](experiments/aiac.md) |
 
 Two more experiments exist in the platform but have no page on this site yet. **Failure recovery**
 returns a stopped agent to a known state. **Data-flow analysis** records the source of the data that

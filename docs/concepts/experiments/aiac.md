@@ -1,11 +1,10 @@
 ---
 title: AI-based access control
-description: Applies organizational access control policy to a running agentic systems.
+description: Applies organizational access control policy to a running agentic system.
 sidebar_position: 9
 ---
 
-An access control policy in agentic systems states who may call what. You write that policy in plain language, for a person to read. A running agentic system needs that policy translated as rules that a machine evaluates on each call.
-AI-based access control (AIAC) performs the translation. It generates the Rego rules that OPA evaluates,
+An access control policy in agentic systems states who may call what. You write that policy in plain language, for a person to read. A running agentic system needs that policy translated as access rules that a machine evaluates on each call. AI-based access control (AIAC) performs the translation. It generates the Rego rules that OPA evaluates,
 and it repeats the work each time an agent or a tool is onboarded.
 
 :::warning Alpha
@@ -83,20 +82,17 @@ every workload.
 | Target side (default) | The inbound gate of the tool | Holds the check of each tool call |
 | Agent side | The outbound gate of the calling agent | Allows each call |
 
-Under both sides, the inbound gate of an agent checks who may call the agent. The other packages allow
-each call. AIAC still writes them, because AIAC changes the global policy of the bundle service: a pod
-without a resource gets a deny on each request.
+Under both sides, the inbound gate of an agent checks who may call the agent.
 
-Under target side, a tool call must pass two checks. The role of the user must grant the tool. The roles
-of the calling agent must also reach the tool. A deny from either check stops the call.
+Under target side, a tool call must pass two checks. The role of the user must grant the tool (according to the policy). The roles of the calling agent must also grant the tool (also according to the policy). A deny from either check stops the call.
 
 ### What starts a translation
 
 | Event | What AIAC does |
 | --- | --- |
-| Keycloak (IdP) registers a client for an agent or a tool | Onboards the agent or the tool. Computes its rules, inbound and outbound. |
-| A user or an agent gets or loses a realm role | Writes again each resource that uses the role, with the current holders. No model runs. |
-| An operator offboards a workload, with `POST /apply/offboard/{clientId}` | Deletes the rules and the resource of the workload. The global policy then denies its pod. |
+| An operator registers a Keycloak client for an agent or a tool | Onboards the agent or the tool. Computes its rules, inbound and outbound. |
+| An operator offboards a workload | Deletes the rules and the resource of the client. The global policy then denies its pod. |
+| A user or an agent gets or loses a realm role | Writes again each resource that uses the role, with the current holders. |
 
 For an onboarding, the agent performs these steps:
 
@@ -106,9 +102,7 @@ For an onboarding, the agent performs these steps:
    stops with the status 409, and nothing changes.
 3. It reads the roles, the agent and tool ids and the scopes from Keycloak, with the description of
    each role. It also reads the capabilities of the agent or the tool.
-4. It reads the policy file. It reads the whole policy, not the part that applies to the event. A rule
-   of least privilege and a baseline policy go in front of your policy. The baseline only grants access,
-   and it never denies.
+4. It reads the whole policy, not only the part that applies to the event.
 5. A model proposes the rules. A second pass of the model audits them against the policy.
 6. The computation engine merges the proposed rules into the policy model that the store holds.
 7. The policy writer renders the merged model as Rego into the `AuthorizationPolicy` resources.
