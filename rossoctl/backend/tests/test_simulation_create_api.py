@@ -34,7 +34,7 @@ def test_create_returns_202_and_provisions_workload():
     kube = _kube()
     with patch("app.core.auth.settings") as auth, patch("app.routers.simulation.settings") as s:
         auth.enable_auth = False
-        s.simulation_harness_image = "ghcr.io/rossoctl/simulation-harness:latest"
+        s.simulation_harness_image = "ghcr.io/skillberry-ai/simulation-harness:latest"
         r = _client(kube).post(
             "/simulation/tools",
             json={"namespace": "team1", "openapiSpec": VALID_SPEC},
@@ -63,7 +63,7 @@ def test_create_wires_image_pull_secret_into_statefulset():
     kube = _kube()
     with patch("app.core.auth.settings") as auth, patch("app.routers.simulation.settings") as s:
         auth.enable_auth = False
-        s.simulation_harness_image = "ghcr.io/rossoctl/simulation-harness:latest"
+        s.simulation_harness_image = "ghcr.io/skillberry-ai/simulation-harness:latest"
         s.simulation_image_pull_secret = "ghcr-secret"
         r = _client(kube).post(
             "/simulation/tools",
@@ -78,7 +78,7 @@ def test_create_omits_image_pull_secret_when_setting_empty():
     kube = _kube()
     with patch("app.core.auth.settings") as auth, patch("app.routers.simulation.settings") as s:
         auth.enable_auth = False
-        s.simulation_harness_image = "ghcr.io/rossoctl/simulation-harness:latest"
+        s.simulation_harness_image = "ghcr.io/skillberry-ai/simulation-harness:latest"
         s.simulation_image_pull_secret = ""
         r = _client(kube).post(
             "/simulation/tools",

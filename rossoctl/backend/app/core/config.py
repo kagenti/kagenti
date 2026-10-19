@@ -87,12 +87,13 @@ class Settings(BaseSettings):
     rossoctl_feature_flag_external_skills: bool = False  # External skill registry references
     # Simulated MCP tools: LLM-driven, stateful tools generated from an OpenAPI spec
     rossoctl_feature_flag_simulated_tools: bool = False
-    # Generic simulation-harness image serving all simulated tools (epic #2151)
-    simulation_harness_image: str = "ghcr.io/rossoctl/simulation-harness:latest"
-    # Pull secret for the harness image while it lives in a private registry (interim,
-    # epic #2151). References the Helm-created per-namespace `ghcr-secret`. Set empty
-    # to disable — once the image is public, anonymous pull works and this is unneeded.
-    simulation_image_pull_secret: str = "ghcr-secret"
+    # Generic simulation-harness image serving all simulated tools (epic #2151).
+    # Built from the public github.com/skillberry-ai/simulation-harness repo.
+    simulation_harness_image: str = "ghcr.io/skillberry-ai/simulation-harness:latest"
+    # Optional pull secret for the harness image. The default image is public and
+    # pulls anonymously; set this (e.g. to the Helm-created `ghcr-secret`) only when
+    # pointing simulation_harness_image at a private registry or mirror.
+    simulation_image_pull_secret: str = ""
     # Image pull policy for the harness container. Defaults to Always (production
     # pulls :latest from the registry); set IfNotPresent/Never for local dev when
     # the image is side-loaded into the cluster (e.g. `kind load`).

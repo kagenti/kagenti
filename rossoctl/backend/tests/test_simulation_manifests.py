@@ -22,13 +22,13 @@ def test_simulation_harness_image_setting_defaults():
     from app.core.config import Settings
 
     s = Settings()
-    assert s.simulation_harness_image.startswith("ghcr.io/rossoctl/simulation-harness")
+    assert s.simulation_harness_image.startswith("ghcr.io/skillberry-ai/simulation-harness")
 
 
 def test_simulation_image_pull_secret_setting_defaults():
     from app.core.config import Settings
 
-    assert Settings().simulation_image_pull_secret == "ghcr-secret"
+    assert Settings().simulation_image_pull_secret == ""
 
 
 def test_env_vars_include_harness_and_platform_defaults():
@@ -71,7 +71,7 @@ def _sts(**kw):
     defaults = {
         "name": "petstore",
         "namespace": "team1",
-        "image": "ghcr.io/rossoctl/simulation-harness:latest",
+        "image": "ghcr.io/skillberry-ai/simulation-harness:latest",
         "env_vars": [{"name": "PORT", "value": "8000"}],
     }
     defaults.update(kw)
@@ -85,7 +85,7 @@ def test_statefulset_core_shape():
     assert m["metadata"]["name"] == "petstore"
     assert m["metadata"]["namespace"] == "team1"
     c = m["spec"]["template"]["spec"]["containers"][0]
-    assert c["image"] == "ghcr.io/rossoctl/simulation-harness:latest"
+    assert c["image"] == "ghcr.io/skillberry-ai/simulation-harness:latest"
     assert c["ports"][0]["containerPort"] == 8000
 
 
